@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
@@ -14,8 +14,10 @@ import {
   cardTrialEligible,
   formatTrialEnd,
   planById,
+  readAuthorizationReturn,
   readPlanIntent,
   readPromoCode,
+  takeAuthorizationReturn,
   writeCardTrialPrompt,
   type PlanSelection,
 } from '@/lib/card-trial';
@@ -39,6 +41,19 @@ export default function StartTrialPage() {
   const [ready, setReady] = useState(false);
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
   const [promo, setPromo] = useState<string | null>(null);
+  // Set when the user came from "Connect" in an AI client: every way out of
+  // this page goes back to that authorization.
+  const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
+
+  /** Leave for the waiting authorization (a backend page) or for `fallback`. */
+  const leave = useCallback(
+    (fallback: string) => {
+      const target = takeAuthorizationReturn(fallback);
+      if (target.startsWith('/auth/')) window.location.assign(target);
+      else router.replace(target);
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
@@ -47,7 +62,7 @@ export default function StartTrialPage() {
       return;
     }
     if (deploymentMode !== 'cloud' || user.role !== 'ADMIN') {
-      router.replace('/');
+      leave('/');
       return;
     }
     let live = true;
@@ -56,21 +71,22 @@ export default function StartTrialPage() {
       .then((lic) => {
         if (!live) return;
         if (!cardTrialEligible({ isCloud: true, role: user.role, license: lic })) {
-          router.replace('/');
+          leave('/');
           return;
         }
+        setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
         setReady(true);
       })
       .catch(() => {
-        if (live) router.replace('/');
+        if (live) leave('/');
       });
     return () => {
       live = false;
     };
-  }, [isLoading, deploymentModeLoaded, deploymentMode, token, user, router]);
+  }, [isLoading, deploymentModeLoaded, deploymentMode, token, user, router, leave]);
 
   const handleStart = async () => {
     if (!user) return;
@@ -80,8 +96,9 @@ export default function StartTrialPage() {
 
   const handleSkip = () => {
     if (user) writeCardTrialPrompt(user.id, 'skipped');
-    // The dashboard decides what comes next (usually the /welcome wizard).
-    router.replace('/');
+    // Back to the AI client's authorization if one is waiting; otherwise the
+    // dashboard decides what comes next (usually the /welcome wizard).
+    leave('/');
   };
 
   if (!ready) {
@@ -132,6 +149,11 @@ export default function StartTrialPage() {
             <strong className="text-[var(--text)]">lower connector limit</strong>, and you can add a card
             any time to unlock your full plan.
           </p>
+          {authorizationReturn && (
+            <p className="mt-3 text-sm text-[var(--text-2)] max-w-xl mx-auto">
+              Either way, you go straight back to finish connecting your AI client.
+            </p>
+          )}
         </div>
 
         <Card className="p-5 sm:p-6">

@@ -9,6 +9,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { sessionStore } from '@/lib/storage';
+import { takeAuthorizationReturn } from '@/lib/card-trial';
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
 const PENDING_KEY = 'amcp_pending_license_key';
@@ -45,6 +46,7 @@ function LicenseActivateInner() {
   const key = rawKey.toUpperCase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [message, setMessage] = useState('');
+  const [redirectLabel, setRedirectLabel] = useState('Redirecting to settings…');
   const ran = useRef(false);
 
   useEffect(() => {
@@ -85,10 +87,14 @@ function LicenseActivateInner() {
         sessionStore.remove(PENDING_KEY);
         setPhase('success');
         setMessage(res.message || 'License activated successfully.');
+        // Started the card trial while connecting an AI client: finish that
+        // authorization (it waits 30 minutes) instead of opening settings.
+        const next = takeAuthorizationReturn('/settings/license');
+        setRedirectLabel(next.startsWith('/auth/') ? 'Taking you back to finish connecting your AI client…' : 'Redirecting to settings…');
         // A full load rather than a client-side route change: the app shell
         // (trial banner, licence wall) read the licence before activation and
         // would keep showing the trial until the next reload.
-        setTimeout(() => window.location.replace('/settings/license'), 1500);
+        setTimeout(() => window.location.replace(next), 1500);
       })
       .catch((err: any) => {
         setPhase('error');
@@ -112,7 +118,7 @@ function LicenseActivateInner() {
         {phase === 'success' && (
           <div className="text-center">
             <p className="text-[var(--ok)] font-medium mb-2">{message}</p>
-            <p className="text-[var(--text-3)] text-xs">Redirecting to settings…</p>
+            <p className="text-[var(--text-3)] text-xs">{redirectLabel}</p>
           </div>
         )}
 

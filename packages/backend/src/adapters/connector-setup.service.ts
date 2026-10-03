@@ -171,7 +171,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     try {
       await this.licenseGuard.checkCanCreateConnector(ctx.userId, ctx.organizationId);
     } catch (err: any) {
-      return { isError: true, body: { error: String(err?.message ?? err), dashboard: `${ctx.dashboardBase}/settings/license` } };
+      return { isError: true, body: await this.planLimitAnswer(ctx, String(err?.message ?? err)) };
     }
 
     let imported: Awaited<ReturnType<AdaptersService['importAdapter']>>;
@@ -224,6 +224,34 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         linkValidFor: '30 minutes, for this user only',
         next: 'Give the user the link. When they say they are done, call setup_get_status.',
       },
+    };
+  }
+
+  /**
+   * The plan's connector limit stopped an install. Billing is mentioned here
+   * and only here: the answer is the reason the request failed, with the one
+   * page that lifts the limit. An admin on the free trial gets the card-trial
+   * offer (nothing charged before the trial ends); other admins the licence
+   * page; members are told who can do it.
+   */
+  private async planLimitAnswer(ctx: SetupContext, reason: string): Promise<Record<string, unknown>> {
+    const member = await this.prisma.organizationMember
+      .findFirst({
+        where: { userId: ctx.userId, organizationId: ctx.organizationId, deactivatedAt: null },
+        select: { role: true },
+      })
+      .catch(() => null);
+    if (member?.role !== 'ADMIN') {
+      return { error: reason, whatTheUserCanDo: 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.' };
+    }
+    const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    const onTrial = usage?.plan === 'trial';
+    return {
+      error: reason,
+      whatTheUserCanDo: onTrial
+        ? 'Add a card to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
+        : 'Choose a plan with more connectors, or remove a connector.',
+      upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}`,
     };
   }
 

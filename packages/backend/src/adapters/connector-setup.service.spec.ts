@@ -145,6 +145,34 @@ describe('ConnectorSetupService — install', () => {
     expect(out.isError).toBe(true);
     expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
+
+  it('at the limit, offers an admin on the free trial the card trial', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Trial limit reached (2 connectors).'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'trial', connectors: { current: 2, max: 2 } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body).toMatchObject({
+      error: 'Trial limit reached (2 connectors).',
+      upgradeUrl: 'https://cloud.example.com/start-trial',
+    });
+    expect(out.body.whatTheUserCanDo).toMatch(/nothing is charged before the trial ends/);
+  });
+
+  it('at the limit, sends an admin on a paid plan to the licence page', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Connector limit reached.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'cloud_starter', connectors: { current: 5, max: 5 } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license');
+  });
+
+  it('at the limit, tells an editor who can lift it, without a billing link', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'EDITOR' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Trial limit reached (2 connectors).'));
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBeUndefined();
+    expect(out.body.whatTheUserCanDo).toMatch(/administrator/);
+  });
 });
 
 describe('ConnectorSetupService — links', () => {

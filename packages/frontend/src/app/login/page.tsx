@@ -19,6 +19,7 @@ import {
   cardTrialEligible,
   parsePlanIntent,
   readCardTrialPrompt,
+  saveAuthorizationReturn,
   savePlanIntent,
   parsePromoCode,
   savePromoCode,
@@ -177,6 +178,31 @@ function LoginForm() {
     return true;
   };
 
+  /**
+   * Cloud only: someone who signed up from "Connect" in an AI client (the
+   * redirect is the pending authorization) is offered the card trial before
+   * approving, once. Every way out of /start-trial (skip, a cancelled or a
+   * completed checkout) returns to this authorization, which the backend
+   * keeps for 30 minutes. Resolves true when it has navigated.
+   */
+  const offerCardTrialBeforeAuthorization = async (
+    u: { id?: string; role?: string } | null | undefined,
+    token: string,
+  ): Promise<boolean> => {
+    if (!isCloudMode || !returningToAuthorization || !u?.id || u.role !== 'ADMIN') return false;
+    if (readCardTrialPrompt(u.id) !== null) return false;
+    try {
+      const lic = await license.getStatus(token);
+      if (!cardTrialEligible({ isCloud: true, role: u.role, license: lic })) return false;
+    } catch {
+      return false;
+    }
+    writeCardTrialPrompt(u.id, 'shown');
+    saveAuthorizationReturn(redirectTo);
+    router.push('/start-trial');
+    return true;
+  };
+
   // Surface a failure the SSO callback redirected back with.
   useEffect(() => {
     if (errorParam) setError(errorParam);
@@ -305,6 +331,7 @@ function LoginForm() {
         login(result.accessToken, result.user);
         if (isCloudMode && needsLicenseSetup && returningToAuthorization) {
           await license.activateTrial(result.accessToken).catch(() => undefined);
+          if (await offerCardTrialBeforeAuthorization(result.user, result.accessToken)) return;
           goTo(redirectTo);
         } else if (isCloudMode && needsLicenseSetup) {
           // Cloud mode: auto-activate trial for verified users
@@ -352,7 +379,9 @@ function LoginForm() {
 
       if (isCloudMode && returningToAuthorization) {
         // Verification already created the trial; the user is in the middle
-        // of connecting an AI client, so take them straight back to approve.
+        // of connecting an AI client: offer the card trial once, then back
+        // to approve.
+        if (await offerCardTrialBeforeAuthorization(verifiedUser, authToken)) return;
         goTo(redirectTo);
       } else if (isCloudMode) {
         // Cloud mode: auto-activate trial
