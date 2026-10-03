@@ -83,9 +83,8 @@ test.describe('sign-up from an AI client (Claude "Connect")', () => {
   // The MCP authorization page links "Create an account" with
   // redirect=/auth/login. After verifying, the new user must land back on that
   // page (still inside the pending authorization) to approve with one click,
-  // not on the welcome wizard, which used to strand the connection half way.
-  // The card-trial offer may come first, but only with a guaranteed way back
-  // (card-trial-claude-signup.spec.ts); here there is no trial to convert.
+  // not on the welcome wizard or the card-trial offer, which strand the connection half way.
+  // Nor the card-trial offer: before Approve it cost half the connections.
   test('after verifying the email, goes straight back to the authorization page', async ({ page }) => {
     const calls: string[] = [];
     await page.route(/\/(api|health)\//, async (route) => {
