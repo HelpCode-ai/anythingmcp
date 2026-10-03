@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "fatture-in-cloud",
   "docsUrl": "https://developers.fattureincloud.it/api-reference/",
-  "instructions": "**Getting a token**\n1. Register an application in the **Fatture in Cloud developer console** (developers.fattureincloud.it). You receive a client id and client secret.\n2. Run the authorization-code flow once for the account, requesting the scopes you need — `entity.clients:r`, `entity.suppliers:r`, `issued_documents:r`, `received_documents:r`, `products:r`, and the `:a` variants for write. Keep the **refresh token**.\n3. Set `FIC_CLIENT_ID`, `FIC_CLIENT_SECRET`, `FIC_REFRESH_TOKEN` and `FIC_COMPANY_ID`. AnythingMCP refreshes the access token on its own.\n\n**Every path carries a company id.** A Fatture in Cloud account can hold several companies (aziende) and each has its own numeric id; `FIC_COMPANY_ID` fixes this connector to one. `fatture_in_cloud_list_companies` is the exception — it is the one call that works without it, and it tells you which ids exist.\n\n**Issued vs received.** `issued_documents` are the documents you send (invoices, quotes, credit notes, delivery notes); `received_documents` are supplier invoices you have recorded. The `type` parameter narrows within each: `invoice`, `quote`, `proforma`, `credit_note`, `order`, `receipt`, `delivery_note`.\n\n**Fatturazione elettronica.** Italian e-invoices carry an `e_invoice` flag and an `ei_status` that tracks the document through the Sistema di Interscambio: `not_sent`, `sent`, `pending`, `accepted`, `rejected`. A rejected invoice is a real accounting problem and worth asking about by name.\n\n**`fieldset=detailed`** returns the line items and payment schedule; the default returns headers only. Ask for detail when you need it and not before, because documents are large.\n\n**Cloud reachability**: api-v2.fattureincloud.it is public with a valid certificate.",
+  "instructions": "**Getting a token**\n1. Register an application in the **Fatture in Cloud developer console** (developers.fattureincloud.it). You receive a client id and client secret.\n2. Run the authorization-code flow once for the account, requesting the scopes you need. Issued documents have one scope per type: `issued_documents.invoices:r`, `issued_documents.quotes:r`, `issued_documents.proformas:r`, `issued_documents.credit_notes:r`, `issued_documents.receipts:r`, `issued_documents.orders:r`, `issued_documents.delivery_notes:r` (and so on). The other tools need `entity.clients:r`, `entity.suppliers:r`, `received_documents:r`, `products:r` and `receipts:r`. The `:a` variants grant write access. Keep the **refresh token**.\n3. Set `FIC_CLIENT_ID`, `FIC_CLIENT_SECRET`, `FIC_REFRESH_TOKEN` and `FIC_COMPANY_ID`. AnythingMCP refreshes the access token on its own.\n\n**Every path carries a company id.** A Fatture in Cloud account can hold several companies (aziende) and each has its own numeric id; `FIC_COMPANY_ID` fixes this connector to one. `fatture_in_cloud_list_companies` is the exception — it is the one call that works without it, and it tells you which ids exist.\n\n**Issued vs received.** `issued_documents` are the documents you send (invoices, quotes, credit notes, delivery notes); `received_documents` are supplier invoices you have recorded. The `type` parameter narrows within each, and both list calls require it: issued `invoice`, `quote`, `proforma`, `credit_note`, `order`, `receipt`, `delivery_note` and more; received `expense`, `passive_credit_note`, `passive_delivery_note`, `self_invoice`.\n\n**Filtering and paging.** The list tools' `filter` argument is sent as Fatture in Cloud's `q` query: `field = 'value'`, `name contains 'Luca'`, comparisons such as `date >= '2026-01-01'`, combined with `and`/`or` and parentheses; strings in single quotes. Pages default to 5 rows; `per_page` goes up to 100.\n\n**Fatturazione elettronica.** Italian e-invoices carry an `e_invoice` flag and an `ei_status` that tracks the document through the Sistema di Interscambio: `not_sent`, `sent`, `pending`, `accepted`, `rejected`. A rejected invoice is a real accounting problem and worth asking about by name.\n\n**`fieldset=detailed`** returns the line items and payment schedule; the default returns headers only. Ask for detail when you need it and not before, because documents are large.\n\n**Cloud reachability**: api-v2.fattureincloud.it is public with a valid certificate.",
   "requiredEnvVars": [
     "FIC_CLIENT_ID",
     "FIC_CLIENT_SECRET",
@@ -53,7 +53,20 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Document type: invoice, quote, proforma, receipt, delivery_note, credit_note, order, work_report, supplier_order, self_own_invoice, self_supplier_invoice."
+            "description": "Document type: invoice, quote, proforma, receipt, delivery_note, credit_note, order, work_report, supplier_order, self_own_invoice, self_supplier_invoice.",
+            "enum": [
+              "invoice",
+              "quote",
+              "proforma",
+              "receipt",
+              "delivery_note",
+              "credit_note",
+              "order",
+              "work_report",
+              "supplier_order",
+              "self_own_invoice",
+              "self_supplier_invoice"
+            ]
           },
           "fieldset": {
             "type": "string",
@@ -61,7 +74,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. date >= '2026-01-01' or entity.name = 'Rossi'."
+            "description": "Filter expression (sent as the `q` query), e.g. date >= '2026-01-01'. Strings in single quotes; combine with and/or."
           },
           "sort": {
             "type": "string",
@@ -73,7 +86,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page (default 50)."
+            "description": "Rows per page, 1–100 (default 5)."
           }
         },
         "required": [
@@ -86,7 +99,7 @@
         "queryParams": {
           "type": "$type",
           "fieldset": "$fieldset",
-          "filter": "$filter",
+          "q": "$filter",
           "sort": "$sort",
           "page": "$page",
           "per_page": "$per_page"
@@ -124,7 +137,13 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Document type: expense, passive_credit_note, passive_delivery_note."
+            "description": "Document type: expense, passive_credit_note, passive_delivery_note or self_invoice. Required by the API.",
+            "enum": [
+              "expense",
+              "passive_credit_note",
+              "passive_delivery_note",
+              "self_invoice"
+            ]
           },
           "fieldset": {
             "type": "string",
@@ -132,7 +151,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. date >= '2026-01-01'."
+            "description": "Filter expression (sent as the `q` query), e.g. date >= '2026-01-01'."
           },
           "sort": {
             "type": "string",
@@ -144,9 +163,12 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–100 (default 5)."
           }
-        }
+        },
+        "required": [
+          "type"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -154,7 +176,7 @@
         "queryParams": {
           "type": "$type",
           "fieldset": "$fieldset",
-          "filter": "$filter",
+          "q": "$filter",
           "sort": "$sort",
           "page": "$page",
           "per_page": "$per_page"
@@ -169,7 +191,7 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. name = 'Rossi' or vat_number = 'IT01234567890'."
+            "description": "Filter expression (sent as the `q` query), e.g. name = 'Rossi' or vat_number = 'IT01234567890'."
           },
           "sort": {
             "type": "string",
@@ -181,7 +203,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–100 (default 5)."
           }
         }
       },
@@ -189,7 +211,7 @@
         "method": "GET",
         "path": "/c/{FIC_COMPANY_ID}/entities/clients",
         "queryParams": {
-          "filter": "$filter",
+          "q": "$filter",
           "sort": "$sort",
           "page": "$page",
           "per_page": "$per_page"
@@ -204,7 +226,7 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. name = 'Bianchi'."
+            "description": "Filter expression (sent as the `q` query), e.g. name = 'Bianchi'."
           },
           "page": {
             "type": "number",
@@ -212,7 +234,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–100 (default 5)."
           }
         }
       },
@@ -220,7 +242,7 @@
         "method": "GET",
         "path": "/c/{FIC_COMPANY_ID}/entities/suppliers",
         "queryParams": {
-          "filter": "$filter",
+          "q": "$filter",
           "page": "$page",
           "per_page": "$per_page"
         }
@@ -234,7 +256,7 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. code = 'ART001'."
+            "description": "Filter expression (sent as the `q` query), e.g. code = 'ART001'."
           },
           "page": {
             "type": "number",
@@ -242,7 +264,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–100 (default 5)."
           }
         }
       },
@@ -250,7 +272,7 @@
         "method": "GET",
         "path": "/c/{FIC_COMPANY_ID}/products",
         "queryParams": {
-          "filter": "$filter",
+          "q": "$filter",
           "page": "$page",
           "per_page": "$per_page"
         }
@@ -264,7 +286,7 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Filter expression, e.g. date >= '2026-09-01'."
+            "description": "Filter expression (sent as the `q` query), e.g. date >= '2026-09-01'."
           },
           "page": {
             "type": "number",
@@ -272,7 +294,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–100 (default 5)."
           }
         }
       },
@@ -280,7 +302,7 @@
         "method": "GET",
         "path": "/c/{FIC_COMPANY_ID}/receipts",
         "queryParams": {
-          "filter": "$filter",
+          "q": "$filter",
           "page": "$page",
           "per_page": "$per_page"
         }

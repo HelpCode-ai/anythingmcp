@@ -26,6 +26,24 @@ describe('aruba-fatturazione adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.tokenJsonPath).toBe('access_token');
   });
 
+  it("signs in on the separate auth host with a form-encoded password grant", () => {
+    const cfg = a.connector.authConfig as Record<string, any>;
+    expect(cfg.loginUrl).toBe('https://auth.fatturazioneelettronica.aruba.it/auth/signin');
+    expect(cfg.loginHeaders['Content-Type']).toContain('application/x-www-form-urlencoded');
+    expect(cfg.loginBody.grant_type).toBe('password');
+    expect(a.connector.healthcheckPath).toBe('https://auth.fatturazioneelettronica.aruba.it/auth/userInfo');
+  });
+
+  it("uses Aruba's documented search and lookup methods", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(byName.aruba_fatturazione_list_sent_invoices.path).toBe('/invoice/out/findByUsername');
+    expect(byName.aruba_fatturazione_list_received_invoices.path).toBe('/invoice/in/findByUsername');
+    expect((byName.aruba_fatturazione_list_sent_invoices.queryParams as Record<string, string>).username).toBe('$ARUBA_USERNAME');
+    expect(byName.aruba_fatturazione_get_invoice_status.path).toBe('/invoice/out/getByIdSdi');
+    expect(byName.aruba_fatturazione_get_received_invoice.path).toBe('/invoice/in/getByIdSdi');
+    expect(byName.aruba_fatturazione_list_notifications.path).toBe('/notification/out/getByInvoiceFilename');
+  });
+
   it("keeps sent and received invoices apart, as the SDI does", () => {
     expect(toolNames).toContain('aruba_fatturazione_list_sent_invoices');
     expect(toolNames).toContain('aruba_fatturazione_list_received_invoices');

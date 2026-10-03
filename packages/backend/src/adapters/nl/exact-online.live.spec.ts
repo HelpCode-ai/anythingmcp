@@ -35,6 +35,16 @@ describe('exact-online adapter — static spec conformance', () => {
     for (const t of scoped) expect(String(t.endpointMapping.path)).toContain('{EXACT_DIVISION}');
   });
 
+  it("reads stock from inventory/ItemWarehouses, not the itemId-bound StockPosition function", () => {
+    const t = a.tools.find((x) => x.name === 'exact_online_list_stock_positions')!;
+    expect(t.endpointMapping.path).toBe('/{EXACT_DIVISION}/inventory/ItemWarehouses');
+  });
+
+  it("covers purchase invoices in accounting-only administrations too", () => {
+    const t = a.tools.find((x) => x.name === 'exact_online_list_purchase_entries')!;
+    expect(t.endpointMapping.path).toBe('/{EXACT_DIVISION}/purchaseentry/PurchaseEntries');
+  });
+
   it("leaves /current/Me reachable, since it reports the division", () => {
     const t = a.tools.find((x) => x.name === 'exact_online_get_me')!;
     expect(t.endpointMapping.path).toBe('/current/Me');

@@ -144,3 +144,15 @@ function withPath(base: URL, pathname: string, search: string): URL {
   url.hash = '';
   return url;
 }
+
+/**
+ * Public dashboard address of a connector's page, for messages a person reads
+ * in a chat client ("open the connector and set X"). FRONTEND_URL is where the
+ * dashboard is served; undefined when it is not configured, so callers can
+ * fall back to wording without a link.
+ */
+export function connectorPageUrl(connectorId: string | undefined | null): string | undefined {
+  const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+  if (!connectorId || !/^https?:\/\//i.test(base)) return undefined;
+  return `${base}/connectors/${encodeURIComponent(connectorId)}`;
+}

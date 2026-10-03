@@ -37,6 +37,12 @@ describe('dynamics-nav adapter — static spec conformance', () => {
   it("makes the published-service list the entry point", () => {
     expect(a.probe?.tool).toBe('dynamics_nav_list_services');
   });
+
+  it("reads the service list and $metadata at the service root, outside the company", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(byName.dynamics_nav_list_services.path).toBe('{{NAV_BASE_URL}}/');
+    expect(byName.dynamics_nav_get_metadata.path).toBe('{{NAV_BASE_URL}}/$metadata');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

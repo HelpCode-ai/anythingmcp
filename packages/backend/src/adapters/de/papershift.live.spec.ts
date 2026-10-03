@@ -31,11 +31,33 @@ describe('papershift adapter — static spec conformance', () => {
     expect(toolNames).toContain('papershift_list_working_sessions');
   });
 
-  it("requires a bounded date range on every range query", () => {
+  it("requires a bounded date range on every range query, named range_start/range_end", () => {
     for (const name of ['papershift_list_shifts', 'papershift_list_working_sessions', 'papershift_list_absences']) {
       const t = adapter.tools.find((x: { name: string }) => x.name === name)!;
-      expect((t as unknown as { parameters: { required: string[] } }).parameters.required).toEqual(['start_date', 'end_date']);
+      expect((t as unknown as { parameters: { required: string[] } }).parameters.required).toEqual(
+        expect.arrayContaining(['range_start', 'range_end']),
+      );
+      const q = (t as unknown as { endpointMapping: { queryParams: Record<string, string> } }).endpointMapping.queryParams;
+      expect(q.range_start).toBe('$range_start');
+      expect(q.range_end).toBe('$range_end');
+      expect(q).not.toHaveProperty('start_date');
+      expect(q).not.toHaveProperty('per_page');
     };
+  });
+
+  it("requires a location for shifts, as Papershift does", () => {
+    const t = adapter.tools.find((x: { name: string }) => x.name === 'papershift_list_shifts')!;
+    expect((t as unknown as { parameters: { required: string[] } }).parameters.required).toContain('location_id');
+  });
+
+  it("reads one user with ?id=, since /users/{id} is not a route", () => {
+    const t = a.tools.find((x) => x.name === 'papershift_get_user')!;
+    expect(t.endpointMapping.path).toBe('/users');
+    expect(t.endpointMapping.queryParams).toEqual({ id: '$id' });
+  });
+
+  it("sends the mandatory interface_language with every request", () => {
+    expect(a.connector.authConfig?.interface_language).toBe('de');
   });
 });
 

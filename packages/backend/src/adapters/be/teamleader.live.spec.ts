@@ -36,6 +36,14 @@ describe('teamleader adapter — static spec conformance', () => {
   it("warns that the refresh token rotates on every use", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('rotate');
   });
+
+  it("filters quotations by id, the only filter quotations.list has", () => {
+    const t = a.tools.find((x) => x.name === 'teamleader_list_quotations')!;
+    expect(t.endpointMapping.bodyMapping).toEqual({
+      filter: { ids: '$ids' },
+      page: { size: '$page_size', number: '$page_number' },
+    });
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

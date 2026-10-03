@@ -25,8 +25,27 @@ describe('jtl-wawi adapter — static spec conformance', () => {
     expect(a.connector.baseUrl).toBe('{{JTL_WAWI_URL}}/api/eazybusiness/v1');
   });
 
-  it("identifies the app alongside the bearer key", () => {
+  it("authenticates with JTL's own `Wawi <key>` scheme, not Bearer", () => {
+    expect(a.connector.authType).toBe('API_KEY');
+    expect(a.connector.authConfig?.headerName).toBe('Authorization');
+    expect(a.connector.authConfig?.apiKey).toBe('Wawi {{JTL_WAWI_API_KEY}}');
+  });
+
+  it("identifies the app and its version on every call", () => {
     expect(a.connector.headers?.['X-AppId']).toBe('{{JTL_WAWI_APP_ID}}');
+    expect(a.connector.headers?.['X-AppVersion']).toBe('{{JTL_WAWI_APP_VERSION}}');
+    expect(a.requiredEnvVars).toContain('JTL_WAWI_APP_VERSION');
+  });
+
+  it("reads stock from /stocks and shipments from /deliveryNotes, paged by pageNumber/pageSize", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(byName.jtl_wawi_get_item_stock.path).toBe('/stocks');
+    expect(byName.jtl_wawi_get_item_stock.queryParams).toMatchObject({ itemId: '$itemId' });
+    expect(byName.jtl_wawi_list_shipments.path).toBe('/deliveryNotes');
+    for (const t of a.tools) {
+      const q = Object.keys((t.endpointMapping.queryParams as Record<string, unknown>) ?? {});
+      expect(q.filter((k) => k.startsWith('$'))).toEqual([]);
+    }
   });
 
   it("keeps per-warehouse stock separate from the item master", () => {

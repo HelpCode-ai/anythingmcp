@@ -1,0 +1,9 @@
+- Which indexes do we have, and how much data is in each of them?
+- Show me the hosts that sent data to the `main` index in the last 24 hours.
+- Count failed logins per user in the last 7 days and list the top 10.
+- Write the SPL for 5xx errors per service over the last hour, explain it, then run it.
+- Which saved searches and alerts exist in the `search` app, and what do they look for?
+- Run the saved search "Daily error summary" and summarise the result.
+- Optimise this SPL: `index=web | stats count by status | where count > 100`.
+- Which roles and capabilities does the user behind this connection have?
+- Compare yesterday's error volume with the same day last week and tell me what changed.

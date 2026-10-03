@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "holded",
   "docsUrl": "https://developers.holded.com/reference",
-  "instructions": "**Getting a key**\n1. Sign in to Holded and open **Configuración → Desarrolladores → API key** (Settings → Developers).\n2. Generate a key and put it in `HOLDED_API_KEY`. The key belongs to the account, not to a user, and carries full access to every module you have subscribed to — treat it as a password.\n\n**The key travels in a `key` header.** Not `Authorization`, not a query parameter. Holded's own documentation calls it simply `key`.\n\n**One API, several modules, one path prefix each.** Invoicing lives under `/invoicing/v1`, CRM under `/crm/v1`, projects under `/projects/v1`, team under `/team/v1`. The tools below carry the right prefix per resource; a 404 on a path that looks right usually means the module is not on your plan.\n\n**Documents are one endpoint with a type.** `/invoicing/v1/documents/{docType}` covers invoices, sales receipts, credit notes, estimates, purchase orders and supplier invoices — the `docType` path segment picks one: `invoice`, `salesreceipt`, `creditnote`, `salesorder`, `estimate`, `purchase`, `purchaseorder`, `waybill`.\n\n**Dates are Unix timestamps in seconds**, not ISO strings, on the `starttmp`/`endtmp` filters. This catches everyone once.\n\n**Cloud reachability**: api.holded.com is public with a valid certificate.",
+  "instructions": "**Getting a key**\n1. Sign in to Holded and open **Configuración → Desarrolladores → API key** (Settings → Developers).\n2. Generate a key and put it in `HOLDED_API_KEY`. The key belongs to the account, not to a user, and carries full access to every module you have subscribed to — treat it as a password.\n\n**The key travels in a `key` header.** Not `Authorization`, not a query parameter. Holded's own documentation calls it simply `key`.\n\n**This adapter uses Holded's v1 API** (`/api/invoicing/v1`, `/api/crm/v1`), which is still served. Holded's current developer site documents a newer v2 API with `Authorization: Bearer` and different paths; this adapter does not use it.\n\n**Paging**: every v1 list endpoint is paginated; pass `page` (2, 3, …) for the next page.\n\n**Contact filters are exact matches**: `phone`, `mobile` and `customId`. There is no filter by contact type; read the type from each returned contact.\n\n**One API, several modules, one path prefix each.** Invoicing lives under `/invoicing/v1`, CRM under `/crm/v1`, projects under `/projects/v1`, team under `/team/v1`. The tools below carry the right prefix per resource; a 404 on a path that looks right usually means the module is not on your plan.\n\n**Documents are one endpoint with a type.** `/invoicing/v1/documents/{docType}` covers invoices, sales receipts, credit notes, estimates, purchase orders and supplier invoices — the `docType` path segment picks one: `invoice`, `salesreceipt`, `creditnote`, `salesorder`, `proform`, `waybill`, `estimate`, `purchase`, `purchaseorder`, `purchaserefund`. Filter further with `paid` (0 not paid, 1 paid, 2 partially paid), `billed` (0/1) and `sort` (`created-asc`/`created-desc`).\n\n**Dates are Unix timestamps in seconds**, not ISO strings, on the `starttmp`/`endtmp` filters. This catches everyone once.\n\n**Cloud reachability**: api.holded.com is public with a valid certificate.",
   "requiredEnvVars": [
     "HOLDED_API_KEY"
   ],
@@ -38,9 +38,17 @@
             "type": "string",
             "description": "Page number, starting at 1."
           },
-          "type": {
+          "phone": {
             "type": "string",
-            "description": "Restrict by contact type, e.g. client or supplier."
+            "description": "Exact phone number match, including characters like +, # and -."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Exact mobile number match, including characters like +, # and -."
+          },
+          "customId": {
+            "type": "string",
+            "description": "Your external reference id; several ids comma-separated."
           }
         }
       },
@@ -49,7 +57,9 @@
         "path": "/invoicing/v1/contacts",
         "queryParams": {
           "page": "$page",
-          "type": "$type"
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "customId": "$customId"
         }
       }
     },
@@ -81,7 +91,7 @@
         "properties": {
           "docType": {
             "type": "string",
-            "description": "Document type: invoice, salesreceipt, creditnote, salesorder, estimate, purchase, purchaseorder, waybill."
+            "description": "Document type: invoice, salesreceipt, creditnote, salesorder, proform, waybill, estimate, purchase, purchaseorder or purchaserefund."
           },
           "starttmp": {
             "type": "number",
@@ -94,6 +104,22 @@
           "contactid": {
             "type": "string",
             "description": "Restrict to one contact's documents."
+          },
+          "paid": {
+            "type": "string",
+            "description": "Payment status filter: 0 = not paid, 1 = paid, 2 = partially paid."
+          },
+          "billed": {
+            "type": "string",
+            "description": "Billing status filter: 0 = not billed, 1 = billed."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created-asc",
+              "created-desc"
+            ],
+            "description": "Sort by creation date: created-asc or created-desc."
           },
           "page": {
             "type": "string",
@@ -111,6 +137,9 @@
           "starttmp": "$starttmp",
           "endtmp": "$endtmp",
           "contactid": "$contactid",
+          "paid": "$paid",
+          "billed": "$billed",
+          "sort": "$sort",
           "page": "$page"
         }
       }

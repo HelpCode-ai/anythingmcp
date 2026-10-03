@@ -26,6 +26,23 @@ import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
  * Supports OAuth2 token refresh: if a request returns 401 and a refreshToken + tokenUrl
  * are available, it will attempt to refresh the access token and retry the request once.
  */
+/** Longest Retry-After we honour inside a tool call; beyond it we give up. */
+const MAX_RETRY_AFTER_MS = 3000;
+
+/**
+ * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
+ * 10.2.3). Null when absent or unreadable.
+ */
+export function parseRetryAfterMs(value: unknown, now = Date.now()): number | null {
+  if (value === undefined || value === null) return null;
+  const text = String(Array.isArray(value) ? value[0] : value).trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  const at = Date.parse(text);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, at - now);
+}
+
 @Injectable()
 export class RestEngine {
   private readonly logger = new Logger(RestEngine.name);
@@ -91,13 +108,17 @@ export class RestEngine {
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
-    const withMeta = (response: AxiosResponse) => ({
-      body: endpointMapping.rawBody ? response.data : parseXmlBody(response),
-      headers: pickExposedHeaders(
-        response.headers as Record<string, unknown>,
-        endpointMapping.exposeHeaders,
-      ),
-    });
+    const withMeta = (response: AxiosResponse) => {
+      const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
+      assertNotJsonRpcError(body);
+      return {
+        body,
+        headers: pickExposedHeaders(
+          response.headers as Record<string, unknown>,
+          endpointMapping.exposeHeaders,
+        ),
+      };
+    };
     // Interpolate path parameters: /users/{id} → /users/123
     //
     // `path` is optional on the stored mapping — tools saved as `method:
@@ -389,6 +410,34 @@ export class RestEngine {
   }
 
   /**
+   * How long to wait before the next attempt, or null to give up.
+   *
+   * A rate limit is not an outage: retrying a 429 three times in 3.7 s sent
+   * four requests to an API that had just asked for fewer, and a customer
+   * whose backend hit its own Supabase limit saw ~54k rejections become ~216k
+   * requests in two days. So a 429, and a 503 that says when to come back,
+   * get at most one more attempt: after the API's Retry-After when it is
+   * short, after about a second when it gives none, and none at all when it
+   * asks for longer than we can wait inside a tool call. The model still sees
+   * the status and the Retry-After header in the error.
+   */
+  private retryDelayMs(
+    error: unknown,
+    attempt: number,
+    delaysMs: number[],
+  ): number | null {
+    const response = (error as AxiosError).response;
+    const status = response?.status;
+    const retryAfter = parseRetryAfterMs(response?.headers?.['retry-after']);
+    if (status === 429 || (status === 503 && retryAfter !== null)) {
+      if (attempt > 0) return null;
+      if (retryAfter === null) return 1000 + Math.floor(Math.random() * 250);
+      return retryAfter <= MAX_RETRY_AFTER_MS ? retryAfter : null;
+    }
+    return attempt < delaysMs.length ? delaysMs[attempt] : null;
+  }
+
+  /**
    * Human-readable replacements for connection-level failures. Without these
    * the caller — and the model reading the tool result — gets the raw OpenSSL
    * dump, e.g.
@@ -441,7 +490,8 @@ export class RestEngine {
         return await axios(axiosConfig);
       } catch (error) {
         const transient = this.isTransientError(error);
-        if (attempt >= delaysMs.length || !transient) {
+        const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
+        if (delay === null) {
           // Warn, not debug: production runs at info, so a call that burned
           // every retry used to look identical to one that failed outright —
           // there was no way to tell a flaky upstream from a broken connector.
@@ -456,9 +506,9 @@ export class RestEngine {
           throw this.describeConnectionError(error, attempt + 1);
         }
         this.logger.debug(
-          `Transient error (attempt ${attempt + 1}), retrying in ${delaysMs[attempt]}ms`,
+          `Transient error (attempt ${attempt + 1}), retrying in ${delay}ms`,
         );
-        await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -1102,6 +1152,46 @@ function assertNoPrototypePollution(value: unknown): void {
  * zyte-request-id is included because it is the first thing Zyte support asks
  * for, and it is not recoverable after the fact.
  */
+/**
+ * JSON-RPC servers (Odoo's /jsonrpc, Zabbix's api_jsonrpc.php) answer an
+ * error with HTTP 200 and an `error` member instead of `result`. Passed on as
+ * a body, such a call was logged as a success and the model had to notice the
+ * error itself; a connector test passed with a wrong key. Raise it instead,
+ * with the server's own message (Odoo puts the useful part in
+ * error.data.message, Zabbix in error.data) and without the traceback.
+ */
+export class JsonRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code: unknown,
+  ) {
+    super(message);
+    this.name = 'JsonRpcError';
+  }
+}
+
+export function assertNotJsonRpcError(body: unknown): void {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return;
+  const envelope = body as { jsonrpc?: unknown; error?: unknown; result?: unknown };
+  if (typeof envelope.jsonrpc !== 'string') return;
+  if (!envelope.error || typeof envelope.error !== 'object') return;
+  if (envelope.result !== undefined) return;
+  const error = envelope.error as { code?: unknown; message?: unknown; data?: unknown };
+  const data = error.data as { message?: unknown; name?: unknown } | string | undefined;
+  const detail =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && typeof data.message === 'string'
+        ? data.message
+        : undefined;
+  const head = typeof error.message === 'string' && error.message ? error.message : 'JSON-RPC error';
+  const text = detail && detail !== head ? `${head}: ${detail}` : head;
+  throw new JsonRpcError(
+    `JSON-RPC error${error.code !== undefined ? ` ${String(error.code)}` : ''}: ${text.slice(0, 1000)}`,
+    error.code,
+  );
+}
+
 export function restateProxyError(error: unknown): unknown {
   if (!(error instanceof AxiosError) || !error.response) return error;
   const headers = error.response.headers as Record<string, unknown> | undefined;

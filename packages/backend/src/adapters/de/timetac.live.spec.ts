@@ -21,17 +21,28 @@ const a = adapter as unknown as {
 const toolNames = a.tools.map((t) => t.name);
 
 describe('timetac adapter — static spec conformance', () => {
-  it("repeats the account name in host and path, as TimeTac requires", () => {
-    expect(a.connector.baseUrl).toBe('https://{{TIMETAC_ACCOUNT}}.timetac.com/{{TIMETAC_ACCOUNT}}/api/v3');
+  it("calls api.timetac.com with the account name and API version in the path", () => {
+    expect(a.connector.baseUrl).toBe('https://api.timetac.com/{{TIMETAC_ACCOUNT}}/v4');
   });
 
-  it("refreshes an OAuth2 token against the tenant's own token URL", () => {
+  it("gets its token with the client-credentials grant, the only one TimeTac documents", () => {
     expect(a.connector.authType).toBe('OAUTH2');
-    expect(a.connector.authConfig?.tokenUrl).toContain('{{TIMETAC_ACCOUNT}}');
+    expect(a.connector.authConfig?.grant).toBe('client_credentials');
+    expect(a.connector.authConfig?.tokenUrl).toBe('https://api.timetac.com/{{TIMETAC_ACCOUNT}}/auth/oauth2/token');
+    expect(a.connector.authConfig).not.toHaveProperty('refreshToken');
   });
 
-  it("uses TimeTac's /read suffix rather than REST collections", () => {
-    expect(a.tools.every((t) => /\/(read|readLive)$/.test(String(t.endpointMapping.path)))).toBe(true);
+  it("uses TimeTac's /read/ suffix rather than REST collections", () => {
+    expect(a.tools.every((t) => /\/read\/$/.test(String(t.endpointMapping.path)))).toBe(true);
+  });
+
+  it("pages with the underscore meta parameters and passes field filters through as a raw query", () => {
+    for (const t of a.tools) {
+      const qp = t.endpointMapping.queryParams as Record<string, string>;
+      expect(qp.__rawquery).toBe('$filter');
+      expect(qp._limit).toBe('$limit');
+      expect(qp._offset).toBe('$offset');
+    }
   });
 });
 

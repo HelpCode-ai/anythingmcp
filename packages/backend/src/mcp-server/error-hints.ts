@@ -87,6 +87,24 @@ const TYPESAFE_INVALID_REQUEST_HINT =
   'state, model and questions go in the request: there is no field for a list ' +
   'of records, send one call per record instead.';
 
+const TELEGRAM_BAD_TOKEN_HINT =
+  'Telegram answers 404 "Not Found" (or 401) for every method when the bot token ' +
+  'in the URL is wrong, so this is the TELEGRAM_BOT_TOKEN, not the method. Tell ' +
+  'the user to copy the token again from @BotFather (format 123456789:AA...) into ' +
+  'the connector settings. Retrying or calling another method will fail the same way.';
+
+const TELEGRAM_CHAT_HINT =
+  'The bot cannot reach that chat. A bot may only write to a user who has opened ' +
+  'it and pressed Start, or to a group/channel it was added to (channels: as an ' +
+  'administrator). Use the numeric chat id from telegram_bot_get_updates after ' +
+  'the user has sent the bot a message; @usernames only work for public channels. ' +
+  'Ask the user to do that instead of trying other ids.';
+
+const LEXWARE_OVERDUE_HINT =
+  'Lexware does not accept `overdue` together with other statuses in ' +
+  '`voucherStatus`. Make one call with voucherStatus=overdue and a separate one ' +
+  'for the other statuses.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -140,6 +158,19 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (/invalid parameter value|unknown query parameter|unexpected parameter/i.test(text)) {
       return WECLAPP_RAW_FILTER_HINT;
     }
+  }
+
+  if (hostMatches(input.host, 'api.telegram.org')) {
+    if (input.status === 401 || (input.status === 404 && /"Not Found"/.test(text))) {
+      return TELEGRAM_BAD_TOKEN_HINT;
+    }
+    if (/chat not found|bot is not a member|can't initiate conversation|need administrator rights|bot was blocked by the user/i.test(text)) {
+      return TELEGRAM_CHAT_HINT;
+    }
+  }
+
+  if (/voucherStatus filter 'overdue' cannot be used in combination/i.test(text)) {
+    return LEXWARE_OVERDUE_HINT;
   }
 
   // TypeSafe answers a question with an unknown type (and any other field it

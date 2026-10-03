@@ -39,6 +39,21 @@ describe('bexio adapter — static spec conformance', () => {
   it("probes the company profile", () => {
     expect(a.probe?.tool).toBe('bexio_get_company_profile');
   });
+
+  it("sends the structured address fields, not the deprecated `address`", () => {
+    const t = a.tools.find((x) => x.name === 'bexio_create_contact')!;
+    const body = t.endpointMapping.bodyMapping as Record<string, unknown>;
+    expect(body.street_name).toBe('$street_name');
+    expect(body.house_number).toBe('$house_number');
+    expect(body).not.toHaveProperty('address');
+  });
+
+  it("points to Personal Access Tokens and explains a 403", () => {
+    const ins = (adapter as unknown as { instructions: string }).instructions;
+    expect(ins).toContain('developer.bexio.com/pat');
+    expect(ins).toContain('60 days');
+    expect(ins).toContain('403');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

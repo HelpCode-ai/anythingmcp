@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "moneybird",
   "docsUrl": "https://developer.moneybird.com/",
-  "instructions": "**Getting a token**\n1. Sign in to Moneybird and open **Instellingen → Koppelingen → API-tokens** (Settings → Integrations → API tokens).\n2. Create a personal access token and put it in `MONEYBIRD_API_TOKEN`.\n3. Set `MONEYBIRD_ADMINISTRATION_ID` to the numeric administration id. It is in the URL when you are logged in — `moneybird.com/123456789/…` — and `moneybird_list_administrations` also returns it.\n\n**Every data path carries the administration id.** A Moneybird account can hold several administrations (one per company, or a bookkeeper's client list) and each has its own id. This connector is fixed to one; add a second connector for a second administration.\n\n**Rate limit**: roughly 150 requests per five minutes per token, and Moneybird answers a burst with 429 plus a `Retry-After`. Pace bulk work rather than retrying immediately.\n\n**Filtering is a single comma-separated string**, not repeated parameters: `filter=period:this_year,state:open`. Available keys differ per resource — for sales invoices the useful ones are `period`, `state` (`draft`, `open`, `late`, `paid`, `all`) and `contact_id`.\n\n**Paging** is `page` (1-based) and `per_page` (max 100). There is no total count in the body; a short page means you have reached the end.\n\n**Amounts are strings in euros**, and `total_price_incl_tax` is not `total_price_excl_tax`. Pick the one the question actually means.\n\n**Cloud reachability**: moneybird.com is public with a valid certificate.",
+  "instructions": "**Getting a token**\n1. Sign in to Moneybird and open **Instellingen → Koppelingen → API-tokens** (Settings → Integrations → API tokens).\n2. Create a personal access token and put it in `MONEYBIRD_API_TOKEN`.\n3. Set `MONEYBIRD_ADMINISTRATION_ID` to the numeric administration id. It is in the URL when you are logged in — `moneybird.com/123456789/…` — and `moneybird_list_administrations` also returns it.\n\n**Every data path carries the administration id.** A Moneybird account can hold several administrations (one per company, or a bookkeeper's client list) and each has its own id. This connector is fixed to one; add a second connector for a second administration.\n\n**Rate limit**: roughly 150 requests per five minutes per token, and Moneybird answers a burst with 429 plus a `Retry-After`. Pace bulk work rather than retrying immediately.\n\n**Filtering is a single comma-separated string**, not repeated parameters: `filter=period:this_year,state:open`. Available keys differ per resource — for sales invoices the useful ones are `period`, `state` (`all`, `draft`, `open`, `scheduled`, `pending_payment`, `late`, `reminded`, `paid`, `uncollectible`; combine with a pipe, e.g. `state:open|late`) and `contact_id`. A filter you pass replaces the defaults entirely (`period:this_year`, `state:all`), so include `period` when you need anything outside the current year.\n\n**Paging** is `page` (1-based) and `per_page` (max 100). There is no total count in the body; a short page means you have reached the end. Financial mutations are the exception: that endpoint has no paging and returns at most 100 rows, so narrow it with `period` (e.g. `period:20260101..20260131`).\n\n**Amounts are strings in euros**, and `total_price_incl_tax` is not `total_price_excl_tax`. Pick the one the question actually means.\n\n**Cloud reachability**: moneybird.com is public with a valid certificate.",
   "requiredEnvVars": [
     "MONEYBIRD_API_TOKEN",
     "MONEYBIRD_ADMINISTRATION_ID"
@@ -98,7 +98,7 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Comma-separated filter, e.g. period:this_year,state:open. States: draft, open, late, paid, all."
+            "description": "Comma-separated filter, e.g. period:this_year,state:open. States: all, draft, open, scheduled, pending_payment, late, reminded, paid, uncollectible (pipe to combine, e.g. state:open|late). A filter replaces the defaults (period:this_year, state:all)."
           },
           "page": {
             "type": "number",
@@ -227,21 +227,13 @@
     },
     {
       "name": "moneybird_list_financial_mutations",
-      "description": "List bank mutations with their date, amount, description and reconciliation state, so unpaid invoices can be matched against money that actually arrived.",
+      "description": "List bank mutations with their date, amount, description and reconciliation state, so unpaid invoices can be matched against money that actually arrived. Returns at most 100 rows and has no paging: narrow the period instead.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
             "type": "string",
-            "description": "Comma-separated filter, e.g. period:this_month."
-          },
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page, max 100."
+            "description": "Comma-separated filter, e.g. period:this_month or period:20260101..20260131,state:unprocessed. Keys: period, state (all, unprocessed, processed, auto_booked), mutation_type (all, debit, credit), financial_account_id, amount_from, amount_to. Default period is this_year."
           }
         }
       },
@@ -249,9 +241,7 @@
         "method": "GET",
         "path": "/{MONEYBIRD_ADMINISTRATION_ID}/financial_mutations.json",
         "queryParams": {
-          "filter": "$filter",
-          "page": "$page",
-          "per_page": "$per_page"
+          "filter": "$filter"
         }
       }
     }

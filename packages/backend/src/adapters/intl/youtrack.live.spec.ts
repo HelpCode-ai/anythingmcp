@@ -33,6 +33,15 @@ describe('youtrack adapter — static spec conformance', () => {
     };
   });
 
+  it("defaults the caller-overridable fields selector, or an omitted one returns only id and $type", () => {
+    for (const name of ['youtrack_search_issues', 'youtrack_get_issue']) {
+      const t = adapter.tools.find((x: { name: string }) => x.name === name)! as unknown as {
+        parameters: { properties: { fields: { default?: string } } };
+      };
+      expect(t.parameters.properties.fields.default).toMatch(/^id,idReadable,summary,.*customFields\(/);
+    }
+  });
+
   it("exposes the query language rather than hand-rolled filters", () => {
     const t = adapter.tools.find((x: { name: string }) => x.name === 'youtrack_search_issues')!;
     expect(Object.keys((t as unknown as { parameters: { properties: object } }).parameters.properties)).toContain('query');

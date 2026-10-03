@@ -26,7 +26,24 @@ describe('afas-profit adapter — static spec conformance', () => {
   });
 
   it("builds the host from the environment id", () => {
-    expect(a.connector.baseUrl).toBe('https://{{AFAS_ENVIRONMENT}}.rest.afas.online/profitrestservices');
+    expect(a.connector.baseUrl).toBe('https://{{AFAS_ENVIRONMENT}}.rest.afas.online/ProfitRestServices');
+  });
+
+  it("reads AFAS's standard GetConnectors, not invented Dutch names", () => {
+    const path = (n: string) => a.tools.find((x) => x.name === n)!.endpointMapping.path;
+    expect(path('afas_profit_get_debtors')).toBe('/connectors/Profit_Debtor');
+    expect(path('afas_profit_get_invoices')).toBe('/connectors/Profit_Debtor_Invoices');
+    expect(path('afas_profit_get_employees')).toBe('/connectors/Profit_Employees');
+  });
+
+  it("documents AFAS's operator codes (6 contains, 7 not equal, 10 starts with)", () => {
+    const t = a.tools.find((x) => x.name === 'afas_profit_get_data') as unknown as {
+      parameters: { properties: Record<string, { description: string }> };
+    };
+    const ops = t.parameters.properties.operatortypes.description;
+    expect(ops).toContain('6 contains');
+    expect(ops).toContain('7 not equal');
+    expect(ops).toContain('10 starts with');
   });
 
   it("makes the published-connector list the entry point", () => {

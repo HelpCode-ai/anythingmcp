@@ -34,6 +34,18 @@ describe('visma-eaccounting adapter — static spec conformance', () => {
   it("authenticates against Visma's identity host", () => {
     expect(a.connector.authConfig?.tokenUrl).toBe('https://identity.vismaonline.com/connect/token');
   });
+
+  it("pages with $page/$pagesize, the documented paging options", () => {
+    const lists = a.tools.filter((t) => t.endpointMapping.queryParams);
+    expect(lists.length).toBeGreaterThan(5);
+    for (const t of lists) {
+      const q = t.endpointMapping.queryParams as Record<string, unknown>;
+      expect(q.$page).toBe('$page');
+      expect(q.$pagesize).toBe('$pagesize');
+      expect(q).not.toHaveProperty('$top');
+      expect(q).not.toHaveProperty('$skip');
+    }
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

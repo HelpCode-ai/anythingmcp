@@ -14,6 +14,10 @@ describe('extractSsrfBlockedHostname', () => {
       "SSRF guard: cannot resolve 'other-mcp-server': getaddrinfo ENOTFOUND other-mcp-server",
       'other-mcp-server',
     ],
+    [
+      "Host not found: 'nina.api.proxy.bund.dev' could not be resolved (ENOTFOUND). Check the address in the connector settings.",
+      'nina.api.proxy.bund.dev',
+    ],
   ])('extracts the host from %s', (message, expected) => {
     expect(extractSsrfBlockedHostname(message)).toBe(expected);
   });
@@ -26,5 +30,14 @@ describe('extractSsrfBlockedHostname', () => {
     '',
   ])('returns undefined for %s (allowlisting would not help)', (message) => {
     expect(extractSsrfBlockedHostname(message)).toBeUndefined();
+  });
+});
+
+describe('assertSafeOutboundHost on a name that does not resolve', () => {
+  it('says the host was not found instead of reporting a policy block', async () => {
+    const { assertSafeOutboundHost } = await import('./ssrf.util');
+    await expect(
+      assertSafeOutboundHost('no-such-host.invalid', { SSRF_GUARD: 'enabled' } as NodeJS.ProcessEnv),
+    ).rejects.toThrow(/^Host not found: 'no-such-host\.invalid' could not be resolved \(ENOTFOUND\)/);
   });
 });

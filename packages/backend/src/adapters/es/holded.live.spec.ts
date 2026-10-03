@@ -35,6 +35,18 @@ describe('holded adapter — static spec conformance', () => {
     expect(byName.holded_list_leads).toContain('/crm/v1/');
   });
 
+  it("filters contacts and documents only by the parameters v1 documents", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(Object.keys(byName.holded_list_contacts.queryParams as object).sort()).toEqual(
+      ['customId', 'mobile', 'page', 'phone'],
+    );
+    expect(byName.holded_list_documents.queryParams).toMatchObject({
+      paid: '$paid',
+      billed: '$billed',
+      sort: '$sort',
+    });
+  });
+
   it("says the date filters are Unix timestamps, not ISO strings", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('Unix timestamps in seconds');
   });

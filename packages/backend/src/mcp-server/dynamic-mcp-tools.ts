@@ -35,6 +35,7 @@ import { processGauges } from '../common/process-vitals';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
+import { connectorPageUrl } from '../common/url.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -351,6 +352,7 @@ export class DynamicMcpTools {
           authConfig,
         },
         `the connector behind ${tool.name}`,
+        connectorPageUrl(tool.connectorId),
       );
       // A base URL without https:// (a variable typed as `shop.example.com`
       // on an older install) would otherwise fail in the SSRF guard as

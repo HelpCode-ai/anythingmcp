@@ -243,8 +243,15 @@ async function vetHost(
   try {
     resolved = await dns.lookup(hostname, { all: true });
   } catch (e: any) {
+    // Not a policy decision: the name simply has no address (a typo, a
+    // retired API, a DNS hiccup). Worded as such, because "SSRF guard" made
+    // users and the model read a security block into a wrong host name.
+    const temporary = e?.code === 'EAI_AGAIN';
     throw new SsrfBlockedError(
-      `SSRF guard: cannot resolve '${hostname}': ${e?.message || e}`,
+      `Host not found: '${hostname}' could not be resolved (${e?.code || e?.message || e}). ` +
+        (temporary
+          ? 'This is usually a temporary DNS failure; try again.'
+          : 'Check the address in the connector settings.'),
     );
   }
 
@@ -386,9 +393,9 @@ export function createSsrfGuardedAgents(env: NodeJS.ProcessEnv = process.env): {
 export function extractSsrfBlockedHostname(
   message: string,
 ): string | undefined {
-  const match = /SSRF guard:\s*(?:address|hostname|cannot resolve)\s*'([^']+)'/.exec(
-    message || '',
-  );
+  const match =
+    /SSRF guard:\s*(?:address|hostname|cannot resolve)\s*'([^']+)'/.exec(message || '') ??
+    /Host not found:\s*'([^']+)'/.exec(message || '');
   return match?.[1];
 }
 

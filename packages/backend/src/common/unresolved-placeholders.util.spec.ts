@@ -69,6 +69,16 @@ describe('assertNoUnresolvedPlaceholders', () => {
     ).toThrow(/The "Acme" connector is missing a value for X/);
   });
 
+  it('links to the connector page when given one', () => {
+    expect(() =>
+      assertNoUnresolvedPlaceholders(
+        { authConfig: { token: '{{X}}' } },
+        'the "Acme" connector',
+        'https://cloud.example.com/connectors/c1',
+      ),
+    ).toThrow(/Open the connector \(https:\/\/cloud\.example\.com\/connectors\/c1\) and set that variable/);
+  });
+
   it('falls back to a generic subject', () => {
     expect(() =>
       assertNoUnresolvedPlaceholders({ authConfig: { token: '{{X}}' } }),

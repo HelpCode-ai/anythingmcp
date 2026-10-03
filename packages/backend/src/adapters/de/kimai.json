@@ -116,7 +116,7 @@
     },
     {
       "name": "kimai_list_customers",
-      "description": "List customers with their number, country, currency and visible flag. Customers are the top of Kimai's customer → project → activity hierarchy.",
+      "description": "List customers with their number, country, currency and visible flag. Customers are the top of Kimai's customer → project → activity hierarchy. Not paginated: the whole list comes back in one response.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -124,13 +124,9 @@
             "type": "number",
             "description": "1 visible, 2 hidden, 3 both."
           },
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "size": {
-            "type": "number",
-            "description": "Rows per page."
+          "term": {
+            "type": "string",
+            "description": "Free search term."
           }
         }
       },
@@ -139,14 +135,13 @@
         "path": "/customers",
         "queryParams": {
           "visible": "$visible",
-          "page": "$page",
-          "size": "$size"
+          "term": "$term"
         }
       }
     },
     {
       "name": "kimai_list_projects",
-      "description": "List projects, optionally for one customer, with their budget, time budget and start and end dates.",
+      "description": "List projects, optionally for one customer, with their budget, time budget and start and end dates. Not paginated: the whole list comes back in one response.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -158,13 +153,9 @@
             "type": "number",
             "description": "1 visible, 2 hidden, 3 both."
           },
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "size": {
-            "type": "number",
-            "description": "Rows per page."
+          "term": {
+            "type": "string",
+            "description": "Free search term."
           }
         }
       },
@@ -174,32 +165,31 @@
         "queryParams": {
           "customer": "$customer",
           "visible": "$visible",
-          "page": "$page",
-          "size": "$size"
+          "term": "$term"
         }
       }
     },
     {
       "name": "kimai_list_activities",
-      "description": "List activities — the task types time is booked against — either global or attached to one project.",
+      "description": "List activities — the task types time is booked against — either global or attached to one project. Not paginated: the whole list comes back in one response.",
       "parameters": {
         "type": "object",
         "properties": {
           "project": {
-            "type": "string",
-            "description": "Restrict to one project id, or `null` for global activities only."
+            "type": "number",
+            "description": "Restrict to one numeric project id."
+          },
+          "globals": {
+            "type": "number",
+            "description": "1 = only global activities (not bound to a project). Use this instead of a project filter for global ones."
           },
           "visible": {
             "type": "number",
             "description": "1 visible, 2 hidden, 3 both."
           },
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "size": {
-            "type": "number",
-            "description": "Rows per page."
+          "term": {
+            "type": "string",
+            "description": "Free search term."
           }
         }
       },
@@ -208,9 +198,9 @@
         "path": "/activities",
         "queryParams": {
           "project": "$project",
+          "globals": "$globals",
           "visible": "$visible",
-          "page": "$page",
-          "size": "$size"
+          "term": "$term"
         }
       }
     },

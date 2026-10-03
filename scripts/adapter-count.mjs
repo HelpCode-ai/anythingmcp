@@ -31,7 +31,10 @@ for (const region of readdirSync(ADAPTERS_DIR)) {
   if (!statSync(dir).isDirectory()) continue;
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.json')) continue;
-    adapters.push(JSON.parse(readFileSync(join(dir, f), 'utf8')));
+    const adapter = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    // Unlisted adapters are not offered anywhere, so they are not counted.
+    if (adapter.unlisted) continue;
+    adapters.push(adapter);
   }
 }
 const stats = {
@@ -39,7 +42,14 @@ const stats = {
   // "No API key" is a promise about the cloud too, so an adapter that only
   // answers residential IPs (selfHostOnly) does not count towards it even
   // though it needs no key.
-  keyless: adapters.filter((a) => a.connector?.authType === 'NONE' && !a.selfHostOnly).length,
+  // A credential carried in the request body (Odoo's JSON-RPC) leaves
+  // authType NONE although a key is needed, so the variables decide too.
+  keyless: adapters.filter(
+    (a) =>
+      a.connector?.authType === 'NONE' &&
+      !a.selfHostOnly &&
+      !(a.requiredEnvVars ?? []).some((v) => /KEY|TOKEN|SECRET|PASSWORD/.test(v)),
+  ).length,
   tools: adapters.reduce((n, a) => n + (a.tools?.length ?? 0), 0),
 };
 

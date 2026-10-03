@@ -41,6 +41,13 @@ export const ProductEvents = {
    * brings sign-ups, verified sign-ups and paying customers.
    */
   SIGNUP_ATTRIBUTED: 'signup_attributed',
+  /**
+   * A user connected an AI client (Claude, ChatGPT…) through the OAuth flow
+   * for the first time; metadata.client = the client's name. Server-only.
+   * Answers: how many sign-ups reach the client, and how many of those then
+   * add a connector (read against the connectors table).
+   */
+  AI_CLIENT_CONNECTED: 'ai_client_connected',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -49,7 +56,10 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  * Events only the server writes. A signed-in user could otherwise post a
  * `signup_attributed` of their own and skew the channel report.
  */
-const SERVER_ONLY = new Set<string>([ProductEvents.SIGNUP_ATTRIBUTED]);
+const SERVER_ONLY = new Set<string>([
+  ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.AI_CLIENT_CONNECTED,
+]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
 );
