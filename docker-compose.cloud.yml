@@ -92,6 +92,8 @@ x-backend: &backend
     - REDIS_URL=redis://redis:6379
     - JWT_SECRET=${JWT_SECRET}
     - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    # `plaintext` only to roll back past encrypted connector variables (docs/operations/backup-restore.md)
+    - ENV_VARS_AT_REST=${ENV_VARS_AT_REST:-}
     # Shared secret for the onboarding-reminders GitHub Actions cron.
     # Must match the repo secret ONBOARDING_CRON_SECRET. Unset = cron
     # endpoint refuses all calls (self-host default).
