@@ -403,7 +403,7 @@ export default function ConnectorsPage() {
           <p className="mb-6 text-xs text-[var(--text-3)]">
             Supports {SUPPORTED_TYPES.map((t) => t.label).join(', ')}
           </p>
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
               <PlusIcon />
               Add Connector
