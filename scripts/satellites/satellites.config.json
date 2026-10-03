@@ -866,7 +866,7 @@
         "zalando-zds"
       ],
       "wave": 2,
-      "about": "Zalando MCP server: connect Zalando Direct Ship (ZDS) partner APIs to Claude & ChatGPT. Orders, returns, stock and prices.",
+      "about": "Zalando MCP server: connect Zalando Direct Ship (ZDS) partner APIs to Claude & ChatGPT. Orders, order items, shipments and returns.",
       "topics": [
         "zalando",
         "zalando-direct-ship",
