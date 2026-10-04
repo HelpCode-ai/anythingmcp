@@ -832,6 +832,35 @@ function resultBody(result: TextResult): unknown {
 }
 
 /**
+ * A setup answer without plan quotas or upgrade links. OpenAI does not allow a
+ * plugin to promote upgrades or link to a page that starts one, so on the
+ * ChatGPT tools a connector limit is explained without either.
+ */
+function withoutPlanDetails(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const {
+    connectorsLeftOnThisPlan: _left,
+    upgradeUrl,
+    whatTheUserCanDo,
+    ...rest
+  } = body as Record<string, unknown>;
+  const aboutBilling =
+    upgradeUrl !== undefined ||
+    (typeof whatTheUserCanDo === 'string' && /upgrade|plan|card|trial/i.test(whatTheUserCanDo));
+  return {
+    ...rest,
+    ...(aboutBilling
+      ? {
+          whatTheUserCanDo:
+            'This workspace cannot add more connectors right now. Remove a connector it no longer needs, or ask a workspace administrator.',
+        }
+      : whatTheUserCanDo !== undefined
+        ? { whatTheUserCanDo }
+        : {}),
+  };
+}
+
+/**
  * The ChatGPT profile's extra tools. Every one of them goes through the same
  * scope and checks as the shared tools: the steps runner calls the read
  * runner for each step, and the connector tools call the same setup service
@@ -859,7 +888,7 @@ function registerChatgptTools(
     const out = await deps.setup.run(name, args);
     // The setup service names its own tools in its hints; point the model at
     // the tools it actually sees here.
-    const text = JSON.stringify(out.body, null, 2)
+    const text = JSON.stringify(withoutPlanDetails(out.body), null, 2)
       .replace(/\bsetup_find_connectors\b/g, 'anythingmcp_find_connectors')
       .replace(/\bsetup_install_connector\b/g, 'anythingmcp_add_connector')
       .replace(/\bsetup_get_status\b/g, 'anythingmcp_connection_status');

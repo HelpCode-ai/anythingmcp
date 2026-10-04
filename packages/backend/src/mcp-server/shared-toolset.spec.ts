@@ -524,6 +524,28 @@ describe('ChatGPT tool set', () => {
     expect(run).toHaveBeenCalledWith('setup_install_connector', { adapter: 'etsy' });
   });
 
+  it('explains a connector limit without plan quotas or upgrade links', async () => {
+    const run = jest.fn(async (name: string) =>
+      name === 'setup_find_connectors'
+        ? { body: { results: [], connectorsLeftOnThisPlan: 0 } }
+        : {
+            isError: true,
+            body: {
+              error: 'Trial limit reached (10 connectors).',
+              whatTheUserCanDo: 'Add a card to continue the trial on the full plan, or remove a connector.',
+              upgradeUrl: 'https://cloud.example.com/start-trial',
+            },
+          },
+    );
+    const { client } = await connectGpt([], makeDeps({ setup: { organizationId: 'org-A', run } } as any));
+    const found = await call(client, 'anythingmcp_find_connectors', { query: 'etsy' });
+    expect(found.body).toEqual({ results: [] });
+    const added = await call(client, 'anythingmcp_add_connector', { adapter: 'etsy' });
+    expect(added.isError).toBe(true);
+    expect(JSON.stringify(added.body)).not.toMatch(/start-trial|card|upgradeUrl/);
+    expect(added.body.error).toBe('Trial limit reached (10 connectors).');
+  });
+
   it('marks adding a connector as a write, and refuses it to callers who may not', async () => {
     const { client } = await connectGpt([]);
     const add = (await client.listTools()).tools.find((t) => t.name === 'anythingmcp_add_connector');
