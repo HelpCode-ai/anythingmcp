@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
-import { SHARED_TOOL_NAMES } from './shared-toolset';
+import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES } from './shared-toolset';
 import type { RegisteredTool } from './tool-registry';
 
 /**
@@ -36,6 +36,12 @@ const ALL = [
   tool('t-b1', 'crm_find_customer', 'org-B', 'conn-B1'),
 ];
 
+// Redirect URIs as the two assistants register them in production.
+const REDIRECTS: Record<string, string[]> = {
+  'client-claude': ['https://claude.ai/api/mcp/auth_callback'],
+  'client-chatgpt': ['https://chatgpt.com/connector_platform_oauth_redirect'],
+};
+
 function build(opts: { grant?: unknown; allowedByOrg?: Record<string, string[] | null> } = {}) {
   const executor = {
     executeTool: jest.fn(async () => ({
@@ -67,7 +73,10 @@ function build(opts: { grant?: unknown; allowedByOrg?: Record<string, string[] |
     } as any,
     kg as any,
     {} as any,
-    { resolve: jest.fn().mockResolvedValue(opts.grant ?? null) } as any,
+    {
+      resolve: jest.fn().mockResolvedValue(opts.grant ?? null),
+      clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
+    } as any,
     { create: jest.fn() } as any,
   );
 
@@ -112,6 +121,33 @@ describe('shared /mcp in fixed mode', () => {
     const client = await build().connect(orgB);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...SHARED_TOOL_NAMES].sort());
+  });
+
+  it('gives a Claude connection exactly the reviewed set, with the Claude instructions', async () => {
+    const claude = await build().connect({ ...orgB, azp: 'client-claude' });
+    const plain = await build().connect(orgB);
+    const listClaude = (await claude.listTools()).tools;
+    expect(listClaude.map((t) => t.name).sort()).toEqual([...SHARED_TOOL_NAMES].sort());
+    expect(JSON.stringify(listClaude)).toBe(JSON.stringify((await plain.listTools()).tools));
+    expect(claude.getInstructions()).toBe(plain.getInstructions());
+  });
+
+  it('gives a ChatGPT connection the reviewed set plus the ChatGPT tools', async () => {
+    const client = await build().connect({ ...orgB, azp: 'client-chatgpt' });
+    const names = (await client.listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual([...SHARED_TOOL_NAMES, ...CHATGPT_EXTRA_TOOL_NAMES].sort());
+    expect(client.getInstructions()).toMatch(/anythingmcp_run_read_steps/);
+  });
+
+  it('falls back to the reviewed set for an unknown client or an API key', async () => {
+    for (const user of [
+      { ...orgB, azp: 'client-unregistered' },
+      { ...orgB, authMethod: 'api_key', mcpServerId: undefined },
+    ]) {
+      const client = await build().connect(user);
+      const names = (await client.listTools()).tools.map((t) => t.name).sort();
+      expect(names).toEqual([...SHARED_TOOL_NAMES].sort());
+    }
   });
 
   it('runs the caller\'s own copy of a colliding tool name, pinned to its connector', async () => {

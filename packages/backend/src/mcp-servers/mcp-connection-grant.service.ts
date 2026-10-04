@@ -39,9 +39,12 @@ export type ResolvedGrant =
  *   tell "no such server" from "not your server" — that difference would
  *   confirm the existence of another tenant's server.
  */
+const REDIRECT_URI_CACHE_MAX = 10_000;
+
 @Injectable()
 export class McpConnectionGrantService {
   private readonly logger = new Logger(McpConnectionGrantService.name);
+  private readonly redirectUrisByClient = new Map<string, string[]>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -275,6 +278,25 @@ export class McpConnectionGrantService {
   }
 
   /** First connection of this client for this user: the funnel step between sign-up and first call. */
+  /**
+   * The redirect URIs an OAuth client registered, which tell which assistant
+   * it is (see `profileForRedirectUris`). A registration never changes them,
+   * so they are cached; a lookup failure answers `[]`, which means the default
+   * tool set.
+   */
+  async clientRedirectUris(clientId: string | undefined): Promise<string[]> {
+    if (!clientId) return [];
+    const cached = this.redirectUrisByClient.get(clientId);
+    if (cached) return cached;
+    const row = await this.prisma.oAuthClient
+      .findUnique({ where: { clientId }, select: { redirectUris: true } })
+      .catch(() => null);
+    if (!row) return [];
+    if (this.redirectUrisByClient.size >= REDIRECT_URI_CACHE_MAX) this.redirectUrisByClient.clear();
+    this.redirectUrisByClient.set(clientId, row.redirectUris);
+    return row.redirectUris;
+  }
+
   private async reportConnected(
     clientId: string,
     userId: string,
