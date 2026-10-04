@@ -150,7 +150,11 @@ export class McpClientEngine {
     });
 
     try {
-      await client.connect(transport);
+      try {
+        await client.connect(transport);
+      } catch (err) {
+        throw explainMcpConnectError(err, mcpUrl);
+      }
       const result = await client.listTools();
 
       return (result.tools || []).map((tool) => ({
@@ -238,3 +242,25 @@ export class McpClientEngine {
     }
   }
 }
+
+/**
+ * A remote MCP server built on the MCP SDK with DNS-rebinding protection on
+ * answers 403 "Invalid Host header" / "host not allowed" to any hostname it
+ * was not told about, e.g. its own public tunnel (trycloudflare, ngrok). The
+ * raw message reads like our fault; say which setting on their side to change.
+ */
+export function explainMcpConnectError(err: unknown, mcpUrl: URL): Error {
+  const message = String((err as Error)?.message ?? err);
+  if (!/invalid host header|host not allowed|dns rebinding/i.test(message)) {
+    return err instanceof Error ? err : new Error(message);
+  }
+  const explained = new Error(
+    `${message}. The MCP server refused the hostname '${mcpUrl.hostname}': its DNS-rebinding ` +
+      `protection only accepts the hosts it was configured with. Add '${mcpUrl.hostname}' to the ` +
+      `server's allowed hosts (allowedHosts in the MCP SDK; with a tunnel, the tunnel's hostname) ` +
+      `or turn that check off behind the tunnel, then discover the tools again.`,
+  );
+  (explained as Error & { cause?: unknown }).cause = err;
+  return explained;
+}
+

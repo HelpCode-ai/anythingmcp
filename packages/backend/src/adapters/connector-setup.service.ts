@@ -18,6 +18,8 @@ import { decrypt } from '../common/crypto/encryption.util';
 
 /** How long a setup link handed to the user stays valid. */
 export const SETUP_LINK_TTL_MS = 30 * 60 * 1000;
+/** How long expired setup links stay in the table, for measurement only. */
+export const SETUP_LINK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Installs through a chat, per user and hour. A model does not need more. */
 const INSTALLS_PER_HOUR = 10;
 
@@ -290,7 +292,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   /** A fresh one-time link to finish this connector, for this user. */
   async createLink(ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase'>, connectorId: string): Promise<string> {
     const token = randomBytes(24).toString('base64url');
-    await this.prisma.connectorSetupLink.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => undefined);
+    // Expired links stop working at once (resolveLink checks expiresAt); the
+    // rows are kept a week so the share of links that get opened can be read.
+    await this.prisma.connectorSetupLink
+      .deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - SETUP_LINK_RETENTION_MS) } } })
+      .catch(() => undefined);
     await this.prisma.connectorSetupLink.create({
       data: {
         tokenHash: this.hash(token),

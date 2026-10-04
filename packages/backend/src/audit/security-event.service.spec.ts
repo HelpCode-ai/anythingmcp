@@ -47,6 +47,29 @@ describe('SecurityEventService', () => {
       expect(dataOf().actorUserId).toBeNull();
     });
 
+    it('keeps an event whose user or organization was deleted, with the ids in metadata', async () => {
+      // A token rejected because its user is gone: the foreign key fails, and
+      // this is the row an investigation needs.
+      const fk = Object.assign(new Error('Foreign key constraint violated'), { code: 'P2003' });
+      prisma.securityEvent.create.mockRejectedValueOnce(fk).mockResolvedValueOnce({});
+
+      await service.log({
+        event: SecurityEvents.TOKEN_REJECTED,
+        actorType: 'USER',
+        organizationId: 'org-gone',
+        actorUserId: 'user-gone',
+        metadata: { reason: 'user_deleted' },
+      });
+
+      expect(prisma.securityEvent.create).toHaveBeenCalledTimes(2);
+      const retried = prisma.securityEvent.create.mock.calls[1][0].data;
+      expect(retried).toMatchObject({ organizationId: null, actorUserId: null, targetUserId: null });
+      expect(retried.metadata).toMatchObject({
+        reason: 'user_deleted',
+        unresolved: { organizationId: 'org-gone', actorUserId: 'user-gone', targetUserId: null },
+      });
+    });
+
     it('never throws when the write fails', async () => {
       // An audit failure must not deny a legitimate request, nor give an
       // attacker a way to break the flow by breaking the write.
