@@ -1,5 +1,9 @@
-import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
+import { Injectable, Logger, NestMiddleware, Optional } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
+import { PrismaService } from '../common/prisma.service';
+
+/** Token-endpoint auth methods that prove possession of a client secret. */
+const SECRET_AUTH_METHODS = new Set(['client_secret_basic', 'client_secret_post']);
 
 /**
  * Enforces PKCE with S256 on GET /authorize.
@@ -24,12 +28,25 @@ import type { Request, Response, NextFunction } from 'express';
  * `redirect_uri`. Redirecting would require trusting a client-supplied URI
  * before it has been validated against a registration, which is exactly how an
  * authorization endpoint becomes an open redirector.
+ *
+ * ONE EXCEPTION. Some platforms cannot send PKCE at all: Power Platform
+ * connectors (Microsoft Copilot Studio) run a plain OAuth 2.0 authorization
+ * code flow with a client secret. An operator can list such clients in
+ * `OAUTH_PKCE_EXEMPT_CLIENT_IDS`; a listed client may omit the challenge only
+ * while its registration is confidential (client_secret_basic/post with a
+ * stored secret). The token endpoint then refuses the code without that
+ * secret, which is what PKCE would otherwise protect, and the code is still
+ * bound to the client's registered redirect URI. A request that does carry a
+ * challenge is validated as usual, and a client registered through open DCR is
+ * never exempt unless the operator names it.
  */
 @Injectable()
 export class AuthorizePkceMiddleware implements NestMiddleware {
   private readonly logger = new Logger(AuthorizePkceMiddleware.name);
 
-  use(req: Request, res: Response, next: NextFunction): void {
+  constructor(@Optional() private readonly prisma?: PrismaService) {}
+
+  async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Only the authorization request itself carries PKCE parameters.
     if (req.method !== 'GET') {
       return next();
@@ -40,6 +57,12 @@ export class AuthorizePkceMiddleware implements NestMiddleware {
     const method = query.code_challenge_method;
 
     if (typeof challenge !== 'string' || challenge.trim() === '') {
+      if (
+        method === undefined &&
+        (await this.isExemptConfidentialClient(query.client_id))
+      ) {
+        return next();
+      }
       this.logger.warn(
         `Rejecting /authorize without PKCE (client_id=${String(query.client_id ?? '<none>')})`,
       );
@@ -70,6 +93,43 @@ export class AuthorizePkceMiddleware implements NestMiddleware {
     }
 
     next();
+  }
+
+  /**
+   * True only for a client the operator listed in OAUTH_PKCE_EXEMPT_CLIENT_IDS
+   * whose registration requires a client secret at the token endpoint. The
+   * database is consulted only for listed ids, so ordinary requests never pay
+   * for a lookup.
+   */
+  private async isExemptConfidentialClient(clientId: unknown): Promise<boolean> {
+    if (typeof clientId !== 'string' || !clientId) return false;
+    const listed = (process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (!listed.includes(clientId) || !this.prisma) return false;
+
+    try {
+      const client = await this.prisma.oAuthClient.findUnique({
+        where: { clientId },
+        select: { tokenEndpointAuthMethod: true, clientSecret: true },
+      });
+      if (
+        client &&
+        SECRET_AUTH_METHODS.has(client.tokenEndpointAuthMethod) &&
+        !!client.clientSecret
+      ) {
+        return true;
+      }
+      this.logger.warn(
+        `Client ${clientId} is listed in OAUTH_PKCE_EXEMPT_CLIENT_IDS but is not a confidential client; PKCE stays required`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `PKCE exemption lookup failed for ${clientId}: ${(err as Error).message}`,
+      );
+    }
+    return false;
   }
 
   private reject(res: Response, description: string): void {
