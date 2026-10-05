@@ -1,4 +1,4 @@
-import { McpClientEngine } from './mcp-client.engine';
+import { McpClientEngine, assertNotThisServer, explainMcpConnectError } from './mcp-client.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
@@ -168,5 +168,49 @@ describe('McpClientEngine endpoint resolution', () => {
         'https://mcp.example.com/deep/path/mcp',
       );
     });
+  });
+});
+
+describe('assertNotThisServer', () => {
+  const env = { SERVER_URL: 'https://cloud.anythingmcp.com', FRONTEND_URL: 'https://cloud.anythingmcp.com' } as NodeJS.ProcessEnv;
+
+  it.each(['https://cloud.anythingmcp.com/mcp', 'https://CLOUD.anythingmcp.com/mcp/abc123'])(
+    'refuses an MCP connector that points at this server: %s',
+    (url) => {
+      expect(() => assertNotThisServer(new URL(url), env)).toThrow(/points at this AnythingMCP server itself/);
+    },
+  );
+
+  it('allows another server, including another AnythingMCP instance', () => {
+    expect(() => assertNotThisServer(new URL('https://mcp.example.com/mcp'), env)).not.toThrow();
+    expect(() => assertNotThisServer(new URL('https://amcp.customer.de/mcp'), env)).not.toThrow();
+  });
+
+  it('on a self-hosted instance, another MCP server on the same machine is allowed', () => {
+    const local = { SERVER_URL: 'http://localhost:4000' } as NodeJS.ProcessEnv;
+    expect(() => assertNotThisServer(new URL('http://localhost:8080/mcp'), local)).not.toThrow();
+    expect(() => assertNotThisServer(new URL('http://localhost:4000/mcp'), local)).toThrow(/itself/);
+  });
+
+  it('does nothing when the instance does not know its own URL', () => {
+    expect(() => assertNotThisServer(new URL('https://cloud.anythingmcp.com/mcp'), {} as NodeJS.ProcessEnv)).not.toThrow();
+  });
+});
+
+describe('explainMcpConnectError', () => {
+  const url = new URL('https://soap-shipping.trycloudflare.com/mcp');
+
+  it.each([
+    'Error POSTing to endpoint: host not allowed',
+    'Error POSTing to endpoint: Forbidden: invalid Host header',
+  ])('says which setting to change when the server refuses our Host: %s', (raw) => {
+    const out = explainMcpConnectError(new Error(raw), url);
+    expect(out.message).toContain(raw);
+    expect(out.message).toContain("Add 'soap-shipping.trycloudflare.com' to the server's allowed hosts");
+  });
+
+  it('leaves other errors as they are', () => {
+    const err = new Error('Error POSTing to endpoint: 401 Unauthorized');
+    expect(explainMcpConnectError(err, url)).toBe(err);
   });
 });

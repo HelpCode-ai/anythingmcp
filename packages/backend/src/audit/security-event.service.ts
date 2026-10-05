@@ -139,19 +139,40 @@ export class SecurityEventService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(input: SecurityEventInput): Promise<void> {
+    const data = {
+      event: input.event,
+      actorType: input.actorType,
+      organizationId: input.organizationId ?? null,
+      actorUserId: input.actorUserId ?? null,
+      targetUserId: input.targetUserId ?? null,
+      metadata: (this.redact(input.metadata) ?? undefined) as any,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent?.slice(0, MAX_STRING) ?? null,
+    };
     try {
-      await this.prisma.securityEvent.create({
-        data: {
-          event: input.event,
-          actorType: input.actorType,
-          organizationId: input.organizationId ?? null,
-          actorUserId: input.actorUserId ?? null,
-          targetUserId: input.targetUserId ?? null,
-          metadata: (this.redact(input.metadata) ?? undefined) as any,
-          ip: input.ip ?? null,
-          userAgent: input.userAgent?.slice(0, MAX_STRING) ?? null,
-        },
-      });
+      try {
+        await this.prisma.securityEvent.create({ data });
+      } catch (error: any) {
+        // P2003: a referenced user or organization no longer exists, e.g. a
+        // token rejected because its user was deleted. That is exactly the
+        // event worth keeping, so store it without the links and keep the
+        // ids in the metadata instead of losing the row.
+        if (error?.code !== 'P2003') throw error;
+        const unresolved = {
+          organizationId: data.organizationId,
+          actorUserId: data.actorUserId,
+          targetUserId: data.targetUserId,
+        };
+        await this.prisma.securityEvent.create({
+          data: {
+            ...data,
+            organizationId: null,
+            actorUserId: null,
+            targetUserId: null,
+            metadata: { ...((data.metadata as Record<string, unknown>) ?? {}), unresolved },
+          },
+        });
+      }
     } catch (error: any) {
       // Never propagate: an audit failure must not deny a legitimate request,
       // and must not hand an attacker a way to break the flow by breaking the
