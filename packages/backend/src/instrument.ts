@@ -59,6 +59,12 @@ if (dsn) {
       }),
     ],
 
+    // raw-body's BadRequestError when the client hangs up before its request
+    // body has been read. Nothing failed on our side; a client looping on
+    // /mcp/:id and dropping its calls sent 1,388 of these in one burst on
+    // 4 Oct 2026 (ANYTHINGMCP-CLOUD-BACKEND-6).
+    ignoreErrors: [/^request aborted$/],
+
     beforeSend: scrubEvent,
     beforeSendTransaction: scrubEvent,
     beforeBreadcrumb: scrubBreadcrumb,

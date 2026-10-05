@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Event } from '@sentry/nextjs';
-import { beforeSendBrowser, isInjectedScriptError } from '../../src/lib/sentry-scrub';
+import { BROWSER_IGNORE_ERRORS, beforeSendBrowser, isInjectedScriptError } from '../../src/lib/sentry-scrub';
 
 /**
  * Errors thrown entirely inside scripts the browser injected (Chrome on iOS
@@ -28,5 +28,20 @@ test.describe('injected-script errors', () => {
   test('keeps an error without a stack', () => {
     expect(isInjectedScriptError({ exception: { values: [{ type: 'Error', value: 'La' }] } })).toBe(false);
     expect(isInjectedScriptError({})).toBe(false);
+  });
+});
+
+test.describe('ignored browser messages', () => {
+  const ignored = (message: string) =>
+    BROWSER_IGNORE_ERRORS.some((p) => (typeof p === 'string' ? message.includes(p) : p.test(message)));
+
+  test('drops a blocked Google Tag Manager beacon', () => {
+    expect(ignored('Failed to fetch (ad.doubleclick.net)')).toBe(true);
+    expect(ignored('Failed to fetch (www.google-analytics.com)')).toBe(true);
+  });
+
+  test('keeps a failed fetch to our own API', () => {
+    expect(ignored('Failed to fetch (cloud.anythingmcp.com)')).toBe(false);
+    expect(ignored('Failed to fetch')).toBe(false);
   });
 });

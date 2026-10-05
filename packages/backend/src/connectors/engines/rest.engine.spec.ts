@@ -335,6 +335,23 @@ describe('RestEngine', () => {
     );
   });
 
+  it('refuses a header name with spaces before sending, and says which field is wrong', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await expect(
+      engine.execute(
+        {
+          baseUrl: 'https://api.example.com',
+          authType: 'API_KEY',
+          authConfig: { headerName: 'Valentino API Key', apiKey: 'sk-test' },
+        },
+        { method: 'GET', path: '/' },
+        {},
+      ),
+    ).rejects.toThrow(/"Valentino API Key" is not a valid HTTP header name.*X-API-Key/);
+    expect(mockedAxios).not.toHaveBeenCalled();
+  });
+
   it('should inject bearer token auth', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 

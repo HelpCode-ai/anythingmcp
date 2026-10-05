@@ -121,6 +121,9 @@ export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
   // A WebExtension (runtime.sendMessage is extension-only API; the site
   // never calls it) messaging a tab that has closed (ANYTHINGMCP-WEBSITE-J on the site).
   /Invalid call to runtime\.sendMessage\(\)\. Tab not found/,
+  // Google Tag Manager's own beacons blocked by an ad blocker or dropped by
+  // the network; the SDK names the host in the message (ANYTHINGMCP-CLOUD-FRONTEND-D).
+  /^Failed to fetch \((?:[\w-]+\.)*(?:doubleclick\.net|google-analytics\.com|googletagmanager\.com|googleadservices\.com|googlesyndication\.com)\)$/,
 ];
 
 const SCRIPT_FILE = /\.[cm]?js(?:[?#]|$)/i;
