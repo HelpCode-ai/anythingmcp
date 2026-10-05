@@ -1,8 +1,8 @@
 {
   "slug": "etsy",
   "name": "Etsy",
-  "description": "Read and update Etsy shop data (listings, transactions, receipts, reviews) from any AI agent. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. In the app's settings, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n3. Note the app's **Keystring** and **Shared secret**. Enter them as `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r transactions_r` (read access to your account, shops, listings and orders), enough for every tool here. For tools of your own that write, add the scope you need (e.g. `listings_w`) in the connector's OAuth settings and authorize again.\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 4, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 2.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Out of scope here**: listing image uploads, payment account, billing, taxonomy edits.",
+  "description": "Run an Etsy shop from any AI agent: create draft listings, edit and publish them, add photos, set price and stock, add tracking to orders, and read listings, orders, receipts and reviews. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. In the app's settings, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n3. Note the app's **Keystring** and **Shared secret**. Enter them as `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, and add tracking to orders. It cannot delete listings. **Connectors installed before October 2026** asked only for the read scopes: to use the write tools, open the connector's OAuth settings, set the scopes above and click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\".\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 4, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 2.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: deleting listings, payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
@@ -46,7 +46,7 @@
       "grant": "refresh_token",
       "authorizationUrl": "https://www.etsy.com/oauth/connect",
       "tokenUrl": "https://api.etsy.com/v3/public/oauth/token",
-      "scopes": "email_r shops_r listings_r transactions_r",
+      "scopes": "email_r shops_r listings_r listings_w transactions_r transactions_w",
       "clientId": "{{ETSY_CLIENT_ID}}",
       "clientSecret": "{{ETSY_CLIENT_SECRET}}",
       "refreshToken": "{{ETSY_REFRESH_TOKEN}}",
@@ -429,6 +429,676 @@
           "shop_section_ids": "$shop_section_ids",
           "limit": "$limit",
           "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "etsy_list_seller_taxonomy",
+      "description": "The full tree of Etsy seller categories (id, name, children). Use it to find the taxonomy_id for a new listing. The response is large: look for the closest leaf category and keep only its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-taxonomy/nodes"
+      }
+    },
+    {
+      "name": "etsy_list_taxonomy_properties",
+      "description": "Properties (size, colour, material…) and their allowed values for one seller category. Needed when an inventory product sets property_values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taxonomy_id": {
+            "type": "integer",
+            "description": "Seller taxonomy category ID."
+          }
+        },
+        "required": [
+          "taxonomy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-taxonomy/nodes/{taxonomy_id}/properties",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_list_shipping_profiles",
+      "description": "The shop's shipping profiles. A physical listing needs one: pass its shipping_profile_id when creating the listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/shipping-profiles",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_list_processing_profiles",
+      "description": "The shop's processing profiles (Etsy calls them readiness states: ready to ship or made to order, with processing times). A physical listing needs one: pass its readiness_state_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/readiness-state-definitions",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_list_return_policies",
+      "description": "The shop's return policies. Publishing a physical listing needs a return_policy_id (not for EU-based shops).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/policies/return",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_list_shop_sections",
+      "description": "The shop's sections, to file a listing under one with shop_section_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/sections",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_read_listing_inventory",
+      "description": "Products, prices, quantities and SKUs of a listing, per variation. Read this before etsy_set_listing_inventory: that call replaces the whole inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}/inventory",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_create_listing_draft",
+      "description": "Create a listing as a draft (not visible to buyers). A physical listing also needs shipping_profile_id and readiness_state_id; get them, and taxonomy_id, from the etsy_list_* tools first. Add photos with etsy_add_listing_image, then publish with etsy_edit_listing state=active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Units available (at least 1)."
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in the shop currency, e.g. 24.5."
+          },
+          "title": {
+            "type": "string",
+            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full listing description (plain text)."
+          },
+          "who_made": {
+            "type": "string",
+            "enum": [
+              "i_did",
+              "someone_else",
+              "collective"
+            ],
+            "description": "Who made the item. Etsy needs who_made, when_made and is_supply together."
+          },
+          "when_made": {
+            "type": "string",
+            "enum": [
+              "made_to_order",
+              "2020_2026",
+              "2010_2019",
+              "2007_2009",
+              "before_2007",
+              "2000_2006",
+              "1990s",
+              "1980s",
+              "1970s",
+              "1960s",
+              "1950s",
+              "1940s",
+              "1930s",
+              "1920s",
+              "1910s",
+              "1900s",
+              "1800s",
+              "1700s",
+              "before_1700"
+            ],
+            "description": "When it was made. Etsy needs who_made, when_made and is_supply together."
+          },
+          "is_supply": {
+            "type": "boolean",
+            "description": "true for a craft supply, false for a finished product. Etsy needs who_made, when_made and is_supply together."
+          },
+          "taxonomy_id": {
+            "type": "integer",
+            "description": "Seller taxonomy category ID (etsy_list_seller_taxonomy)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "physical",
+              "download",
+              "both"
+            ],
+            "description": "physical (default), download or both."
+          },
+          "shipping_profile_id": {
+            "type": "integer",
+            "description": "Shipping profile ID (etsy_list_shipping_profiles). Required for physical listings."
+          },
+          "readiness_state_id": {
+            "type": "integer",
+            "description": "Processing profile ID (etsy_list_processing_profiles). Required for physical listings."
+          },
+          "return_policy_id": {
+            "type": "integer",
+            "description": "Return policy ID (etsy_list_return_policies). Required to publish a physical listing, except for EU-based shops."
+          },
+          "shop_section_id": {
+            "type": "integer",
+            "description": "Shop section ID (etsy_list_shop_sections)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+          },
+          "materials": {
+            "type": "string",
+            "description": "Materials, comma-separated. Letters, numbers and spaces only."
+          },
+          "item_weight": {
+            "type": "number",
+            "description": "Item weight, in item_weight_unit."
+          },
+          "item_weight_unit": {
+            "type": "string",
+            "enum": [
+              "oz",
+              "lb",
+              "g",
+              "kg"
+            ],
+            "description": "Unit of item_weight."
+          },
+          "item_length": {
+            "type": "number",
+            "description": "Item length, in item_dimensions_unit."
+          },
+          "item_width": {
+            "type": "number",
+            "description": "Item width, in item_dimensions_unit."
+          },
+          "item_height": {
+            "type": "number",
+            "description": "Item height, in item_dimensions_unit."
+          },
+          "item_dimensions_unit": {
+            "type": "string",
+            "enum": [
+              "in",
+              "ft",
+              "mm",
+              "cm",
+              "m",
+              "yd"
+            ],
+            "description": "Unit of the item dimensions."
+          },
+          "should_auto_renew": {
+            "type": "boolean",
+            "description": "Renew automatically for four months when the listing expires."
+          },
+          "is_taxable": {
+            "type": "boolean",
+            "description": "Apply the shop's tax rates at checkout."
+          }
+        },
+        "required": [
+          "shop_id",
+          "title",
+          "description",
+          "price",
+          "quantity",
+          "who_made",
+          "when_made",
+          "taxonomy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "quantity": "$quantity",
+          "price": "$price",
+          "title": "$title",
+          "description": "$description",
+          "who_made": "$who_made",
+          "when_made": "$when_made",
+          "is_supply": "$is_supply",
+          "taxonomy_id": "$taxonomy_id",
+          "type": "$type",
+          "shipping_profile_id": "$shipping_profile_id",
+          "readiness_state_id": "$readiness_state_id",
+          "return_policy_id": "$return_policy_id",
+          "shop_section_id": "$shop_section_id",
+          "tags": "$tags",
+          "materials": "$materials",
+          "item_weight": "$item_weight",
+          "item_weight_unit": "$item_weight_unit",
+          "item_length": "$item_length",
+          "item_width": "$item_width",
+          "item_height": "$item_height",
+          "item_dimensions_unit": "$item_dimensions_unit",
+          "should_auto_renew": "$should_auto_renew",
+          "is_taxable": "$is_taxable"
+        }
+      }
+    },
+    {
+      "name": "etsy_edit_listing",
+      "description": "Change a listing: title, description, tags, category, shipping, section, or state. state=active publishes a draft (it needs at least one image) and state=inactive takes a listing off the shop. Send only the fields to change, but who_made, when_made and is_supply always together. Price and quantity are not here: use etsy_set_listing_inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "description": "active publishes the listing (draft or inactive); inactive hides it."
+          },
+          "title": {
+            "type": "string",
+            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full listing description (plain text)."
+          },
+          "who_made": {
+            "type": "string",
+            "enum": [
+              "i_did",
+              "someone_else",
+              "collective"
+            ],
+            "description": "Who made the item. Etsy needs who_made, when_made and is_supply together."
+          },
+          "when_made": {
+            "type": "string",
+            "enum": [
+              "made_to_order",
+              "2020_2026",
+              "2010_2019",
+              "2007_2009",
+              "before_2007",
+              "2000_2006",
+              "1990s",
+              "1980s",
+              "1970s",
+              "1960s",
+              "1950s",
+              "1940s",
+              "1930s",
+              "1920s",
+              "1910s",
+              "1900s",
+              "1800s",
+              "1700s",
+              "before_1700"
+            ],
+            "description": "When it was made. Etsy needs who_made, when_made and is_supply together."
+          },
+          "is_supply": {
+            "type": "boolean",
+            "description": "true for a craft supply, false for a finished product. Etsy needs who_made, when_made and is_supply together."
+          },
+          "taxonomy_id": {
+            "type": "integer",
+            "description": "Seller taxonomy category ID (etsy_list_seller_taxonomy)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "physical",
+              "download",
+              "both"
+            ],
+            "description": "physical (default), download or both."
+          },
+          "shipping_profile_id": {
+            "type": "integer",
+            "description": "Shipping profile ID (etsy_list_shipping_profiles). Required for physical listings."
+          },
+          "return_policy_id": {
+            "type": "integer",
+            "description": "Return policy ID (etsy_list_return_policies). Required to publish a physical listing, except for EU-based shops."
+          },
+          "shop_section_id": {
+            "type": "integer",
+            "description": "Shop section ID (etsy_list_shop_sections)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+          },
+          "materials": {
+            "type": "string",
+            "description": "Materials, comma-separated. Letters, numbers and spaces only."
+          },
+          "item_weight": {
+            "type": "number",
+            "description": "Item weight, in item_weight_unit."
+          },
+          "item_weight_unit": {
+            "type": "string",
+            "enum": [
+              "oz",
+              "lb",
+              "g",
+              "kg"
+            ],
+            "description": "Unit of item_weight."
+          },
+          "item_length": {
+            "type": "number",
+            "description": "Item length, in item_dimensions_unit."
+          },
+          "item_width": {
+            "type": "number",
+            "description": "Item width, in item_dimensions_unit."
+          },
+          "item_height": {
+            "type": "number",
+            "description": "Item height, in item_dimensions_unit."
+          },
+          "item_dimensions_unit": {
+            "type": "string",
+            "enum": [
+              "in",
+              "ft",
+              "mm",
+              "cm",
+              "m",
+              "yd"
+            ],
+            "description": "Unit of the item dimensions."
+          },
+          "should_auto_renew": {
+            "type": "boolean",
+            "description": "Renew automatically for four months when the listing expires."
+          },
+          "is_taxable": {
+            "type": "boolean",
+            "description": "Apply the shop's tax rates at checkout."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/shops/{shop_id}/listings/{listing_id}",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "state": "$state",
+          "title": "$title",
+          "description": "$description",
+          "who_made": "$who_made",
+          "when_made": "$when_made",
+          "is_supply": "$is_supply",
+          "taxonomy_id": "$taxonomy_id",
+          "type": "$type",
+          "shipping_profile_id": "$shipping_profile_id",
+          "return_policy_id": "$return_policy_id",
+          "shop_section_id": "$shop_section_id",
+          "tags": "$tags",
+          "materials": "$materials",
+          "item_weight": "$item_weight",
+          "item_weight_unit": "$item_weight_unit",
+          "item_length": "$item_length",
+          "item_width": "$item_width",
+          "item_height": "$item_height",
+          "item_dimensions_unit": "$item_dimensions_unit",
+          "should_auto_renew": "$should_auto_renew",
+          "is_taxable": "$is_taxable"
+        }
+      }
+    },
+    {
+      "name": "etsy_set_listing_inventory",
+      "description": "Set price, quantity and SKU of a listing, per variation. It REPLACES the whole inventory: read it with etsy_read_listing_inventory, change what you need, and send every product back. In each product keep sku and property_values; in each offering send price as a plain number (amount / divisor from the read, e.g. 2450/100 = 24.5), quantity and is_enabled. Leave out product_id, offering_id, is_deleted and scale_name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "products": {
+            "type": "array",
+            "description": "Every product of the listing, e.g. [{\"sku\": \"MUG-01\", \"property_values\": [], \"offerings\": [{\"price\": 24.5, \"quantity\": 10, \"is_enabled\": true}]}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "price_on_property": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Property IDs whose values change the price (as returned by the read)."
+          },
+          "quantity_on_property": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Property IDs whose values change the quantity."
+          },
+          "sku_on_property": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Property IDs whose values change the SKU."
+          }
+        },
+        "required": [
+          "listing_id",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/listings/{listing_id}/inventory",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "products": "$products",
+          "price_on_property": "$price_on_property",
+          "quantity_on_property": "$quantity_on_property",
+          "sku_on_property": "$sku_on_property"
+        }
+      }
+    },
+    {
+      "name": "etsy_add_listing_image",
+      "description": "Add a photo to a listing from a public image URL (JPG, PNG or GIF, up to 10 MB). rank 1 is the main photo. Etsy allows up to 20 images per listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "Public https URL of the image. AnythingMCP downloads it and uploads it to Etsy."
+          },
+          "rank": {
+            "type": "integer",
+            "description": "Position, 1 = main photo."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Replace the image already at this rank."
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "Alt text, up to 500 characters."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings/{listing_id}/images",
+        "encodePathParams": true,
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "image": {
+            "__file": "$image_url"
+          },
+          "rank": "$rank",
+          "overwrite": "$overwrite",
+          "alt_text": "$alt_text"
+        }
+      }
+    },
+    {
+      "name": "etsy_add_order_tracking",
+      "description": "Mark an order (receipt) as shipped with its tracking code. Etsy emails the buyer the shipping notification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "receipt_id": {
+            "type": "integer",
+            "description": "Receipt (order) ID from etsy_get_shop_receipts."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Tracking number."
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "Carrier, e.g. dhl, ups, usps, royal-mail, deutsche-post."
+          },
+          "note_to_buyer": {
+            "type": "string",
+            "description": "Optional message in the buyer's notification."
+          },
+          "send_bcc": {
+            "type": "boolean",
+            "description": "Also send the notification to the seller."
+          }
+        },
+        "required": [
+          "shop_id",
+          "receipt_id",
+          "tracking_code",
+          "carrier_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/receipts/{receipt_id}/tracking",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "tracking_code": "$tracking_code",
+          "carrier_name": "$carrier_name",
+          "note_to_buyer": "$note_to_buyer",
+          "send_bcc": "$send_bcc"
         }
       }
     }
