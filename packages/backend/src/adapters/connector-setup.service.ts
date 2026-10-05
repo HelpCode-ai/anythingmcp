@@ -162,7 +162,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      if (value !== undefined && value !== null && String(value).trim() !== '') settings[name] = String(value).trim();
+      const text = value !== undefined && value !== null ? String(value).trim() : '';
+      if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' does not look right. ${d.patternMessage ?? d.help ?? ''}`.trim(),
+            hint: 'Ask the user to check the value, or install without it: they can enter it on the page linked in the answer.',
+          },
+        };
+      }
+      if (text) settings[name] = text;
     }
 
     if (!this.takeInstallSlot(ctx.userId)) {
@@ -395,3 +405,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     });
   }
 }
+
+/** A broken pattern in an adapter never blocks an install. */
+function matchesPattern(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return true;
+  }
+}
+

@@ -19,8 +19,10 @@ export interface EnvVarMeta {
   /** Where to find the value, in a sentence. */
   help?: string;
   example?: string;
-  /** Regular expression the value must match (validated in the form). */
+  /** Regular expression the value must match (validated in the form and in the chat). */
   pattern?: string;
+  /** What to tell the user when the value does not match `pattern`. */
+  patternMessage?: string;
   /** Page of the provider where the value is created or shown. */
   link?: string;
   /** Rarely needed: shown collapsed (e.g. a refresh token the authorization fills in). */
@@ -33,6 +35,7 @@ export interface EnvVarDescriptor extends Required<Pick<EnvVarMeta, 'label' | 'k
   help?: string;
   example?: string;
   pattern?: string;
+  patternMessage?: string;
   link?: string;
   advanced?: boolean;
 }

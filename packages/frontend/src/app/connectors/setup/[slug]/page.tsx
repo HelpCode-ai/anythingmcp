@@ -104,7 +104,17 @@ function SetupContent() {
       .then(async (c) => {
         if (c?.setupStatus === 'ready') {
           const test = await connectors.test(existingId, token).catch(() => null);
-          setResult({ connectorId: existingId, status: (test as any)?.message });
+          // The sign-in can succeed with wrong app keys (Etsy's token exchange
+          // does not check the shared secret), so only a call to the API tells.
+          // A refusal sends the user back to the keys, not to "is ready".
+          if (test && test.ok === false && test.kind === 'auth_failed') {
+            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization' });
+            setVerifyFailed({ ok: false, kind: 'auth_failed', message: test.message } as VerifyResult);
+            setError('');
+            setPhase('form');
+            return;
+          }
+          setResult({ connectorId: existingId, status: test?.message });
           setPhase('done');
           productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser' });
         } else {
@@ -143,7 +153,7 @@ function SetupContent() {
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = 'Required';
       else if (v && f.pattern) {
         try {
-          if (!new RegExp(f.pattern).test(v)) errs[f.name] = f.example ? `Looks wrong. Example: ${f.example}` : 'Looks wrong';
+          if (!new RegExp(f.pattern).test(v)) errs[f.name] = f.patternMessage ?? (f.example ? `Looks wrong. Example: ${f.example}` : 'Looks wrong');
         } catch {
           /* a broken pattern never blocks the form */
         }
