@@ -1,4 +1,4 @@
-import { ConnectorSetupService } from './connector-setup.service';
+import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
 import { encrypt } from '../common/crypto/encryption.util';
 
@@ -188,6 +188,14 @@ describe('ConnectorSetupService — links', () => {
     const out: any = await build_.service.install(build_.ctx, { adapter: 'weclapp', settings: { WECLAPP_TENANT: 'acme' } });
     return out.body.finishSetupUrl.split('/s/')[1] as string;
   }
+
+  it('keeps expired links a week (for measurement), not just until they expire', async () => {
+    const b = build();
+    const before = Date.now();
+    await linkFor(b);
+    const cutoff: Date = b.prisma.connectorSetupLink.deleteMany.mock.calls[0][0].where.expiresAt.lt;
+    expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(SETUP_LINK_RETENTION_MS - 1000);
+  });
 
   it('opens once, for the user it was made for, on the guided setup of that connector', async () => {
     const b = build();
