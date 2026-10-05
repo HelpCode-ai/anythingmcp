@@ -1,4 +1,6 @@
 <p align="center">
+
+[![Deploy to Railyard](https://app.railyard.run/deploy/badge)](https://app.railyard.run/deploy?repo=https://github.com/HelpCode-ai/anythingmcp)
   <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 262 connectors, 15 of them with no API key." width="100%" />
 </p>
 
