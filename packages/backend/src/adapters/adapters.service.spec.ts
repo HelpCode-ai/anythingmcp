@@ -325,7 +325,9 @@ describe('AdaptersService starter pack', () => {
       expect({ slug: entry.slug, selfHostOnly: !!a.selfHostOnly }).toEqual({ slug: entry.slug, selfHostOnly: false });
       expect(entry.pitch.length).toBeLessThanOrEqual(110);
     }
-    expect(STARTER_PACK.filter((e: any) => e.preselected).length).toBeGreaterThanOrEqual(2);
+    // Preselected demos took the trial's connector slots from the app the
+    // user came for; the pack is opt-in now.
+    expect(STARTER_PACK.filter((e: any) => e.preselected)).toEqual([]);
   });
 
   it('leaves out Deutsche Bahn unless the operator provides MOTIS', async () => {
@@ -341,7 +343,7 @@ describe('AdaptersService starter pack', () => {
   it('marks what the workspace already has and carries the card fields', async () => {
     const items = await service({ installed: ['hackernews'] }).starterPack('org1');
     const hn = items.find((i) => i.slug === 'hackernews')!;
-    expect(hn).toMatchObject({ installed: true, name: 'Hacker News', icon: 'hackernews', preselected: true });
+    expect(hn).toMatchObject({ installed: true, name: 'Hacker News', icon: 'hackernews', preselected: false });
     expect(hn.toolCount).toBeGreaterThan(0);
     expect(items.find((i) => i.slug === 'nominatim')!.installed).toBe(false);
     // Order follows the pack definition.
@@ -449,5 +451,70 @@ describe('AdaptersService unlisted adapters', () => {
 
   it('stay resolvable by slug, so connectors installed earlier keep their icon and re-sync', () => {
     for (const slug of unlisted) expect(getAdapter(slug)?.unlisted).toBe(true);
+  });
+});
+
+describe('AdaptersService popular connectors', () => {
+  function service(opts: { rows?: Array<{ slug: string; workspaces: bigint }>; fail?: boolean; installed?: string[] } = {}) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).logger = { warn: jest.fn() };
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined) };
+    const queryRaw = opts.fail
+      ? jest.fn().mockRejectedValue(new Error('db down'))
+      : jest.fn().mockResolvedValue(opts.rows ?? []);
+    (svc as any).prisma = {
+      $queryRaw: queryRaw,
+      connector: {
+        findMany: jest.fn().mockResolvedValue((opts.installed ?? []).map((slug) => ({ config: { adapterSlug: slug } }))),
+      },
+    };
+    return { svc, queryRaw };
+  }
+
+  it('leads with what works for the most workspaces, then fills from the fallback', async () => {
+    const { svc } = service({
+      rows: [
+        { slug: 'odoo', workspaces: 17n },
+        { slug: 'telegram-bot', workspaces: 133n },
+      ].sort((a, b) => Number(b.workspaces - a.workspaces)),
+    });
+    const items = await svc.popularConnectors('org1');
+    expect(items.map((i) => i.slug).slice(0, 2)).toEqual(['telegram-bot', 'odoo']);
+    expect(items).toHaveLength(8);
+    expect(new Set(items.map((i) => i.slug)).size).toBe(8);
+  });
+
+  it('leaves keyless adapters to the starter pack', async () => {
+    const { svc } = service({ rows: [{ slug: 'hackernews', workspaces: 50n }, { slug: 'etsy', workspaces: 40n }] });
+    const items = await svc.popularConnectors('org1');
+    expect(items.map((i) => i.slug)).not.toContain('hackernews');
+    expect(items[0].slug).toBe('etsy');
+  });
+
+  it('says what each setup asks for, without the token a sign-in fills in', async () => {
+    const { svc } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
+    const etsy = (await svc.popularConnectors('org1')).find((i) => i.slug === 'etsy')!;
+    expect(etsy.setupKind).toBe('oauth_browser');
+    expect(etsy.needs).toEqual(['Keystring', 'Shared secret']);
+  });
+
+  it('marks what the workspace already has', async () => {
+    const { svc } = service({ rows: [{ slug: 'telegram-bot', workspaces: 9n }], installed: ['telegram-bot'] });
+    const items = await svc.popularConnectors('org1');
+    expect(items.find((i) => i.slug === 'telegram-bot')!.installed).toBe(true);
+  });
+
+  it('ranks once an hour, not on every page view', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
+    await svc.popularConnectors('org1');
+    await svc.popularConnectors('org2');
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the fallback list when the ranking query fails', async () => {
+    const { svc } = service({ fail: true });
+    const items = await svc.popularConnectors('org1');
+    expect(items[0].slug).toBe('telegram-bot');
+    expect(items.length).toBeGreaterThanOrEqual(4);
   });
 });

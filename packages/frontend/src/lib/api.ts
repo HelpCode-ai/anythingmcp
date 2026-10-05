@@ -518,6 +518,8 @@ export const adapters = {
       token,
       body: { credentials, ...(connectorId ? { connectorId } : {}) },
     }),
+  popularConnectors: (token: string) =>
+    request<{ items: PopularConnectorItem[] }>('/api/adapters/popular-connectors', { token }),
   starterPack: (token: string) =>
     request<StarterPackResponse>('/api/adapters/starter-pack', { token }),
   installStarterPack: (slugs: string[], token: string) =>
@@ -540,6 +542,18 @@ export interface LicenseBilling {
   amount: number | null;
   currency: string | null;
   interval: 'day' | 'week' | 'month' | 'year' | null;
+}
+
+/** An app new workspaces connect and get working (see /welcome). */
+export interface PopularConnectorItem {
+  slug: string;
+  name: string;
+  icon: string;
+  category: string;
+  setupKind: 'none' | 'credentials' | 'oauth_browser';
+  /** Labels of the values the setup asks for, e.g. ["Keystring", "Shared secret"]. */
+  needs: string[];
+  installed: boolean;
 }
 
 /** A keyless connector offered to a new workspace (see /welcome). */

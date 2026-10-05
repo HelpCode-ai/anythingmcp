@@ -5,25 +5,15 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, users } from '@/lib/api';
+import { setupNeeds } from '@/lib/setup-needs';
 import { LogoIcon } from '@/components/logo-icon';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { StarterPack } from '@/components/starter-pack';
 import { matchesSearch } from '@/lib/marketplace-search';
 
-// What people connect most and get working, from production (installs that
-// went on to a successful call, September-October 2026). Keyless demos have
-// their own section below: they are installed often and used almost never,
-// so they no longer lead.
-const STARTER_SLUGS = [
-  'etsy',
-  'telegram-bot',
-  'odoo',
-  'weclapp',
-  'lexware-office',
-  'sendcloud',
-  'getmyinvoices',
-  'google-search-console',
-];
+// Shown when the ranking can't be loaded: what the cloud ranked in October
+// 2026. The live list comes from /api/adapters/popular-connectors.
+const FALLBACK_SLUGS = ['telegram-bot', 'etsy', 'odoo', 'woocommerce', 'weclapp', 'lexware-office', 'getmyinvoices', 'google-search-console'];
 
 export default function WelcomePage() {
   const { token, user, isLoading } = useAuth();
@@ -45,15 +35,18 @@ export default function WelcomePage() {
     if (!token) return;
     adapters
       .list(token)
-      .then((all: any[]) => {
-        setCatalog(all);
-        const bySlug = new Map(all.map((a) => [a.slug, a]));
-        setStarters(
-          STARTER_SLUGS.map((s) => bySlug.get(s)).filter(Boolean) as any[],
-        );
-      })
+      .then((all: any[]) => setCatalog(Array.isArray(all) ? all : []))
+      .catch(() => setCatalog([]));
+    adapters
+      .popularConnectors(token)
+      .then((res) => setStarters(Array.isArray(res?.items) ? res.items : []))
       .catch(() => setStarters([]));
   }, [token]);
+
+  const popular =
+    starters.length > 0
+      ? starters
+      : (FALLBACK_SLUGS.map((slug) => catalog.find((a) => a.slug === slug)).filter(Boolean) as any[]);
 
   const handleSkip = async () => {
     if (!token || skipping) return;
@@ -127,10 +120,15 @@ export default function WelcomePage() {
               placeholder="Etsy, Odoo, weclapp, Lexware, Shopify…"
               className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
+            {!query.trim() && popular.length > 0 && (
+              <p className="mt-4 text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-3)]">
+                What new workspaces connect most
+              </p>
+            )}
             <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
               {(query.trim()
                 ? catalog.filter((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query)).slice(0, 8)
-                : starters
+                : popular
               ).map((a) => (
                 <Link
                   key={a.slug}
@@ -140,8 +138,8 @@ export default function WelcomePage() {
                   <ConnectorLogo icon={a.icon} name={a.name} small />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-[var(--text)]">{a.name}</div>
-                    <div className="truncate text-xs text-[var(--text-2)]">
-                      {a.setupKind === 'none' ? 'No account needed' : a.setupKind === 'oauth_browser' ? 'Sign in with your account' : 'API key'}
+                    <div className="truncate text-xs text-[var(--text-2)]" title={setupNeeds(a)}>
+                      {a.installed ? 'Already added' : setupNeeds(a)}
                     </div>
                   </div>
                 </Link>
@@ -155,12 +153,6 @@ export default function WelcomePage() {
                 </p>
               )}
           </section>
-        )}
-
-        {/* Keyless demos, added in one click, for trying AnythingMCP before
-            picking a real app. Viewers can't add connectors. */}
-        {token && user.role !== 'VIEWER' && (
-          <StarterPack token={token} />
         )}
 
         {/* Two big paths — marketplace vs custom */}
@@ -201,6 +193,12 @@ export default function WelcomePage() {
             </div>
           </Link>
         </div>
+
+        {/* Keyless demos, opt-in, for trying AnythingMCP before setting up a
+            real app. Viewers can't add connectors. */}
+        {token && user.role !== 'VIEWER' && (
+          <StarterPack token={token} />
+        )}
 
         {/* Differentiator teaser — what makes AnythingMCP "smart" beyond a
             proxy. It's empty for a brand-new account, so this is a concept

@@ -49,8 +49,19 @@ export class AdaptersController {
     private readonly productEvents: ProductEventService,
   ) {}
 
-  // Declared before `:slug`, which would otherwise take "starter-pack" for
-  // an adapter slug.
+  // Declared before `:slug`, which would otherwise take these paths for an
+  // adapter slug.
+  @Get('popular-connectors')
+  @ApiOperation({
+    summary: 'Apps new workspaces connect and get working',
+    description:
+      'Catalog adapters ranked by how many workspaces had a successful call on them in the last 30 days ' +
+      '(aggregate counts only), with what each setup asks for and whether this workspace already has it.',
+  })
+  async popularConnectors(@Req() req: any) {
+    return { items: await this.adaptersService.popularConnectors(req.user.organizationId) };
+  }
+
   @Get('starter-pack')
   @ApiOperation({
     summary: 'Connectors offered to a new workspace',

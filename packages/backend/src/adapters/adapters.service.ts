@@ -18,6 +18,13 @@ import {
 import { pickProbe } from './probe.util';
 import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
 import { STARTER_PACK } from './starter-pack';
+import {
+  POPULAR_CACHE_MS,
+  POPULAR_FALLBACK,
+  POPULAR_MAX,
+  POPULAR_MIN_WORKSPACES,
+  POPULAR_WINDOW_DAYS,
+} from './popular-connectors';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -116,6 +123,77 @@ export class AdaptersService {
       });
     }
     return items;
+  }
+
+  private popularCache: { at: number; slugs: string[] } | null = null;
+
+  /**
+   * The apps /welcome offers first, most-working first (see
+   * ./popular-connectors.ts), each with what its setup asks for and whether
+   * this workspace already has it.
+   */
+  async popularConnectors(organizationId: string): Promise<PopularConnectorItem[]> {
+    const [ranked, installed] = await Promise.all([
+      this.rankedPopularSlugs(),
+      this.installedAdapterSlugs(organizationId),
+    ]);
+    const items: PopularConnectorItem[] = [];
+    for (const slug of [...ranked, ...POPULAR_FALLBACK]) {
+      if (items.length >= POPULAR_MAX) break;
+      if (items.some((i) => i.slug === slug)) continue;
+      const adapter = getAdapter(slug);
+      if (!adapter || !this.isInstallableHere(adapter)) continue;
+      const requiredEnvVars = withoutOperatorProvided(adapter.requiredEnvVars) ?? [];
+      const kind = setupKind({ ...adapter, requiredEnvVars });
+      if (kind === 'none') continue;
+      const needs = describeAdapterEnvVars({ ...adapter, requiredEnvVars })
+        .filter((v) => v.required && !v.advanced)
+        .map((v) => v.label);
+      items.push({
+        slug,
+        name: adapter.name,
+        icon: adapter.icon,
+        category: adapter.category,
+        setupKind: kind,
+        needs,
+        installed: installed.has(slug),
+      });
+    }
+    return items;
+  }
+
+  /** Adapter slugs by successful workspaces over the window, cached for an hour. */
+  private async rankedPopularSlugs(): Promise<string[]> {
+    const now = Date.now();
+    if (this.popularCache && now - this.popularCache.at < POPULAR_CACHE_MS) {
+      return this.popularCache.slugs;
+    }
+    let slugs: string[] = [];
+    try {
+      // tool_invocations is large; the EXISTS goes through its
+      // (connector_id, created_at) index, one recent connector at a time.
+      const rows = await this.prisma.$queryRaw<Array<{ slug: string; workspaces: bigint }>>`
+        SELECT c.config->>'adapterSlug' AS slug,
+               COUNT(DISTINCT c.organization_id) AS workspaces
+        FROM connectors c
+        WHERE c.created_at > now() - make_interval(days => ${POPULAR_WINDOW_DAYS})
+          AND c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
+        GROUP BY 1
+        HAVING COUNT(DISTINCT c.organization_id) >= ${POPULAR_MIN_WORKSPACES}
+        ORDER BY 2 DESC, 1
+        LIMIT 40`;
+      slugs = rows.map((r) => r.slug).filter((s): s is string => typeof s === 'string');
+    } catch (err: any) {
+      // The page still has the fallback list; a ranking that fails is not
+      // worth an error on a new user's first screen.
+      this.logger.warn(`Could not rank popular connectors: ${err?.message ?? err}`);
+    }
+    this.popularCache = { at: now, slugs };
+    return slugs;
   }
 
   /** Catalog slugs this workspace already has a connector for. */
@@ -696,6 +774,17 @@ export class AdaptersService {
     }
     return obj;
   }
+}
+
+export interface PopularConnectorItem {
+  slug: string;
+  name: string;
+  icon: string;
+  category: string;
+  setupKind: SetupKind;
+  /** Labels of the values the setup asks for, e.g. ["Keystring", "Shared secret"]. */
+  needs: string[];
+  installed: boolean;
 }
 
 export interface StarterPackItem {
