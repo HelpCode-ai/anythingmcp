@@ -20,6 +20,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/clipboard';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -367,7 +368,7 @@ function SetupContent() {
             <div className="mt-2 flex items-center gap-2">
               <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">{redirectUri ?? '…'}</code>
               {redirectUri && (
-                <Button size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(redirectUri)}>
+                <Button size="sm" variant="secondary" onClick={() => void copyText(redirectUri)}>
                   Copy
                 </Button>
               )}

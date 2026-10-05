@@ -17,6 +17,7 @@ import {
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
+import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
@@ -541,6 +542,8 @@ export class RestEngine {
     // so for a few seconds, and the old 1.2 s total often gave up just short of
     // recovery. 3.7 s worst case still sits well inside any MCP client timeout.
     const delaysMs = [300, 900, 2500];
+    const badHeaders = Object.keys(axiosConfig.headers ?? {}).filter((n) => !isValidHeaderName(n));
+    if (badHeaders.length > 0) throw new Error(describeInvalidHeaderNames(badHeaders));
     for (let attempt = 0; ; attempt++) {
       try {
         return await axios(axiosConfig);

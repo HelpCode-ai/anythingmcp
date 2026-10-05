@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ConnectionCheck } from '@/components/connection-check';
+import { copyText } from '@/lib/clipboard';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -208,29 +209,7 @@ export default function McpServerDetailPage() {
   };
 
   const handleCopy = async (text: string, label: string) => {
-    let ok = false;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      }
-    } catch {}
-    if (!ok) {
-      // Fallback for non-secure contexts (e.g. plain-HTTP LAN deployments)
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.top = '0';
-      ta.style.left = '0';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        ok = document.execCommand('copy');
-      } catch {}
-      document.body.removeChild(ta);
-    }
+    const ok = await copyText(text);
     if (ok) {
       setCopied(label);
       setTimeout(() => setCopied(''), 2000);
@@ -881,7 +860,7 @@ export default function McpServerDetailPage() {
                     {generatedKey}
                   </code>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(generatedKey); setKeyMsg('Copied!'); }}
+                    onClick={async () => setKeyMsg((await copyText(generatedKey)) ? 'Copied!' : 'Error: copy blocked by the browser. Select the key and copy it manually.')}
                     className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
                   >
                     Copy

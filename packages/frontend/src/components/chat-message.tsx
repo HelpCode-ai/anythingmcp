@@ -3,12 +3,13 @@
 import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { copyText } from '@/lib/clipboard';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(text);
+    if (!(await copyText(text))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [text]);
