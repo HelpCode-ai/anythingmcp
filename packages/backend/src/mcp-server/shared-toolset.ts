@@ -44,6 +44,70 @@ export const SHARED_TOOLSET_INSTRUCTIONS = [
 ].join('\n');
 
 /**
+ * Which variant of the fixed tool set a connection gets, chosen by the OAuth
+ * client it authorized. Each assistant directory reviews the tool list its own
+ * client sees, so each client gets one set, the same for all of its users:
+ *
+ * - `default`: the eight tools above. Claude, every other client, and any
+ *   request whose client cannot be identified. This is the set the Claude
+ *   connectors directory reviewed, and it must not change by accident.
+ * - `chatgpt`: those eight plus four tools for multi-step work (several reads
+ *   in one call, adding and checking connectors), with all three hints set
+ *   explicitly on every tool, which OpenAI's review requires.
+ */
+export type SharedToolsetProfile = 'default' | 'chatgpt';
+
+export const CHATGPT_EXTRA_TOOL_NAMES = [
+  'anythingmcp_run_read_steps',
+  'anythingmcp_find_connectors',
+  'anythingmcp_add_connector',
+  'anythingmcp_connection_status',
+] as const;
+
+const CHATGPT_HOSTS = ['chatgpt.com', 'openai.com'];
+
+/**
+ * The profile for an OAuth client, from the redirect URIs it registered. They
+ * are fixed at registration and the access token is bound to the client, so
+ * this cannot be steered by a header. Anything that is not clearly ChatGPT
+ * gets the default set.
+ */
+export function profileForRedirectUris(
+  uris: readonly string[] | null | undefined,
+): SharedToolsetProfile {
+  for (const uri of uris ?? []) {
+    let host: string;
+    try {
+      const url = new URL(uri);
+      if (url.protocol !== 'https:') continue;
+      host = url.hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    if (CHATGPT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return 'chatgpt';
+  }
+  return 'default';
+}
+
+export function sharedToolNames(profile: SharedToolsetProfile): string[] {
+  return profile === 'chatgpt'
+    ? [...SHARED_TOOL_NAMES, ...CHATGPT_EXTRA_TOOL_NAMES]
+    : [...SHARED_TOOL_NAMES];
+}
+
+const CHATGPT_INSTRUCTIONS = [
+  "AnythingMCP runs work across the business systems the user connected to their AnythingMCP workspace: ERP, accounting, online shops, CRM, databases and their own APIs. The tool list is the same for every user; the workspace's own tools are reached through it.",
+  '1. anythingmcp_list_connectors shows what this connection can reach; anythingmcp_get_workspace_guide returns the workspace\'s notes and approved workflows. Read the guide before first using a connector.',
+  '2. anythingmcp_search_tools finds a tool by keyword; anythingmcp_describe_tool returns its parameters. kg_how_to_obtain tells which tool produces a value you need, also across systems (for example the customer id in the ERP for an order in the shop).',
+  '3. anythingmcp_run_read_steps runs several read-only tools in one call, for requests that combine systems; anythingmcp_run_read_tool runs one. anythingmcp_run_write_tool runs a tool that creates, changes, deletes or sends something: say what it will do and get the user\'s confirmation before each call.',
+  '4. When an app the user needs is not connected, anythingmcp_find_connectors and anythingmcp_add_connector add it (ask the user first, never ask for passwords or keys in the chat); anythingmcp_connection_status checks what still needs the user. anythingmcp_get_configuration_url links to the dashboard.',
+].join('\n');
+
+export function sharedToolsetInstructions(profile: SharedToolsetProfile): string {
+  return profile === 'chatgpt' ? CHATGPT_INSTRUCTIONS : SHARED_TOOLSET_INSTRUCTIONS;
+}
+
+/**
  * Which endpoint surface `/mcp` serves. `fixed` = the tool set above;
  * `direct` = each workspace's own tools, as the endpoint did originally.
  * Defaults to `fixed` on the cloud, where `/mcp` is the listed URL, and to
@@ -270,8 +334,26 @@ const runInput = {
     .describe('The tool\'s parameters, as described by anythingmcp_describe_tool.'),
 };
 
+type Annotations = {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint: boolean;
+};
+
+/** OpenAI's review rejects a tool that leaves any of the three hints unset. */
+function explicitHints(a: Annotations): Annotations {
+  return a.readOnlyHint
+    ? { ...a, destructiveHint: a.destructiveHint ?? false, idempotentHint: a.idempotentHint ?? true }
+    : a;
+}
+
+const RUN_STEPS_MAX = 10;
+
 /**
- * Registers the eight tools on a per-request server.
+ * Registers the tool set on a per-request server: the eight shared tools, plus
+ * the ChatGPT ones for that profile (see {@link SharedToolsetProfile}).
  *
  * `scopeTools` is everything this caller may use, already narrowed by the
  * controller to the connection grant and the MCP role. The exclusions are
@@ -281,7 +363,12 @@ export function registerSharedToolset(
   mcpServer: McpServer,
   scopeTools: RegisteredTool[],
   deps: SharedToolsetDeps,
+  profile: SharedToolsetProfile = 'default',
 ): void {
+  // The default set's annotations are passed through untouched: they are what
+  // the Claude directory reviewed.
+  const hints = (a: Annotations): Annotations =>
+    profile === 'chatgpt' ? explicitHints(a) : a;
   const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
   const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t));
   // Connectors still missing a credential or an authorization: not offered to
@@ -435,11 +522,11 @@ export function registerSharedToolset(
       description:
         'List the connectors (APIs, databases, applications) this connection can use in the user\'s AnythingMCP workspace, with how many tools each has and whether they read or write.',
       inputSchema: {},
-      annotations: {
+      annotations: hints({
         title: 'List connectors',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async () => {
       const byId = await connectorsById();
@@ -487,7 +574,9 @@ export function registerSharedToolset(
         ...(connectors.every((c) => c.id === SETUP_CONNECTOR_ID) && needsSetup.length === 0
           ? {
               hint: deps.setup
-                ? `No apps are connected yet. Ask the user which app they want to work with, then add it with the ${SETUP_CONNECTOR_NAME} tools (setup_find_connectors, then setup_install_connector).`
+                ? profile === 'chatgpt'
+                  ? 'No apps are connected yet. Ask the user which app they want to work with, then add it with anythingmcp_find_connectors and anythingmcp_add_connector.'
+                  : `No apps are connected yet. Ask the user which app they want to work with, then add it with the ${SETUP_CONNECTOR_NAME} tools (setup_find_connectors, then setup_install_connector).`
                 : 'No connectors yet. The user adds them in the dashboard: call anythingmcp_get_configuration_url.',
             }
           : {}),
@@ -518,11 +607,11 @@ export function registerSharedToolset(
           .optional()
           .describe(`Maximum results (default ${SEARCH_DEFAULT_LIMIT}, max ${SEARCH_MAX_LIMIT}).`),
       },
-      annotations: {
+      annotations: hints({
         title: 'Search tools',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async (args: {
       query?: string;
@@ -586,11 +675,11 @@ export function registerSharedToolset(
       description:
         'Full description, input schema and annotations of one tool of the user\'s workspace, and which run tool to use for it.',
       inputSchema: toolRef,
-      annotations: {
+      annotations: hints({
         title: 'Describe tool',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async (args: { tool: string; connector?: string }) => {
       const found = await resolve(args.tool, args.connector);
@@ -617,11 +706,11 @@ export function registerSharedToolset(
       description:
         'Run a tool of the user\'s workspace that only reads data (its access is "read" in anythingmcp_search_tools). Tools that change data are refused here.',
       inputSchema: runInput,
-      annotations: {
+      annotations: hints({
         title: 'Run read-only tool',
         readOnlyHint: true,
         openWorldHint: true,
-      },
+      }),
     },
     async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) =>
       run('read', args),
@@ -633,13 +722,13 @@ export function registerSharedToolset(
       description:
         'Run a tool of the user\'s workspace that creates, changes, deletes or sends something (its access is "write"). Tell the user what it will do and get their confirmation before each call.',
       inputSchema: runInput,
-      annotations: {
+      annotations: hints({
         title: 'Run tool that changes data',
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
-      },
+      }),
     },
     async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) =>
       run('write', args),
@@ -653,11 +742,11 @@ export function registerSharedToolset(
       inputSchema: {
         connector: z.string().optional().describe('Only this connector (id or name).'),
       },
-      annotations: {
+      annotations: hints({
         title: 'Workspace guide',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async (args: { connector?: string }) => {
       const ids = args.connector ? [...(await matchConnector(args.connector))] : connectorIds;
@@ -687,11 +776,11 @@ export function registerSharedToolset(
       inputSchema: {
         query: z.string().describe('An entity or parameter name, e.g. "customer_id" or "deal".'),
       },
-      annotations: {
+      annotations: hints({
         title: 'How to obtain',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async (args: { query: string }) => {
       const result = await deps.kgLookup(args.query, connectorIds);
@@ -711,11 +800,11 @@ export function registerSharedToolset(
       description:
         'Link to the AnythingMCP dashboard where the user adds, removes or configures connectors, plus the direct URL of each of their MCP servers.',
       inputSchema: {},
-      annotations: {
+      annotations: hints({
         title: 'Configuration link',
         readOnlyHint: true,
         openWorldHint: false,
-      },
+      }),
     },
     async () => {
       const cfg = await deps.configuration();
@@ -725,5 +814,182 @@ export function registerSharedToolset(
         note: 'Changes made in the dashboard are available here right away. A server\'s own URL lists its tools directly instead of through these tools.',
       });
     },
+  );
+
+  if (profile === 'chatgpt') registerChatgptTools(mcpServer, deps, run);
+}
+
+type RunArgs = { tool: string; connector?: string; arguments?: Record<string, unknown> };
+
+/** Parsed JSON when the text is JSON, the text otherwise. */
+function resultBody(result: TextResult): unknown {
+  const text = result.content.map((c) => c.text).join('\n');
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * A setup answer without plan quotas or upgrade links. OpenAI does not allow a
+ * plugin to promote upgrades or link to a page that starts one, so on the
+ * ChatGPT tools a connector limit is explained without either.
+ */
+function withoutPlanDetails(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const {
+    connectorsLeftOnThisPlan: _left,
+    upgradeUrl,
+    whatTheUserCanDo,
+    ...rest
+  } = body as Record<string, unknown>;
+  const aboutBilling =
+    upgradeUrl !== undefined ||
+    (typeof whatTheUserCanDo === 'string' && /upgrade|plan|card|trial/i.test(whatTheUserCanDo));
+  return {
+    ...rest,
+    ...(aboutBilling
+      ? {
+          whatTheUserCanDo:
+            'This workspace cannot add more connectors right now. Remove a connector it no longer needs, or ask a workspace administrator.',
+        }
+      : whatTheUserCanDo !== undefined
+        ? { whatTheUserCanDo }
+        : {}),
+  };
+}
+
+/**
+ * The ChatGPT profile's extra tools. Every one of them goes through the same
+ * scope and checks as the shared tools: the steps runner calls the read
+ * runner for each step, and the connector tools call the same setup service
+ * that the hidden setup_* tools use.
+ */
+function registerChatgptTools(
+  mcpServer: McpServer,
+  deps: SharedToolsetDeps,
+  run: (mode: 'read' | 'write', args: RunArgs) => Promise<TextResult>,
+): void {
+  // Always listed, so every ChatGPT user sees the same tools; a caller who may
+  // not add connectors gets this answer instead.
+  const setupOrRefuse = async (name: string, args: Record<string, unknown>) => {
+    if (!deps.setup) {
+      const cfg = await deps.configuration();
+      return json(
+        {
+          error:
+            'Adding connectors from the chat is open to the workspace\'s admins and editors only, and not to a connection pinned to one server. Ask a workspace admin, or add the connector in the dashboard.',
+          dashboardUrl: cfg.dashboardUrl,
+        },
+        true,
+      );
+    }
+    const out = await deps.setup.run(name, args);
+    // The setup service names its own tools in its hints; point the model at
+    // the tools it actually sees here.
+    const text = JSON.stringify(withoutPlanDetails(out.body), null, 2)
+      .replace(/\bsetup_find_connectors\b/g, 'anythingmcp_find_connectors')
+      .replace(/\bsetup_install_connector\b/g, 'anythingmcp_add_connector')
+      .replace(/\bsetup_get_status\b/g, 'anythingmcp_connection_status');
+    return {
+      content: [{ type: 'text' as const, text }],
+      ...(out.isError ? { isError: true } : {}),
+    };
+  };
+
+  mcpServer.registerTool(
+    'anythingmcp_run_read_steps',
+    {
+      description: `Run up to ${RUN_STEPS_MAX} read-only tools of the user's workspace in one call, for requests that combine several systems (for example orders from the shop, the matching customers from the ERP and their open invoices from accounting). Steps run in parallel and each step's result is returned separately; a failing step does not stop the others. Tools that change data are refused here.`,
+      inputSchema: {
+        steps: z
+          .array(z.object(runInput))
+          .min(1)
+          .max(RUN_STEPS_MAX)
+          .describe('The read-only tools to run, each with its arguments as described by anythingmcp_describe_tool.'),
+      },
+      annotations: explicitHints({
+        title: 'Run several read-only tools',
+        readOnlyHint: true,
+        openWorldHint: true,
+      }),
+    },
+    async (args: { steps: RunArgs[] }) => {
+      const results = await Promise.all(
+        args.steps.map(async (step, i) => {
+          const result = await run('read', step);
+          return {
+            step: i + 1,
+            tool: step.tool,
+            ok: !result.isError,
+            result: resultBody(result),
+          };
+        }),
+      );
+      return json({
+        steps: results,
+        succeeded: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok).length,
+      });
+    },
+  );
+
+  mcpServer.registerTool(
+    'anythingmcp_find_connectors',
+    {
+      description:
+        'Search the AnythingMCP catalog of ready connectors (ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed to anythingmcp_add_connector.',
+      inputSchema: {
+        query: z.string().min(1).describe('App name or topic, e.g. "etsy", "odoo", "invoices".'),
+        limit: z.number().int().min(1).max(10).optional().describe('Maximum results, 1 to 10. Default 5.'),
+      },
+      annotations: explicitHints({
+        title: 'Find a connector to add',
+        readOnlyHint: true,
+        openWorldHint: false,
+      }),
+    },
+    async (args: { query: string; limit?: number }) =>
+      setupOrRefuse('setup_find_connectors', args),
+  );
+
+  mcpServer.registerTool(
+    'anythingmcp_add_connector',
+    {
+      description:
+        "Add a catalog connector to the user's workspace. Ask the user first. Pass only the non-secret settings anythingmcp_find_connectors listed (such as a tenant name or a shop URL), never passwords, API keys or tokens: when those are needed, the answer contains a one-time link where the user enters them or signs in to the provider.",
+      inputSchema: {
+        adapter: z.string().min(1).describe('Connector id from anythingmcp_find_connectors, e.g. "etsy".'),
+        settings: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe('Non-secret settings by name, e.g. {"WECLAPP_TENANT": "acme"}.'),
+      },
+      annotations: {
+        title: 'Add a connector',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (args: { adapter: string; settings?: Record<string, unknown> }) =>
+      setupOrRefuse('setup_install_connector', args),
+  );
+
+  mcpServer.registerTool(
+    'anythingmcp_connection_status',
+    {
+      description:
+        "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. Call it after the user says they completed a setup link.",
+      inputSchema: {},
+      annotations: explicitHints({
+        title: 'Setup status',
+        readOnlyHint: true,
+        openWorldHint: false,
+      }),
+    },
+    async () => setupOrRefuse('setup_get_status', {}),
   );
 }

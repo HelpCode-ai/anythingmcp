@@ -34,10 +34,11 @@ import {
   ResolvedGrant,
 } from '../mcp-servers/mcp-connection-grant.service';
 import {
-  SHARED_TOOLSET_INSTRUCTIONS,
   SharedToolsetDeps,
+  profileForRedirectUris,
   registerSharedToolset,
   sharedEndpointMode,
+  sharedToolsetInstructions,
 } from './shared-toolset';
 
 /**
@@ -377,6 +378,13 @@ export class McpEndpointController {
       },
     };
 
+    // Which assistant this connection belongs to, from the OAuth client the
+    // token was issued to. API keys and anything unidentified get the default
+    // set, the one the Claude directory reviewed.
+    const profile = profileForRedirectUris(
+      await this.grants.clientRedirectUris(oauthClientId(user)),
+    );
+
     await this.serveStateless(
       req,
       res,
@@ -384,9 +392,9 @@ export class McpEndpointController {
       () => {
         const mcpServer = new McpServer(
           { name: 'AnythingMCP', version: APP_VERSION },
-          { instructions: SHARED_TOOLSET_INSTRUCTIONS },
+          { instructions: sharedToolsetInstructions(profile) },
         );
-        registerSharedToolset(mcpServer, scopeTools, deps);
+        registerSharedToolset(mcpServer, scopeTools, deps, profile);
         return mcpServer;
       },
       'shared /mcp',

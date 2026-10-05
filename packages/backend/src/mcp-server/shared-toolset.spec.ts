@@ -2,12 +2,16 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { RegisteredTool } from './tool-registry';
 import {
+  CHATGPT_EXTRA_TOOL_NAMES,
   SHARED_TOOL_NAMES,
   SHARED_TOOLSET_INSTRUCTIONS,
   SharedToolsetDeps,
+  SharedToolsetProfile,
   excludedOnSharedEndpoint,
+  profileForRedirectUris,
   registerSharedToolset,
   sharedEndpointMode,
+  sharedToolsetInstructions,
 } from './shared-toolset';
 
 function tool(p: Partial<RegisteredTool> & { name: string; connectorId: string }): RegisteredTool {
@@ -75,12 +79,16 @@ function makeDeps(overrides: Partial<SharedToolsetDeps> = {}) {
   return deps;
 }
 
-async function connect(scope: RegisteredTool[], deps = makeDeps()) {
+async function connect(
+  scope: RegisteredTool[],
+  deps = makeDeps(),
+  profile: SharedToolsetProfile = 'default',
+) {
   const server = new McpServer(
     { name: 'AnythingMCP', version: 'test' },
-    { instructions: SHARED_TOOLSET_INSTRUCTIONS },
+    { instructions: sharedToolsetInstructions(profile) },
   );
-  registerSharedToolset(server, scope, deps);
+  registerSharedToolset(server, scope, deps, profile);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'spec', version: '1.0.0' });
@@ -409,5 +417,141 @@ describe('connector setup from the chat (AnythingMCP Setup)', () => {
     const { client } = await connect([], withSetup());
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...SHARED_TOOL_NAMES].sort());
+  });
+});
+
+describe('which tool set a client gets', () => {
+  it('recognises ChatGPT by the redirect URIs it registered, and nothing else', () => {
+    expect(profileForRedirectUris(['https://chatgpt.com/connector_platform_oauth_redirect'])).toBe('chatgpt');
+    expect(profileForRedirectUris(['https://chatgpt.com/connector/oauth/CvGqWES8FsNv'])).toBe('chatgpt');
+    expect(profileForRedirectUris(['https://platform.openai.com/apps-manage/oauth'])).toBe('chatgpt');
+    expect(profileForRedirectUris(['https://claude.ai/api/mcp/auth_callback'])).toBe('default');
+    expect(profileForRedirectUris(['cursor://anysphere.cursor-mcp/oauth/callback'])).toBe('default');
+    expect(profileForRedirectUris([])).toBe('default');
+    expect(profileForRedirectUris(undefined)).toBe('default');
+    // Look-alikes and cleartext do not count.
+    expect(profileForRedirectUris(['https://chatgpt.com.evil.io/cb'])).toBe('default');
+    expect(profileForRedirectUris(['https://notchatgpt.com/cb'])).toBe('default');
+    expect(profileForRedirectUris(['http://chatgpt.com/cb'])).toBe('default');
+    expect(profileForRedirectUris(['not a url'])).toBe('default');
+  });
+
+  it('leaves the default set exactly as the Claude directory reviewed it', async () => {
+    const { client } = await connect([CRM_READ, CRM_WRITE]);
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([...SHARED_TOOL_NAMES].sort());
+    expect(client.getInstructions()).toBe(SHARED_TOOLSET_INSTRUCTIONS);
+    const read = tools.find((t) => t.name === 'anythingmcp_run_read_tool')!.annotations;
+    expect(read).toEqual({ title: 'Run read-only tool', readOnlyHint: true, openWorldHint: true });
+  });
+});
+
+describe('ChatGPT tool set', () => {
+  const connectGpt = (scope: RegisteredTool[], deps = makeDeps()) => connect(scope, deps, 'chatgpt');
+
+  it('is the reviewed set plus four tools, the same for every caller', async () => {
+    const a = await connectGpt([CRM_READ, CRM_WRITE]);
+    const b = await connectGpt([]);
+    const listA = (await a.client.listTools()).tools;
+    expect(listA.map((t) => t.name).sort()).toEqual(
+      [...SHARED_TOOL_NAMES, ...CHATGPT_EXTRA_TOOL_NAMES].sort(),
+    );
+    expect(JSON.stringify(listA)).toBe(JSON.stringify((await b.client.listTools()).tools));
+  });
+
+  it('sets readOnlyHint, destructiveHint and openWorldHint on every tool', async () => {
+    const { client } = await connectGpt([]);
+    for (const t of (await client.listTools()).tools) {
+      expect(typeof t.annotations?.title).toBe('string');
+      for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) {
+        expect({ tool: t.name, hint, type: typeof t.annotations?.[hint] }).toEqual({
+          tool: t.name,
+          hint,
+          type: 'boolean',
+        });
+      }
+    }
+  });
+
+  it('runs several reads in one call and reports each step', async () => {
+    const OTHER_READ = tool({ name: 'erp_open_invoices', connectorId: 'c-erp' });
+    const { client, deps } = await connectGpt([CRM_READ, OTHER_READ]);
+    const out = await call(client, 'anythingmcp_run_read_steps', {
+      steps: [
+        { tool: 'crm_find_customer', arguments: { email: 'a@b.io' } },
+        { tool: 'erp_open_invoices' },
+        { tool: 'crm_find_customer', arguments: {} },
+      ],
+    });
+    expect(out.isError).toBe(false);
+    expect(out.body.succeeded).toBe(2);
+    expect(out.body.failed).toBe(1);
+    expect(out.body.steps[0]).toMatchObject({ step: 1, ok: true, result: { ran: 'c-crm:crm_find_customer' } });
+    expect(out.body.steps[2]).toMatchObject({ step: 3, ok: false });
+    expect(deps.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a write tool inside the steps runner without running it', async () => {
+    const { client, deps } = await connectGpt([CRM_READ, CRM_WRITE]);
+    const out = await call(client, 'anythingmcp_run_read_steps', {
+      steps: [{ tool: 'crm_create_deal', arguments: { title: 'x' } }],
+    });
+    expect(out.body.steps[0].ok).toBe(false);
+    expect(JSON.stringify(out.body)).toContain('anythingmcp_run_write_tool');
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  it('does not reach payment connectors through the steps runner', async () => {
+    const { client, deps } = await connectGpt([WISE_PAY]);
+    const out = await call(client, 'anythingmcp_run_read_steps', {
+      steps: [{ tool: 'wise_create_transfer' }],
+    });
+    expect(out.body.steps[0].ok).toBe(false);
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  it('adds connectors through the setup service, pointing at the tools it lists', async () => {
+    const run = jest.fn(async (name: string) =>
+      name === 'setup_find_connectors'
+        ? { body: { results: [{ adapter: 'etsy' }], next: 'then call setup_install_connector' } }
+        : { body: { installed: 'Etsy', next: 'call setup_get_status when done' } },
+    );
+    const { client } = await connectGpt([], makeDeps({ setup: { organizationId: 'org-A', run } } as any));
+    const found = await call(client, 'anythingmcp_find_connectors', { query: 'etsy' });
+    expect(found.body.next).toBe('then call anythingmcp_add_connector');
+    const added = await call(client, 'anythingmcp_add_connector', { adapter: 'etsy' });
+    expect(added.body).toEqual({ installed: 'Etsy', next: 'call anythingmcp_connection_status when done' });
+    expect(run).toHaveBeenCalledWith('setup_install_connector', { adapter: 'etsy' });
+  });
+
+  it('explains a connector limit without plan quotas or upgrade links', async () => {
+    const run = jest.fn(async (name: string) =>
+      name === 'setup_find_connectors'
+        ? { body: { results: [], connectorsLeftOnThisPlan: 0 } }
+        : {
+            isError: true,
+            body: {
+              error: 'Trial limit reached (10 connectors).',
+              whatTheUserCanDo: 'Add a card to continue the trial on the full plan, or remove a connector.',
+              upgradeUrl: 'https://cloud.example.com/start-trial',
+            },
+          },
+    );
+    const { client } = await connectGpt([], makeDeps({ setup: { organizationId: 'org-A', run } } as any));
+    const found = await call(client, 'anythingmcp_find_connectors', { query: 'etsy' });
+    expect(found.body).toEqual({ results: [] });
+    const added = await call(client, 'anythingmcp_add_connector', { adapter: 'etsy' });
+    expect(added.isError).toBe(true);
+    expect(JSON.stringify(added.body)).not.toMatch(/start-trial|card|upgradeUrl/);
+    expect(added.body.error).toBe('Trial limit reached (10 connectors).');
+  });
+
+  it('marks adding a connector as a write, and refuses it to callers who may not', async () => {
+    const { client } = await connectGpt([]);
+    const add = (await client.listTools()).tools.find((t) => t.name === 'anythingmcp_add_connector');
+    expect(add?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    const out = await call(client, 'anythingmcp_add_connector', { adapter: 'etsy' });
+    expect(out.isError).toBe(true);
+    expect(out.body.dashboardUrl).toBe('https://cloud.example.com/connectors');
   });
 });

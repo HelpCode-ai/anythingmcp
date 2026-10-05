@@ -379,3 +379,26 @@ describe('McpConnectionGrantService reports the first connection of a client', (
     expect(events.log).not.toHaveBeenCalled();
   });
 });
+
+describe('McpConnectionGrantService.clientRedirectUris', () => {
+  it('reads a client\'s redirect URIs once and caches them', async () => {
+    const findUnique = jest.fn(async () => ({
+      redirectUris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+    }));
+    const svc = new McpConnectionGrantService({ oAuthClient: { findUnique } } as any);
+    expect(await svc.clientRedirectUris('c1')).toEqual(['https://chatgpt.com/connector_platform_oauth_redirect']);
+    expect(await svc.clientRedirectUris('c1')).toEqual(['https://chatgpt.com/connector_platform_oauth_redirect']);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers [] for no client, an unknown client or a database error', async () => {
+    const findUnique = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('db down'));
+    const svc = new McpConnectionGrantService({ oAuthClient: { findUnique } } as any);
+    expect(await svc.clientRedirectUris(undefined)).toEqual([]);
+    expect(await svc.clientRedirectUris('missing')).toEqual([]);
+    expect(await svc.clientRedirectUris('c2')).toEqual([]);
+  });
+});
