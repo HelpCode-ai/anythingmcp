@@ -467,6 +467,8 @@ export interface EnvVarDescriptor {
   help?: string;
   example?: string;
   pattern?: string;
+  /** Shown when the value does not match `pattern`. */
+  patternMessage?: string;
   link?: string;
   advanced?: boolean;
 }

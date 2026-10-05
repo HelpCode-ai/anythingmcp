@@ -1,4 +1,4 @@
-import { McpClientEngine, assertNotThisServer } from './mcp-client.engine';
+import { McpClientEngine, assertNotThisServer, explainMcpConnectError } from './mcp-client.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
@@ -197,3 +197,20 @@ describe('assertNotThisServer', () => {
   });
 });
 
+describe('explainMcpConnectError', () => {
+  const url = new URL('https://soap-shipping.trycloudflare.com/mcp');
+
+  it.each([
+    'Error POSTing to endpoint: host not allowed',
+    'Error POSTing to endpoint: Forbidden: invalid Host header',
+  ])('says which setting to change when the server refuses our Host: %s', (raw) => {
+    const out = explainMcpConnectError(new Error(raw), url);
+    expect(out.message).toContain(raw);
+    expect(out.message).toContain("Add 'soap-shipping.trycloudflare.com' to the server's allowed hosts");
+  });
+
+  it('leaves other errors as they are', () => {
+    const err = new Error('Error POSTing to endpoint: 401 Unauthorized');
+    expect(explainMcpConnectError(err, url)).toBe(err);
+  });
+});

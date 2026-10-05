@@ -19,12 +19,16 @@
       "label": "Keystring",
       "kind": "credential",
       "help": "Etsy developers → Your apps → your app: the Keystring.",
-      "link": "https://www.etsy.com/developers/your-apps"
+      "link": "https://www.etsy.com/developers/your-apps",
+      "pattern": "^[a-z0-9]{20,30}$",
+      "patternMessage": "The Keystring is 24 lowercase letters and digits, nothing else (no spaces, no colon)."
     },
     "ETSY_CLIENT_SECRET": {
       "label": "Shared secret",
-      "help": "Same page, the Shared secret next to the Keystring.",
-      "link": "https://www.etsy.com/developers/your-apps"
+      "help": "Same page, the Shared secret next to the Keystring. Paste it on its own: not the Keystring, not \"keystring:secret\".",
+      "link": "https://www.etsy.com/developers/your-apps",
+      "pattern": "^[a-z0-9]{8,32}$",
+      "patternMessage": "Paste the Shared secret alone: lowercase letters and digits, without the Keystring and without a colon."
     },
     "ETSY_REFRESH_TOKEN": {
       "label": "Refresh token",

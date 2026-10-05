@@ -249,7 +249,7 @@ export function validateAdapter(adapter, file, region) {
     const meta = adapter.envVarMeta;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
     const KINDS = new Set(['address', 'credential', 'setting']);
-    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'link', 'advanced']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced']);
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
     } else {
