@@ -683,7 +683,7 @@ describe('POST :id/oauth/authorize (REST)', () => {
     expect(url.origin + url.pathname).toBe('https://www.etsy.com/oauth/connect');
     expect(url.searchParams.get('client_id')).toBe('keystring');
     expect(url.searchParams.get('redirect_uri')).toBe(`${SERVER}/api/mcp-oauth/callback`);
-    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r transactions_r');
+    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
 
     const [state, flow] = store.mock.calls[0];
@@ -700,7 +700,7 @@ describe('POST :id/oauth/authorize (REST)', () => {
       tokenAuthMethod: undefined,
       persistAuthConfig: {
         authorizationUrl: 'https://www.etsy.com/oauth/connect',
-        scopes: 'email_r shops_r listings_r transactions_r',
+        scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
       },
     });
   });
