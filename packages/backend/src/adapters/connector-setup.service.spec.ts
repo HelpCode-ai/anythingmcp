@@ -1,4 +1,4 @@
-import { ConnectorSetupService } from './connector-setup.service';
+import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
 import { encrypt } from '../common/crypto/encryption.util';
 
@@ -124,7 +124,7 @@ describe('ConnectorSetupService — install', () => {
 
   it('asks for the sign-in when an OAuth connector has its app keys', async () => {
     const { service, ctx } = build();
-    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'ks' } });
+    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
     expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
@@ -136,6 +136,14 @@ describe('ConnectorSetupService — install', () => {
     const out = await service.install(ctx, { adapter: 'openplz' });
     expect(out.isError).toBe(true);
     expect(JSON.stringify(out.body)).toContain('an hour');
+  });
+
+  it('refuses a setting that does not match its pattern, with what to check', async () => {
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abc123:secret' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/Keystring.*does not look right.*24 lowercase/);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
 
   it('respects the trial limit', async () => {
@@ -180,6 +188,14 @@ describe('ConnectorSetupService — links', () => {
     const out: any = await build_.service.install(build_.ctx, { adapter: 'weclapp', settings: { WECLAPP_TENANT: 'acme' } });
     return out.body.finishSetupUrl.split('/s/')[1] as string;
   }
+
+  it('keeps expired links a week (for measurement), not just until they expire', async () => {
+    const b = build();
+    const before = Date.now();
+    await linkFor(b);
+    const cutoff: Date = b.prisma.connectorSetupLink.deleteMany.mock.calls[0][0].where.expiresAt.lt;
+    expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(SETUP_LINK_RETENTION_MS - 1000);
+  });
 
   it('opens once, for the user it was made for, on the guided setup of that connector', async () => {
     const b = build();

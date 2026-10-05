@@ -30,7 +30,7 @@ const ETSY = {
   setupKind: 'oauth_browser',
   envVars: [
     { name: 'ETSY_CLIENT_ID', required: true, label: 'Keystring', kind: 'credential', secret: false },
-    { name: 'ETSY_CLIENT_SECRET', required: true, label: 'Shared secret', kind: 'credential', secret: true },
+    { name: 'ETSY_CLIENT_SECRET', required: true, label: 'Shared secret', kind: 'credential', secret: true, pattern: '^[a-z0-9]{8,32}$', patternMessage: 'Paste the Shared secret alone: lowercase letters and digits, without the Keystring and without a colon.' },
     { name: 'ETSY_REFRESH_TOKEN', required: false, label: 'Refresh token', kind: 'credential', secret: true, advanced: true },
   ],
 };
@@ -42,7 +42,7 @@ interface Calls {
   authorize: any[];
 }
 
-async function setup(page: Page, opts: { verify?: any; connector?: any } = {}): Promise<Calls> {
+async function setup(page: Page, opts: { verify?: any; connector?: any; test?: any } = {}): Promise<Calls> {
   const calls: Calls = { verify: [], imports: [], envVars: [], authorize: [] };
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: 'http://localhost:3100' }]);
   await page.addInitScript((user) => {
@@ -73,7 +73,7 @@ async function setup(page: Page, opts: { verify?: any; connector?: any } = {}): 
       calls.envVars.push(req.postDataJSON());
       return json({});
     }
-    if (url.includes('/api/connectors/c9/test')) return json({ ok: true, message: 'Connected' });
+    if (url.includes('/api/connectors/c9/test')) return json(opts.test ?? { ok: true, message: 'Connected' });
     if (url.includes('/api/connectors/c9')) return json(opts.connector ?? { id: 'c9', setupStatus: 'ready', envVars: {}, maskedEnvVars: [] });
     if (url.includes('/api/product-events')) return json({ ok: true });
     if (url.includes('/api/users/me/onboarding-state')) return json({ onboardingCompletedAt: '2026-01-01T00:00:00Z' });
@@ -128,11 +128,11 @@ test('OAuth: saves the app keys and goes straight to the sign-in, with the way b
   await expect(page.getByLabel('Keystring')).toHaveAttribute('autocomplete', 'off');
   await expect(page.getByLabel('Shared secret')).toHaveAttribute('autocomplete', 'new-password');
   await expect(page.getByLabel('Shared secret')).toHaveAttribute('data-1p-ignore', 'true');
-  await page.getByLabel('Keystring').fill('ks');
-  await page.getByLabel('Shared secret').fill('ss');
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
   await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
   await page.waitForURL('https://www.etsy.com/oauth/connect?state=s1');
-  expect(calls.imports[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+  expect(calls.imports[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2', ETSY_CLIENT_SECRET: 's3cr3t0abc' });
   expect(calls.authorize).toEqual([{ returnTo: '/connectors/setup/etsy?connector=c9&step=done' }]);
 });
 
@@ -141,6 +141,28 @@ test('OAuth: back from the provider, shows the connector ready', async ({ page }
   await page.goto('/connectors/setup/etsy?connector=c9&step=done&from=claude');
   await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is ready' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Back to Claude' })).toBeVisible();
+});
+
+test('OAuth: a sign-in that worked with wrong app keys goes back to the keys, not to "ready"', async ({ page }) => {
+  // Etsy's token exchange does not check the shared secret; the first API
+  // call does. Seen in production: users told "is ready", then every call 403.
+  await setup(page, {
+    test: { ok: false, kind: 'auth_failed', httpStatus: 403, message: 'Invalid API key: should be in the format keystring:shared_secret.' },
+  });
+  await page.goto('/connectors/setup/etsy?connector=c9&step=done&from=claude');
+  await expect(page.getByText('Etsy Open API v3 did not accept these credentials.')).toBeVisible();
+  await expect(page.getByText('should be in the format keystring:shared_secret')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Etsy Open API v3 is ready' })).toHaveCount(0);
+  await expect(page.getByLabel('Shared secret')).toBeVisible();
+});
+
+test('a value that does not match the pattern says what to check', async ({ page }) => {
+  await setup(page);
+  await page.goto('/connectors/setup/etsy');
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('a1b2c3d4e5f6g7h8i9j0k1l2:abc');
+  await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
+  await expect(page.getByText('Paste the Shared secret alone')).toBeVisible();
 });
 
 test('finishing an existing connector keeps a stored secret left empty', async ({ page }) => {
