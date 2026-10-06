@@ -6,14 +6,24 @@
   "category": "accounting",
   "icon": "exact-online",
   "docsUrl": "https://start.exactonline.nl/docs/HlpRestAPIResources.aspx",
-  "instructions": "**Getting a token**\n1. Register an app in the **Exact Online App Centre** for your country (`apps.exactonline.com`). You receive a client id and client secret.\n2. Run the authorization-code flow once against your country's host. Keep the **refresh token** — Exact's access tokens last ten minutes, so the refresh token is the only value worth storing.\n3. Set `EXACT_CLIENT_ID`, `EXACT_CLIENT_SECRET`, `EXACT_REFRESH_TOKEN`, `EXACT_BASE_HOST` and `EXACT_DIVISION`.\n\n**The host is country-specific.** `start.exactonline.nl` for the Netherlands, `.be` for Belgium, `.de` for Germany, `.co.uk`, `.fr`, `.es`, `.com` for the US. A token issued on one host does not work on another, and this is the most common cause of a 401 that looks like a bad secret. Set `EXACT_BASE_HOST` to the one your customer is on, hostname only.\n\n**Division is the administration id**, a number. One Exact account can hold dozens of administrations and every data path carries one. `exact_online_get_me` returns `CurrentDivision` — use it to find the right value for `EXACT_DIVISION`.\n\n**Rate limits are strict and enforced per app.** Exact allows on the order of 60 calls a minute and a few thousand a day. The response headers carry the remaining budget. Bulk work needs pacing, not retrying.\n\n**OData v3-flavoured.** `$select`, `$filter`, `$top`, `$orderby`, `$expand` all work. `$filter` uses single quotes for strings and `datetime'2026-01-01'` for dates. Always `$select` — Exact entities have very many columns.\n\n**Cloud reachability**: the Exact hosts are public with valid certificates.",
+  "instructions": "**Setup**\n1. Register an app in the **Exact Online App Centre** for your country (`apps.exactonline.com`) and set its redirect URI to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. You receive a client id and client secret.\n2. Set `EXACT_CLIENT_ID`, `EXACT_CLIENT_SECRET`, `EXACT_BASE_HOST` and `EXACT_DIVISION`, leave `EXACT_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. You sign in on your country's host (`https://<EXACT_BASE_HOST>/api/oauth2/auth`) and land back on the connector page with the tools ready. Exact's access tokens last ten minutes; AnythingMCP renews them and stores the new refresh token Exact returns each time.\n\nExact Online takes no scope in the authorization request: what the app may read is set on its registration in the App Centre.\n\n**Already have a refresh token?** You can paste it into `EXACT_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same app on the same host. Exact replaces the refresh token on every renewal, so a token that was already used once (to test it, say) is no longer valid and the connector fails with `invalid_grant`. Authorizing from the connector page avoids this.\n\n**The host is country-specific.** `start.exactonline.nl` for the Netherlands, `.be` for Belgium, `.de` for Germany, `.co.uk`, `.fr`, `.es`, `.com` for the US. A token issued on one host does not work on another, and this is the most common cause of a 401 that looks like a bad secret. Set `EXACT_BASE_HOST` to the one your customer is on, hostname only.\n\n**Division is the administration id**, a number. One Exact account can hold dozens of administrations and every data path carries one. `exact_online_get_me` returns `CurrentDivision` — use it to find the right value for `EXACT_DIVISION`.\n\n**Rate limits are strict and enforced per app.** Exact allows on the order of 60 calls a minute and a few thousand a day. The response headers carry the remaining budget. Bulk work needs pacing, not retrying.\n\n**OData v3-flavoured.** `$select`, `$filter`, `$top`, `$orderby`, `$expand` all work. `$filter` uses single quotes for strings and `datetime'2026-01-01'` for dates. Always `$select` — Exact entities have very many columns.\n\n**Cloud reachability**: the Exact hosts are public with valid certificates.",
   "requiredEnvVars": [
     "EXACT_CLIENT_ID",
     "EXACT_CLIENT_SECRET",
-    "EXACT_REFRESH_TOKEN",
     "EXACT_BASE_HOST",
     "EXACT_DIVISION"
   ],
+  "optionalEnvVars": [
+    "EXACT_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "EXACT_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself. Exact Online replaces the refresh token on every renewal, so a token that was already used once (to test it, say) no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Exact Online REST API",
     "type": "REST",
@@ -23,6 +33,7 @@
       "clientId": "{{EXACT_CLIENT_ID}}",
       "clientSecret": "{{EXACT_CLIENT_SECRET}}",
       "refreshToken": "{{EXACT_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://{{EXACT_BASE_HOST}}/api/oauth2/auth",
       "tokenUrl": "https://{{EXACT_BASE_HOST}}/api/oauth2/token"
     },
     "headers": {

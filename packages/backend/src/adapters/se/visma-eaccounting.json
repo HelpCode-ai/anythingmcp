@@ -6,12 +6,22 @@
   "category": "accounting",
   "icon": "visma-eaccounting",
   "docsUrl": "https://developer.vismaonline.com/",
-  "instructions": "**Getting a token**\n1. Register at **developer.vismaonline.com** and create an application. You receive a client id and client secret.\n2. Run the authorization-code flow once for the customer's company, asking for the scopes you need — `ea:api`, `ea:sales`, `ea:purchase`, `ea:accounting`. Keep the **refresh token**.\n3. Set `VISMA_CLIENT_ID`, `VISMA_CLIENT_SECRET` and `VISMA_REFRESH_TOKEN`.\n\n**Sandbox and production are different hosts.** This adapter targets production at `eaccountingapi.vismaonline.com`. The sandbox lives at `eaccountingapi-sandbox.vismaonline.com` with its own client registration; a production token there fails in a way that looks like a bad secret. If you want to test first, register a sandbox app and build a custom connector against that host.\n\n**One connector, one company.** The token is bound to the company it was authorised for. A bookkeeper with several clients needs one connector per client.\n\n**Filtering is OData-flavoured** on most collections: `$filter` (operators `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `and`, `or`, `startswith()`, `contains()`; strings in single quotes, dates as full timestamps such as `2026-01-01T00:00:00Z`) and `$orderby`. **Paging** uses `$page` (1-based) and `$pagesize` (default 50, max 1000); the response's `Meta` block carries `TotalNumberOfPages` and `TotalNumberOfResults`.\n\n**Vocabulary is Nordic.** `CustomerInvoiceDraft` is an unposted invoice; `CustomerInvoice` is posted and immutable. A draft is not revenue, and an agent summing both will over-report.\n\n**Checked against the published API, not a live company.** Every path exists in Visma's OpenAPI document and answers an unauthenticated request with 401 (not 404); the query options follow the developer docs. The tools have not been run against a real company yet. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: eaccountingapi.vismaonline.com is public with a valid certificate.",
+  "instructions": "**Setup**\n1. Register at **developer.vismaonline.com** and create an application with the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. You receive a client id and client secret.\n2. Set `VISMA_CLIENT_ID` and `VISMA_CLIENT_SECRET`, leave `VISMA_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in with a Visma user of the customer's company, approve, and you land back on the connector page.\n\n**Scopes**: `ea:api offline_access ea:sales ea:purchase ea:accounting`. `offline_access` is what makes Visma issue a refresh token. If your application has the read-only variants (`ea:sales_readonly`, `ea:purchase_readonly`, `ea:accounting_readonly`), they cover every tool here: change the scopes in the connector's OAuth settings and authorize again.\n\n**Already have a refresh token?** You can paste it into `VISMA_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same application with `offline_access`.\n\n**Sandbox and production are different hosts.** This adapter targets production at `eaccountingapi.vismaonline.com`. The sandbox lives at `eaccountingapi-sandbox.vismaonline.com` with its own client registration; a production token there fails in a way that looks like a bad secret. If you want to test first, register a sandbox app and build a custom connector against that host.\n\n**One connector, one company.** The token is bound to the company it was authorised for. A bookkeeper with several clients needs one connector per client.\n\n**Filtering is OData-flavoured** on most collections: `$filter` (operators `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `and`, `or`, `startswith()`, `contains()`; strings in single quotes, dates as full timestamps such as `2026-01-01T00:00:00Z`) and `$orderby`. **Paging** uses `$page` (1-based) and `$pagesize` (default 50, max 1000); the response's `Meta` block carries `TotalNumberOfPages` and `TotalNumberOfResults`.\n\n**Vocabulary is Nordic.** `CustomerInvoiceDraft` is an unposted invoice; `CustomerInvoice` is posted and immutable. A draft is not revenue, and an agent summing both will over-report.\n\n**Checked against the published API, not a live company.** Every path exists in Visma's OpenAPI document and answers an unauthenticated request with 401 (not 404); the query options follow the developer docs. The tools have not been run against a real company yet. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: eaccountingapi.vismaonline.com is public with a valid certificate.",
   "requiredEnvVars": [
     "VISMA_CLIENT_ID",
-    "VISMA_CLIENT_SECRET",
+    "VISMA_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
     "VISMA_REFRESH_TOKEN"
   ],
+  "envVarMeta": {
+    "VISMA_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Visma eAccounting API v2",
     "type": "REST",
@@ -21,7 +31,9 @@
       "clientId": "{{VISMA_CLIENT_ID}}",
       "clientSecret": "{{VISMA_CLIENT_SECRET}}",
       "refreshToken": "{{VISMA_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://identity.vismaonline.com/connect/authorize",
       "tokenUrl": "https://identity.vismaonline.com/connect/token",
+      "scopes": "ea:api offline_access ea:sales ea:purchase ea:accounting",
       "tokenAuthMethod": "basic"
     },
     "headers": {

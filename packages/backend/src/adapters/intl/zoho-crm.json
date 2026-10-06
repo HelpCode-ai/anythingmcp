@@ -2,12 +2,21 @@
   "slug": "zoho-crm",
   "name": "Zoho CRM",
   "description": "Manage Zoho CRM (leads, contacts, accounts, deals, tasks, notes, custom modules) from any AI agent. 10 tools, OAuth refresh-token auth.",
-  "instructions": "This connector wraps the Zoho CRM API v8 (www.zohoapis.com/crm/v8).\n\n**Setup — OAuth client + refresh token**:\n1. Go to https://api-console.zoho.com → **Add Client → Self Client**. Generate a 'grant token' with scope `ZohoCRM.modules.ALL,ZohoCRM.settings.READ,ZohoCRM.users.READ` and copy it.\n2. Exchange it for a refresh token via:\n   `curl -X POST 'https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=CLIENT_ID&client_secret=CLIENT_SECRET&code=GRANT_TOKEN'`\n3. Save the `refresh_token` from the response. Set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`.\n4. **Data centre matters**: Zoho hosts data in regional clusters: `.com` (US, default), `.eu` (EU), `.in` (India), `.com.au` (AU), `.jp` (Japan). If your org is on a non-US DC change baseUrl + token URL accordingly — wrong DC returns `INVALID_TOKEN`.\n\n**Authentication**: the engine handles the OAuth2 refresh flow — every call exchanges the refresh token for a short-lived (1h) access token and sends it as `Authorization: Zoho-oauthtoken ACCESS_TOKEN`. Zoho uses `Zoho-oauthtoken` instead of `Bearer` — non-standard but documented.\n\n**Module API**: every record type (Leads/Contacts/Accounts/Deals/Tasks/...) lives at `/crm/v8/{module}`. Custom modules use their API name (`Cf__Custom_Module1`). List of module API names is exposed via the modules metadata endpoint.\n\n**Bulk writes**: insert/update endpoints expect `{data: [{...}, {...}], trigger: ['approval','workflow','blueprint']}` shape — wrap a single record in an array.\n\n**Pagination**: `page` + `per_page` (max 200). Response has `info: {more_records: bool, page: N, per_page: N}`.\n\n**Rate limits**: 50 req/min per OAuth client + daily credits (5k on free, 25k on Standard, 250k on Enterprise). 429 → exponential backoff.\n\n**Out of scope here**: bulk import (CSV upload + polling), territory rules CRUD, workflow execution, Sandbox switching.",
+  "instructions": "This connector wraps the Zoho CRM API v8 (www.zohoapis.com/crm/v8). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Go to https://api-console.zoho.com → **Add Client → Server-based Applications**. Set the homepage URL to your AnythingMCP URL and the authorized redirect URI to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n2. Enter the client's **Client ID** as `ZOHO_CLIENT_ID` and its **Client Secret** as `ZOHO_CLIENT_SECRET`, leave `ZOHO_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in with a Zoho CRM user, accept, and you land back on the connector page with the tools ready.\n4. **Data centre matters**: Zoho hosts data in regional clusters: `.com` (US, default), `.eu` (EU), `.in` (India), `.com.au` (AU), `.jp` (Japan). If your org is on a non-US DC, change baseUrl, and the authorization URL and token URL in the connector's OAuth settings, to that domain (e.g. `https://accounts.zoho.eu/oauth/v2/auth`) before you authorize. Wrong DC returns `INVALID_TOKEN`.\n\n**Scopes**: `ZohoCRM.modules.ALL,ZohoCRM.settings.READ,ZohoCRM.users.READ` (comma-separated, as Zoho expects). The authorization URL carries `access_type=offline&prompt=consent`, so Zoho returns a refresh token every time you authorize.\n\n**Already have a refresh token?** You can paste it into `ZOHO_REFRESH_TOKEN` instead of step 3. With a **Self Client**, generate a grant token with the scopes above and exchange it:\n   `curl -X POST 'https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=CLIENT_ID&client_secret=CLIENT_SECRET&code=GRANT_TOKEN'`\n   The client id and secret must then be the Self Client's.\n\n**Authentication**: the engine handles the OAuth2 refresh flow — every call exchanges the refresh token for a short-lived (1h) access token and sends it as `Authorization: Zoho-oauthtoken ACCESS_TOKEN`. Zoho uses `Zoho-oauthtoken` instead of `Bearer` — non-standard but documented.\n\n**Module API**: every record type (Leads/Contacts/Accounts/Deals/Tasks/...) lives at `/crm/v8/{module}`. Custom modules use their API name (`Cf__Custom_Module1`). List of module API names is exposed via the modules metadata endpoint.\n\n**Bulk writes**: insert/update endpoints expect `{data: [{...}, {...}], trigger: ['approval','workflow','blueprint']}` shape — wrap a single record in an array.\n\n**Pagination**: `page` + `per_page` (max 200). Response has `info: {more_records: bool, page: N, per_page: N}`.\n\n**Rate limits**: 50 req/min per OAuth client + daily credits (5k on free, 25k on Standard, 250k on Enterprise). 429 → exponential backoff.\n\n**Out of scope here**: bulk import (CSV upload + polling), territory rules CRUD, workflow execution, Sandbox switching.",
   "region": "intl",
   "category": "crm",
   "icon": "zoho-crm",
   "docsUrl": "https://www.zoho.com/crm/developer/docs/api/v8/",
-  "requiredEnvVars": ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"],
+  "requiredEnvVars": ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET"],
+  "optionalEnvVars": ["ZOHO_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "ZOHO_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Zoho CRM API v8",
     "type": "REST",
@@ -17,7 +26,9 @@
       "clientId": "{{ZOHO_CLIENT_ID}}",
       "clientSecret": "{{ZOHO_CLIENT_SECRET}}",
       "refreshToken": "{{ZOHO_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://accounts.zoho.com/oauth/v2/auth?access_type=offline&prompt=consent",
       "tokenUrl": "https://accounts.zoho.com/oauth/v2/token",
+      "scopes": "ZohoCRM.modules.ALL,ZohoCRM.settings.READ,ZohoCRM.users.READ",
       "tokenPrefix": "Zoho-oauthtoken"
     }
   },

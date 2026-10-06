@@ -2,12 +2,21 @@
   "slug": "box",
   "name": "Box",
   "description": "Manage Box (enterprise content: files, folders, collaborations, comments, tasks, metadata) from any AI agent. 10 tools, OAuth2 token.",
-  "instructions": "This connector wraps the Box Content API v2 (api.box.com/2.0).\n\n**Setup — OAuth2**:\n1. Register at https://app.box.com/developers/console → **Create New App** → 'OAuth 2.0 with JWT' or 'OAuth 2.0 with User Authentication'.\n2. For user OAuth: complete the auth flow at `https://account.box.com/api/oauth2/authorize?response_type=code&client_id=...&redirect_uri=...`.\n3. Exchange the code at `https://api.box.com/oauth2/token`. Save the refresh_token.\n4. For JWT (server auth): generate an enterprise-level access token differently — out of scope for this OAuth-based adapter.\n5. Set `BOX_CLIENT_ID`, `BOX_CLIENT_SECRET`, `BOX_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Folder ID 0** is the root folder of the authenticated user.\n\n**File-vs-Folder IDs**: Box assigns numeric IDs that are unique within file-space and folder-space but can collide across (file 123 ≠ folder 123). Always know whether you're operating on a file or folder.\n\n**Upload**: file upload uses a different host (`upload.box.com`) with multipart. Out of scope here for content upload — use the create_shared_link pattern with externally-hosted files for ingest.\n\n**Pagination**: `limit` (max 1000) + `offset` (0-based). Some endpoints support `marker` cursor pagination — pass `usemarker=true`.\n\n**Rate limits**: ~16 req/sec per token, soft. 429 with `Retry-After`.\n\n**Out of scope here**: file upload multipart, Box Sign workflows, retention policies, the new Box AI inference endpoints.",
+  "instructions": "This connector wraps the Box Content API v2 (api.box.com/2.0). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Create an app at https://app.box.com/developers/console → **Create New App** → **Custom App** → **User Authentication (OAuth 2.0)**.\n2. In the app's **Configuration** tab, add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Under **Application Scopes**, tick **Write all files and folders stored in Box**.\n3. Enter the app's **Client ID** as `BOX_CLIENT_ID` and its **Client Secret** as `BOX_CLIENT_SECRET`, leave `BOX_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Box, grant access, and you land back on the connector page with the tools ready.\n\n**Scopes**: `root_readwrite`, which covers every tool here (read, create, move, copy, delete and share).\n\n**Already have a refresh token?** You can paste it into `BOX_REFRESH_TOKEN` instead of step 4, if you obtained it yourself for the same app (authorization code from `https://account.box.com/api/oauth2/authorize`, exchanged at `https://api.box.com/oauth2/token`). Box refresh tokens work only once: a token you already exchanged, for example while testing it, is spent and the connector fails with `invalid_grant`. Authorizing from the connector page avoids this.\n\n**JWT (server authentication)** is out of scope for this OAuth-based adapter.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Folder ID 0** is the root folder of the authenticated user.\n\n**File-vs-Folder IDs**: Box assigns numeric IDs that are unique within file-space and folder-space but can collide across (file 123 ≠ folder 123). Always know whether you're operating on a file or folder.\n\n**Upload**: file upload uses a different host (`upload.box.com`) with multipart. Out of scope here for content upload — use the create_shared_link pattern with externally-hosted files for ingest.\n\n**Pagination**: `limit` (max 1000) + `offset` (0-based). Some endpoints support `marker` cursor pagination — pass `usemarker=true`.\n\n**Rate limits**: ~16 req/sec per token, soft. 429 with `Retry-After`.\n\n**Out of scope here**: file upload multipart, Box Sign workflows, retention policies, the new Box AI inference endpoints.",
   "region": "intl",
   "category": "storage",
   "icon": "box",
   "docsUrl": "https://developer.box.com/reference/",
-  "requiredEnvVars": ["BOX_CLIENT_ID", "BOX_CLIENT_SECRET", "BOX_REFRESH_TOKEN"],
+  "requiredEnvVars": ["BOX_CLIENT_ID", "BOX_CLIENT_SECRET"],
+  "optionalEnvVars": ["BOX_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "BOX_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself. Box replaces the refresh token on every renewal, so a token that was already used once (to test it, say) no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Box Content API v2",
     "type": "REST",
@@ -17,7 +26,9 @@
       "clientId": "{{BOX_CLIENT_ID}}",
       "clientSecret": "{{BOX_CLIENT_SECRET}}",
       "refreshToken": "{{BOX_REFRESH_TOKEN}}",
-      "tokenUrl": "https://api.box.com/oauth2/token"
+      "authorizationUrl": "https://account.box.com/api/oauth2/authorize",
+      "tokenUrl": "https://api.box.com/oauth2/token",
+      "scopes": "root_readwrite"
     }
   },
   "tools": [
