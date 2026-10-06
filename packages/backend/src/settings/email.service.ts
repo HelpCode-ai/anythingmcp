@@ -666,7 +666,7 @@ export class EmailService {
     const body = connectClient
       ? `<p>Hi ${name},</p>
       <p>Your connector is set up and sitting on an MCP server, but no client has talked to it yet. The last step is a copy and paste.</p>
-      <p>Open the server page, copy the endpoint, and pick your client under <strong>Quick Connect</strong> — Claude, Cursor, ChatGPT and Claude Code each have a two-line recipe there.</p>
+      <p>Open the server page, copy the endpoint, and pick your client under <strong>Quick Connect</strong> — Claude, Cursor, ChatGPT, Meta Muse and Claude Code each have a short recipe there.</p>
       <p><a href="${connectorUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Connect your client →</a></p>
       <p style="font-size:13px;color:#666;">Stuck? Reply to this email — we read every one.</p>`
       : `<p>Hi ${name},</p>

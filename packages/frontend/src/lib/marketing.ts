@@ -2,6 +2,13 @@ import { CLICK_ID_KEYS, cleanClickId, type ClickIds } from './attribution';
 
 const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
 
+/**
+ * AnythingMCP's listing in Claude's connector directory. Connecting from there
+ * reaches AnythingMCP Cloud's shared /mcp endpoint, so it is only offered on
+ * Cloud: a self-hosted instance is never what that listing connects to.
+ */
+export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
+
 export function getMarketingUrl(): string {
   if (typeof process !== 'undefined') {
     const env = (process as { env?: Record<string, string | undefined> }).env;
