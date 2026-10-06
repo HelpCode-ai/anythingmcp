@@ -1,0 +1,163 @@
+{
+  "slug": "moco",
+  "name": "MOCO",
+  "description": "MOCO project and time tracking for agencies: browse users, projects, companies, activities and invoices, report utilization, and book time through the REST API.",
+  "instructions": "MOCO connects agencies to projects, time entries, companies, invoices, and utilization reports through its REST API. This adapter reads those records and can book time for the API key's user.\n\n**Getting credentials**\n1. In your MOCO account, open Profile → Integrations and copy your personal API key into `MOCO_API_KEY`. A personal key follows your user's permissions. An account API key can instead be created under Settings → Extensions → API & Webhooks with read-only or full access; a read-only key cannot book time.\n2. Set `MOCO_SUBDOMAIN` to the first part of your account URL only: for `agency.mocoapp.com`, use `agency` (no scheme or domain suffix). The adapter sends requests to `https://agency.mocoapp.com/api/v1`.\n\n**Permissions and privacy**: list tools return only records visible to the key's user. A missing project or invoice may be a permission issue. Do not share a full-access key with people who should only read data. The connector stores the key as a credential.\n\n**Finding IDs**: list companies and projects first. `moco_get_project` returns one project and its task IDs; use its numeric project and task IDs when booking time. For example, project `123456` and task `234567` are IDs, not names. A new activity belongs to the key's user.\n\n**Dates and duration**: use `YYYY-MM-DD` dates, such as `2026-10-06`. Activity list requests require both `from` and `to` so the result is bounded. `moco_create_activity` accepts duration in whole seconds; 2 hours is `7200` seconds. Each call creates a new entry, so do not retry a successful call or you may book duplicate time.\n\n**Pagination and limits**: list tools accept a 1-based `page`. Up to 100 entries come back per page. Each list response carries `_pagination` next to the body while there are more pages: call again with `page` = `_pagination.nextCursor` and repeat until `_pagination` is absent, which means that was the last page. `_headers[\"x-total\"]` is the total number of entries. Standard plans allow about 120 requests per two minutes; a 429 means wait before retrying.\n\n**Cloud reachability**: `*.mocoapp.com` is publicly reachable over HTTPS. This adapter uses MOCO's REST API and does not require MOCO's optional MCP endpoint. PDF downloads, webhooks, invoice creation, and destructive operations are outside this adapter's scope.",
+  "region": "de",
+  "category": "time-tracking",
+  "icon": "moco",
+  "docsUrl": "https://docs.mocoapp.com/api/docs/v1",
+  "requiredEnvVars": ["MOCO_SUBDOMAIN", "MOCO_API_KEY"],
+  "envVarMeta": {
+    "MOCO_SUBDOMAIN": {
+      "label": "MOCO subdomain",
+      "help": "The first part of your MOCO account URL: agency for agency.mocoapp.com.",
+      "example": "agency",
+      "pattern": "^[A-Za-z0-9-]+$"
+    },
+    "MOCO_API_KEY": {
+      "label": "MOCO API key",
+      "help": "Your personal key is under Profile → Integrations; an account key is under Settings → Extensions → API & Webhooks."
+    }
+  },
+  "connector": {
+    "name": "MOCO API v1",
+    "type": "REST",
+    "baseUrl": "https://{{MOCO_SUBDOMAIN}}.mocoapp.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MOCO_API_KEY}}"
+    }
+  },
+  "probe": { "tool": "moco_list_users" },
+  "tools": [
+    {
+      "name": "moco_list_users",
+      "description": "List MOCO users visible to this API key, including their IDs and names. Use this to confirm credentials and identify people for activity reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "page": "$page" }, "exposeHeaders": ["link", "x-total"] }
+    },
+    {
+      "name": "moco_list_projects",
+      "description": "List MOCO projects with IDs, names, customer links and status. Filter archived projects, one company or recently updated records to narrow the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": { "type": "boolean", "description": "Include archived projects when true." },
+          "company_id": { "type": "integer", "description": "Return projects belonging to this numeric company ID." },
+          "updated_after": { "type": "string", "description": "Only projects changed after this ISO 8601 UTC timestamp, e.g. 2026-10-01T00:00:00Z." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": { "include_archived": "$include_archived", "company_id": "$company_id", "updated_after": "$updated_after", "page": "$page" },
+        "exposeHeaders": ["link", "x-total"]
+      }
+    },
+    {
+      "name": "moco_get_project",
+      "description": "Get a single MOCO project by its numeric ID, including project details and assigned tasks needed when creating a time activity.",
+      "parameters": {
+        "type": "object",
+        "properties": { "id": { "type": "integer", "description": "Numeric project ID from moco_list_projects." } },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/projects/{id}" }
+    },
+    {
+      "name": "moco_list_activities",
+      "description": "List tracked time activities within a date range, optionally filtered by user, project or billability. Results include durations and linked projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "First activity date, YYYY-MM-DD, e.g. 2026-10-01." },
+          "to": { "type": "string", "description": "Last activity date, YYYY-MM-DD, e.g. 2026-10-31." },
+          "user_id": { "type": "integer", "description": "Restrict to one numeric user ID." },
+          "project_id": { "type": "integer", "description": "Restrict to one numeric project ID." },
+          "billable": { "type": "boolean", "description": "True for billable time, false for non-billable time." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        },
+        "required": ["from", "to"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities",
+        "queryParams": { "from": "$from", "to": "$to", "user_id": "$user_id", "project_id": "$project_id", "billable": "$billable", "page": "$page" },
+        "exposeHeaders": ["link", "x-total"]
+      }
+    },
+    {
+      "name": "moco_list_companies",
+      "description": "List customers, suppliers and organizations in MOCO. Filter by company type or search term to find the IDs used by projects and invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["customer", "supplier", "organization"], "description": "Company type to include." },
+          "term": { "type": "string", "description": "Search company names or other matching text." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/companies", "queryParams": { "type": "$type", "term": "$term", "page": "$page" }, "exposeHeaders": ["link", "x-total"] }
+    },
+    {
+      "name": "moco_list_invoices",
+      "description": "List MOCO invoices visible to this API key. Narrow by status, invoice date range or company ID to review outstanding customer billing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "Invoice status: draft, created, sent, partially_paid, paid, overdue or ignored. Several can be combined comma-separated, e.g. sent,overdue." },
+          "date_from": { "type": "string", "description": "Earliest invoice date, YYYY-MM-DD." },
+          "date_to": { "type": "string", "description": "Latest invoice date, YYYY-MM-DD." },
+          "company_id": { "type": "integer", "description": "Restrict to one numeric company ID." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": { "status": "$status", "date_from": "$date_from", "date_to": "$date_to", "company_id": "$company_id", "page": "$page" },
+        "exposeHeaders": ["link", "x-total"]
+      }
+    },
+    {
+      "name": "moco_report_utilization",
+      "description": "Get MOCO's utilization report for a date range, showing available and booked capacity so you can assess team workload.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Report start date, YYYY-MM-DD." },
+          "to": { "type": "string", "description": "Report end date, YYYY-MM-DD." }
+        },
+        "required": ["from", "to"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/report/utilization", "queryParams": { "from": "$from", "to": "$to" } }
+    },
+    {
+      "name": "moco_create_activity",
+      "description": "Book a new MOCO time activity for the API key's user. This creates a real, non-idempotent time entry; confirm the details before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "Activity date, YYYY-MM-DD." },
+          "project_id": { "type": "integer", "description": "Numeric project ID from moco_list_projects." },
+          "task_id": { "type": "integer", "description": "Numeric task ID from the project details." },
+          "seconds": { "type": "integer", "description": "Duration in whole seconds; 7200 means two hours." },
+          "description": { "type": "string", "description": "What work was completed during this time." }
+        },
+        "required": ["date", "project_id", "task_id", "seconds"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities",
+        "bodyMapping": { "date": "$date", "project_id": "$project_id", "task_id": "$task_id", "seconds": "$seconds", "description": "$description" }
+      }
+    }
+  ]
+}
