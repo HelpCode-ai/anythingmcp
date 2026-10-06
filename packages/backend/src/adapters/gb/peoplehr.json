@@ -1,0 +1,978 @@
+{
+  "slug": "peoplehr",
+  "name": "Access PeopleHR",
+  "description": "Access PeopleHR, UK HR software: employees, holidays, absences, holiday entitlements, salaries, saved Query Builder reports, appraisals, training, timesheets, work patterns and recruitment vacancies. Integration API v4, API key sent in the JSON body of every POST.",
+  "region": "gb",
+  "category": "hr",
+  "icon": "peoplehr",
+  "docsUrl": "https://apidocs.peoplehr.com/",
+  "instructions": "**Getting the API key**: in PeopleHR open **Settings > API** and create a key (a GUID such as 1a2b3c4d-...). When you create it you choose which resources (schemas) and which actions it may call: tick at least Employee, Holiday, Absence, Holiday Entitlements, Salary, Query Builder, Appraisal, Training and ATS for the read tools here, and add the Add Holiday / Add Absence actions only if you want the write tools. Put the key in `PEOPLEHR_API_KEY`. If the key has an IP allow-list, calls from AnythingMCP are refused unless its address is on it.\n\n**How the API works**: every call is a POST to `https://api.peoplehr.net/<Resource>` (`/Employee`, `/Holiday`, `/Absence`, `/Salary`, `/Query` ...) with a JSON body holding `APIKey`, `Action` and the action's fields. The tools fill in the key and the action for you, so every read tool is a POST that only reads.\n\n**Errors come back as HTTP 200.** Always read `Status` in the answer, not the HTTP code: 0 success, 10 no records found, 5 validation error or `Access Denied.`, 6 server error. `Access Denied.` means the key is not granted that action or schema (an unknown action name gives the same answer); ask the PeopleHR admin to add the grant. `isError` is unreliable; ignore it.\n\n**Ids**: employees are addressed by their PeopleHR EmployeeId (e.g. `PW15`, max 15 characters). Start with `peoplehr_get_employee_directory` to find someone by name, then call the per-employee tools. Vacancies use their `Reference` (from `peoplehr_list_vacancies`), appraisals their `AppraisalId`.\n\n**Dates** are `yyyy-MM-dd`. Other formats are either rejected or read day-first, so never send `MM/dd/yyyy` or an ISO date-time.\n\n**Volumes and paging**: only `peoplehr_list_employees` pages (`limit` up to 500, `offset` in rows, `Result.Pagination.TotalRows`). The `peoplehr_list_*` tools for absences, holidays and salaries return the whole company in one answer, keyed by EmployeeId; narrow them with a date window.\n\n**Employee fields** are wrapped: `\"FirstName\": {\"DisplayValue\": \"Jane\", \"FieldHistory\": []}`. `EmployeeStatus` is \"1\" for current staff and \"2\" for leavers.\n\n**Tenant settings decide some answers**: `peoplehr_list_leavers` needs a separate GetAllLeavers grant even on a key with every other Employee action, and the vacancy and applicant tools need the recruitment (ATS) module to be active; otherwise both answer Status 5.\n\n**Query Builder**: `peoplehr_run_query` runs a saved query by its exact name; the API cannot list queries, so ask the user for the name as it appears under Reports > Query Builder.\n\n**Rate limit**: set per company by Access, not per key. A throttled call is Status 5 with a message like \"API calls will be limited to a N per minute\"; wait a minute and retry.",
+  "prerequisites": "An administrator creates the API key in PeopleHR under **Settings > API** and ticks the resources and actions it may use; a key without a grant answers `Access Denied.`",
+  "requiredEnvVars": [
+    "PEOPLEHR_API_KEY"
+  ],
+  "envVarMeta": {
+    "PEOPLEHR_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "PeopleHR > Settings > API > create a key. Tick the schemas and actions it may call (Employee, Holiday, Absence, Salary, Query Builder ...).",
+      "link": "https://apidocs.peoplehr.com/overview.html",
+      "pattern": "^\\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\}?$",
+      "patternMessage": "A PeopleHR API key is a GUID such as 1a2b3c4d-1111-2222-3333-444455556666."
+    }
+  },
+  "verifyHints": {
+    "403": "The CDN in front of PeopleHR refused the request. Try again; if it persists, contact PeopleHR support with the time of the call.",
+    "404": "PeopleHR has no such resource path. The API lives at https://api.peoplehr.net.",
+    "auth_failed": "PeopleHR did not accept the key, or the key is not granted this action. Check the key under Settings > API and the actions ticked for it."
+  },
+  "connector": {
+    "name": "Access PeopleHR Integration API",
+    "type": "REST",
+    "baseUrl": "https://api.peoplehr.net",
+    "authType": "NONE",
+    "headers": {
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    }
+  },
+  "probe": {
+    "tool": "peoplehr_get_company_information"
+  },
+  "tools": [
+    {
+      "name": "peoplehr_get_company_information",
+      "description": "Return the company (tenant) the API key belongs to: CompanyId, SubDomain and CompanyName. No parameters; use it first to confirm the key works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Employee",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetCompanyInformation"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_directory",
+      "description": "Return every employee in one call as a compact directory: id, name, e-mail, job role, department, location, company, manager, start date and status (1 current, 2 leaver). Use it to find an EmployeeId by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_leavers": {
+            "type": "string",
+            "description": "\"true\" to include people who have left, \"false\" (default) for current staff only.",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "default": "false"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Employee",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllEmployeeDetail",
+          "IncludeLeavers": "$include_leavers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "Status": "$.Status",
+            "Message": "$.Message",
+            "employees": {
+              "$from": "$.Result[*]",
+              "$select": {
+                "EmployeeId": "EmployeeId.DisplayValue",
+                "FirstName": "FirstName.DisplayValue",
+                "LastName": "LastName.DisplayValue",
+                "KnownAs": "KnownAs.DisplayValue",
+                "Email": "EmailId.DisplayValue",
+                "JobRole": "JobRole.DisplayValue",
+                "Department": "Department.DisplayValue",
+                "Location": "Location.DisplayValue",
+                "Company": "Company.DisplayValue",
+                "ReportsTo": "ReportsTo.DisplayValue",
+                "ReportsToEmployeeId": "ReportsToEmployeeId.DisplayValue",
+                "EmploymentType": "EmploymentType.DisplayValue",
+                "StartDate": "StartDate.DisplayValue",
+                "EmployeeStatus": "EmployeeStatus.DisplayValue",
+                "LeavingDate": "LeavingDate"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_employees",
+      "description": "Page through full employee records (contact, employment, bank and right-to-work details, each field as {DisplayValue, FieldHistory}). Result.Result holds the rows and Result.Pagination.TotalRows the total; raise offset by limit until you have them all.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 50.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of rows to skip (a row offset, not a page number). Default 0.",
+            "default": 0
+          },
+          "include_leavers": {
+            "type": "string",
+            "description": "\"true\" to include leavers, \"false\" (default) for current staff only.",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "default": "false"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Employee",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllEmployeeDetailPaginated",
+          "Limit": "$limit",
+          "Offset": "$offset",
+          "IncludeLeavers": "$include_leavers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee",
+      "description": "Return one employee's full record by EmployeeId: personal and contact details, job role, department, location, manager, employment type, holiday allowance, bank and right-to-work details, with each field's change history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Employee",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetEmployeeDetailById",
+          "EmployeeId": "$employee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_leavers",
+      "description": "List the employees who have left the company with their leaving details. Needs its own grant on the API key (GetAllLeavers); without it PeopleHR answers Status 5 Access Denied.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Employee",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllLeavers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_absences",
+      "description": "List one employee's absence (sickness and other absence) records: reason, start and end dates, duration, paid status, part of day, back-to-work interview and medical certificate details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the absence window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the absence window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Absence",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAbsenceDetail",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_absences",
+      "description": "List absence records for all employees in a date window. Result is an object keyed by EmployeeId, each holding that employee's absences; employees without absences are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the absence window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the absence window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Absence",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllAbsenceDetail",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_holidays",
+      "description": "List one employee's annual leave bookings: dates, duration in days or minutes, part of day, approval status, approver and comments. Use it to answer who is off when.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the holiday window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the holiday window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Holiday",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetHolidayDetail",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_holidays",
+      "description": "List annual leave bookings for all employees in a date window. Result is an object keyed by EmployeeId with each employee's bookings; good for team calendars and cover planning.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the holiday window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the holiday window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Holiday",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllHolidayDetail",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_holiday_entitlement",
+      "description": "Return one employee's holiday entitlement per holiday year: period start and end, whether it is measured in days or hours, and the entitlement amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the entitlement window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the entitlement window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/HolidayEntitlements",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetHolidayEntitlement",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_holiday_entitlements",
+      "description": "Return holiday entitlement rows for every employee and holiday year in a date window: FullName, UniqueId, period, unit (days or hours) and amount. Without a window this is every year on record, so always pass one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the entitlement window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the entitlement window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/HolidayEntitlements",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllHolidayEntitlement",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_salary",
+      "description": "Return one employee's salary records: effective date, salary type, payment frequency, amount, total including entitlements, currency, deductions, entitlements and change reason. Needs the SALARY schema on the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "include_history": {
+            "type": "string",
+            "description": "\"true\" for every salary record, \"false\" (default) for the current one only.",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "default": "false"
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Salary",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetSalaryDetail",
+          "EmployeeId": "$employee_id",
+          "IsIncludeHistory": "$include_history"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_salaries",
+      "description": "Return salary records for all employees. Result is an object keyed by EmployeeId with an array of salary records each; employees without a salary record are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_history": {
+            "type": "string",
+            "description": "\"true\" for every salary record, \"false\" (default) for the current ones only.",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "default": "false"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Salary",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllSalaryDetails",
+          "IsIncludeHistory": "$include_history"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_run_query",
+      "description": "Run a saved Query Builder query by its exact name and return its rows, keyed by the query's own column headings. Use it for reports the other tools do not cover; the query must exist in PeopleHR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_name": {
+            "type": "string",
+            "description": "Exact name of a query saved in PeopleHR's Query Builder (Reports > Query Builder), including spaces and capitals. The API cannot list them."
+          }
+        },
+        "required": [
+          "query_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Query",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetQueryResultByQueryName",
+          "QueryName": "$query_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_appraisals",
+      "description": "List one employee's appraisals (performance reviews): AppraisalId, review date, reviewer, notes, objectives, action plan and the tenant's custom appraisal columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Appraisal",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetByEmployeeId",
+          "EmployeeId": "$employee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_appraisal",
+      "description": "Return one appraisal by its AppraisalId with review date, reviewer, notes, objectives, action plan and custom columns. Get the id from peoplehr_get_employee_appraisals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appraisal_id": {
+            "type": "string",
+            "description": "AppraisalId from peoplehr_get_employee_appraisals."
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          }
+        },
+        "required": [
+          "appraisal_id",
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Appraisal",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetByAppraisalId",
+          "AppraisalId": "$appraisal_id",
+          "EmployeeId": "$employee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_training",
+      "description": "List training records: TrainingId, training type, description, importance, status, start, end and expiry dates, cost, provider and notes. Training is read per employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Training",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetTrainingDetail",
+          "EmployeeId": "$employee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_other_events",
+      "description": "List one employee's other events (leave types beyond holiday and absence, such as jury duty, training days or appointments) with reason, dates, duration, status and approver.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the event window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the event window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/OtherEvent",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "getothereventdetail",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_lateness",
+      "description": "List one employee's lateness records: the date, how many minutes late and comments, optionally within a date window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the lateness window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the lateness window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Late",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetLateByEmployeeId",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_employee_timesheets",
+      "description": "List one employee's timesheets per day with up to 15 time-in and time-out pairs (HH:mm:ss) and comments, within a date window. Needs the TIMESHEET schema on the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the timesheet window, yyyy-MM-dd. Optional; omit together with end_date for all records."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the timesheet window, yyyy-MM-dd. Must be on or after start_date."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Timesheet",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetTimesheetDetail",
+          "EmployeeId": "$employee_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_work_patterns",
+      "description": "List the company's work patterns with, per week and weekday, the working days and minutes. Filter by name or id; use it to explain how holiday and absence durations are counted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "work_pattern_name": {
+            "type": "string",
+            "description": "Optional work pattern name to filter on."
+          },
+          "work_pattern_id": {
+            "type": "string",
+            "description": "Optional work pattern id to filter on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/WorkPattern",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetWorkPatternDetail",
+          "WorkPatternName": "$work_pattern_name",
+          "WorkPatternId": "$work_pattern_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_vacancies",
+      "description": "List the recruitment vacancies (ATS): name, reference, job title, company, location, department, status, closing date, salary range and vacancy type. Needs the ATS schema on the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Vacancy",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetAllVacancies"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_get_vacancy",
+      "description": "Return one vacancy by its reference with description, job description, closing date, salary range and application questions. Get the reference from peoplehr_list_vacancies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vacancy_reference": {
+            "type": "string",
+            "description": "The vacancy's Reference value from peoplehr_list_vacancies, e.g. VA4."
+          }
+        },
+        "required": [
+          "vacancy_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Vacancy",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetVacancy",
+          "VacancyReference": "$vacancy_reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_list_applicants",
+      "description": "List the applicants of one vacancy with ApplicantId, first and last name and e-mail address. Get the vacancy reference from peoplehr_list_vacancies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vacancy_reference": {
+            "type": "string",
+            "description": "The vacancy's Reference value from peoplehr_list_vacancies."
+          }
+        },
+        "required": [
+          "vacancy_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Applicant",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "GetApplicantDetail",
+          "VacancyReference": "$vacancy_reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "peoplehr_add_holiday",
+      "description": "Book annual leave for an employee. For a day or more set duration_type 1 and duration_in_days; for less than a day set duration_type 2, duration_in_minutes and part_of_day. Rejected when it overlaps other leave.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "duration_type": {
+            "type": "string",
+            "description": "1 for a day or more, 2 for less than a day.",
+            "enum": [
+              "1",
+              "2"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of leave, yyyy-MM-dd."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of leave, yyyy-MM-dd."
+          },
+          "duration_in_days": {
+            "type": "string",
+            "description": "Number of working days, e.g. \"1\" or \"0.5\". Required by the API; send \"0\" for part-day leave."
+          },
+          "duration_in_minutes": {
+            "type": "string",
+            "description": "Minutes of leave for part-day bookings, e.g. \"240\". Required by the API; send \"0\" for whole days."
+          },
+          "part_of_day": {
+            "type": "string",
+            "description": "AM or PM, for part-day leave.",
+            "enum": [
+              "AM",
+              "PM"
+            ]
+          },
+          "comments": {
+            "type": "string",
+            "description": "Optional comment stored with the booking."
+          }
+        },
+        "required": [
+          "employee_id",
+          "duration_type",
+          "start_date",
+          "end_date",
+          "duration_in_days",
+          "duration_in_minutes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Holiday",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "AddNewHoliday",
+          "EmployeeId": "$employee_id",
+          "DurationType": "$duration_type",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "DurationInDays": "$duration_in_days",
+          "DurationInMinutes": "$duration_in_minutes",
+          "PartOfDay": "$part_of_day",
+          "Comments": "$comments"
+        }
+      }
+    },
+    {
+      "name": "peoplehr_add_absence",
+      "description": "Record an absence (e.g. sickness) for an employee with reason, dates, duration and paid status. The reason must exist in the tenant's absence reason list; overlapping leave is rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "PeopleHR employee id as shown on the employee's profile, e.g. PW15 (at most 15 characters). Get it from peoplehr_get_employee_directory."
+          },
+          "duration_type": {
+            "type": "string",
+            "description": "1 for a day or more, 2 for half a day, 3 for a quarter day.",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Absence reason exactly as in the tenant's absence reason list, e.g. Sickness."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of absence, yyyy-MM-dd."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of absence, yyyy-MM-dd."
+          },
+          "duration": {
+            "type": "string",
+            "description": "Duration in days, e.g. \"1\"."
+          },
+          "part_of_day": {
+            "type": "string",
+            "description": "AM or PM, for part-day absences.",
+            "enum": [
+              "AM",
+              "PM"
+            ]
+          },
+          "absence_paid_status": {
+            "type": "string",
+            "description": "Paid status code as configured in PeopleHR, e.g. \"1\" for paid."
+          },
+          "emergency_leave": {
+            "type": "string",
+            "description": "\"true\" if this is emergency leave, otherwise \"false\".",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "employee_id",
+          "duration_type",
+          "reason",
+          "start_date",
+          "end_date",
+          "duration",
+          "absence_paid_status",
+          "emergency_leave"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Absence",
+        "bodyMapping": {
+          "APIKey": "{{PEOPLEHR_API_KEY}}",
+          "Action": "AddNewAbsence",
+          "EmployeeId": "$employee_id",
+          "DurationType": "$duration_type",
+          "Reason": "$reason",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "Duration": "$duration",
+          "PartOfDay": "$part_of_day",
+          "AbsencePaidStatus": "$absence_paid_status",
+          "EmergencyLeave": "$emergency_leave"
+        }
+      }
+    }
+  ]
+}

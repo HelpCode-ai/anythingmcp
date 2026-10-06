@@ -1,0 +1,294 @@
+{
+  "slug": "freepik",
+  "name": "Freepik",
+  "description": "Freepik stock content and AI images through the Freepik API, now run as the Magnific API: search and download photos, vectors and PSDs, search and download icons, search stock videos, and generate images with Mystic.",
+  "instructions": "## Freepik\nThis connector uses the Freepik API, which Freepik now publishes as the **Magnific API** (`https://api.magnific.com`, documentation at docs.magnific.com; docs.freepik.com redirects there). The stock catalog is Freepik's: photos, vectors, PSD templates, Flaticon icons and stock video. Existing Freepik API keys keep working.\n\n## Setup\nCreate an API key under **Account → Organization → API keys** on magnific.com (formerly freepik.com/api) and put it in `FREEPIK_API_KEY`. It is sent in the `x-magnific-api-key` header (the older `x-freepik-api-key` header name is accepted too). Keys are server-side secrets; the API has no OAuth.\n\n## Costs\nThe API is billed in credits. Searching and reading details is cheap; every call to `freepik_download_resource`, `freepik_download_resource_format` and `freepik_download_icon` registers a download on the account, and `freepik_generate_image_mystic` spends AI credits. Those tools are marked as writes so the client asks before calling them. Download only what the user actually wants to use.\n\n## Start here\n- Photos, vectors, PSDs: `freepik_search_resources` with a `term`, then `freepik_get_resource` for licence, formats and author, then `freepik_download_resource` for a time-limited download URL.\n- Icons: `freepik_search_icons`, then `freepik_download_icon` with `format` svg or png.\n- Video: `freepik_search_videos` (a `term` is required).\n- AI images: `freepik_generate_image_mystic` returns a `task_id`; poll `freepik_get_mystic_task` every few seconds until `status` is `COMPLETED`, then `generated` holds the image URLs.\n\n## Filters\nSearch filters are sent as `filters[...]` query parameters. For resources, pass 1 on `photo`, `vector` or `psd` to restrict the content type, 1 on `freemium` or `premium` for the licence, and 1 on an orientation. Several flags of the same group can be combined. `language` sets the `Accept-Language` header (e.g. `es-ES`, `pt-BR`) so titles and the search term are handled in that language; the default is en-US.\n\n## Licences\nEach resource carries `licenses[].type`: `freemium` resources need attribution to Freepik/the author unless the account has a premium plan; `premium` resources need a plan that includes them. The licence PDF is linked in `licenses[].url`. Check this before telling a user an asset can be used commercially.\n\n## Pagination and rate limits\nResources: `page` (1-100) and `limit`; icons: `page` and `per_page`. The `meta.pagination` object gives the total and last page. Limits: 50 requests per second per IP in a 5-second window, 10 per second averaged over two minutes, and 30,000 per minute per key; a 429 means wait and retry.\n\n## Pitfalls\n- Ids are integers; a resource id comes from the number at the end of a freepik.com URL (`..._1540200.htm`).\n- Download URLs expire after a short time; download them right away instead of storing the link.\n- `freepik_download_resource_format` only works for formats listed in the resource's `meta.available_formats`.\n- Icon search answers 404 instead of an empty list for some filter combinations with no match (seen with shape outline plus free_svg free). Drop a filter and search again.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "freepik",
+  "docsUrl": "https://docs.magnific.com/",
+  "requiredEnvVars": ["FREEPIK_API_KEY"],
+  "envVarMeta": {
+    "FREEPIK_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "On magnific.com (the Freepik API) open your account → Organization → API keys and create a key. Existing Freepik API keys work as well.",
+      "link": "https://www.magnific.com/user/organization/api-keys"
+    }
+  },
+  "verifyHints": {
+    "401": "The API refused the key. Create a new one under Organization → API keys on magnific.com and check it is active.",
+    "402": "The account has no credits left for this call. Top up or upgrade the API plan.",
+    "rate_limited": "Too many requests: the API allows 10 per second on average over two minutes. Wait and try again."
+  },
+  "probe": { "tool": "freepik_search_resources", "params": { "term": "coffee", "limit": 1 } },
+  "connector": {
+    "name": "Freepik",
+    "type": "REST",
+    "baseUrl": "https://api.magnific.com",
+    "authType": "API_KEY",
+    "authConfig": { "headerName": "x-magnific-api-key", "apiKey": "{{FREEPIK_API_KEY}}" }
+  },
+  "tools": [
+    {
+      "name": "freepik_search_resources",
+      "description": "Search Freepik photos, vectors and PSD templates by keyword with filters for content type, licence, orientation, colour, period and AI-generated content. Returns id, title, preview image, licence type, author and stats per result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": { "type": "string", "description": "Search words, e.g. 'coffee shop flyer'." },
+          "page": { "type": "integer", "description": "Page number, 1-100." },
+          "limit": { "type": "integer", "description": "Results per page." },
+          "order": { "type": "string", "enum": ["relevance", "recent"], "description": "Sort by relevance (default) or newest first." },
+          "language": { "type": "string", "description": "Language of the term and of the titles returned, e.g. en-US, es-ES, pt-BR, de-DE. Default en-US." },
+          "photo": { "type": "integer", "enum": [1], "description": "1 to include photos. Combine with vector or psd; omit all three for every type." },
+          "vector": { "type": "integer", "enum": [1], "description": "1 to include vectors." },
+          "psd": { "type": "integer", "enum": [1], "description": "1 to include PSD templates." },
+          "freemium": { "type": "integer", "enum": [1], "description": "1 to include free (attribution) resources." },
+          "premium": { "type": "integer", "enum": [1], "description": "1 to include premium resources." },
+          "landscape": { "type": "integer", "enum": [1], "description": "1 to include landscape orientation." },
+          "portrait": { "type": "integer", "enum": [1], "description": "1 to include portrait orientation." },
+          "square": { "type": "integer", "enum": [1], "description": "1 to include square images." },
+          "panoramic": { "type": "integer", "enum": [1], "description": "1 to include panoramic images." },
+          "color": { "type": "string", "enum": ["black", "blue", "gray", "green", "orange", "red", "white", "yellow", "purple", "cyan", "pink"], "description": "Predominant colour." },
+          "period": { "type": "string", "enum": ["last-month", "last-quarter", "last-semester", "last-year"], "description": "Only resources added in this period." },
+          "exclude_ai_generated": { "type": "integer", "enum": [1], "description": "1 to leave out AI-generated resources." },
+          "only_ai_generated": { "type": "integer", "enum": [1], "description": "1 for AI-generated resources only." },
+          "vector_style": { "type": "string", "enum": ["watercolor", "flat", "cartoon", "geometric", "gradient", "isometric", "3d", "hand-drawn"], "description": "Style of vectors." },
+          "author": { "type": "integer", "description": "Only resources by this author id." },
+          "ids": { "type": "string", "description": "Comma-separated resource ids. Cannot be combined with other filters." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/resources",
+        "queryParams": {
+          "term": "$term",
+          "page": "$page",
+          "limit": "$limit",
+          "order": "$order",
+          "filters[content_type][photo]": "$photo",
+          "filters[content_type][vector]": "$vector",
+          "filters[content_type][psd]": "$psd",
+          "filters[license][freemium]": "$freemium",
+          "filters[license][premium]": "$premium",
+          "filters[orientation][landscape]": "$landscape",
+          "filters[orientation][portrait]": "$portrait",
+          "filters[orientation][square]": "$square",
+          "filters[orientation][panoramic]": "$panoramic",
+          "filters[color]": "$color",
+          "filters[period]": "$period",
+          "filters[ai-generated][excluded]": "$exclude_ai_generated",
+          "filters[ai-generated][only]": "$only_ai_generated",
+          "filters[vector][style]": "$vector_style",
+          "filters[author]": "$author",
+          "filters[ids]": "$ids"
+        },
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_get_resource",
+      "description": "Get one photo, vector or PSD by id: title, licences with the licence PDF link, available download formats and sizes, preview, tags, author and related resources. Check the licence here before downloading.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": { "type": "integer", "description": "Resource id from freepik_search_resources, or the number at the end of a freepik.com URL." },
+          "language": { "type": "string", "description": "Language of the texts returned, e.g. es-ES. Default en-US." }
+        },
+        "required": ["resource_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/resources/{resource_id}",
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_download_resource",
+      "description": "Get a time-limited download URL and file name for a resource in its default format. Each call counts as a download on the account and may cost credits; photos can be resized with image_size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": { "type": "integer", "description": "Resource id." },
+          "image_size": { "type": "string", "description": "Photos only: small (1000px), medium (1500px), large (2000px), original, or a pixel width between 100 and 2000." }
+        },
+        "required": ["resource_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/resources/{resource_id}/download",
+        "queryParams": { "image_size": "$image_size" }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false }
+    },
+    {
+      "name": "freepik_download_resource_format",
+      "description": "Get a download URL for a resource in a specific format (psd, ai, eps, svg, png, jpg...). Use a format listed in the resource's available_formats. Counts as a download on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": { "type": "integer", "description": "Resource id." },
+          "format": { "type": "string", "enum": ["psd", "ai", "eps", "atn", "fonts", "resources", "png", "jpg", "3d-render", "svg", "mockup"], "description": "File format to download." }
+        },
+        "required": ["resource_id", "format"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/resources/{resource_id}/download/{format}" },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false }
+    },
+    {
+      "name": "freepik_search_icons",
+      "description": "Search Freepik/Flaticon icons by keyword with filters for colour, shape (outline, fill, lineal-color, hand-drawn), period and free or premium SVG. Returns id, name, thumbnails, family, style and author.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": { "type": "string", "description": "Search words, e.g. 'shopping cart'." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page." },
+          "order": { "type": "string", "enum": ["relevance", "recent"], "description": "Sort order when no term is given." },
+          "family_id": { "type": "integer", "description": "Only icons of this icon family (pack) id." },
+          "thumbnail_size": { "type": "string", "description": "Thumbnail size in pixels, e.g. 64 or 256. Default 128." },
+          "color": { "type": "string", "enum": ["gradient", "solid-black", "multicolor", "azure", "black", "blue", "chartreuse", "cyan", "gray", "green", "orange", "red", "rose", "spring-green", "violet", "white", "yellow"], "description": "Icon colour." },
+          "shape": { "type": "string", "enum": ["outline", "fill", "lineal-color", "hand-drawn"], "description": "Icon shape." },
+          "period": { "type": "string", "enum": ["three-months", "six-months", "one-year", "all"], "description": "Only icons added in this period." },
+          "free_svg": { "type": "string", "enum": ["all", "free", "premium"], "description": "Free SVG, premium, or both." },
+          "language": { "type": "string", "description": "Language of the term, e.g. es-ES. Default en-US." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/icons",
+        "queryParams": {
+          "term": "$term",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order",
+          "family-id": "$family_id",
+          "thumbnail_size": "$thumbnail_size",
+          "filters[color]": "$color",
+          "filters[shape]": "$shape",
+          "filters[period]": "$period",
+          "filters[free_svg]": "$free_svg"
+        },
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_get_icon",
+      "description": "Get one icon by id: name, tags, style, family, thumbnails, free or premium status and author. Use it to check an icon before downloading it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "icon_id": { "type": "integer", "description": "Icon id from freepik_search_icons." },
+          "language": { "type": "string", "description": "Language of the texts returned, e.g. es-ES." }
+        },
+        "required": ["icon_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/icons/{icon_id}",
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_download_icon",
+      "description": "Get a download URL for an icon as SVG or PNG (or GIF, MP4, Lottie JSON for animated icons). Counts as a download on the account. png_size applies to PNG only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "icon_id": { "type": "integer", "description": "Icon id." },
+          "format": { "type": "string", "enum": ["svg", "png", "gif", "mp4", "aep", "json", "psd", "eps"], "description": "File format. Animated formats exist only for animated icons." },
+          "png_size": { "type": "integer", "enum": [512, 256, 128, 64, 32, 24, 16], "description": "PNG size in pixels." }
+        },
+        "required": ["icon_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/icons/{icon_id}/download",
+        "queryParams": { "format": "$format", "png_size": "$png_size" }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false }
+    },
+    {
+      "name": "freepik_search_videos",
+      "description": "Search Freepik stock videos by keyword. Returns id, title, duration, resolution, preview and thumbnail URLs, licence and author per result. A search term is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": { "type": "string", "description": "Search words, e.g. 'city traffic night'." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "order": { "type": "string", "enum": ["relevance", "recent", "random"], "description": "Sort order." },
+          "category": { "type": "string", "enum": ["footage", "motion_graphics"], "description": "Real footage or motion graphics." },
+          "language": { "type": "string", "description": "Language of the term, e.g. es-ES. Default en-US." }
+        },
+        "required": ["term"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/videos",
+        "queryParams": { "term": "$term", "page": "$page", "order": "$order", "filters[category]": "$category" },
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_get_video",
+      "description": "Get one stock video by id: title, duration, resolutions, frame rate, previews, licence and author, and the download options available for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": { "type": "integer", "description": "Video id from freepik_search_videos." },
+          "language": { "type": "string", "description": "Language of the texts returned, e.g. es-ES." }
+        },
+        "required": ["video_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/videos/{video_id}",
+        "headers": { "Accept-Language": "$language" }
+      }
+    },
+    {
+      "name": "freepik_generate_image_mystic",
+      "description": "Start an AI image generation with Mystic from a text prompt. Spends AI credits. Returns a task_id at once; poll freepik_get_mystic_task until status is COMPLETED to get the image URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string", "description": "What the image should show, in plain words, e.g. 'a ceramic coffee mug on a wooden table, morning light'." },
+          "resolution": { "type": "string", "enum": ["1k", "2k", "4k"], "description": "Output resolution. Default 2k." },
+          "aspect_ratio": { "type": "string", "enum": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16", "smartphone_horizontal_20_9", "smartphone_vertical_9_20", "standard_3_2", "portrait_2_3", "horizontal_2_1", "vertical_1_2", "social_5_4"], "description": "Aspect ratio. Default square_1_1." },
+          "model": { "type": "string", "enum": ["realism", "fluid", "zen", "flexible", "super_real", "editorial_portraits"], "description": "Mystic model. realism (default) for photographic results, fluid for prompt adherence, zen for clean simple scenes." },
+          "creative_detailing": { "type": "integer", "description": "0-100, detail per pixel. Default 33; high values look more artificial." },
+          "fixed_generation": { "type": "boolean", "description": "true to get the same image again for the same settings." },
+          "webhook_url": { "type": "string", "format": "uri", "description": "Optional URL notified when the task changes status." }
+        },
+        "required": ["prompt"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/ai/mystic",
+        "bodyMapping": {
+          "prompt": "$prompt",
+          "resolution": "$resolution",
+          "aspect_ratio": "$aspect_ratio",
+          "model": "$model",
+          "creative_detailing": "$creative_detailing",
+          "fixed_generation": "$fixed_generation",
+          "webhook_url": "$webhook_url"
+        }
+      },
+      "annotations": { "destructiveHint": false }
+    },
+    {
+      "name": "freepik_get_mystic_task",
+      "description": "Get the status of a Mystic image generation: CREATED, IN_PROGRESS, COMPLETED or FAILED, and when completed the list of generated image URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "task_id returned by freepik_generate_image_mystic." }
+        },
+        "required": ["task_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/ai/mystic/{task_id}" }
+    }
+  ]
+}
