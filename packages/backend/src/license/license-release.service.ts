@@ -113,8 +113,10 @@ export class LicenseReleaseService {
       return 'released';
     } catch (err: any) {
       const status: number | undefined = err?.response?.status;
-      if (status === 404) return 'unknown';
       const detail = err?.response?.data?.error || err?.message || 'no response';
+      // Only the route's own answer means the key is unknown. A bare 404 (a
+      // licence site without the route yet) must not drop the row unreleased.
+      if (status === 404 && detail === 'License not found') return 'unknown';
       if (status === 409) {
         this.logger.warn(`Licence site refused to release licence …${tail}: ${detail}`);
         return 'refused';

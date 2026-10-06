@@ -83,7 +83,8 @@ describe('LicenseReleaseService', () => {
   });
 
   it('keeps the row for the next run when the site fails or cannot be reached', async () => {
-    for (const err of [httpError(500), httpError(429), httpError(403), httpError(undefined)]) {
+    // A 404 without the route's answer is a site that does not have the route yet.
+    for (const err of [httpError(500), httpError(429), httpError(403), httpError(404), httpError(undefined)]) {
       mockedAxios.post.mockRejectedValueOnce(err);
       const { svc, prisma } = makeService({ orphans: [orphan(1)] });
 
