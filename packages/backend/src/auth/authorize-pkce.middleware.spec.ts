@@ -1,4 +1,8 @@
-import { AuthorizePkceMiddleware } from './authorize-pkce.middleware';
+import {
+  AuthorizePkceMiddleware,
+  pkceExemptClientIds,
+  pkceExemptionsConfigured,
+} from './authorize-pkce.middleware';
 import { createHash, randomBytes } from 'crypto';
 
 describe('AuthorizePkceMiddleware', () => {
@@ -193,6 +197,28 @@ describe('AuthorizePkceMiddleware', () => {
       middleware = new AuthorizePkceMiddleware({ oAuthClient: { findUnique } } as any);
       await middleware.use(req({ client_id: 'copilot-studio' }), res, next);
       expect(res.status).toHaveBeenCalledWith(400);
+    });
+  });
+
+  describe('pkceExemptionsConfigured', () => {
+    const original = process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS;
+    afterEach(() => {
+      if (original === undefined) delete process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS;
+      else process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS = original;
+    });
+
+    // app.module turns upstream's own PKCE requirement off only when this is
+    // true, so an empty or blank list must keep it on.
+    it.each([undefined, '', ' , ,'])('is false for %p', (value) => {
+      if (value === undefined) delete process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS;
+      else process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS = value;
+      expect(pkceExemptionsConfigured()).toBe(false);
+    });
+
+    it('is true when a client is listed', () => {
+      process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS = ' copilot-studio ';
+      expect(pkceExemptionsConfigured()).toBe(true);
+      expect(pkceExemptClientIds()).toEqual(['copilot-studio']);
     });
   });
 });

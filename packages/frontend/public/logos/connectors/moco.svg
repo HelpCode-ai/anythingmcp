@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="MOCO connector">
+  <rect width="128" height="128" rx="24" fill="#247ba6"/>
+  <path d="M25 88V46h13l18 22 18-22h13v42H74V64L56 85 38 64v24H25Z" fill="#fff"/>
+  <circle cx="99" cy="32" r="17" fill="#fff"/>
+  <path d="M99 22v10l7 5" fill="none" stroke="#247ba6" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+</svg>
