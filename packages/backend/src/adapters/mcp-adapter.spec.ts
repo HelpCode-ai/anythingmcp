@@ -1,6 +1,6 @@
 import { AdaptersService } from './adapters.service';
 import { getAdapter } from './catalog';
-import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
+import { catalogMcpToolsFor, describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import type { DiscoveredMcpTool } from '../connectors/connectors.service';
 
 /**
@@ -53,6 +53,39 @@ describe('mergeDiscoveredMcpTools', () => {
 
   it('drops catalog tools the server no longer has', () => {
     expect(merged.find((t) => t.name === 'a_gone')).toBeUndefined();
+  });
+
+  it('names the tools with the prefix, matches the policy by local or remote name, and calls the remote name', () => {
+    const prefixed = mergeDiscoveredMcpTools(
+      [
+        // Snapshot entries carry the local name and call the remote one.
+        { name: 'acme_delete_page', description: '', parameters: {}, endpointMapping: { method: 'delete-page', path: '/mcp' }, enabled: false },
+        { name: 'acme_search', description: '', parameters: {}, endpointMapping: { method: 'search', path: '/mcp' }, annotations: { idempotentHint: true } },
+      ],
+      [remote('delete-page'), remote('search'), remote('acme_fetch')],
+      'acme_',
+    );
+    expect(prefixed.map((t) => [t.name, t.endpointMapping.method, t.enabled])).toEqual([
+      ['acme_delete_page', 'delete-page', false],
+      ['acme_search', 'search', undefined],
+      // Already prefixed upstream: not doubled.
+      ['acme_fetch', 'acme_fetch', undefined],
+    ]);
+    expect(prefixed[1].annotations).toEqual({ idempotentHint: true, readOnlyHint: true });
+  });
+
+  it('applies the catalog policy to tools discovered later, and only the prefix to a hand-made connector', () => {
+    const later = catalogMcpToolsFor({ adapterSlug: 'splunk' }, [remote('splunk_update_dashboard'), remote('splunk_x')]);
+    expect(later.map((t) => [t.name, t.enabled, t.origin])).toEqual([
+      ['splunk_update_dashboard', false, 'catalog'],
+      ['splunk_x', undefined, 'catalog'],
+    ]);
+    const own = catalogMcpToolsFor({ mcpToolPrefix: 'mine_' }, [remote('list')]);
+    expect(own).toEqual([
+      expect.objectContaining({ name: 'mine_list', endpointMapping: { method: 'list', path: '/mcp' } }),
+    ]);
+    expect(own[0]).not.toHaveProperty('origin');
+    expect(catalogMcpToolsFor(null, [remote('list')])[0].name).toBe('list');
   });
 
   it('describes the discovered tools in one line', () => {

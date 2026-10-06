@@ -23,6 +23,11 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
+import type { DiscoveredMcpTool } from './connectors.service';
+import { DYNAMIC_CLIENT_KEY } from './mcp-oauth-settings';
+import { mcpPathOf } from './mcp-connector-config.util';
+import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
+import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 
 /**
  * Connector OAuth: where the provider sends the browser back, and where the
@@ -86,6 +91,12 @@ export class McpOAuthCallbackController {
       // is spent either way.
       const record = state ? await this.mcpOAuthService.takePendingFlow(state) : undefined;
       if (record) void this.recordFailure(record.flow, 'provider_refused', providerError.slice(0, 80));
+      if (
+        record?.flow.dynamicClient &&
+        (providerError === 'invalid_client' || providerError === 'unauthorized_client')
+      ) {
+        await this.forgetDynamicClient(record.flow.connectorId);
+      }
       return res.redirect(
         this.completePage({
           error: describeProviderError(providerError, providerErrorDescription),
@@ -188,17 +199,26 @@ export class McpOAuthCallbackController {
   /** Exchange the code, store the tokens, reload the tools. Throws on failure. */
   private async exchangeAndStore(flow: PendingOAuthFlow, code: string): Promise<number> {
     // 1. Exchange auth code for tokens
-    const tokens = await this.mcpOAuthService.exchangeCodeForTokens({
-      tokenUrl: flow.tokenUrl,
-      code,
-      redirectUri: flow.redirectUri,
-      clientId: flow.clientId,
-      clientSecret: flow.clientSecret,
-      codeVerifier: flow.codeVerifier,
-      tokenAuthMethod: flow.tokenAuthMethod,
-      clientAssertion: flow.clientAssertion,
-      userAgent: flow.userAgent,
-    });
+    let tokens: Awaited<ReturnType<McpOAuthService['exchangeCodeForTokens']>>;
+    try {
+      tokens = await this.mcpOAuthService.exchangeCodeForTokens({
+        tokenUrl: flow.tokenUrl,
+        code,
+        redirectUri: flow.redirectUri,
+        clientId: flow.clientId,
+        clientSecret: flow.clientSecret,
+        codeVerifier: flow.codeVerifier,
+        tokenAuthMethod: flow.tokenAuthMethod,
+        clientAssertion: flow.clientAssertion,
+        userAgent: flow.userAgent,
+        resource: flow.resource,
+      });
+    } catch (err: any) {
+      if (flow.dynamicClient && /invalid_client|unauthorized_client/i.test(String(err?.message))) {
+        await this.forgetDynamicClient(flow.connectorId);
+      }
+      throw err;
+    }
 
     this.logger.log(`OAuth tokens obtained for connector ${flow.connectorId}`);
 
@@ -210,6 +230,8 @@ export class McpOAuthCallbackController {
       clientId: flow.clientId,
       clientSecret: flow.clientSecret,
       tokenAuthMethod: flow.tokenAuthMethod,
+      // The refreshes send the same RFC 8707 resource indicator (MCP).
+      ...(flow.resource ? { resource: flow.resource } : {}),
     };
     await this.connectorsService.updateAuthConfigMerge(flow.connectorId, {
       ...clientSettings,
@@ -259,38 +281,101 @@ export class McpOAuthCallbackController {
     return toolsImported;
   }
 
-  /** Import the tools a remote MCP server lists, skipping ones already present. */
+  /**
+   * Drop a dynamically registered client the provider no longer accepts, so
+   * the next "Authorize" registers a fresh one instead of reusing it.
+   */
+  private async forgetDynamicClient(connectorId: string): Promise<void> {
+    try {
+      await this.connectorsService.updateAuthConfigMerge(connectorId, {
+        [DYNAMIC_CLIENT_KEY]: undefined,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Could not drop the stored OAuth client of ${connectorId}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Import the tools a remote MCP server lists.
+   *
+   * A connector installed from a catalog adapter goes through the same
+   * policy as the install (mcp-adapter.util): tools the catalog switches off
+   * arrive switched off, catalog annotations fill what the server leaves out,
+   * and the adapter's tool prefix applies. Its catalog tools that are already
+   * there (the snapshot installed before the authorization) take the server's
+   * description and schema; whether they are switched on stays as it is.
+   * Other existing tools are left alone, as before.
+   */
   private async importRemoteTools(
     connectorId: string,
-    connector: { baseUrl: string; headers: unknown },
+    connector: { baseUrl: string; headers: unknown; envVars?: unknown; config?: unknown },
     accessToken: string,
   ): Promise<number> {
     let toolsImported = 0;
+    const envVars = (connector.envVars as Record<string, string> | null) ?? {};
+    const mcpPath = mcpPathOf(connector.config);
     const remoteTools = await this.mcpClientEngine.listTools({
-      baseUrl: connector.baseUrl,
+      baseUrl: interpolateString(connector.baseUrl, envVars),
       authType: 'OAUTH2',
       authConfig: {
         accessToken,
       },
-      headers: connector.headers as Record<string, string>,
+      headers: interpolateDeep(connector.headers as Record<string, string>, envVars),
+      mcpPath,
     });
 
-    for (const rt of remoteTools) {
+    const discovered: DiscoveredMcpTool[] = remoteTools.map((rt) => ({
+      name: rt.name,
+      description: rt.description || `MCP tool: ${rt.name}`,
+      parameters: (rt.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} },
+      // Default path, not a user choice: resolveMcpEndpointUrl() treats it
+      // as unset when the base URL has a path (#501).
+      endpointMapping: { method: rt.name, path: mcpPath ?? '/mcp' },
+      outputSchema: (rt.outputSchema as Record<string, unknown>) ?? null,
+      // The upstream server is authoritative about its own tools.
+      annotations: (rt.annotations as Record<string, unknown>) ?? null,
+    }));
+    const tools = catalogMcpToolsFor(connector.config, discovered);
+
+    const existing =
+      (await this.prisma.mcpTool.findMany({
+        where: { connectorId },
+        select: { id: true, name: true, origin: true, endpointMapping: true },
+      })) ?? [];
+    const byName = new Map(existing.map((t) => [t.name, t]));
+    const byMethod = new Map(
+      existing.map((t) => [String((t.endpointMapping as { method?: unknown } | null)?.method ?? ''), t]),
+    );
+
+    for (const tool of tools) {
+      const method = String(tool.endpointMapping.method);
+      const match = byName.get(tool.name) ?? byMethod.get(method);
+      if (match) {
+        if (tool.origin === 'catalog' && match.origin === 'catalog') {
+          await this.prisma.mcpTool.update({
+            where: { id: match.id },
+            data: {
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+              ...(tool.outputSchema ? { outputSchema: tool.outputSchema as any } : {}),
+            },
+          });
+        }
+        continue;
+      }
       try {
         await this.prisma.mcpTool.create({
           data: {
             connectorId,
-            name: rt.name,
-            description: rt.description || `MCP tool: ${rt.name}`,
-            parameters: rt.inputSchema as any,
-            // Default path, not a user choice — resolveMcpEndpointUrl()
-            // treats it as unset when the base URL has a path (#501).
-            endpointMapping: {
-              method: rt.name,
-              path: '/mcp',
-            } as any,
-            // The upstream server is authoritative about its own tools.
-            annotations: (rt.annotations ?? null) as any,
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters as any,
+            endpointMapping: tool.endpointMapping as any,
+            outputSchema: (tool.outputSchema ?? null) as any,
+            annotations: (tool.annotations ?? null) as any,
+            isEnabled: tool.enabled !== false,
+            ...(tool.origin ? { origin: tool.origin } : {}),
           },
         });
         toolsImported++;
@@ -298,7 +383,7 @@ export class McpOAuthCallbackController {
         // Skip duplicates
         if (err.code !== 'P2002') {
           this.logger.warn(
-            `Failed to import tool ${rt.name}: ${err.message}`,
+            `Failed to import tool ${tool.name}: ${err.message}`,
           );
         }
       }

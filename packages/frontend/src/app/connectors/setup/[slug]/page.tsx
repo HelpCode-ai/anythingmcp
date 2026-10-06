@@ -288,6 +288,10 @@ function SetupContent() {
 
   const working = phase === 'working';
   const isOAuth = info.setupKind === 'oauth_browser';
+  // A bridge to a vendor's MCP server that registers its own client: the
+  // sign-in is all there is (Notion, Helium 10). One that needs an app of
+  // the user's asks for its client ID like any other OAuth connector.
+  const selfRegisteringBridge = info.connector.type === 'MCP' && info.envVars.every((v) => !v.required);
   const primaryLabel =
     info.setupKind === 'none'
       ? `Install ${info.name}`
@@ -380,7 +384,16 @@ function SetupContent() {
           </div>
         )}
 
-        {isOAuth && (
+        {isOAuth && selfRegisteringBridge && (
+          <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            <p>
+              After saving you sign in at {info.name.split(' ')[0]} once. AnythingMCP registers itself with {info.name.split(' ')[0]}&apos;s
+              MCP server, so there is no app to create and no key to copy.
+            </p>
+          </div>
+        )}
+
+        {isOAuth && !selfRegisteringBridge && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>
               You need an app of your own at {info.name.split(' ')[0]}, then you sign in once. In the app&apos;s settings, register this

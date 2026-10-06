@@ -878,6 +878,7 @@ export function listAdapters(): AdapterMeta[] {
     unlisted: adapter.unlisted,
     probe: adapter.probe,
     envVarMeta: adapter.envVarMeta,
+    prerequisites: adapter.prerequisites,
   }));
 }
 

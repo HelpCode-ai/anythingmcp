@@ -41,6 +41,7 @@ import {
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
+import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 
 @Injectable()
 export class AdaptersService {
@@ -668,11 +669,18 @@ export class AdaptersService {
     // proof that the address and token work, so it stands in for the probe.
     let toolsToCreate = adapter.tools;
     let mcpProbe: ImportProbeResult | null = null;
-    if (adapter.connector.type === 'MCP') {
+    // A bridge that needs a sign-in at the provider has no token yet: listing
+    // could only return a 401. It installs the snapshot, and the tools are
+    // listed again, through the same policy, once the authorization completes.
+    if (adapter.connector.type === 'MCP' && !needsBrowserAuthorization(adapter)) {
       const started = Date.now();
       try {
         const discovered = await this.connectors.discoverRemoteMcpTools(connector);
-        toolsToCreate = mergeDiscoveredMcpTools(adapter.tools, discovered);
+        toolsToCreate = mergeDiscoveredMcpTools(
+          adapter.tools,
+          discovered,
+          mcpToolPrefixOf(adapter.connector.config),
+        );
         mcpProbe = {
           ok: true,
           toolName: 'tools/list',

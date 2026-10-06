@@ -359,6 +359,35 @@ describe('OAuth2TokenService', () => {
     });
   });
 
+  describe('MCP bridges', () => {
+    it('sends the RFC 8707 resource on refresh, and no secret for a public client', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'new', expires_in: 3600 } });
+
+      await service.refreshToken({
+        tokenUrl: 'https://access.stripe.com/mcp/oauth2/token',
+        refreshToken: 'rt',
+        clientId: 'pub-1',
+        clientSecret: 'leftover',
+        tokenAuthMethod: 'none',
+        resource: 'https://mcp.stripe.com',
+      });
+
+      const form = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+      expect(form.get('grant_type')).toBe('refresh_token');
+      expect(form.get('resource')).toBe('https://mcp.stripe.com');
+      expect(form.get('client_id')).toBe('pub-1');
+      expect(form.get('client_secret')).toBeNull();
+    });
+
+    it('sends no resource for a connector that was not authorized with one', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'new', expires_in: 3600 } });
+      await service.refreshToken({ tokenUrl: 'https://x.example/token', refreshToken: 'rt', clientId: 'c', clientSecret: 's' });
+      const form = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+      expect(form.has('resource')).toBe(false);
+      expect(form.get('client_secret')).toBe('s');
+    });
+  });
+
   describe('client_credentials grant', () => {
     it('posts grant_type=client_credentials with HTTP Basic auth header', async () => {
       mockedAxios.post.mockResolvedValue({

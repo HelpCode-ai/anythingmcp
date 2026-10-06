@@ -233,6 +233,15 @@ export class McpClientEngine {
           authConfig.apiKey,
         );
         break;
+      case 'BASIC_AUTH':
+      case 'BASIC': {
+        // Atlassian's Rovo MCP server takes a personal API token as
+        // Basic base64(email:token). An absent password is an empty one, as
+        // in the REST engine, never the string "undefined".
+        const credentials = `${String(authConfig.username ?? '')}:${String(authConfig.password ?? '')}`;
+        headers['Authorization'] = `Basic ${Buffer.from(credentials).toString('base64')}`;
+        break;
+      }
       case 'OAUTH2': {
         const accessToken = await this.oauth2TokenService.getAccessToken(
           authConfig,

@@ -21,6 +21,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
+import { mcpPathOf } from './mcp-connector-config.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
@@ -348,6 +349,7 @@ export class ConnectorsService {
             authConfig,
             headers: connector.headers as Record<string, string>,
             connectorId: connector.id,
+            mcpPath: mcpPathOf(connector.config),
           });
           return {
             ok: true,
@@ -382,6 +384,7 @@ export class ConnectorsService {
     authConfig: string | null;
     headers: unknown;
     envVars: unknown;
+    config?: unknown;
   }): Promise<DiscoveredMcpTool[]> {
     const envVars = (connector.envVars as Record<string, string> | null) || {};
     const authConfig = connector.authConfig
@@ -396,20 +399,23 @@ export class ConnectorsService {
       { baseUrl, headers, authConfig },
       `the "${connector.name}" connector`,
     );
+    const mcpPath = mcpPathOf(connector.config);
     const remote = await this.mcpClientEngine.listTools({
       baseUrl,
       authType: connector.authType,
       authConfig,
       headers,
       connectorId: connector.id,
+      mcpPath,
     });
     return remote.map((rt) => ({
       name: rt.name,
       description: rt.description || `MCP tool: ${rt.name}`,
       parameters: (rt.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} },
       // '/mcp' is the historical default that resolveMcpEndpointUrl() treats
-      // as unset, so the path in the connector's base URL is used (#501).
-      endpointMapping: { method: rt.name, path: '/mcp' },
+      // as unset, so the path in the connector's base URL is used (#501). A
+      // connector whose server sits at the root of its host sets config.mcpPath.
+      endpointMapping: { method: rt.name, path: mcpPath ?? '/mcp' },
       outputSchema: (rt.outputSchema as Record<string, unknown>) ?? null,
       annotations: (rt.annotations as Record<string, unknown>) ?? null,
     }));

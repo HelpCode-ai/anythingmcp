@@ -9,7 +9,10 @@ import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 function makeController(overrides: {
   listToolsThrows?: boolean;
   connectorType?: string;
-  remoteTools?: Array<{ name: string }>;
+  remoteTools?: Array<{ name: string; annotations?: Record<string, unknown> }>;
+  existingTools?: Array<Record<string, unknown>>;
+  connectorConfig?: Record<string, unknown>;
+  exchangeError?: Error;
   flow?: Record<string, unknown>;
   noFlow?: boolean;
   returnTo?: string;
@@ -33,8 +36,8 @@ function makeController(overrides: {
   const mcpOAuthService: any = {
     getPendingFlow: jest.fn().mockResolvedValue(record),
     takePendingFlow: jest.fn().mockResolvedValue(record),
-    exchangeCodeForTokens: overrides.exchangeThrows
-      ? jest.fn().mockRejectedValue(overrides.exchangeThrows)
+    exchangeCodeForTokens: overrides.exchangeThrows ?? overrides.exchangeError
+      ? jest.fn().mockRejectedValue(overrides.exchangeThrows ?? overrides.exchangeError)
       : jest.fn().mockResolvedValue({
           accessToken: 'AT',
           refreshToken: 'RT',
@@ -47,6 +50,7 @@ function makeController(overrides: {
       type: overrides.connectorType ?? 'REST',
       baseUrl: 'https://accounting-clients.api.datev.de/platform-sandbox/v2',
       headers: {},
+      config: overrides.connectorConfig ?? null,
     }),
   };
   const mcpClientEngine: any = {
@@ -55,7 +59,11 @@ function makeController(overrides: {
       : jest.fn().mockResolvedValue(overrides.remoteTools ?? []),
   };
   const prisma: any = {
-    mcpTool: { create: jest.fn().mockResolvedValue({}) },
+    mcpTool: {
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue(overrides.existingTools ?? []),
+    },
     connector: {
       findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1', config: { adapterSlug: 'etsy' } }),
     },
@@ -289,5 +297,106 @@ describe('McpOAuthCallbackController — failed sign-ins are recorded', () => {
     const { metadata } = productEvents.log.mock.calls[0][0];
     expect(metadata.kind).toBe('token_exchange');
     expect(metadata.error).toBe('invalid_client: client secret *** rejected by https://api.etsy.com/token');
+  });
+});
+
+describe('McpOAuthCallbackController: MCP bridges', () => {
+  it('exchanges with the resource indicator and keeps it for the refreshes (G2)', async () => {
+    const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController({
+      connectorType: 'MCP',
+      flow: { tokenAuthMethod: 'none', clientSecret: undefined, resource: 'https://mcp.stripe.com' },
+    });
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(mcpOAuthService.exchangeCodeForTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: 'https://mcp.stripe.com', tokenAuthMethod: 'none' }),
+    );
+    expect(updateAuthConfigMerge.mock.calls[0][1]).toMatchObject({
+      resource: 'https://mcp.stripe.com',
+      tokenAuthMethod: 'none',
+      accessToken: 'AT',
+    });
+  });
+
+  it('drops a registered client the token endpoint refuses, so the next attempt registers again (G6)', async () => {
+    const { controller, updateAuthConfigMerge } = makeController({
+      connectorType: 'MCP',
+      flow: { dynamicClient: true },
+      exchangeError: new Error('Token exchange failed: HTTP 401: invalid_client'),
+    });
+    await expect(
+      controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' }),
+    ).rejects.toThrow(/invalid_client/);
+    expect(updateAuthConfigMerge).toHaveBeenCalledWith('conn-1', { mcpOAuthClient: undefined });
+  });
+
+  it('keeps a pre-registered client when the exchange fails', async () => {
+    const { controller, updateAuthConfigMerge } = makeController({
+      connectorType: 'MCP',
+      exchangeError: new Error('Token exchange failed: HTTP 401: invalid_client'),
+    });
+    await expect(
+      controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' }),
+    ).rejects.toThrow();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('drops a registered client the provider refuses at the consent step', async () => {
+    const { controller, updateAuthConfigMerge } = makeController({ flow: { dynamicClient: true } });
+    await controller.oauthCallback(undefined, 'the-state', 'invalid_client', 'unknown client', makeRes());
+    expect(updateAuthConfigMerge).toHaveBeenCalledWith('conn-1', { mcpOAuthClient: undefined });
+  });
+
+  it('imports through the catalog policy: switched off, marked as catalog, snapshot rows refreshed (G9)', async () => {
+    const { controller, prisma } = makeController({
+      connectorType: 'MCP',
+      connectorConfig: { adapterSlug: 'splunk' },
+      remoteTools: [{ name: 'splunk_get_info' }, { name: 'splunk_create_dashboard' }, { name: 'splunk_new_tool' }],
+      existingTools: [
+        { id: 't1', name: 'splunk_get_info', origin: 'catalog', endpointMapping: { method: 'splunk_get_info', path: '/mcp' } },
+      ],
+    });
+
+    const out = await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+
+    expect(out.toolsImported).toBe(2);
+    const created = prisma.mcpTool.create.mock.calls.map((c: any[]) => c[0].data);
+    expect(created.map((d: any) => [d.name, d.isEnabled, d.origin])).toEqual([
+      ['splunk_create_dashboard', false, 'catalog'],
+      ['splunk_new_tool', true, 'catalog'],
+    ]);
+    // The catalog annotations fill what the server leaves out.
+    expect(created[0].annotations).toMatchObject({ readOnlyHint: false });
+    // The snapshot row takes the server's description and schema, nothing else.
+    expect(prisma.mcpTool.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: expect.objectContaining({ description: 'MCP tool: splunk_get_info' }),
+    });
+    expect(prisma.mcpTool.update.mock.calls[0][0].data).not.toHaveProperty('isEnabled');
+  });
+
+  it("names the tools with the connector's prefix and calls them by the remote name", async () => {
+    const { controller, prisma, mcpClientEngine } = makeController({
+      connectorType: 'MCP',
+      connectorConfig: { mcpToolPrefix: 'acme_', mcpPath: '/' },
+      remoteTools: [{ name: 'search-docs' }],
+    });
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(mcpClientEngine.listTools).toHaveBeenCalledWith(expect.objectContaining({ mcpPath: '/' }));
+    const data = prisma.mcpTool.create.mock.calls[0][0].data;
+    expect(data.name).toBe('acme_search_docs');
+    expect(data.endpointMapping).toEqual({ method: 'search-docs', path: '/' });
+    expect(data).not.toHaveProperty('origin');
+  });
+
+  it('leaves existing tools of a hand-made connector alone, as before', async () => {
+    const { controller, prisma } = makeController({
+      connectorType: 'MCP',
+      remoteTools: [{ name: 'search' }],
+      existingTools: [{ id: 't1', name: 'search', origin: 'user', endpointMapping: { method: 'search', path: '/mcp' } }],
+    });
+    const out = await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(out.toolsImported).toBe(0);
+    expect(prisma.mcpTool.update).not.toHaveBeenCalled();
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
   });
 });

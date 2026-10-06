@@ -135,6 +135,48 @@ describe('McpClientEngine endpoint resolution', () => {
       const { requestInit } = MockedTransport.mock.calls[0][1];
       expect(requestInit.headers['X-API-Key']).toBe('k-123');
     });
+
+    it('sends Basic base64(email:token) for BASIC_AUTH (Atlassian personal API token)', async () => {
+      await engine.listTools({
+        baseUrl: 'https://mcp.atlassian.com/v2/mcp',
+        authType: 'BASIC_AUTH',
+        authConfig: { username: 'jane@example.com', password: 'ATATT-token' },
+        headers: {},
+      });
+
+      const { requestInit } = MockedTransport.mock.calls[0][1];
+      expect(requestInit.headers.Authorization).toBe(
+        'Basic ' + Buffer.from('jane@example.com:ATATT-token').toString('base64'),
+      );
+      expect(transportUrl()).toBe('https://mcp.atlassian.com/v2/mcp');
+    });
+
+    it('treats a missing Basic password as empty, never as "undefined"', async () => {
+      await engine.listTools({
+        baseUrl: 'https://mcp.example.com/mcp',
+        authType: 'BASIC_AUTH',
+        authConfig: { username: 'key' },
+        headers: {},
+      });
+      const { requestInit } = MockedTransport.mock.calls[0][1];
+      expect(requestInit.headers.Authorization).toBe(
+        'Basic ' + Buffer.from('key:').toString('base64'),
+      );
+    });
+  });
+
+  describe('a server at the root of its host (Stripe, Apify)', () => {
+    it('reaches the root when the tool path is "/", for calls and for discovery', async () => {
+      await engine.execute(
+        { ...config('https://mcp.stripe.com'), authType: 'BEARER_TOKEN', authConfig: { token: 'rk_test_x' } },
+        { method: 'stripe_api_read', path: '/' },
+        {},
+      );
+      expect(transportUrl(0)).toBe('https://mcp.stripe.com/');
+
+      await engine.listTools({ ...config('https://mcp.apify.com'), mcpPath: '/' });
+      expect(transportUrl(1)).toBe('https://mcp.apify.com/');
+    });
   });
 
   describe('listTools', () => {
