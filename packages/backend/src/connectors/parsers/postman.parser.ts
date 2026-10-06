@@ -3,7 +3,7 @@ import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { ParsedTool } from './openapi.parser';
 import { inferJsonSchema } from '../output-schema.util';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 
 /**
  * Postman Collection v2.1 Parser.
@@ -61,7 +61,7 @@ export class PostmanParser {
         await assertSafeOutboundUrl(apiUrl);
         const apiResp = await axios.get(apiUrl, {
           timeout: 15000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions(),
         });
         if (apiResp.data && typeof apiResp.data === 'object') {
           return this.parse(apiResp.data);
@@ -78,7 +78,7 @@ export class PostmanParser {
     await assertSafeOutboundUrl(url);
     const response = await axios.get(url, {
       timeout: 15000,
-      ...ssrfGuardedAxiosOptions(),
+      ...outboundAxiosOptions(),
     });
 
     // Validate response is JSON, not HTML

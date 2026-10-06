@@ -209,6 +209,7 @@ Use the [Feature Request](https://github.com/HelpCode-ai/anythingmcp/issues/new?
 - Services handle business logic, controllers handle HTTP
 - Use DTOs with `class-validator` for input validation
 - Write unit tests for services (`.spec.ts` files alongside source)
+- Send requests to user-supplied URLs (connector base URLs, token endpoints, spec URLs) through `common/outbound-http.ts` (`outboundRequest`, or `outboundAxiosOptions()` spread into an axios config), never with a bare `axios`/`fetch` call
 
 ### Frontend (Next.js)
 

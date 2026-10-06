@@ -3,7 +3,7 @@ import { ParsedTool } from './openapi.parser';
 import { buildSchema, introspectionFromSchema } from 'graphql';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 
 const INTROSPECTION_QUERY = `
   query IntrospectionQuery {
@@ -69,7 +69,7 @@ export class GraphqlParser {
         {
           headers: { 'Content-Type': 'application/json', ...headers },
           timeout: 15000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions({ credentialHeaders: Object.keys(headers ?? {}) }),
         },
       );
 
@@ -94,7 +94,7 @@ export class GraphqlParser {
         headers,
         timeout: 30000,
         responseType: 'text',
-        ...ssrfGuardedAxiosOptions(),
+        ...outboundAxiosOptions({ credentialHeaders: Object.keys(headers ?? {}) }),
       });
       return this.parseFromSdl(sdlResponse.data);
     } catch (err: any) {
