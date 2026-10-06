@@ -73,11 +73,11 @@ describe('OAuth2TokenService', () => {
     });
 
     it('should proactively refresh when token is near expiry', async () => {
-      // First, populate the cache with a token that expires in 2 minutes (within 5-min buffer)
+      // First, populate the cache with a one-hour token
       mockedAxios.post.mockResolvedValue({
         data: {
           access_token: 'first-token',
-          expires_in: 120, // 2 minutes — within 5-min buffer
+          expires_in: 3600,
         },
       });
 
@@ -85,6 +85,9 @@ describe('OAuth2TokenService', () => {
         { tokenUrl: 'https://auth/token', refreshToken: 'rt-123' },
         'conn-1',
       );
+      // ...that now has 2 minutes left, inside the 5-minute window
+      const now = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 58 * 60 * 1000);
 
       // Now mock the second refresh
       mockedAxios.post.mockResolvedValue({
@@ -106,6 +109,7 @@ describe('OAuth2TokenService', () => {
       expect(result).toBe('proactively-refreshed');
       // Two POST calls total: initial + proactive
       expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+      clock.mockRestore();
     });
 
     it('should proactively refresh when authConfig.expiresAt is near expiry', async () => {
@@ -673,6 +677,117 @@ describe('OAuth2TokenService', () => {
       expect(params.get('refresh_token')).toBe('12345678.pasted-refresh-token');
       expect(params.get('client_id')).toBe('keystring123');
       expect(String(mockedAxios.post.mock.calls[0][1])).not.toContain('%7B%7B');
+    });
+  });
+
+  describe('short-lived tokens and rotating refresh tokens (Sage, JTL)', () => {
+    const cfg = {
+      tokenUrl: 'https://oauth.accounting.sage.com/token',
+      refreshToken: 'rt-1',
+      clientId: 'id',
+      clientSecret: 'secret',
+    };
+
+    it('does not refresh a 5-minute token on every call', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'at-1', expires_in: 300, refresh_token: 'rt-2' },
+      });
+      await service.refreshToken(cfg, 'conn-sage');
+      mockedAxios.post.mockClear();
+
+      // A minute later the token has 4 minutes left: still inside a flat
+      // 5-minute window, but more than half its lifetime remains.
+      const now = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 60 * 1000);
+      expect(await service.getAccessToken(cfg, 'conn-sage')).toBe('at-1');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+
+      // Past half its lifetime it is renewed.
+      clock.mockReturnValue(now + 160 * 1000);
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'at-2', expires_in: 300, refresh_token: 'rt-3' },
+      });
+      expect(await service.getAccessToken(cfg, 'conn-sage')).toBe('at-2');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      clock.mockRestore();
+    });
+
+    it('uses the stored expiresIn to size the window before anything is cached', async () => {
+      const now = Date.now();
+      const result = await service.getAccessToken(
+        { ...cfg, accessToken: 'stored', expiresAt: now + 240 * 1000, expiresIn: 300 },
+        'conn-sage',
+      );
+      expect(result).toBe('stored');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('refreshes once for a burst of 401s and hands the new token to all of them', async () => {
+      let resolvePost: (v: unknown) => void = () => undefined;
+      mockedAxios.post.mockReturnValue(
+        new Promise((r) => {
+          resolvePost = r;
+        }) as any,
+      );
+      const sentAt = Date.now();
+      const renewals = [1, 2, 3].map(() =>
+        service.renewAfterRejection(cfg, 'conn-jtl', sentAt),
+      );
+      resolvePost({ data: { access_token: 'at-new', expires_in: 1800, refresh_token: 'rt-2' } });
+      expect(await Promise.all(renewals)).toEqual(['at-new', 'at-new', 'at-new']);
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+
+      // A call that was sent before that refresh and comes back with 401 later
+      // takes the token already obtained instead of spending rt-2.
+      expect(await service.renewAfterRejection(cfg, 'conn-jtl', sentAt)).toBe('at-new');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('says what the token endpoint answered when the renewal after a 401 fails', async () => {
+      mockedAxios.post.mockRejectedValue({
+        response: {
+          status: 401,
+          data: {
+            error: 'invalid_request',
+            error_description: 'The refresh token is invalid.',
+          },
+        },
+      });
+      expect(await service.renewAfterRejection(cfg, 'conn-jtl', Date.now())).toBeNull();
+      const err = service.renewalFailedError(cfg, 'conn-jtl');
+      expect(err?.message).toContain('could not be renewed at oauth.accounting.sage.com');
+      expect(err?.message).toContain('HTTP 401: invalid_request: The refresh token is invalid.');
+      expect(err?.status).toBe(401);
+    });
+
+    it('has no renewal error to report when none failed', () => {
+      expect(service.renewalFailedError(cfg, 'conn-other')).toBeUndefined();
+    });
+
+    it('forgets the cached token and the last error after a new authorization', async () => {
+      mockedAxios.post.mockRejectedValueOnce({
+        response: { status: 400, data: { error: 'invalid_grant' } },
+      });
+      await service.refreshToken(cfg, 'conn-jtl');
+      expect(service.renewalFailedError(cfg, 'conn-jtl')).toBeDefined();
+
+      service.forget('conn-jtl');
+      expect(service.renewalFailedError(cfg, 'conn-jtl')).toBeUndefined();
+    });
+
+    it('never serves one unsaved config the token another one obtained from the same provider', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { access_token: 'workspace-a-token', expires_in: 3600 },
+      });
+      const a = { ...cfg, refreshToken: 'rt-workspace-a' };
+      const b = { ...cfg, clientId: 'other-client', refreshToken: 'rt-workspace-b' };
+      expect(await service.getAccessToken(a)).toBe('workspace-a-token');
+
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { access_token: 'workspace-b-token', expires_in: 3600 },
+      });
+      expect(await service.getAccessToken(b)).toBe('workspace-b-token');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(2);
     });
   });
 

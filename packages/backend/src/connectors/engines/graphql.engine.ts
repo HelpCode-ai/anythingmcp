@@ -190,6 +190,7 @@ export class GraphqlEngine {
       axiosOpts.proxy = false;
     }
 
+    const sentAt = Date.now();
     try {
       const response = await axios.post(config.baseUrl, requestConfig, axiosOpts);
 
@@ -212,9 +213,10 @@ export class GraphqlEngine {
         this.logger.debug(
           'OAuth2: access token expired, attempting refresh...',
         );
-        const newToken = await this.oauth2TokenService.refreshToken(
+        const newToken = await this.oauth2TokenService.renewAfterRejection(
           config.authConfig,
           config.connectorId,
+          sentAt,
         );
         if (newToken) {
           headers['Authorization'] = `Bearer ${newToken}`;
@@ -232,6 +234,11 @@ export class GraphqlEngine {
 
           return retryResponse.data.data;
         }
+        const renewalFailed = this.oauth2TokenService.renewalFailedError(
+          config.authConfig,
+          config.connectorId,
+        );
+        if (renewalFailed) throw renewalFailed;
       }
       // LOGIN_TOKEN auto-relogin on 401
       if (

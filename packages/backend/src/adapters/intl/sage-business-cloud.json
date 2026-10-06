@@ -2,12 +2,31 @@
   "slug": "sage-business-cloud",
   "name": "Sage Business Cloud Accounting",
   "description": "Manage Sage Business Cloud Accounting (contacts, products, invoices, bank accounts, transactions) from any AI agent. 9 tools, OAuth2 auth.",
-  "instructions": "This connector wraps the Sage Business Cloud Accounting API v3.1 (api.accounting.sage.com).\n\n**Setup — OAuth2**:\n1. Register at https://developer.sage.com/accounting → **Create app**. Set callback URL.\n2. Complete the auth flow at `https://www.sageone.com/oauth2/auth/central?response_type=code&client_id=...&redirect_uri=...&scope=full_access&country=gb` (use the country code matching your Sage subscription — gb, us, ca, de, fr, ie, es).\n3. Exchange the code at `https://oauth.accounting.sage.com/token`.\n4. Set `SAGE_CLIENT_ID`, `SAGE_CLIENT_SECRET`, `SAGE_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 — engine handles refresh. Sends `Authorization: Bearer ${ACCESS_TOKEN}`.\n\n**Business ID header**: Sage scopes everything to a business. Pass `X-Business: <BUSINESS_ID>` header on each call OR rely on the default business of the user. To discover IDs: `GET /v3.1/businesses`.\n\n**Pagination**: `page` (1-based) + `items_per_page` (max 200).\n\n**Rate limits**: 100 req/min per token, 10k/day. 429 with `Retry-After`.\n\n**Out of scope here**: VAT return submission, Stripe-connect setup, multi-currency journal lines beyond standard, asset register.",
+  "instructions": "This connector wraps the Sage Business Cloud Accounting API v3.1 (api.accounting.sage.com). You authorize it once, in AnythingMCP; from then on the access token (5 minutes) is renewed automatically, and the refresh token Sage replaces on every renewal is stored for you.\n\n**Setup — OAuth2**:\n1. Register at https://developer.sage.com/accounting → **Create app**.\n2. In the app, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Enter the app's client ID and client secret as `SAGE_CLIENT_ID` and `SAGE_CLIENT_SECRET`, leave `SAGE_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Sage, pick the business, approve, and you land back on the connector page with the tools ready.\n\n**Scopes**: the connector asks for `full_access`, which `sage_create_contact` needs. For a read-only connector, set the scope to `readonly` in the connector's OAuth settings before you authorize.\n\n**Already have a refresh token?** You can paste it into `SAGE_REFRESH_TOKEN` instead of step 4. Sage replaces the refresh token every time it is used, so paste one you have not used yet: a token you already exchanged by hand (for example with curl to test it) is refused with `invalid_grant`. The token Sage returned from that exchange is the one to paste.\n\n**Authentication**: OAuth2 — engine handles refresh. Sends `Authorization: Bearer ${ACCESS_TOKEN}`.\n\n**Business ID header**: Sage scopes everything to a business. Pass `X-Business: <BUSINESS_ID>` header on each call OR rely on the default business of the user. To discover IDs: `GET /v3.1/businesses`.\n\n**Pagination**: `page` (1-based) + `items_per_page` (max 200).\n\n**Rate limits**: 100 req/min per token, 10k/day. 429 with `Retry-After`.\n\n**Out of scope here**: VAT return submission, Stripe-connect setup, multi-currency journal lines beyond standard, asset register.",
   "region": "intl",
   "category": "accounting",
   "icon": "sage-business-cloud",
   "docsUrl": "https://developer.sage.com/accounting/reference/",
-  "requiredEnvVars": ["SAGE_CLIENT_ID", "SAGE_CLIENT_SECRET", "SAGE_REFRESH_TOKEN"],
+  "requiredEnvVars": ["SAGE_CLIENT_ID", "SAGE_CLIENT_SECRET"],
+  "optionalEnvVars": ["SAGE_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "SAGE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Sage Developer → your app: the Client ID.",
+      "link": "https://developer.sage.com/accounting/"
+    },
+    "SAGE_CLIENT_SECRET": {
+      "label": "Client secret",
+      "help": "Same app, the Client secret. Paste it exactly as shown, special characters included.",
+      "link": "https://developer.sage.com/accounting/"
+    },
+    "SAGE_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "help": "Leave empty: the authorization with Sage fills it in. Sage replaces it on every use, so a token you already exchanged yourself no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Sage Business Cloud Accounting v3.1",
     "type": "REST",
@@ -17,7 +36,9 @@
       "clientId": "{{SAGE_CLIENT_ID}}",
       "clientSecret": "{{SAGE_CLIENT_SECRET}}",
       "refreshToken": "{{SAGE_REFRESH_TOKEN}}",
-      "tokenUrl": "https://oauth.accounting.sage.com/token"
+      "authorizationUrl": "https://www.sageone.com/oauth2/auth/central?filter=apiv3.1",
+      "tokenUrl": "https://oauth.accounting.sage.com/token",
+      "scopes": "full_access"
     }
   },
   "tools": [
