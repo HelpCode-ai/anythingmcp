@@ -277,6 +277,8 @@ import {
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
 
+export type VerifyHint = string | { hint: string; suggest?: string };
+
 export interface AdapterMeta {
   slug: string;
   name: string;
@@ -331,6 +333,15 @@ export interface AdapterMeta {
    *  (label, secret or not, where to find it). Optional and partial: what is
    *  left out is derived from the name, see env-var-meta.ts. */
   envVarMeta?: Record<string, EnvVarMeta>;
+  /** What someone needs before starting the setup (an approved app, an admin,
+   *  a paid plan), in a sentence or two of Markdown. Shown above the form, so
+   *  nobody finds out halfway through. */
+  prerequisites?: string;
+  /** What to tell the user when the check fails, keyed by HTTP status ("404")
+   *  or failure kind ("auth_failed"); replaces the generic hint. `suggest`
+   *  names another adapter to offer instead (e.g. the JSON-RPC Odoo for an
+   *  instance older than 19). */
+  verifyHints?: Record<string, VerifyHint>;
   /** What setting it up involves; filled in by the adapters API. */
   setupKind?: SetupKind;
 }

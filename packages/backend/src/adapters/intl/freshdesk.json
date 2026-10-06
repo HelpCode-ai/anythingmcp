@@ -8,6 +8,28 @@
   "icon": "freshdesk",
   "docsUrl": "https://developers.freshdesk.com/api/",
   "requiredEnvVars": ["FRESHDESK_DOMAIN", "FRESHDESK_API_KEY"],
+  "probe": {
+    "tool": "freshdesk_list_tickets",
+    "params": {}
+  },
+  "envVarMeta": {
+    "FRESHDESK_DOMAIN": {
+      "label": "Freshdesk subdomain",
+      "kind": "address",
+      "help": "Only the first part of your helpdesk address: acme for acme.freshdesk.com. A pasted full address is shortened to it.",
+      "example": "acme"
+    },
+    "FRESHDESK_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "In Freshdesk: your profile picture → Profile settings → View API key.",
+      "link": "https://support.freshdesk.com/support/solutions/articles/215517"
+    }
+  },
+  "verifyHints": {
+    "401": "Freshdesk refused the API key. Copy it again from Profile settings → View API key.",
+    "404": "No Freshdesk helpdesk with this subdomain. It is the part before .freshdesk.com in the address you log in at."
+  },
   "connector": {
     "name": "Freshdesk v2",
     "type": "REST",

@@ -2,7 +2,7 @@
   "slug": "woocommerce",
   "name": "WooCommerce",
   "description": "AI-native commerce operations for any WooCommerce store. Semantic tools for products, variations, inventory, orders, refunds, customers, categories, and reports — plus documented multi-step recipes (inventory optimisation, SEO refresh, upsell/cross-sell, abandoned-order triage, revenue analysis).",
-  "instructions": "This connector talks to the WooCommerce REST API v3 (`/wp-json/wc/v3`). Works against any WordPress + WooCommerce site. HTTPS required.\n\n## Setup\n\n1. **`WOOCOMMERCE_URL`** — site root (e.g. `https://shop.example.com`). Do NOT include `/wp-json`; the adapter appends `/wp-json/wc/v3`.\n2. **`WOOCOMMERCE_CONSUMER_KEY`** + **`WOOCOMMERCE_CONSUMER_SECRET`** — generate in WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Use **Read/Write** for full functionality.\n\nHTTPS is mandatory: on HTTP, WC requires OAuth1 instead of Basic Auth (the connector only does Basic Auth).\n\n## Pagination\n\nList endpoints default to `per_page=10`, max `100`. Pass explicit `per_page` + iterate `page` for full catalog scans. Total counts are in `X-WP-Total` / `X-WP-TotalPages` headers (not returned in the JSON body).\n\n## Bulk writes\n\nFor ≥ 3 product updates use `woocommerce_batch_update_products` (one call, up to 100 entries). Don't fan out single `update_product` calls.\n\n## SEO meta (Yoast / Rank Math) on products\n\nMeta lives in the `meta_data` array on the product. Set it via `woocommerce_update_product`:\n\n```json\n\"meta_data\": [\n  { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n  { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n]\n```\n\nRank Math: `rank_math_description`, `rank_math_focus_keyword`, `rank_math_title`. Full reference: `wordpress_list_seo_meta_keys` (sibling WordPress connector).\n\n## Multi-step workflows\n\nFor inventory optimisation, product SEO, upsell/cross-sell, low-conversion analysis, abandoned-order triage, or KPI snapshots → call the dedicated **`woocommerce_skill_*`** tool. It returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nValid values for order status / product type / stock status / report period / payment methods → call **`woocommerce_list_*_options`**.\n\n## Permissions cheat-sheet\n\n- All list / get / reports: Read-only key.\n- Product create/update/delete, order update, refund, batch: Read/Write key.\n- Customer create / coupon create: Read/Write key.",
+  "instructions": "This connector talks to the WooCommerce REST API v3 (`/wp-json/wc/v3`). Works against any WordPress + WooCommerce site. HTTPS required.\n\n## Setup\n\n1. **`WOOCOMMERCE_URL`** — site root (e.g. `https://shop.example.com`). Do NOT include `/wp-json`; the adapter appends `/wp-json/wc/v3`.\n2. **`WOOCOMMERCE_CONSUMER_KEY`** + **`WOOCOMMERCE_CONSUMER_SECRET`** — generate in WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Use **Read/Write** for full functionality.\n\nThe key and secret travel as the `consumer_key` / `consumer_secret` query parameters, the method WooCommerce documents for servers that drop the Authorization header (common behind Apache with CGI/FastCGI and some firewalls). That is only allowed over HTTPS, so the site must use https://.\n\n## Pagination\n\nList endpoints default to `per_page=10`, max `100`. Pass explicit `per_page` + iterate `page` for full catalog scans. Total counts are in `X-WP-Total` / `X-WP-TotalPages` headers (not returned in the JSON body).\n\n## Bulk writes\n\nFor ≥ 3 product updates use `woocommerce_batch_update_products` (one call, up to 100 entries). Don't fan out single `update_product` calls.\n\n## SEO meta (Yoast / Rank Math) on products\n\nMeta lives in the `meta_data` array on the product. Set it via `woocommerce_update_product`:\n\n```json\n\"meta_data\": [\n  { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n  { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n]\n```\n\nRank Math: `rank_math_description`, `rank_math_focus_keyword`, `rank_math_title`. Full reference: `wordpress_list_seo_meta_keys` (sibling WordPress connector).\n\n## Multi-step workflows\n\nFor inventory optimisation, product SEO, upsell/cross-sell, low-conversion analysis, abandoned-order triage, or KPI snapshots → call the dedicated **`woocommerce_skill_*`** tool. It returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nValid values for order status / product type / stock status / report period / payment methods → call **`woocommerce_list_*_options`**.\n\n## Permissions cheat-sheet\n\n- All list / get / reports: Read-only key.\n- Product create/update/delete, order update, refund, batch: Read/Write key.\n- Customer create / coupon create: Read/Write key.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "woocommerce",
@@ -13,14 +13,48 @@
     "WOOCOMMERCE_CONSUMER_SECRET"
   ],
   "priority": 50,
+  "probe": {
+    "tool": "woocommerce_search_products",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "envVarMeta": {
+    "WOOCOMMERCE_URL": {
+      "label": "Shop address",
+      "kind": "address",
+      "help": "The root of the WordPress site, with https://. Without /wp-json or /wp-admin.",
+      "example": "https://shop.example.com",
+      "pattern": "^https://[^\\s?#]+[^/\\s?#]$",
+      "patternMessage": "The https:// address of the site root, without a trailing slash or /wp-json."
+    },
+    "WOOCOMMERCE_CONSUMER_KEY": {
+      "label": "Consumer key",
+      "kind": "credential",
+      "help": "WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Permissions: Read/Write.",
+      "pattern": "^ck_[a-f0-9]{40}$",
+      "patternMessage": "A consumer key starts with ck_ followed by 40 characters."
+    },
+    "WOOCOMMERCE_CONSUMER_SECRET": {
+      "label": "Consumer secret",
+      "kind": "credential",
+      "help": "Shown together with the key, once. Starts with cs_.",
+      "pattern": "^cs_[a-f0-9]{40}$",
+      "patternMessage": "A consumer secret starts with cs_ followed by 40 characters."
+    }
+  },
+  "verifyHints": {
+    "401": "WooCommerce refused the key. Check that key and secret belong to the same REST API key, that it is not revoked, and that its user is an administrator or shop manager.",
+    "404": "No WooCommerce REST API at this address. Check the site address, and that permalinks are not set to Plain (Settings → Permalinks)."
+  },
   "connector": {
     "name": "WooCommerce",
     "type": "REST",
     "baseUrl": "{{WOOCOMMERCE_URL}}/wp-json/wc/v3",
-    "authType": "BASIC_AUTH",
+    "authType": "QUERY_AUTH",
     "authConfig": {
-      "username": "{{WOOCOMMERCE_CONSUMER_KEY}}",
-      "password": "{{WOOCOMMERCE_CONSUMER_SECRET}}"
+      "consumer_key": "{{WOOCOMMERCE_CONSUMER_KEY}}",
+      "consumer_secret": "{{WOOCOMMERCE_CONSUMER_SECRET}}"
     }
   },
   "tools": [

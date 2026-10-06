@@ -3,6 +3,7 @@ import {
   assertAbsoluteBaseUrl,
   checkBaseUrlValue,
   leadingBaseUrlVariable,
+  normalizeSubdomainVariables,
   normalizeBaseUrlVariable,
   normalizeBaseUrlVariables,
 } from './base-url-variable.util';
@@ -211,4 +212,33 @@ describe('catalog adapters whose base URL is a variable', () => {
       ).toBe('https://service.example.com');
     },
   );
+});
+
+describe('normalizeSubdomainVariables', () => {
+  const template = 'https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2';
+
+  it.each([
+    ['acme', 'acme'],
+    ['https://acme.freshdesk.com', 'acme'],
+    ['acme.freshdesk.com/a/tickets', 'acme'],
+    ['https://ACME.freshdesk.com/api/v2/.freshdesk.com/api/v2', 'acme'],
+  ])('%s → %s', (value, expected) => {
+    expect(normalizeSubdomainVariables(template, { FRESHDESK_DOMAIN: value }).FRESHDESK_DOMAIN).toBe(expected);
+  });
+
+  it('leaves other variables and other templates alone', () => {
+    expect(normalizeSubdomainVariables(template, { FRESHDESK_DOMAIN: 'acme', FRESHDESK_API_KEY: 'k.freshdesk.com' })).toEqual({
+      FRESHDESK_DOMAIN: 'acme',
+      FRESHDESK_API_KEY: 'k.freshdesk.com',
+    });
+    expect(normalizeSubdomainVariables('{{SUBSTACK_URL}}/api/v1', { SUBSTACK_URL: 'https://x.substack.com' })).toEqual({
+      SUBSTACK_URL: 'https://x.substack.com',
+    });
+  });
+
+  it('handles the weclapp tenant pasted as a host', () => {
+    expect(
+      normalizeSubdomainVariables('https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v2', { WECLAPP_TENANT: 'stryve.weclapp.com' }),
+    ).toEqual({ WECLAPP_TENANT: 'stryve' });
+  });
 });

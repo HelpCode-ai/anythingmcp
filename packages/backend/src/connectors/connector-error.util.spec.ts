@@ -46,4 +46,11 @@ describe('classifyToolExecutionError', () => {
   it('falls back to a generic error otherwise', () => {
     expect(classifyToolExecutionError({ message: 'boom' }).kind).toBe('error');
   });
+
+  it('reads a JSON-RPC "Access Denied" answered with 200 as auth_failed', () => {
+    const out = classifyToolExecutionError({ status: 200, authType: 'NONE', message: 'Odoo error: Access Denied' });
+    expect(out.kind).toBe('auth_failed');
+    expect(out.hint).not.toMatch(/no credentials configured/);
+    expect(classifyToolExecutionError({ message: 'odoo.exceptions.AccessDenied' }).kind).toBe('auth_failed');
+  });
 });

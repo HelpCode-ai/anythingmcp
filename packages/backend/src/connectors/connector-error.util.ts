@@ -69,6 +69,21 @@ export function classifyToolExecutionError(input: {
 
   // No HTTP status: network / DNS / SSRF / timeout.
   const msg = String(message ?? '');
+  // JSON-RPC APIs (Odoo's /jsonrpc) answer 200 and put the refusal in the
+  // body; "Access Denied" there is a wrong key, user or database, not a bug.
+  if (status === undefined || status === 200) {
+    if (/\bAccess ?Denied\b|AccessDenied|invalid (api )?key|authentication failed/i.test(msg)) {
+      return {
+        kind: 'auth_failed',
+        // With credentials in the body the auth type is NONE, whose hint
+        // ("no credentials configured") would be wrong here.
+        hint:
+          authType && authType !== 'NONE'
+            ? AUTH_HINTS[authType] ?? 'Credentials were rejected.'
+            : 'The API refused the credentials sent with the request. Check each of them.',
+      };
+    }
+  }
   if (/ENOTFOUND|EAI_AGAIN|getaddrinfo|SSRF|ECONNREFUSED|ETIMEDOUT|certificate/i.test(msg)) {
     return {
       kind: 'unreachable',

@@ -36,6 +36,10 @@
       "advanced": true
     }
   },
+  "prerequisites": "An Etsy app of your own (etsy.com/developers → Create a New App). A new app can stay *Pending* for a while: until Etsy activates it, sign-in works but every call is refused. Use the **Keystring** and **Shared secret** of an active app.",
+  "verifyHints": {
+    "403": "Etsy refused the app keys: the app is not active yet, or the shared secret does not belong to this keystring."
+  },
   "connector": {
     "name": "Etsy Open API v3",
     "type": "REST",

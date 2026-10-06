@@ -13,6 +13,39 @@
     "ODOO_UID",
     "ODOO_API_KEY"
   ],
+  "envVarMeta": {
+    "ODOO_URL": {
+      "label": "Odoo address",
+      "kind": "address",
+      "help": "The address you open Odoo at, up to the host. Leave out /odoo, /web and anything after it.",
+      "example": "https://mycompany.odoo.com",
+      "pattern": "^https?://(?!www\\.[^/]+\\.odoo\\.com)[^\\s/?#]+/?$",
+      "patternMessage": "Only the address up to the host, e.g. https://mycompany.odoo.com (no www. on odoo.com, nothing after the host)."
+    },
+    "ODOO_DB": {
+      "label": "Database name",
+      "kind": "setting",
+      "help": "On Odoo Online usually the subdomain. On your own server the name on /web/database/selector, or the value after ?db= in the address bar.",
+      "example": "mycompany"
+    },
+    "ODOO_UID": {
+      "label": "User ID",
+      "kind": "setting",
+      "help": "The number of the Odoo user the key belongs to: Settings → Users & Companies → Users → open the user; it is the number after id= in the address bar. The admin is usually 2.",
+      "example": "2",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "Only the number, e.g. 2."
+    },
+    "ODOO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "User menu → Preferences (Odoo 14/15: My Profile) → Account Security → New API Key. Odoo shows it once. No tab? Activate developer mode first."
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "Odoo answered Access Denied: the user ID, database name and API key must belong together. The key is for the user whose ID you entered.",
+    "404": "There is no Odoo at this address, or not at its root. Check the address, without /odoo or /web."
+  },
   "connector": {
     "name": "Odoo JSON-RPC",
     "type": "REST",

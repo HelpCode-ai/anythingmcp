@@ -33,6 +33,7 @@
       "pattern": "^[0-9]{10}$"
     }
   },
+  "prerequisites": "A Google Cloud project with the Google Ads API enabled and at least **Explorer access** (Test access only reaches test accounts), an OAuth consent screen *In production*, and a Web OAuth client with the redirect URI below. About 15 minutes the first time.",
   "connector": {
     "name": "Google Ads",
     "type": "REST",

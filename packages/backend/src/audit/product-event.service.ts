@@ -45,6 +45,13 @@ export const ProductEvents = {
   OAUTH_STARTED: 'oauth_started',
   SETUP_COMPLETED: 'setup_completed',
   SETUP_SAVED_DRAFT: 'setup_saved_draft',
+  /**
+   * The provider sign-in of a guided setup failed: refused at the provider
+   * (metadata.kind = 'provider_refused', metadata.error = its error code) or
+   * the code could not be exchanged ('token_exchange'). Server-only. Answers
+   * why setups that reach oauth_started never complete.
+   */
+  OAUTH_FAILED: 'oauth_failed',
   SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
   /**
    * A new cloud account was created; metadata = the first and last touch the
@@ -87,6 +94,7 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  */
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
 ]);
@@ -163,7 +171,13 @@ export class ProductEventService {
 // 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
 // `query`, `results`, `missing`: a catalog search (see sanitizeSearchQuery);
 // `missing` = the query's words no connector mentions.
-const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing'] as const;
+// `status`, `toolName`, `error`: why a setup check or sign-in failed (the
+// provider's message, passed through scrubProviderMessage by the server);
+// `verified`: whether a completed setup made a successful call.
+const METADATA_KEYS = [
+  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing',
+  'status', 'toolName', 'error', 'verified',
+] as const;
 const MAX_QUERY_LENGTH = 100;
 
 function boundMetadata(
@@ -196,6 +210,22 @@ export function sanitizeSearchQuery(value: unknown): string | null {
   // One unbroken run of 24+ letters, digits and key punctuation: a token, not a name.
   if (/[A-Za-z0-9_\-.:/+=]{24,}/.test(q) && /\d/.test(q)) return null;
   return q;
+}
+
+/**
+ * A provider's error message, made safe to keep: query strings dropped from
+ * URLs (keys travel there), any of the given secret values masked, long
+ * token-like runs masked, and the whole capped at 160 characters.
+ */
+export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
+  if (typeof message !== 'string' || !message.trim()) return null;
+  let out = message.replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1');
+  for (const secret of secrets) {
+    if (typeof secret === 'string' && secret.length >= 6) out = out.split(secret).join('***');
+  }
+  out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
+  out = out.replace(/\s+/g, ' ').trim();
+  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

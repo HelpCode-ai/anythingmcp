@@ -73,9 +73,17 @@ function SetupContent() {
       .describe(slug, token)
       .then((d) => {
         setInfo(d);
-        if (!started.current) {
+        // Once per tab session: a reload or a return from the provider is the
+        // same setup, and counting each visit inflated "started".
+        const onceKey = `amcp:setup_started:${slug}`;
+        let seen = false;
+        try {
+          seen = !!sessionStorage.getItem(onceKey);
+          sessionStorage.setItem(onceKey, '1');
+        } catch {}
+        if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, existing: !!existingId });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind });
         }
       })
       .catch((e: Error) => setLoadError(e.message || 'This connector is not available.'));
@@ -117,7 +125,7 @@ function SetupContent() {
           }
           setResult({ connectorId: existingId, status: test?.message });
           setPhase('done');
-          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser' });
+          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
         } else {
           setError('The authorization did not complete. Try again.');
           setPhase('form');
@@ -198,7 +206,7 @@ function SetupContent() {
       const check =
         info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), existingId ?? undefined);
       if (check && check.ok === false) {
-        productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: check.kind });
+        // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, 'Required'])));
         }
@@ -209,7 +217,7 @@ function SetupContent() {
       const id = await save();
       setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined });
       setPhase('done');
-      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind });
+      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind, verified: check?.ok === true });
     } catch (e) {
       fail(e);
     }
@@ -359,6 +367,15 @@ function SetupContent() {
           </div>
         </div>
 
+        {info.prerequisites && (
+          <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            <p className="mb-1 font-medium text-[var(--text)]">Before you start</p>
+            <div className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert [&_p]:my-1">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.prerequisites}</ReactMarkdown>
+            </div>
+          </div>
+        )}
+
         {isOAuth && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>
@@ -408,6 +425,14 @@ function SetupContent() {
                   : `${info.name} answered with an error.`}
             </p>
             <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
+            {verifyFailed.suggest && (
+              <Link
+                href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
+                className="mt-2 inline-block text-xs font-medium underline"
+              >
+                Set up {verifyFailed.suggestName ?? 'the other connector'} instead
+              </Link>
+            )}
             {verifyFailed.kind !== 'invalid_input' && (
               <button type="button" onClick={() => saveAnyway(false)} className="mt-2 text-xs underline">
                 Save anyway
