@@ -704,6 +704,99 @@ export class EmailService {
     }
   }
 
+  /**
+   * Win-back after a Cloud trial ended (onboarding cron). Someone who used the
+   * product gets a discount code; someone who never made a call gets the
+   * shortest way to a first result instead, since a discount does not help
+   * with a product they never saw work. Marketing: the caller honours the
+   * opt-out.
+   */
+  async sendTrialWinbackEmail(
+    to: string,
+    name: string,
+    offer:
+      | { kind: 'discount'; percentOff: number; promoCode: string; endedAgo: 'week' | 'month'; successfulCalls: number }
+      | { kind: 'help' },
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping trial win-back email to ${to}: no SMTP configured`);
+      return false;
+    }
+
+    const cloudUrl = process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
+    const marketingUrl = process.env.MARKETING_URL || 'https://anythingmcp.com';
+    const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
+    const unsubUrl = `${cloudUrl}/settings/profile`;
+    const button = (href: string, label: string) =>
+      `<p><a href="${href}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">${label}</a></p>`;
+
+    let subject: string;
+    let body: string;
+    let text: string;
+    if (offer.kind === 'discount') {
+      const promo = encodeURIComponent(offer.promoCode);
+      const pricingUrl = `${marketingUrl}/pricing?promo=${promo}&return_url=${returnUrl}`;
+      const calls =
+        offer.successfulCalls > 0
+          ? ` Your agents made <strong>${offer.successfulCalls} successful tool call${offer.successfulCalls === 1 ? '' : 's'}</strong> during the trial, and your connectors are still there.`
+          : ' Your connectors are still there.';
+      subject =
+        offer.endedAgo === 'week'
+          ? `${offer.percentOff}% off your first 3 months of AnythingMCP`
+          : `One more try? ${offer.percentOff}% off AnythingMCP for 3 months`;
+      body = `<p>Hi ${name},</p>
+        <p>Your AnythingMCP trial ended a ${offer.endedAgo} ago.${calls}</p>
+        <p>If you'd like to pick up where you left off, here is <strong>${offer.percentOff}% off your first 3 months</strong> on any Cloud plan. The code is applied when you use the button, or enter it at checkout:</p>
+        <p style="background:#f5f5f5;padding:12px;border-radius:6px;text-align:center;font-family:monospace;font-size:16px;font-weight:bold;letter-spacing:2px;">${offer.promoCode}</p>
+        ${button(pricingUrl, `Reactivate with ${offer.percentOff}% off →`)}
+        <p style="font-size:13px;color:#666;">Not the right time, or something was missing? Reply and tell us; we read every answer.</p>`;
+      text =
+        `Hi ${name},\n\nYour AnythingMCP trial ended a ${offer.endedAgo} ago. Here is ${offer.percentOff}% off your first 3 months on any Cloud plan.\n\n` +
+        `Code: ${offer.promoCode}\nReactivate: ${pricingUrl}\n\nUnsubscribe: ${unsubUrl}`;
+    } else {
+      const pricingUrl = `${marketingUrl}/pricing?return_url=${returnUrl}`;
+      const connectorsUrl = `${cloudUrl}/connectors`;
+      subject = 'Connect your first app to Claude in two minutes';
+      body = `<p>Hi ${name},</p>
+        <p>Your AnythingMCP trial ended last week before you connected an app, so you never saw the part that matters. It is quicker than it looks.</p>
+        <p><strong>You can set it up from the chat.</strong> Add AnythingMCP to Claude (it is in Claude's connector directory) or to ChatGPT with <code>${cloudUrl}/mcp</code>, then just ask: <em>"Connect my Shopify store"</em> or <em>"Add HubSpot"</em>. The assistant finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.</p>
+        <p>You can also pick from 200+ apps in the dashboard: <a href="${connectorsUrl}">${connectorsUrl.replace(/^https?:\/\//, '')}</a>.</p>
+        <p>Your workspace is still there. To use it again, choose a plan:</p>
+        ${button(pricingUrl, 'See plans →')}
+        <p style="font-size:13px;color:#666;">Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly.</p>`;
+      text =
+        `Hi ${name},\n\nYour AnythingMCP trial ended last week before you connected an app.\n\n` +
+        `You can set it up from the chat: add AnythingMCP to Claude (connector directory) or ChatGPT with ${cloudUrl}/mcp and ask "Connect my Shopify store". ` +
+        `The assistant installs the connector and gives you a one-time link to sign in to the app.\n\n` +
+        `Or pick from 200+ apps: ${connectorsUrl}\nPlans: ${pricingUrl}\n\nUnsubscribe: ${unsubUrl}`;
+    }
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        subject,
+        html: `
+          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+            ${body}
+            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+            <p style="color: #a3a3a3; font-size: 11px;">
+              You're receiving this because you tried AnythingMCP at cloud.anythingmcp.com.
+              <a href="${unsubUrl}" style="color: #a3a3a3;">Unsubscribe from these emails</a>.
+            </p>
+          </div>
+        `,
+        text,
+      });
+      this.logger.log(`Trial win-back (${offer.kind}) email sent to ${to}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send trial win-back email to ${to}: ${err}`);
+      return false;
+    }
+  }
+
   // ── External API Fallback ─────────────────────────────────────────────────
 
   private async sendViaExternalApi(

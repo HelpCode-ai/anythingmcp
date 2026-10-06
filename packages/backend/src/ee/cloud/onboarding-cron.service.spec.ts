@@ -159,8 +159,8 @@ describe('OnboardingCronService — trial status transition', () => {
         update: jest.fn(),
       },
       license: {
-        findMany: jest.fn().mockImplementation(async () => {
-          calls.push('lifecycle');
+        findMany: jest.fn().mockImplementation(async (args: any) => {
+          calls.push(args?.where?.status === 'active' ? 'lifecycle' : 'winback');
           return [];
         }),
         updateMany: jest.fn().mockImplementation(async () => {
@@ -183,7 +183,7 @@ describe('OnboardingCronService — trial status transition', () => {
     expect(prisma.license.updateMany.mock.calls[0][0].data).toEqual({ status: 'expired' });
     // The "your trial has ended" email selects on status='active', so the
     // flip must come after it or the email would never be sent.
-    expect(calls).toEqual(['lifecycle', 'mark-expired']);
+    expect(calls).toEqual(['lifecycle', 'winback', 'mark-expired']);
   });
 });
 
@@ -307,5 +307,131 @@ describe('OnboardingCronService — onboarding pass', () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { onboardingCompletedAt: expect.any(Date) } }),
     );
+  });
+});
+
+describe('OnboardingCronService — trial win-back', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = new Date('2026-11-20T10:00:00Z').getTime();
+  const out = () => ({ examined: 0, winbackOffers: 0, winbackHelp: 0, skipped: 0 });
+
+  function makeService(opts: {
+    endedDaysAgo: number;
+    calls?: number;
+    paid?: number;
+    flagged?: boolean;
+    optedOut?: boolean;
+    sendOk?: boolean;
+  }) {
+    const prisma = {
+      license: {
+        findMany: jest.fn().mockResolvedValue([
+          { organizationId: 'org-1', expiresAt: new Date(NOW - opts.endedDaysAgo * DAY) },
+        ]),
+        count: jest.fn().mockResolvedValue(opts.paid ?? 0),
+      },
+      orgSettings: {
+        findUnique: jest.fn().mockResolvedValue(opts.flagged ? { id: 'f' } : null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      organizationMember: {
+        findMany: jest.fn().mockResolvedValue([
+          { user: { email: 'admin@example.com', name: 'Ada', emailMarketingOptOut: !!opts.optedOut } },
+        ]),
+      },
+      toolInvocation: { count: jest.fn().mockResolvedValue(opts.calls ?? 0) },
+    } as any;
+    const email = { sendTrialWinbackEmail: jest.fn().mockResolvedValue(opts.sendOk ?? true) } as any;
+    const service = new OnboardingCronService(prisma, email, makeLicense(), makeRelease());
+    const run = async () => {
+      const o = out();
+      await (service as any).runWinbackPass(NOW, o);
+      return o;
+    };
+    return { run, prisma, email };
+  }
+
+  it('only looks at trials that ended on or after the switch from the licence site', async () => {
+    const { run, prisma } = makeService({ endedDaysAgo: 8, calls: 3 });
+    await run();
+    const where = prisma.license.findMany.mock.calls[0][0].where;
+    expect(where.plan).toBe('trial');
+    expect(where.expiresAt.gte).toEqual(new Date('2026-10-06T00:00:00Z'));
+  });
+
+  it('a week after, offers 30% to a workspace that used the product', async () => {
+    const { run, email, prisma } = makeService({ endedDaysAgo: 8, calls: 12 });
+    const o = await run();
+    expect(email.sendTrialWinbackEmail).toHaveBeenCalledWith('admin@example.com', 'Ada', {
+      kind: 'discount',
+      percentOff: 30,
+      promoCode: 'START30',
+      endedAgo: 'week',
+      successfulCalls: 12,
+    });
+    expect(o.winbackOffers).toBe(1);
+    expect(prisma.orgSettings.upsert.mock.calls[0][0].where.organizationId_key.key).toBe('trial_email_winback7');
+  });
+
+  it('a month after, offers 50%', async () => {
+    const { run, email } = makeService({ endedDaysAgo: 31, calls: 2 });
+    await run();
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({
+      kind: 'discount',
+      percentOff: 50,
+      promoCode: 'WINBACK50',
+      endedAgo: 'month',
+    });
+  });
+
+  it('a week after, sends the how-to without a discount to a workspace that never made a call', async () => {
+    const { run, email } = makeService({ endedDaysAgo: 8, calls: 0 });
+    const o = await run();
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toEqual({ kind: 'help' });
+    expect(o.winbackHelp).toBe(1);
+  });
+
+  it('sends nothing more a month after to a workspace that never made a call', async () => {
+    const { run, email, prisma } = makeService({ endedDaysAgo: 31, calls: 0 });
+    await run();
+    expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
+    expect(prisma.orgSettings.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends nothing outside a stage window, nor twice, nor after a purchase', async () => {
+    for (const opts of [
+      { endedDaysAgo: 20, calls: 5 },
+      { endedDaysAgo: 40, calls: 5 },
+      { endedDaysAgo: 8, calls: 5, flagged: true },
+      { endedDaysAgo: 8, calls: 5, paid: 1 },
+    ]) {
+      const { run, email } = makeService(opts);
+      await run();
+      expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
+    }
+  });
+
+  it('respects the marketing opt-out, and closes the stage', async () => {
+    const { run, email, prisma } = makeService({ endedDaysAgo: 8, calls: 5, optedOut: true });
+    await run();
+    expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
+    expect(prisma.orgSettings.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on the next run when the email could not be sent', async () => {
+    const { run, prisma } = makeService({ endedDaysAgo: 8, calls: 5, sendOk: false });
+    await run();
+    expect(prisma.orgSettings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('takes the codes from the environment when set', async () => {
+    process.env.WINBACK_FIRST_PROMO_CODE = 'SPRING30';
+    try {
+      const { run, email } = makeService({ endedDaysAgo: 8, calls: 1 });
+      await run();
+      expect(email.sendTrialWinbackEmail.mock.calls[0][2].promoCode).toBe('SPRING30');
+    } finally {
+      delete process.env.WINBACK_FIRST_PROMO_CODE;
+    }
   });
 });

@@ -11,6 +11,24 @@ const AI_CLIENT_NUDGE_AFTER = HOURS(2);
 const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
 
 /**
+ * Win-back after a Cloud trial ends. Until 6 Oct 2026 the licence site sent
+ * every Cloud trial the same 50% code a week and a month after expiry (about
+ * 2,100 emails, one redemption): most of those people never connected an app.
+ * The site has no usage data; this cron does, so Cloud trials are won back from
+ * here and the site keeps the self-hosted ones.
+ *
+ * Someone who made a successful call gets 30% a week after expiry and 50% a
+ * month after; someone who never did gets one email on how to connect an app
+ * from the chat. Only trials that ended from WINBACK_FROM on: earlier ones were
+ * already sent the site's win-back.
+ */
+const WINBACK_FROM = new Date('2026-10-06T00:00:00Z');
+const WINBACK_STAGES = [
+  { stage: 'winback7', after: DAYS(7), until: DAYS(14), percentOff: 30, codeEnv: 'WINBACK_FIRST_PROMO_CODE', code: 'START30', endedAgo: 'week' },
+  { stage: 'winback30', after: DAYS(30), until: DAYS(37), percentOff: 50, codeEnv: 'WINBACK_FINAL_PROMO_CODE', code: 'WINBACK50', endedAgo: 'month' },
+] as const;
+
+/**
  * Onboarding drip — finds users who registered, verified their email,
  * but never created a connector, and nudges them via email at two
  * milestones:
@@ -55,6 +73,8 @@ export class OnboardingCronService {
     licensesReverified: number;
     licensesDeactivated: number;
     licensesReleased: number;
+    winbackOffers: number;
+    winbackHelp: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -71,6 +91,8 @@ export class OnboardingCronService {
       licensesReverified: 0,
       licensesDeactivated: 0,
       licensesReleased: 0,
+      winbackOffers: 0,
+      winbackHelp: 0,
       skipped: 0,
     };
 
@@ -215,6 +237,7 @@ export class OnboardingCronService {
 
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
+    await this.runWinbackPass(now, out);
     out.trialsMarkedExpired = await this.markExpiredTrials(now);
 
     // Before nudging anyone about their trial, make sure they actually got one.
@@ -239,7 +262,7 @@ export class OnboardingCronService {
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
-        `licensesReleased=${out.licensesReleased} ` +
+        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} winbackHelp=${out.winbackHelp} ` +
         `skipped=${out.skipped}`,
     );
     return out;
@@ -328,6 +351,101 @@ export class OnboardingCronService {
         out.skipped++;
       }
     }
+  }
+
+  /**
+   * Win-back pass (see WINBACK_STAGES). One email per stage and workspace,
+   * flagged in OrgSettings like the lifecycle emails; a stage is only sent
+   * inside its window, so a late run never mails a month-old trial its
+   * one-week offer. Skips workspaces that bought a plan since, and admins who
+   * opted out of marketing email.
+   */
+  private async runWinbackPass(
+    now: number,
+    out: { examined: number; winbackOffers: number; winbackHelp: number; skipped: number },
+  ): Promise<void> {
+    const trials = await this.prisma.license.findMany({
+      where: {
+        plan: 'trial',
+        status: { in: ['active', 'expired'] },
+        organizationId: { not: null },
+        expiresAt: { gte: WINBACK_FROM, lte: new Date(now - DAYS(7)) },
+      },
+      select: { organizationId: true, expiresAt: true },
+    });
+
+    for (const lic of trials) {
+      const organizationId = lic.organizationId!;
+      const endedFor = now - lic.expiresAt!.getTime();
+      const step = WINBACK_STAGES.find((s) => endedFor >= s.after && endedFor < s.until);
+      if (!step) continue;
+      out.examined++;
+      const flagKey = `trial_email_${step.stage}`;
+
+      const [already, paid] = await Promise.all([
+        this.prisma.orgSettings.findUnique({
+          where: { organizationId_key: { organizationId, key: flagKey } },
+          select: { id: true },
+        }),
+        this.prisma.license.count({
+          where: { organizationId, status: 'active', plan: { not: 'trial' } },
+        }),
+      ]);
+      if (already || paid > 0) {
+        out.skipped++;
+        continue;
+      }
+
+      const [admins, successfulCalls] = await Promise.all([
+        this.prisma.organizationMember.findMany({
+          where: { organizationId, role: 'ADMIN', deactivatedAt: null },
+          select: { user: { select: { email: true, name: true, emailMarketingOptOut: true } } },
+        }),
+        this.prisma.toolInvocation.count({ where: { organizationId, status: 'SUCCESS' } }),
+      ]);
+      const used = successfulCalls > 0;
+
+      // Someone who never made a call gets the how-to once, a week after.
+      if (!used && step.stage !== 'winback7') {
+        await this.flag(organizationId, flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut);
+      let sentAny = false;
+      for (const a of recipients) {
+        const ok = await this.email.sendTrialWinbackEmail(
+          a.user.email,
+          a.user.name || 'there',
+          used
+            ? {
+                kind: 'discount',
+                percentOff: step.percentOff,
+                promoCode: process.env[step.codeEnv] || step.code,
+                endedAgo: step.endedAgo,
+                successfulCalls,
+              }
+            : { kind: 'help' },
+        );
+        if (ok) sentAny = true;
+      }
+
+      // Nobody to mail (no admin, all opted out) ends the stage too; a failed
+      // send does not, so the next run retries inside the window.
+      if (sentAny || recipients.length === 0) await this.flag(organizationId, flagKey);
+      if (!sentAny) out.skipped++;
+      else if (used) out.winbackOffers++;
+      else out.winbackHelp++;
+    }
+  }
+
+  private async flag(organizationId: string, key: string): Promise<void> {
+    await this.prisma.orgSettings.upsert({
+      where: { organizationId_key: { organizationId, key } },
+      create: { organizationId, key, value: new Date().toISOString() },
+      update: { value: new Date().toISOString() },
+    });
   }
 
   /**
