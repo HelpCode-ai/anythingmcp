@@ -6,12 +6,22 @@
   "category": "crm",
   "icon": "teamleader",
   "docsUrl": "https://developer.teamleader.eu/",
-  "instructions": "**Getting a token**\n1. Register an integration in the **Teamleader Marketplace developer area** (developer.teamleader.eu). You receive a client id and client secret.\n2. Run the authorization-code flow once for the account and keep the **refresh token** — Teamleader's access tokens last one hour.\n3. Set `TEAMLEADER_CLIENT_ID`, `TEAMLEADER_CLIENT_SECRET` and `TEAMLEADER_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own.\n\n**Every endpoint is a POST, including the reads.** Teamleader's API is action-shaped — `companies.list`, `deals.info`, `invoices.list` — and all of them are POSTs whose JSON body carries the filter. That is why these tools look like writes in an HTTP trace even when they only read; the tool names here say what each one actually does.\n\n**Filters are a nested object.** `{\"filter\": {\"term\": \"Acme\"}, \"page\": {\"size\": 20, \"number\": 1}, \"sort\": [{\"field\": \"name\", \"order\": \"asc\"}]}`. The available filter keys differ per action and are listed in Teamleader's reference.\n\n**Refresh tokens rotate.** Teamleader issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated token back into the connector, so the stored value stays current — but if you also use the same refresh token from another script, one of the two will start failing.\n\n**Ids are UUIDs**, and `deals.info` needs the deal's id, not its reference number.\n\n**Cloud reachability**: api.focus.teamleader.eu is public with a valid certificate.",
+  "instructions": "**Setup**\n1. Register an integration in the **Teamleader Marketplace developer area** (marketplace.focus.teamleader.eu/build). Add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and tick the scopes for users, companies, contacts, deals, invoices, quotations, projects and time tracking. You receive a client id and client secret.\n2. Set `TEAMLEADER_CLIENT_ID` and `TEAMLEADER_CLIENT_SECRET`, leave `TEAMLEADER_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in to Teamleader, approve, and you land back on the connector page. Teamleader's access tokens last one hour; AnythingMCP refreshes them on its own.\n\nTeamleader takes no scope in the authorization request: the integration gets the scopes ticked on its settings page.\n\n**Already have a refresh token?** You can paste it into `TEAMLEADER_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same integration and have not used it since (see below).\n\n**Every endpoint is a POST, including the reads.** Teamleader's API is action-shaped — `companies.list`, `deals.info`, `invoices.list` — and all of them are POSTs whose JSON body carries the filter. That is why these tools look like writes in an HTTP trace even when they only read; the tool names here say what each one actually does.\n\n**Filters are a nested object.** `{\"filter\": {\"term\": \"Acme\"}, \"page\": {\"size\": 20, \"number\": 1}, \"sort\": [{\"field\": \"name\", \"order\": \"asc\"}]}`. The available filter keys differ per action and are listed in Teamleader's reference.\n\n**Refresh tokens rotate.** Teamleader issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated token back into the connector, so the stored value stays current, but a refresh token you tested by hand, or also use from another script, is spent and the connector fails with `invalid_grant`. Authorize again from the connector page to get a fresh one.\n\n**Ids are UUIDs**, and `deals.info` needs the deal's id, not its reference number.\n\n**Cloud reachability**: api.focus.teamleader.eu is public with a valid certificate.",
   "requiredEnvVars": [
     "TEAMLEADER_CLIENT_ID",
-    "TEAMLEADER_CLIENT_SECRET",
+    "TEAMLEADER_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
     "TEAMLEADER_REFRESH_TOKEN"
   ],
+  "envVarMeta": {
+    "TEAMLEADER_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself. Teamleader replaces the refresh token on every renewal, so a token that was already used once (to test it, say) no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Teamleader Focus API",
     "type": "REST",
@@ -21,6 +31,7 @@
       "clientId": "{{TEAMLEADER_CLIENT_ID}}",
       "clientSecret": "{{TEAMLEADER_CLIENT_SECRET}}",
       "refreshToken": "{{TEAMLEADER_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://focus.teamleader.eu/oauth2/authorize",
       "tokenUrl": "https://focus.teamleader.eu/oauth2/access_token"
     },
     "headers": {

@@ -6,12 +6,22 @@
   "category": "accounting",
   "icon": "fortnox",
   "docsUrl": "https://www.fortnox.se/developer/",
-  "instructions": "**Getting a token**\n1. Register at the **Fortnox Developer Portal** and create an integration. You receive a **client id** and **client secret**.\n2. Run the authorization-code flow once for the customer's Fortnox account, asking for the scopes you need — `invoice`, `customer`, `article`, `order`, `supplierinvoice`, `bookkeeping`, `settings`. Keep the **refresh token**.\n3. Set `FORTNOX_CLIENT_ID`, `FORTNOX_CLIENT_SECRET` and `FORTNOX_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own.\n\n**The legacy Access-Token header is gone.** Fortnox retired the old `Access-Token` + `Client-Secret` header pair; if you find an example using those, it is pre-2022 and will not work. OAuth 2.0 is the only path now.\n\n**Refresh tokens rotate.** Fortnox issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated value back into the connector — but sharing one refresh token between this connector and another script will break one of them.\n\n**Rate limit** is roughly 25 requests per 5 seconds per token, answered with 429. Pace bulk work.\n\n**Responses wrap the rows** in the resource name: `{\"Customers\": [...], \"MetaInformation\": {...}}`. The paging totals live in `MetaInformation` (`@TotalPages`, `@TotalResources`).\n\n**`financialyear` matters for vouchers.** Fortnox scopes bookkeeping to a financial year id; without one it uses the current year, which is a surprise in January.\n\n**Cloud reachability**: api.fortnox.se is public with a valid certificate.",
+  "instructions": "**Setup**\n1. Register at the **Fortnox Developer Portal** and create an integration. Add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and enable the scopes `settings`, `customer`, `invoice`, `supplierinvoice`, `order`, `article` and `bookkeeping`. You receive a **client id** and **client secret**.\n2. Set `FORTNOX_CLIENT_ID` and `FORTNOX_CLIENT_SECRET`, leave `FORTNOX_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in with a user of the customer's Fortnox account, approve, and you land back on the connector page. AnythingMCP refreshes the access token on its own.\n\n**Scopes**: `settings customer invoice supplierinvoice order article bookkeeping`, one per tool area. Fortnox scopes always grant read and write. The authorization URL carries `access_type=offline`, without which Fortnox issues no refresh token.\n\n**Already have a refresh token?** You can paste it into `FORTNOX_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same integration and have not used it since (see below).\n\n**The legacy Access-Token header is gone.** Fortnox retired the old `Access-Token` + `Client-Secret` header pair; if you find an example using those, it is pre-2022 and will not work. OAuth 2.0 is the only path now.\n\n**Refresh tokens rotate.** Fortnox issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated value back into the connector, but a refresh token you tested by hand, or share with another script, is spent and the connector fails with `invalid_grant`. Authorize again from the connector page to get a fresh one.\n\n**Rate limit** is roughly 25 requests per 5 seconds per token, answered with 429. Pace bulk work.\n\n**Responses wrap the rows** in the resource name: `{\"Customers\": [...], \"MetaInformation\": {...}}`. The paging totals live in `MetaInformation` (`@TotalPages`, `@TotalResources`).\n\n**`financialyear` matters for vouchers.** Fortnox scopes bookkeeping to a financial year id; without one it uses the current year, which is a surprise in January.\n\n**Cloud reachability**: api.fortnox.se is public with a valid certificate.",
   "requiredEnvVars": [
     "FORTNOX_CLIENT_ID",
-    "FORTNOX_CLIENT_SECRET",
+    "FORTNOX_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
     "FORTNOX_REFRESH_TOKEN"
   ],
+  "envVarMeta": {
+    "FORTNOX_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself. Fortnox replaces the refresh token on every renewal, so a token that was already used once (to test it, say) no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Fortnox API v3",
     "type": "REST",
@@ -21,7 +31,9 @@
       "clientId": "{{FORTNOX_CLIENT_ID}}",
       "clientSecret": "{{FORTNOX_CLIENT_SECRET}}",
       "refreshToken": "{{FORTNOX_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://apps.fortnox.se/oauth-v1/auth?access_type=offline",
       "tokenUrl": "https://apps.fortnox.se/oauth-v1/token",
+      "scopes": "settings customer invoice supplierinvoice order article bookkeeping",
       "tokenAuthMethod": "basic"
     },
     "headers": {

@@ -2,12 +2,21 @@
   "slug": "nimble",
   "name": "Nimble",
   "description": "Manage Nimble CRM (contacts, activities, deals, tasks, notes) from any AI agent. 9 tools, OAuth2 auth.",
-  "instructions": "This connector wraps the Nimble REST API v1 (app.nimble.com/api/v1).\n\n**Setup — OAuth2 refresh flow**:\n1. Sign in to https://app.nimble.com → **Settings → Integrations → API → Create OAuth app**.\n2. Note the `client_id`, `client_secret`, and complete the OAuth dance at `https://app.nimble.com/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=...` to get an authorization code.\n3. Exchange for tokens: `POST https://app.nimble.com/oauth/token?grant_type=authorization_code&code=...&client_id=...&client_secret=...&redirect_uri=...`.\n4. Save the `refresh_token`. Set `NIMBLE_CLIENT_ID`, `NIMBLE_CLIENT_SECRET`, `NIMBLE_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 — engine handles the refresh. Access token sent as `Authorization: Bearer ACCESS_TOKEN`.\n\n**Contact model**: Nimble unifies leads + contacts + companies into a single 'Contact' object with `record_type` discriminator (`person` or `company`). Fields are namespaced — `fields['email'][0].value`, `fields['first name'][0].value` etc.\n\n**Pagination**: `page` (1-based) + `per_page` (max 30).\n\n**Rate limits**: 5 req/sec per token. 429 → exponential backoff.\n\n**Out of scope here**: pipeline analytics, social-listening streams, email-sync settings, group messaging.",
+  "instructions": "This connector wraps the Nimble REST API v1 (app.nimble.com/api/v1). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Sign in to https://app.nimble.com → **Settings → Integrations → API → Create OAuth app**, with the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Nimble only redirects to the URI registered on the app.\n2. Enter the app's `client_id` as `NIMBLE_CLIENT_ID` and its `client_secret` as `NIMBLE_CLIENT_SECRET`, leave `NIMBLE_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in to Nimble, allow access, and you land back on the connector page with the tools ready.\n\n**Scopes**: `basic,contacts,deals` (comma-separated, as Nimble expects), which covers every tool here.\n\n**Already have a refresh token?** You can paste it into `NIMBLE_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same app (authorization code from `https://app.nimble.com/oauth/authorize`, exchanged at `https://app.nimble.com/oauth/token`).\n\n**Authentication**: OAuth2 — engine handles the refresh. Access token sent as `Authorization: Bearer ACCESS_TOKEN`.\n\n**Contact model**: Nimble unifies leads + contacts + companies into a single 'Contact' object with `record_type` discriminator (`person` or `company`). Fields are namespaced — `fields['email'][0].value`, `fields['first name'][0].value` etc.\n\n**Pagination**: `page` (1-based) + `per_page` (max 30).\n\n**Rate limits**: 5 req/sec per token. 429 → exponential backoff.\n\n**Out of scope here**: pipeline analytics, social-listening streams, email-sync settings, group messaging.",
   "region": "intl",
   "category": "crm",
   "icon": "nimble",
   "docsUrl": "https://nimble.readme.io/",
-  "requiredEnvVars": ["NIMBLE_CLIENT_ID", "NIMBLE_CLIENT_SECRET", "NIMBLE_REFRESH_TOKEN"],
+  "requiredEnvVars": ["NIMBLE_CLIENT_ID", "NIMBLE_CLIENT_SECRET"],
+  "optionalEnvVars": ["NIMBLE_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "NIMBLE_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Nimble API v1",
     "type": "REST",
@@ -17,7 +26,9 @@
       "clientId": "{{NIMBLE_CLIENT_ID}}",
       "clientSecret": "{{NIMBLE_CLIENT_SECRET}}",
       "refreshToken": "{{NIMBLE_REFRESH_TOKEN}}",
-      "tokenUrl": "https://app.nimble.com/oauth/token"
+      "authorizationUrl": "https://app.nimble.com/oauth/authorize",
+      "tokenUrl": "https://app.nimble.com/oauth/token",
+      "scopes": "basic,contacts,deals"
     }
   },
   "tools": [
