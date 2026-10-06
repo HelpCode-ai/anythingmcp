@@ -518,20 +518,23 @@ describe('LoginController', () => {
   describe('cloud: approving into an empty workspace', () => {
     let cloud: LoginController;
     let productEvents: { log: jest.Mock };
+    let licenseGuard: { getTrialState: jest.Mock };
     let cloudPrisma: {
       user: { findUnique: jest.Mock };
       organizationMember: { findFirst: jest.Mock };
       connector: { count: jest.Mock };
     };
 
-    const arrange = (opts: { connectors?: number; role?: string; session?: boolean } = {}) => {
+    const arrange = (
+      opts: { connectors?: number; role?: string; session?: boolean; sessionLeftMs?: number } = {},
+    ) => {
       if (opts.session !== false) {
         store.getOAuthSession.mockResolvedValue({
           sessionId: 's1',
           state: 'x',
           clientId: 'client-abc',
           redirectUri: 'https://claude.ai/api/mcp/auth_callback',
-          expiresAt: Date.now() + 60_000,
+          expiresAt: Date.now() + (opts.sessionLeftMs ?? 20 * 60_000),
         } as any);
         store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'Claude' } as any);
       }
@@ -566,6 +569,7 @@ describe('LoginController', () => {
         connector: { count: jest.fn() },
       };
       productEvents = { log: jest.fn().mockResolvedValue(undefined) };
+      licenseGuard = { getTrialState: jest.fn().mockResolvedValue(null) };
       config.get.mockImplementation((key: string) =>
         key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
       );
@@ -578,6 +582,7 @@ describe('LoginController', () => {
         { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
         grants as any,
         productEvents as any,
+        licenseGuard as any,
       );
     });
 
@@ -590,8 +595,10 @@ describe('LoginController', () => {
       expect(res._sent).toContain('href="http://mcp.test/callback"');
       expect(res._sent).toContain('href="https://cloud.example/welcome"');
       expect(res._sent).toContain('target="_blank"');
-      // The detour must not outlive the 60-second login cookie.
-      expect(res._cookies['login_user'].options.maxAge).toBe(15 * 60 * 1000);
+      // A detour keeps "Continue" working as long as the authorization lives.
+      const maxAge = res._cookies['login_user'].options.maxAge;
+      expect(maxAge).toBeGreaterThan(19 * 60 * 1000);
+      expect(maxAge).toBeLessThanOrEqual(20 * 60 * 1000);
       expect(res._cookies['login_user'].options.signed).toBe(true);
       expect(productEvents.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -600,6 +607,81 @@ describe('LoginController', () => {
           organizationId: 'org-1',
         }),
       );
+    });
+
+    it('never keeps the login cookie past 30 minutes, nor under one', async () => {
+      arrange({ sessionLeftMs: 2 * 60 * 60_000 });
+      expect((await login())._cookies['login_user'].options.maxAge).toBe(30 * 60 * 1000);
+      arrange({ sessionLeftMs: 5_000 });
+      expect((await login())._cookies['login_user'].options.maxAge).toBe(60 * 1000);
+    });
+
+    describe('the card-trial line', () => {
+      const DAY = 86_400_000;
+      const trial = (over: Record<string, unknown> = {}) => ({
+        endsAt: new Date('2026-10-13T09:30:00Z'),
+        active: true,
+        cardTrialAvailable: true,
+        ...over,
+      });
+
+      it('tells an admin on the free trial when it ends, under Continue, in a new tab', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        const res = await login();
+
+        expect(licenseGuard.getTrialState).toHaveBeenCalledWith('org-1');
+        expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
+        expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
+        expect(res._sent).toMatch(
+          /<a href="https:\/\/cloud\.example\/start-trial" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
+        );
+        // Continue stays the first and only button.
+        const html = res._sent ?? '';
+        expect(html.indexOf('Continue to Claude')).toBeLessThan(html.indexOf('start-trial'));
+        expect(html.match(/class="button"/g)).toHaveLength(1);
+        expect(productEvents.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'empty_workspace_prompt',
+            metadata: { client: 'Claude', cardTrialOffered: true },
+          }),
+        );
+      });
+
+      it.each([
+        ['less than 48 hours are left', trial({ cardTrialAvailable: false, endsAt: new Date(Date.now() + DAY) })],
+        ['the trial has ended', trial({ active: false, cardTrialAvailable: false })],
+        ['the workspace is on a paid plan', null],
+      ])('is left out when %s', async (_label, state) => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(state);
+        const res = await login();
+
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('start-trial');
+        expect(productEvents.log).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: { client: 'Claude' } }),
+        );
+      });
+
+      it('is never shown to an editor, whose licence is not looked up', async () => {
+        arrange({ role: 'EDITOR' });
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        const res = await login();
+
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('start-trial');
+        expect(licenseGuard.getTrialState).not.toHaveBeenCalled();
+      });
+
+      it('never costs the connection when the licence cannot be read', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockRejectedValue(new Error('db down'));
+        const res = await login();
+
+        expect(res._sent).toContain('href="http://mcp.test/callback"');
+        expect(res._sent).not.toContain('start-trial');
+      });
     });
 
     it('escapes the client name the client registered itself', async () => {
