@@ -24,6 +24,7 @@ import { resolveAdapterIcon } from './connector-icon.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
+import { OAuth2TokenService } from './engines/oauth2-token.service';
 
 @Injectable()
 export class ConnectorsService {
@@ -39,6 +40,7 @@ export class ConnectorsService {
     private readonly databaseEngine: DatabaseEngine,
     private readonly mcpClientEngine: McpClientEngine,
     @Optional() private readonly odataEngine?: ODataEngine,
+    @Optional() private readonly oauth2TokenService?: OAuth2TokenService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -166,10 +168,12 @@ export class ConnectorsService {
       updateData.baseUrl = normalizeConnectorBaseUrl(data.baseUrl, existing.type);
     }
 
-    return this.prisma.connector.update({
+    const updated = await this.prisma.connector.update({
       where: { id },
       data: updateData,
     });
+    if (data.authConfig) this.oauth2TokenService?.forget(id);
+    return updated;
   }
 
   /**
@@ -189,12 +193,16 @@ export class ConnectorsService {
         ) as Record<string, unknown>)
       : {};
     const merged = { ...existing, ...patch };
-    return this.prisma.connector.update({
+    const updated = await this.prisma.connector.update({
       where: { id },
       data: {
         authConfig: encrypt(JSON.stringify(merged), this.encryptionKey),
       },
     });
+    // A new authorization or new client settings: a token cached from the
+    // old ones, or the error the old refresh token got, no longer applies.
+    this.oauth2TokenService?.forget(id);
+    return updated;
   }
 
   async remove(id: string): Promise<void> {
@@ -279,6 +287,10 @@ export class ConnectorsService {
               authType: connector.authType,
               authConfig,
               headers,
+              // Without it an OAuth2 refresh here was never saved: the
+              // provider rotated the refresh token, the connector kept the
+              // spent one, and its next refresh was refused as revoked.
+              connectorId: connector.id,
             },
             { method: 'GET', path },
             {},
@@ -292,6 +304,7 @@ export class ConnectorsService {
               authType: connector.authType,
               authConfig,
               headers: connector.headers as Record<string, string>,
+              connectorId: connector.id,
             },
             { method: 'query', path: '{ __typename }' },
             {},
@@ -331,6 +344,7 @@ export class ConnectorsService {
             authType: connector.authType,
             authConfig,
             headers: connector.headers as Record<string, string>,
+            connectorId: connector.id,
           });
           return {
             ok: true,
@@ -358,6 +372,7 @@ export class ConnectorsService {
    * Throws what the server or the transport threw.
    */
   async discoverRemoteMcpTools(connector: {
+    id?: string;
     name: string;
     baseUrl: string;
     authType: string;
@@ -383,6 +398,7 @@ export class ConnectorsService {
       authType: connector.authType,
       authConfig,
       headers,
+      connectorId: connector.id,
     });
     return remote.map((rt) => ({
       name: rt.name,

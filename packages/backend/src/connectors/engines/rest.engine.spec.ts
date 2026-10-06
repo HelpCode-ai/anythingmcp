@@ -38,7 +38,8 @@ describe('RestEngine', () => {
   beforeEach(() => {
     mockOAuth2TokenService = {
       getAccessToken: jest.fn().mockResolvedValue('oauth2-access-token'),
-      refreshToken: jest.fn().mockResolvedValue('new-access-token'),
+      renewAfterRejection: jest.fn().mockResolvedValue('new-access-token'),
+      renewalFailedError: jest.fn().mockReturnValue(undefined),
     } as any;
     mockLoginTokenService = {
       getToken: jest.fn().mockResolvedValue({
@@ -1580,6 +1581,32 @@ describe('RestEngine', () => {
       const retried = mockedAxios.mock.calls[1][0] as any;
       expect(retried.headers['x-amz-access-token']).toBe('new-access-token');
       expect(retried.headers.Authorization).toBeUndefined();
+    });
+
+    it("reports the token endpoint's answer, not the API's bare 401, when the renewal fails", async () => {
+      const err = new AxiosError('Unauthorized');
+      (err as any).response = { status: 401, data: {} };
+      mockedAxios.mockRejectedValueOnce(err);
+      mockOAuth2TokenService.renewAfterRejection.mockResolvedValueOnce(null);
+      const refused = Object.assign(
+        new Error('OAuth2: the API refused the access token (401) and it could not be renewed'),
+        { status: 401 },
+      );
+      mockOAuth2TokenService.renewalFailedError.mockReturnValueOnce(refused);
+
+      await expect(
+        engine.execute(
+          { ...oauthConfig(), connectorId: 'conn-1' },
+          { method: 'GET', path: '/x' },
+          {},
+        ),
+      ).rejects.toBe(refused);
+      expect(mockOAuth2TokenService.renewAfterRejection).toHaveBeenCalledWith(
+        expect.objectContaining({ refreshToken: 'rt' }),
+        'conn-1',
+        expect.any(Number),
+      );
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
     });
   });
 
