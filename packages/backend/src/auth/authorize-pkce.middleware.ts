@@ -5,6 +5,19 @@ import { PrismaService } from '../common/prisma.service';
 /** Token-endpoint auth methods that prove possession of a client secret. */
 const SECRET_AUTH_METHODS = new Set(['client_secret_basic', 'client_secret_post']);
 
+/** Client ids listed in OAUTH_PKCE_EXEMPT_CLIENT_IDS (comma-separated). */
+export function pkceExemptClientIds(): string[] {
+  return (process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+/** True when the operator listed at least one PKCE-exempt client. */
+export function pkceExemptionsConfigured(): boolean {
+  return pkceExemptClientIds().length > 0;
+}
+
 /**
  * Enforces PKCE with S256 on GET /authorize.
  *
@@ -103,11 +116,7 @@ export class AuthorizePkceMiddleware implements NestMiddleware {
    */
   private async isExemptConfidentialClient(clientId: unknown): Promise<boolean> {
     if (typeof clientId !== 'string' || !clientId) return false;
-    const listed = (process.env.OAUTH_PKCE_EXEMPT_CLIENT_IDS ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
-    if (!listed.includes(clientId) || !this.prisma) return false;
+    if (!pkceExemptClientIds().includes(clientId) || !this.prisma) return false;
 
     try {
       const client = await this.prisma.oAuthClient.findUnique({

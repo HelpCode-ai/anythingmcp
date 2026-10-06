@@ -44,6 +44,7 @@ We use AI assistants (Claude Code, GitHub Copilot, etc.) in our own development 
 - Don't paste AI output blindly into the PR description; write the *why* in your own words.
 
 We will not refuse a PR because it was AI-assisted, and we will not single it out either. See [AUTHORS.md](../docs/AUTHORS.md) for how we use AI ourselves.
+Read [AGENTS.md](../AGENTS.md) for AI coding agent commands and repository rules.
 
 ## Getting Started
 
