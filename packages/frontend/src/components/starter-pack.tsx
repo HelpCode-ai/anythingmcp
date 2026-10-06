@@ -13,10 +13,11 @@ import { Button } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 
 /**
- * The starter pack on /welcome: a few keyless connectors, ticked by default,
- * added in one click and put on the user's MCP server. A new workspace used
- * to start empty; this gives it something that works before any credentials
- * are asked for, without installing anything the user did not choose.
+ * The no-key demos on /welcome: a few keyless connectors the user can tick and
+ * add in one click, for trying AnythingMCP before setting up a real app. They
+ * used to be ticked by default and lead the page; now the apps people actually
+ * connect come first and these are opt-in, since every demo takes a connector
+ * slot on the plan.
  */
 export function StarterPack({ token }: { token: string }) {
   const [items, setItems] = useState<StarterPackItem[] | null>(null);
@@ -97,15 +98,15 @@ export function StarterPack({ token }: { token: string }) {
 
   return (
     <section aria-labelledby="starter-pack-title" className="mb-10">
-      <p className="mb-1.5 font-mono text-xs uppercase tracking-[0.14em] text-[var(--brand)]">
-        Starter pack
+      <p className="mb-1.5 font-mono text-xs uppercase tracking-[0.14em] text-[var(--text-3)]">
+        No-key demos
       </p>
       <h2 id="starter-pack-title" className="text-lg font-semibold text-[var(--text)]">
-        Start with connectors that need no keys
+        Want to try it before setting up an app?
       </h2>
       <p className="mt-1 mb-2 text-sm text-[var(--text-2)]">
-        We add them to your MCP server, so your AI can use them as soon as you connect it. Untick
-        what you don&apos;t need; you can remove any of them later.
+        These need no account. Tick the ones you want and we add them to your MCP server; each one
+        counts as a connector on your plan, and you can remove it later.
       </p>
       {maxConnectors != null && !outcome && !allInstalled && (
         <p className="mt-1 mb-4 text-xs text-[var(--text-3)]">

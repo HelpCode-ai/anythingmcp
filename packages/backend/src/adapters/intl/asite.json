@@ -1,0 +1,474 @@
+{
+  "slug": "asite",
+  "name": "Asite",
+  "description": "Read the Asite construction document and project platform: workspaces, folders, documents with access history and comments, document and form search, RFIs and other forms with their distribution, workspace users and roles. Session login with an Asite account.",
+  "region": "intl",
+  "category": "construction",
+  "icon": "asite",
+  "docsUrl": "https://dms.asite.com/dmsHelp/About_API.htm",
+  "prerequisites": "An Asite user that signs in with email and password (not single sign-on only), with access to the workspaces to read. API access may need to be enabled for your organisation by Asite.",
+  "instructions": "**What this connects to**: the Asite API of the Asite platform (Adoddle): workspaces (projects), folders, documents and their access history, forms (RFIs, site diaries, NCRs, submittals) and their distribution, users and roles. Two hosts serve it: the DMS host (`/api/...`, e.g. https://dms.asite.com) and the Adoddle host (`/commonapi/...`, e.g. https://adoddle.asite.com). This first version only reads.\n\n**Start with `asite_list_workspaces`** for workspace ids, then `asite_list_folders` and `asite_list_documents`, or `asite_search_documents` / `asite_search_forms` to search across workspaces with JSON criteria.\n\n**Authentication**: there are no API keys. The connector posts the user's email and password to `/apilogin/` on the DMS host and sends the returned session id as the `ASessionID` cookie and header on every call. It logs in again when the session expires. Use an account that signs in with an Asite password; accounts that only use single sign-on cannot log in to the API. Every call sees what that user sees in Asite.\n\n**Hosts by data centre**: copy the DMS and Adoddle hosts from your browser. UK and global accounts usually use `dms.asite.com` and `adoddle.asite.com`; other data centres use a suffix, e.g. `dmsak.asite.com` and `adoddleak.asite.com`. Both must belong to the same data centre.\n\n**Ids**: Asite ids are hashed strings such as `54784$$8YjxDf`. Pass them exactly as returned, including the `$$` part.\n\n**Paging**: folder listings return 250 documents per page; the answer links the next page (search index and page number for `asite_list_documents_next_page`). Document search returns up to 1000 per call and pages with `cursorMark` (pass `*` first, then the value from the previous answer, with unchanged criteria). Form search pages with `recordStart`.\n\n**Rate limit**: 50,000 API calls per organisation per 24 hours; beyond that Asite answers 429.\n\n**Pitfalls**: never set `generateShareLink` in search criteria, it creates public links. Dates in criteria use the user's locale format. If answers arrive as XML instead of JSON, the account's API access may need enabling by Asite support.",
+  "requiredEnvVars": [
+    "ASITE_DMS_URL",
+    "ASITE_ADODDLE_URL",
+    "ASITE_EMAIL",
+    "ASITE_PASSWORD"
+  ],
+  "envVarMeta": {
+    "ASITE_DMS_URL": {
+      "label": "DMS host",
+      "kind": "address",
+      "help": "The DMS host of your data centre with https://, without a path: https://dms.asite.com for most accounts, or the dms host you see in your browser (e.g. https://dmsak.asite.com).",
+      "example": "https://dms.asite.com",
+      "pattern": "^https://dms[a-z0-9-]*\\.asite\\.com$",
+      "patternMessage": "The https:// address of your Asite DMS host, e.g. https://dms.asite.com.",
+      "link": "https://dms.asite.com/dmsHelp/Login_To_API.htm"
+    },
+    "ASITE_ADODDLE_URL": {
+      "label": "Adoddle host",
+      "kind": "address",
+      "help": "The Adoddle (application) host of the same data centre: https://adoddle.asite.com for most accounts, or the adoddle host you see in your browser when Asite is open (e.g. https://adoddleak.asite.com).",
+      "example": "https://adoddle.asite.com",
+      "pattern": "^https://adoddle[a-z0-9-]*\\.asite\\.com$",
+      "patternMessage": "The https:// address of your Asite Adoddle host, e.g. https://adoddle.asite.com."
+    },
+    "ASITE_EMAIL": {
+      "label": "Email",
+      "kind": "credential",
+      "help": "Email address the connector signs in to Asite with. Prefer a dedicated integration user with read access to the workspaces."
+    },
+    "ASITE_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "That user's Asite password."
+    }
+  },
+  "verifyHints": {
+    "401": "Asite did not accept the login or the session. Check email and password, that the user can sign in with a password (not single sign-on only), and that the DMS host belongs to your data centre.",
+    "auth_failed": "Asite did not return a session. Check email and password and that the account may use the API; Asite support can enable API access for your organisation.",
+    "429": "Your organisation reached Asite's limit of 50,000 API calls in 24 hours. Try again later.",
+    "not_found": "No Asite API at this address. Use the DMS host (e.g. https://dms.asite.com) and the Adoddle host (e.g. https://adoddle.asite.com) of your data centre."
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "Asite",
+    "type": "REST",
+    "baseUrl": "{{ASITE_DMS_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{ASITE_DMS_URL}}/apilogin/",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "User-Agent": "ApiClient"
+      },
+      "loginBody": {
+        "emailId": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{ASITE_EMAIL}}",
+      "password": "{{ASITE_PASSWORD}}",
+      "tokenJsonPath": "UserProfile.Sessionid",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": "ASessionID=${token}",
+      "extraHeaders": {
+        "ASessionID": "${token}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "ApiClient"
+    },
+    "healthcheckPath": "/api/workspace/workspacelist"
+  },
+  "probe": {
+    "tool": "asite_list_workspaces"
+  },
+  "tools": [
+    {
+      "name": "asite_list_workspaces",
+      "description": "The workspaces (projects) the logged-in user can access, with workspace id, name, status, owner organisation and the links to their folders, forms and team. Start here: every other call needs a workspace id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/workspacelist"
+      }
+    },
+    {
+      "name": "asite_list_folders",
+      "description": "The folder tree of one workspace with folder id, name, path, parent and permissions. Use the folder id with list_documents or get_folder_details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/folders"
+      }
+    },
+    {
+      "name": "asite_list_documents",
+      "description": "The first 250 documents of one folder with document id, revision id, reference, title, revision, status, purpose of issue, publisher and dates. The answer carries the search index and page for list_documents_next_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id from list_folders (hashed, e.g. 1234567$$AbCdEf)."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/folder/{folder_id}/firstpage_doclist"
+      }
+    },
+    {
+      "name": "asite_list_documents_next_page",
+      "description": "The next 250 documents of a folder listing started with list_documents. Pass the search index and page number from the previous answer's next-page link until no further link is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "search_index": {
+            "type": "string",
+            "description": "Search index from the next-page link of the previous document list answer."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page number from that next-page link (2 for the second page)."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "search_index",
+          "page_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/folder/nextpage_doclist/{search_index}/{page_no}"
+      }
+    },
+    {
+      "name": "asite_get_document_access",
+      "description": "Who accessed one document and how: user, organisation, action (viewed, downloaded, printed) and date. Use it to check whether a drawing or report reached the people it was sent to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id from list_folders (hashed, e.g. 1234567$$AbCdEf)."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Document id from list_documents or search_documents."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "folder_id",
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/folder/{folder_id}/docaccessdetail/{document_id}"
+      }
+    },
+    {
+      "name": "asite_get_folder_details",
+      "description": "Details of one folder: name, path, parent, permissions, metadata settings and whether public links are allowed. Read-only call sent as a form POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id from list_folders (hashed, e.g. 1234567$$AbCdEf)."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{ASITE_ADODDLE_URL}}/commonapi/folder/getFolderDetails",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "folderId": "$folder_id",
+          "projectId": "$workspace_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "asite_search_documents",
+      "description": "Search documents across workspaces with JSON criteria (workspace name, folder, reference, title, status, revision, publisher, revision date, custom attributes). Returns up to 1000 documents per call with a cursorMark for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_criteria": {
+            "type": "string",
+            "description": "JSON search criteria, e.g. {\"criteria\":[{\"field\":\"project_name\",\"operator\":1,\"values\":[\"Tower A\"]},{\"field\":\"doc_title\",\"operator\":3,\"values\":[\"drainage\"]}],\"cursorMark\":\"*\",\"recordLimit\":50,\"sortField\":\"revision_date\",\"sortOrder\":\"desc\"}. Operators: 1 equals, 2 not equals, 3 contains, 5 greater or equal, 6 less or equal, 7 within (durations like -5d). Fields include doc_title, doc_ref, project_name, folder_name, folder_path, document_status, revision_num, purpose_of_issue, publisher_name, file_name, revision_date, updated_since. For the next page pass the cursorMark from the previous answer and keep the criteria unchanged. Do not add generateShareLink: it creates public links."
+          }
+        },
+        "required": [
+          "search_criteria"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{ASITE_ADODDLE_URL}}/commonapi/documentsearchapi/search",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "searchCriteria": "$search_criteria"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "asite_list_form_types",
+      "description": "The form types (apps) enabled in one workspace, e.g. RFIs, site diaries, NCRs, inspections, with form type id, name, code and the counts the user can see. Use the id with list_forms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/form/formtypelist"
+      }
+    },
+    {
+      "name": "asite_list_forms",
+      "description": "The first page of forms of one form type in a workspace with form id, code, title, status, originator, dates and response due date. Use search_forms for filters across workspaces.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "form_type_id": {
+            "type": "string",
+            "description": "Form type id from list_form_types."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "form_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/workspace/{workspace_id}/form/firstpage/formlist/{form_type_id}"
+      }
+    },
+    {
+      "name": "asite_search_forms",
+      "description": "Search forms (RFIs, submittals, site diaries, NCRs and other apps) with JSON criteria: workspace, form type, status, originator, dates. Returns up to 1000 forms per call; optional messages, actions and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_criteria": {
+            "type": "string",
+            "description": "JSON search criteria, e.g. {\"criteria\":[{\"field\":\"project_name\",\"operator\":1,\"values\":[\"Tower A\"]},{\"field\":\"status_name\",\"operator\":1,\"values\":[\"Open\"]}],\"recordStart\":1,\"recordLimit\":50,\"sortField\":\"updatedate\",\"sortOrder\":\"desc\",\"settings\":{\"includeActions\":true,\"appType\":1}}. appType: 1 project forms, 2 field, 14 RFIs, 15 change orders, 17 submittals, 19 daily site report. Operators as in search_documents. Page with recordStart."
+          }
+        },
+        "required": [
+          "search_criteria"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{ASITE_ADODDLE_URL}}/commonapi/formsearchapi/search",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "searchCriteria": "$search_criteria"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "asite_get_form_distribution_history",
+      "description": "Distribution history of the forms of one form type in a workspace over a period: who each form was sent to, with which action and due date, and when. Use it to follow up open actions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_criteria": {
+            "type": "string",
+            "description": "JSON with projectId (workspace id), formTypeName, appBuilderId (the form type code), startDateTime and endDateTime, e.g. {\"projectId\":\"54784$$8YjxDf\",\"formTypeName\":\"Request for Information\",\"appBuilderId\":\"RFI\",\"startDateTime\":\"01-Sep-2026 00:00:00\",\"endDateTime\":\"30-Sep-2026 23:59:59\"}."
+          }
+        },
+        "required": [
+          "search_criteria"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "{{ASITE_ADODDLE_URL}}/commonapi/form/getFormDistributionHistory",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "searchCriteria": "$search_criteria"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "asite_get_document_comments",
+      "description": "Comments on one document revision with comment id, author, text, replies and dates. Use the revision id from list_documents or search_documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          },
+          "revision_id": {
+            "type": "string",
+            "description": "Document revision id (hashed) from list_documents or search_documents."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "revision_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{{ASITE_ADODDLE_URL}}/commonapi/workspace/{workspace_id}/documents/revisions/{revision_id}/comments"
+      }
+    },
+    {
+      "name": "asite_list_workspace_users",
+      "description": "Active users of one workspace with user id, name, email, organisation and role. Use it to see who is on a project team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collateral/{workspace_id}/getWorkspaceUsers"
+      }
+    },
+    {
+      "name": "asite_list_workspace_roles",
+      "description": "The roles defined in one workspace (e.g. Document Controller, Design Team) with role id and name. Roles decide folder and form permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collateral/{workspace_id}/getWorkspaceroles"
+      }
+    },
+    {
+      "name": "asite_list_document_statuses",
+      "description": "The document status values available in one workspace (e.g. For Information, For Construction, Approved) with id and name. Use the names in search_documents criteria.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collateral/{workspace_id}/getDocStatusForWorkspace"
+      }
+    },
+    {
+      "name": "asite_list_purposes_of_issue",
+      "description": "The purpose of issue values of one workspace (e.g. For Review, For Construction, As Built) with id and name. Use the names in search_documents criteria.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace (project) id from list_workspaces, a hashed id such as 54784$$8YjxDf. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collateral/{workspace_id}/getpoiForWorkspace"
+      }
+    }
+  ]
+}

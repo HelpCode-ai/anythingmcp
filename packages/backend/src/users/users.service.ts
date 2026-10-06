@@ -4,6 +4,7 @@ import { User, UserRole } from '../generated/prisma/client';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
+import { LicenseReleaseService } from '../license/license-release.service';
 
 @Injectable()
 export class UsersService {
@@ -14,6 +15,7 @@ export class UsersService {
     private readonly organizations: OrganizationsService,
     private readonly lifecycle: UserLifecycleService,
     private readonly securityEvents: SecurityEventService,
+    private readonly licenseRelease: LicenseReleaseService,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -259,6 +261,9 @@ export class UsersService {
       });
     }
 
+    // A subscription is cancelled in Stripe, not by deleting the account.
+    await this.licenseRelease.assertNoLiveSubscription(cascadableOrgIds);
+
     await this.prisma.$transaction([
       ...cascadableOrgIds.map((orgId) =>
         this.prisma.organization.delete({ where: { id: orgId } }),
@@ -266,6 +271,10 @@ export class UsersService {
       this.prisma.oAuthAuthorizationCode.deleteMany({ where: { userId } }),
       this.prisma.user.delete({ where: { id: userId } }),
     ]);
+
+    // The deleted workspaces' licences are left without one; end them on the
+    // licence site, which stops the trial emails.
+    if (cascadableOrgIds.length > 0) this.licenseRelease.releaseInBackground();
   }
 
   async findAllInvitations(organizationId?: string) {

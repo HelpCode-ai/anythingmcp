@@ -1,0 +1,781 @@
+{
+  "slug": "sage-200",
+  "name": "Sage 200",
+  "description": "Read Sage 200 Standard and Professional through the Sage 200 API: customers, suppliers, sales and purchase orders, posted invoices, credit notes and payments, stock items and stock levels, nominal codes. Sage ID OAuth 2.0, read-only.",
+  "region": "gb",
+  "category": "accounting",
+  "icon": "sage-200",
+  "docsUrl": "https://developer.sage.com/200/",
+  "prerequisites": "Sage issues the OAuth client ID and secret on request: write to Sage Developer Services (developers.programme@sage.com) and complete their form; it takes a few days and cannot be done inside Sage 200. You also need a developer subscription key from the Sage Developer Portal and a Sage ID that is an API user of your companies.",
+  "instructions": "**What this connects to**: the Sage 200 API (Sage 200 Standard, and Sage 200 Professional connected to the API), `https://api.columbus.sage.com/uk/<product>/accounts/v1`. It reads customers, suppliers, sales and purchase orders, posted sales and purchase transactions (invoices, credit notes, receipts, payments), stock items and stock levels, and nominal codes. This first version only reads.\n\n**Start with `sage_200_list_sites`**: it lists the sites and companies the signed-in user can reach. Every other tool takes `site_id` and `company_id` from it; they are sent as the `X-Site` and `X-Company` headers Sage 200 requires.\n\n**Setup**\n1. Client credentials are issued by Sage, not created in Sage 200: request them from Sage Developer Services (developers.programme@sage.com, then Sage's application form). Choose a confidential (web server) client with the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`). Sage takes a few days.\n2. In the Sage Developer Portal, get a developer subscription key (primary key) for the Sage 200 API.\n3. Set `SAGE200_PRODUCT` to `sage200` for Sage 200 Standard or `sage200extra` for Sage 200 Professional, and fill in client ID, client secret and subscription key.\n4. On the connector page, click **Authorize with Provider** and sign in with the Sage ID that is an API user of your Sage 200 companies (for Sage 200 Professional, the company must be connected to the API in System Administration).\n\n**Querying**: lists take OData options: `filter` (e.g. `reference eq 'ABC001'`), `select`, `orderby`, `top`, `skip`. Field names are snake_case, as in the answers. Ids are numbers and differ from references and codes.\n\n**Invoices**: posted invoices and credit notes are ledger transactions; read them with `sage_200_list_sales_transactions` / `sage_200_list_purchase_transactions` and filter on the transaction type and outstanding value.\n\n**Pitfalls**: 401 means the Sage ID token is not valid (authorize again) or the subscription key is wrong; 403 means the Sage ID is not an API user of that company. Amounts are in the account's currency; check `currency_id`.",
+  "requiredEnvVars": [
+    "SAGE200_PRODUCT",
+    "SAGE200_CLIENT_ID",
+    "SAGE200_CLIENT_SECRET",
+    "SAGE200_SUBSCRIPTION_KEY"
+  ],
+  "envVarMeta": {
+    "SAGE200_PRODUCT": {
+      "label": "Sage 200 edition",
+      "kind": "setting",
+      "help": "sage200 for Sage 200 Standard, sage200extra for Sage 200 Professional.",
+      "example": "sage200",
+      "pattern": "^(sage200|sage200extra)$",
+      "patternMessage": "Enter sage200 (Standard) or sage200extra (Professional)."
+    },
+    "SAGE200_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "The client ID Sage Developer Services issued for your application."
+    },
+    "SAGE200_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret issued with it (confidential web server client)."
+    },
+    "SAGE200_SUBSCRIPTION_KEY": {
+      "label": "API subscription key",
+      "kind": "credential",
+      "help": "Sage Developer Portal > your profile > subscriptions: the primary key of your Sage 200 API subscription. Sent as Ocp-Apim-Subscription-Key.",
+      "link": "https://developer.sage.com/200/"
+    }
+  },
+  "verifyHints": {
+    "401": "Sage 200 refused the call. Authorize the connector again with a Sage ID that is an API user, and check the subscription key and the edition (sage200 or sage200extra).",
+    "403": "The Sage ID is not an API user of this site or company. Add it in Sage 200 (System Administration or the Sage 200 Standard settings).",
+    "404": "Not found on the Sage 200 API. Check the edition: sage200 for Standard, sage200extra for Professional."
+  },
+  "connector": {
+    "name": "Sage 200",
+    "type": "REST",
+    "baseUrl": "https://api.columbus.sage.com/uk/{{SAGE200_PRODUCT}}/accounts/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{SAGE200_CLIENT_ID}}",
+      "clientSecret": "{{SAGE200_CLIENT_SECRET}}",
+      "authorizationUrl": "https://id.sage.com/authorize?audience=s200ukipd/sage200",
+      "tokenUrl": "https://id.sage.com/oauth/token",
+      "scopes": "openid profile email offline_access"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Ocp-Apim-Subscription-Key": "{{SAGE200_SUBSCRIPTION_KEY}}"
+    },
+    "healthcheckPath": "/sites"
+  },
+  "probe": {
+    "tool": "sage_200_list_sites"
+  },
+  "tools": [
+    {
+      "name": "sage_200_list_sites",
+      "description": "The Sage 200 sites and companies the signed-in Sage ID user can reach through the API, with site_id, site name, company_id and company name. Start here: every other tool needs a site id and a company id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites"
+      }
+    },
+    {
+      "name": "sage_200_list_customers",
+      "description": "Customer accounts with id, reference, name, balance, credit limit, on-hold flag, account status, currency and contact details. Filter by reference or name; use the id for get_customer or to filter orders and transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_get_customer",
+      "description": "One customer account by id with addresses, contacts, credit terms, balance, analysis codes and default tax code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id (not the reference) from list_customers."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}",
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_suppliers",
+      "description": "Supplier accounts with id, reference, name, balance, credit limit, on-hold flag, currency and contact details. Filter by reference or name; use the id for get_supplier or to filter purchase orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_get_supplier",
+      "description": "One supplier account by id with addresses, contacts, payment terms, balance, bank details and default tax code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "supplier_id": {
+            "type": "integer",
+            "description": "Supplier id (not the reference) from list_suppliers."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id",
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers/{supplier_id}",
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_sales_orders",
+      "description": "Sales orders (SOP) with id, document number, customer, document date, requested delivery date, status, totals and currency. Filter by customer_id, document_status or a date range; expand lines for the order lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related records to include, e.g. lines for order lines."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sop_orders",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_get_sales_order",
+      "description": "One sales order by id with header, delivery address and, with expand lines, every order line (product, quantity, price, discount, despatched and invoiced quantities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "sales_order_id": {
+            "type": "integer",
+            "description": "Sales order id from list_sales_orders."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related records to include, e.g. lines."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id",
+          "sales_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sop_orders/{sales_order_id}",
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        },
+        "queryParams": {
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_purchase_orders",
+      "description": "Purchase orders (POP) with id, document number, supplier, document date, status, totals and currency. Filter by supplier_id or a date range; expand lines for the order lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related records to include, e.g. lines for order lines."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pop_orders",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_get_purchase_order",
+      "description": "One purchase order by id with header and, with expand lines, every line (product, quantity, cost, received and invoiced quantities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "purchase_order_id": {
+            "type": "integer",
+            "description": "Purchase order id from list_purchase_orders."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related records to include, e.g. lines."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id",
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pop_orders/{purchase_order_id}",
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        },
+        "queryParams": {
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_sales_transactions",
+      "description": "Posted sales ledger transactions: invoices, credit notes, receipts and adjustments with customer, reference, date, due date, goods, tax and outstanding value. Filter by trader_transaction_type and customer_id to list open invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_posted_transactions",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_purchase_transactions",
+      "description": "Posted purchase ledger transactions: supplier invoices, credit notes, payments and adjustments with supplier, reference, date, due date, goods, tax and outstanding value. Filter by supplier_id to see what is owed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_posted_transactions",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_products",
+      "description": "Stock items (products) with id, code, name, product group, unit of sale, prices, cost and stock settings. Filter by code or name; use the id with list_stock_levels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_get_product",
+      "description": "One stock item by id with descriptions, units, prices, cost, analysis codes, suppliers and warehouses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Product id (not the code) from list_products."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_stock_levels",
+      "description": "Stock holdings per product and warehouse: quantity in stock, allocated, free, on order and reorder levels. Filter by product_id or warehouse_id to check availability.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouse_holdings",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "sage_200_list_nominal_codes",
+      "description": "Nominal (general ledger) accounts with id, reference, cost centre, department, name, account type and balances. Use them to read the chart of accounts and account balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sage_200_list_sites (site_id). Sent as the X-Site header."
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Company id from sage_200_list_sites (company_id within the site). Sent as the X-Company header."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on the resource's fields, e.g. reference eq 'ABC001' or date ge 2026-01-01. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,name,balance."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. reference asc or date desc."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records to return; use with skip to page."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for the next page."
+          }
+        },
+        "required": [
+          "site_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nominal_codes",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "headers": {
+          "X-Site": "$site_id",
+          "X-Company": "$company_id"
+        }
+      }
+    }
+  ]
+}

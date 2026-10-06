@@ -58,21 +58,23 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "after": { "type": "string", "description": "Cursor." },
-          "limit": { "type": "integer", "description": "Per page." },
-          "from": { "type": "string", "description": "ISO 8601 — meetings starting after." },
-          "to": { "type": "string", "description": "ISO 8601 — starting before." },
-          "state": { "type": "string", "description": "scheduled, canceled." }
+          "after": { "type": "string", "description": "Cursor from the previous page's metadata: returns entries after it." },
+          "limit": { "type": "integer", "description": "Per page (1-100, default 20)." },
+          "period": { "type": "string", "enum": ["upcoming", "past", "fixed", "all"], "description": "Which events: upcoming (default), past, all, or fixed (between from and to)." },
+          "from": { "type": "string", "description": "Lower bound for the start date, YYYY-MM-DD. Only applies when period is fixed." },
+          "to": { "type": "string", "description": "Upper bound for the start date, YYYY-MM-DD. Only applies when period is fixed." },
+          "state": { "type": "string", "enum": ["all", "confirmed", "canceled", "awaiting_reschedule", "awaiting_checkout", "checkout_expired", "awaiting_approval", "declined", "tentative"], "description": "Filter by event state (default confirmed)." }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/meetings",
+        "path": "/events",
         "queryParams": {
           "after": "$after",
           "limit": "$limit",
+          "period": "$period",
           "from": "$from",
-          "to": "$to",
+          "until": "$to",
           "state": "$state"
         }
       }
@@ -83,11 +85,11 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "meetingId": { "type": "string", "description": "Meeting ID." }
+          "meetingId": { "type": "string", "description": "Event ID or UUID from savvycal_list_meetings (e.g. event_01KKGY70MFPCECSQ6KM6FMDPC3)." }
         },
         "required": ["meetingId"]
       },
-      "endpointMapping": { "method": "GET", "path": "/meetings/{meetingId}" }
+      "endpointMapping": { "method": "GET", "path": "/events/{meetingId}" }
     },
     {
       "name": "savvycal_cancel_meeting",
@@ -95,15 +97,15 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "meetingId": { "type": "string", "description": "Meeting ID." },
+          "meetingId": { "type": "string", "description": "Event ID or UUID from savvycal_list_meetings (e.g. event_01KKGY70MFPCECSQ6KM6FMDPC3)." },
           "reason": { "type": "string", "description": "Cancellation reason (shown in email)." }
         },
         "required": ["meetingId"]
       },
       "endpointMapping": {
-        "method": "DELETE",
-        "path": "/meetings/{meetingId}",
-        "bodyMapping": { "reason": "$reason" }
+        "method": "POST",
+        "path": "/events/{meetingId}/cancel",
+        "bodyMapping": { "cancel_reason": "$reason" }
       }
     }
   ]

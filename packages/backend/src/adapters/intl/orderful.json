@@ -1,0 +1,578 @@
+{
+  "slug": "orderful",
+  "name": "Orderful",
+  "description": "Orderful EDI platform: list and read EDI transactions (purchase orders, acknowledgments, ship notices, invoices, inventory advice) in both directions, read their message content, work an inbox of inbound deliveries, accept or fail deliveries, acknowledge transactions, send new transactions and list trading partner relationships.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "orderful",
+  "docsUrl": "https://docs.orderful.com/reference/welcome-to-mosaic",
+  "instructions": "## Orderful\nOrderful is a cloud EDI network: your organization trades EDI documents (X12, EDIFACT or Orderful's JSON formats) with trading partners such as retailers, suppliers and carriers. A **transaction** is one document (for example an 850 purchase order or an 810 invoice), sent (`out`) or received (`in`). A **relationship** is one agreed document type between you and one partner; the partner's organization and EDI account names appear on it.\n\n## Setup\n1. Sign in at https://ui.orderful.com (US) or https://ui-eu.orderful.com (EU).\n2. Click your avatar → **Settings** → **Organization Settings** → **API Credentials** and copy the **API Token** into `ORDERFUL_API_KEY`. It is sent in the `orderful-api-key` header.\n3. Set `ORDERFUL_API_URL` to the region of your account: `https://api.orderful.com` (US) or `https://api-eu.orderful.com` (EU). Data is not shared across regions; a US key does not work on the EU host.\n\n## Start here\n- `orderful_get_organization` checks the key and shows your organization and EDI accounts (ISA ids).\n- `orderful_list_transactions` is the main query. Narrow it with `direction` (`in`/`out`), `simplified_transaction_type` (e.g. `INVOICE`, `PURCHASE_ORDER`, `SHIP_NOTICE`), `stream` (`test` or `live`), statuses, `business_number` (the PO or invoice number) and `created_at_start`/`created_at_end`.\n- `orderful_get_transaction_message` returns the document content of one transaction.\n- `orderful_list_relationships` lists your trading partners and which document types you exchange with each.\n\n## Ids\n- Transactions from the list have a UUID `id`; the get, message and acknowledgment tools take that UUID.\n- Inbound deliveries (from `orderful_list_inbox_transactions`) carry a `delivery` object with `deliveryId` and a numeric `transactionId`. The delivery tools take both. Orderful has announced that the numeric id in these paths will be replaced; if the accept or fail tools start answering 404, POST to the `delivery.approve.href` / `delivery.fail.href` link instead.\n- The inbox id is shown in the Orderful UI under **Communication Channels** (Inbound Poller).\n\n## Receiving documents\nRead the inbox, process each transaction, then call `orderful_accept_delivery` (removes it from the inbox and sets delivery status DELIVERED) or `orderful_fail_delivery` with a note. For relationships that trade JSON, also send a business acknowledgment with `orderful_acknowledge_transaction` (ACCEPTED or REJECTED, only once per transaction). X12 and EDIFACT relationships acknowledge with a 997 instead.\n\n## Sending documents\n`orderful_create_transaction` posts one document in Orderful's Mosaic JSON for the types 850, 855, 856, 810, 846 and 860. Use `stream: test` until the relationship is live; a `live` transaction goes to the trading partner. Check `validationStatus` on the result: INVALID transactions are not delivered.\n\n## Pagination\nList answers carry `metadata.pagination.links.next`; pass the `nextCursor` value from that URL to get the next page. No `next` link means the last page. Up to 100 transactions per page.\n\n## Statuses\n`validationStatus` PROCESSING, VALID, INVALID; `deliveryStatus` PENDING, SENT, DELIVERED, FAILED; `acknowledgmentStatus` NOT_ACKNOWLEDGED, ACCEPTED, REJECTED, OVERDUE, ACCEPTED_WITH_ERRORS.",
+  "requiredEnvVars": [
+    "ORDERFUL_API_URL",
+    "ORDERFUL_API_KEY"
+  ],
+  "envVarMeta": {
+    "ORDERFUL_API_URL": {
+      "label": "API host (region)",
+      "kind": "address",
+      "help": "https://api.orderful.com for accounts on ui.orderful.com (US), https://api-eu.orderful.com for accounts on ui-eu.orderful.com (EU).",
+      "example": "https://api.orderful.com",
+      "link": "https://docs.orderful.com/reference/regional-endpoints",
+      "pattern": "^https://api(-eu)?\\.orderful\\.com$",
+      "patternMessage": "Use https://api.orderful.com (US) or https://api-eu.orderful.com (EU), without a trailing slash."
+    },
+    "ORDERFUL_API_KEY": {
+      "label": "API token",
+      "kind": "credential",
+      "help": "Orderful → avatar (top right) → Settings → Organization Settings → API Credentials → API Token.",
+      "link": "https://ui.orderful.com",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the API token as one string, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Orderful refused the API token. Copy it again from Settings → Organization Settings → API Credentials, and check that the API host matches your region (US api.orderful.com, EU api-eu.orderful.com).",
+    "403": "The token belongs to a user or organization without access to this resource.",
+    "not_found": "Nothing at this address. Check that the API host is https://api.orderful.com or https://api-eu.orderful.com."
+  },
+  "probe": {
+    "tool": "orderful_get_organization"
+  },
+  "connector": {
+    "name": "Orderful API",
+    "type": "REST",
+    "baseUrl": "{{ORDERFUL_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "orderful-api-key",
+      "apiKey": "{{ORDERFUL_API_KEY}}"
+    },
+    "healthcheckPath": "/v3/organizations/me"
+  },
+  "tools": [
+    {
+      "name": "orderful_get_organization",
+      "description": "Get your own Orderful organization: id, name and its EDI accounts with live and test ISA ids and qualifiers. Call it first to check the token and to learn the ISA ids used as senderId and receiverId.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/organizations/me"
+      }
+    },
+    {
+      "name": "orderful_list_transactions",
+      "description": "List EDI transactions sent and received across all trading partners, newest first, up to 100 per page. Each has a UUID id, direction, sender and receiver ISA ids, type, business number, stream and validation, delivery and acknowledgment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "in",
+                "out"
+              ]
+            },
+            "description": "in for received, out for sent."
+          },
+          "simplified_transaction_type": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PURCHASE_ORDER",
+                "PURCHASE_ORDER_ACKNOWLEDGMENT",
+                "PURCHASE_ORDER_CHANGE",
+                "SHIP_NOTICE",
+                "INVOICE",
+                "INVENTORY_ADVICE",
+                "PRICE_SALES_CATALOG",
+                "WAREHOUSE_SHIPPING_ORDER",
+                "WAREHOUSE_SHIPPING_ADVICE",
+                "WAREHOUSE_STOCK_TRANSFER_SHIPMENT",
+                "WAREHOUSE_STOCK_TRANSFER_RECEIPT"
+              ]
+            },
+            "description": "Business document types, e.g. [\"INVOICE\"] matches every invoice type."
+          },
+          "edi_transaction_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact EDI types, up to 5, e.g. [\"850_PURCHASE_ORDER\", \"810_INVOICE\"]."
+          },
+          "stream": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "test",
+                "live"
+              ]
+            },
+            "description": "test and/or live stream (lowercase)."
+          },
+          "business_number": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 business numbers, such as a purchase order or invoice number."
+          },
+          "validation_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PROCESSING",
+                "VALID",
+                "INVALID"
+              ]
+            },
+            "description": "Validation statuses to include."
+          },
+          "delivery_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "SENT",
+                "DELIVERED",
+                "FAILED"
+              ]
+            },
+            "description": "Delivery statuses to include."
+          },
+          "acknowledgment_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NOT_ACKNOWLEDGED",
+                "ACCEPTED",
+                "REJECTED",
+                "OVERDUE",
+                "ACCEPTED_WITH_ERRORS"
+              ]
+            },
+            "description": "Acknowledgment statuses to include, e.g. [\"OVERDUE\"]."
+          },
+          "sender_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 sender ISA ids."
+          },
+          "receiver_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 receiver ISA ids."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601, e.g. 2026-10-01T00:00:00.000Z."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Transactions per page, 1 to 100 (default 100)."
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "nextCursor value from metadata.pagination.links.next of the previous page."
+          },
+          "prev_cursor": {
+            "type": "string",
+            "description": "prevCursor value from metadata.pagination.links.prev, to go back a page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "queryParams": {
+          "direction": "$direction",
+          "simplifiedTransactionType": "$simplified_transaction_type",
+          "ediTransactionType": "$edi_transaction_type",
+          "stream": "$stream",
+          "businessNumber": "$business_number",
+          "validationStatus": "$validation_status",
+          "deliveryStatus": "$delivery_status",
+          "acknowledgmentStatus": "$acknowledgment_status",
+          "senderId": "$sender_id",
+          "receiverId": "$receiver_id",
+          "createdAtStart": "$created_at_start",
+          "createdAtEnd": "$created_at_end",
+          "limit": "$limit",
+          "nextCursor": "$next_cursor",
+          "prevCursor": "$prev_cursor"
+        }
+      }
+    },
+    {
+      "name": "orderful_get_transaction",
+      "description": "Get one transaction by its UUID: direction, sender and receiver ISA ids, EDI and business type, business number, stream, statuses, creation time and links to its message and acknowledgment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction UUID, the id from orderful_list_transactions or from an inbox item."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}",
+        "headers": {
+          "orderful-api-version": "v4"
+        }
+      }
+    },
+    {
+      "name": "orderful_get_transaction_message",
+      "description": "Get the document content of one transaction: the purchase order, invoice or ship notice itself, as JSON or as the raw EDI file. Use it to read line items, quantities, prices and parties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction UUID."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}/message",
+        "headers": {
+          "orderful-api-version": "v4"
+        }
+      }
+    },
+    {
+      "name": "orderful_get_acknowledgment",
+      "description": "Get the business acknowledgment of a transaction: ACCEPTED or REJECTED, with the errors given by the receiver. Works for both sender and receiver; use it to see whether a partner accepted your document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction UUID."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}/acknowledgment",
+        "headers": {
+          "orderful-api-version": "v4"
+        }
+      }
+    },
+    {
+      "name": "orderful_list_inbox_transactions",
+      "description": "Read the transactions waiting in an Inbound Poller inbox, each with its document content and a delivery object (deliveryId, transactionId, accept and fail links). Use it to pick up inbound documents, then accept or fail each delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbox_id": {
+            "type": "integer",
+            "description": "Inbox id, shown in the Orderful UI under Communication Channels."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Transactions to return, 1 to 100 (default 30)."
+          }
+        },
+        "required": [
+          "inbox_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inboxes/{inbox_id}/transactions",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "orderful_get_delivery",
+      "description": "Get one delivery of a transaction: status (CREATED, SENT, FAILED, DELIVERED), note, send and confirmation times, and the accept and fail links. Use it to check whether an inbound document was confirmed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "description": "Numeric transactionId from the delivery object of an inbox item."
+          },
+          "delivery_id": {
+            "type": "string",
+            "description": "deliveryId from the delivery object."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "delivery_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}/deliveries/{delivery_id}",
+        "headers": {
+          "orderful-api-version": "v4"
+        }
+      }
+    },
+    {
+      "name": "orderful_accept_delivery",
+      "description": "Confirm that an inbound delivery was received and processed. Sets the transaction's delivery status to DELIVERED and removes it from the inbox. Call it after your system has stored the document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "description": "Numeric transactionId from the delivery object."
+          },
+          "delivery_id": {
+            "type": "string",
+            "description": "deliveryId from the delivery object."
+          },
+          "note": {
+            "type": "string",
+            "description": "Short note stored with the acceptance, e.g. Imported as order 4711."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "delivery_id",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/{transaction_id}/deliveries/{delivery_id}/accept",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "bodyMapping": {
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "orderful_fail_delivery",
+      "description": "Mark an inbound delivery as failed because your system could not process it, with a note saying why. The delivery status becomes FAILED so the problem shows in Orderful.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "description": "Numeric transactionId from the delivery object."
+          },
+          "delivery_id": {
+            "type": "string",
+            "description": "deliveryId from the delivery object."
+          },
+          "note": {
+            "type": "string",
+            "description": "Why the delivery failed, e.g. Unknown ship-to location 0042."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "delivery_id",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/{transaction_id}/deliveries/{delivery_id}/fail",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "bodyMapping": {
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "orderful_acknowledge_transaction",
+      "description": "Send the business acknowledgment for an inbound transaction on a JSON relationship: ACCEPTED, or REJECTED with error messages. Can be sent only once per transaction; the sender sees the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction UUID (the id of the inbox item)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "REJECTED"
+            ],
+            "description": "Accept or reject the document."
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "For REJECTED: [{\"path\": \"/message\", \"code\": \"00\", \"message\": \"reason\"}]. Only free-text code 00 at /message is supported."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/{transaction_id}/acknowledgment",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "bodyMapping": {
+          "status": "$status",
+          "errors": "$errors"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "orderful_create_transaction",
+      "enabled": false,
+      "description": "Send one EDI document to a trading partner in Orderful's Mosaic JSON (850, 855, 856, 810, 846 or 860). Returns the new transaction with its validation status. On the live stream the partner receives it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "850_PURCHASE_ORDER",
+              "855_PURCHASE_ORDER_ACKNOWLEDGMENT",
+              "856_SHIP_NOTICE_MANIFEST",
+              "810_INVOICE",
+              "846_INVENTORY_ADVICE",
+              "860_PURCHASE_ORDER_CHANGE"
+            ],
+            "description": "Document type."
+          },
+          "stream": {
+            "type": "string",
+            "enum": [
+              "test",
+              "live"
+            ],
+            "description": "test while testing a relationship, live for production."
+          },
+          "sender_id": {
+            "type": "string",
+            "description": "Your ISA id (from orderful_get_organization)."
+          },
+          "receiver_id": {
+            "type": "string",
+            "description": "The trading partner's ISA id (from orderful_list_relationships)."
+          },
+          "message": {
+            "type": "object",
+            "description": "The document in Mosaic JSON for the chosen type, e.g. for 810: invoiceNumber, invoiceDate, purchaseOrderNumber, parties, lineItems."
+          }
+        },
+        "required": [
+          "type",
+          "stream",
+          "sender_id",
+          "receiver_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions",
+        "headers": {
+          "orderful-api-version": "v4"
+        },
+        "bodyMapping": {
+          "type": "$type",
+          "stream": "$stream",
+          "senderId": "$sender_id",
+          "receiverId": "$receiver_id",
+          "message": "$message"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "orderful_list_relationships",
+      "description": "List your trading partner relationships: for each, the document type, status, auto-send setting and the sender and receiver organization, EDI account and ISA ids. Use it to see who you trade which documents with.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "auto_send": {
+            "type": "string",
+            "enum": [
+              "ENABLED",
+              "DISABLED"
+            ],
+            "description": "Only relationships with auto-send on or off."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Relationships per page."
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "nextCursor value from metadata.pagination.links.next."
+          },
+          "prev_cursor": {
+            "type": "string",
+            "description": "prevCursor value from metadata.pagination.links.prev."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/relationships",
+        "queryParams": {
+          "autoSend": "$auto_send",
+          "limit": "$limit",
+          "nextCursor": "$next_cursor",
+          "prevCursor": "$prev_cursor"
+        }
+      }
+    }
+  ]
+}

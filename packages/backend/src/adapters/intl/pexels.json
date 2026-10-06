@@ -1,0 +1,376 @@
+{
+  "slug": "pexels",
+  "name": "Pexels",
+  "description": "Pexels free stock media: search photos and videos with orientation, size, colour and locale filters, curated photos, popular videos, single photo or video details, and featured or own collections. Pexels API with an API key.",
+  "instructions": "## Pexels\nThis connector uses the Pexels API (`https://api.pexels.com/v1`): search and browse free stock photos and videos, curated and popular media, and collections. It is read-only.\n\n## Setup\nSign in at pexels.com, open **Image & Video API** (https://www.pexels.com/api/new/), fill in the short form about your use and copy the key into `PEXELS_API_KEY`. The key is sent as `Authorization: <key>`, without the word Bearer.\n\n## Start here\n`pexels_search_photos` or `pexels_search_videos` with a `query`. Each photo has `src` with ready-made sizes (original, large2x, large, medium, small, portrait, landscape, tiny), `photographer`, `photographer_url`, `url` (the Pexels page) and `alt`. Each video has `video_files` (one per resolution, with `quality`, `width`, `height` and `link`) and `video_pictures`.\n\n## Filters\n`orientation` landscape, portrait or square; `size` large, medium or small (minimum size); photo `color` as a name (red, blue, black, white, ...) or a hex code; `locale` such as en-US or de-DE for searching in another language. Popular videos filter by `min_width`, `min_height`, `min_duration`, `max_duration`.\n\n## Paging and limits\n`page` starts at 1, `per_page` is 15 by default and at most 80. Answers carry `total_results` and `next_page` (missing on the last page). The default limit is 200 requests per hour and 20,000 per month per key; above it Pexels answers 429. Pexels raises limits for free on request if you attribute properly.\n\n## Attribution\nPexels asks every app to show a visible link to Pexels and, where possible, to credit the photographer: \"Photo by <photographer> on Pexels\", linking `photographer_url` and `url`. Use the media URLs from the answers rather than re-hosting at scale; the API may not be used to build a wallpaper app or a copy of Pexels.\n\n## Ids\nPhoto and video ids are integers; collection ids are short strings (the last part of a pexels.com/collections/ URL). `pexels_get_collection_media` reads only featured collections and the collections of the account that created the key; any other collection answers 404, even a public one.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "pexels",
+  "docsUrl": "https://www.pexels.com/api/documentation/",
+  "requiredEnvVars": [
+    "PEXELS_API_KEY"
+  ],
+  "envVarMeta": {
+    "PEXELS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "pexels.com → your profile menu → Image & Video API → request or view your API key, then copy it. Paste the key alone, without Bearer.",
+      "link": "https://www.pexels.com/api/new/",
+      "pattern": "^[A-Za-z0-9]{40,64}$",
+      "patternMessage": "A Pexels API key is a long string of letters and digits. Paste it without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Pexels refused the key. Copy it again from pexels.com/api and paste it alone, without Bearer.",
+    "rate_limited": "The key used up its quota (200 requests per hour, 20,000 per month by default). Wait for the reset or ask Pexels for a higher limit."
+  },
+  "probe": {
+    "tool": "pexels_list_curated_photos",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Pexels",
+    "type": "REST",
+    "baseUrl": "https://api.pexels.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{PEXELS_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "pexels_search_photos",
+      "description": "Search free stock photos by keyword, with optional orientation, minimum size, colour and locale. Returns photos with photographer, page URL, average colour, alt text and image URLs in several sizes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to search for, for example ocean sunset, people working, Tigers."
+          },
+          "orientation": {
+            "type": "string",
+            "description": "Orientation of the media.",
+            "enum": [
+              "landscape",
+              "portrait",
+              "square"
+            ]
+          },
+          "size": {
+            "type": "string",
+            "description": "Minimum size: large (24 MP photos / 4K video), medium (12 MP / Full HD), small (4 MP / HD).",
+            "enum": [
+              "large",
+              "medium",
+              "small"
+            ]
+          },
+          "color": {
+            "type": "string",
+            "description": "Desired colour: red, orange, yellow, green, turquoise, blue, violet, pink, brown, black, gray, white, or a hex code such as #ffffff."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Search locale, for example en-US, de-DE, it-IT, pt-BR, ja-JP. Default en-US."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "orientation": "$orientation",
+          "size": "$size",
+          "color": "$color",
+          "locale": "$locale",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_list_curated_photos",
+      "description": "List photos hand-picked by the Pexels team, updated at least hourly. Returns the same photo fields as search. Use it for generic, high-quality imagery without a keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/curated",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_get_photo",
+      "description": "Get one photo by id: width, height, photographer and profile link, average colour, alt text and image URLs (original, large2x, large, medium, small, portrait, landscape, tiny).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Photo id from a search or curated list, for example 2014422."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/photos/{id}"
+      }
+    },
+    {
+      "name": "pexels_search_videos",
+      "description": "Search free stock videos by keyword, with optional orientation, minimum size and locale. Returns videos with duration, user, preview image and video files in several resolutions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to search for, for example city traffic, drone mountains."
+          },
+          "orientation": {
+            "type": "string",
+            "description": "Orientation of the media.",
+            "enum": [
+              "landscape",
+              "portrait",
+              "square"
+            ]
+          },
+          "size": {
+            "type": "string",
+            "description": "Minimum size: large (24 MP photos / 4K video), medium (12 MP / Full HD), small (4 MP / HD).",
+            "enum": [
+              "large",
+              "medium",
+              "small"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "Search locale, for example en-US, de-DE, it-IT, pt-BR, ja-JP. Default en-US."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/search",
+        "queryParams": {
+          "query": "$query",
+          "orientation": "$orientation",
+          "size": "$size",
+          "locale": "$locale",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_list_popular_videos",
+      "description": "List the currently popular videos on Pexels, optionally limited by minimum width or height and by duration. Returns the same video fields as search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "min_width": {
+            "type": "integer",
+            "description": "Minimum width in pixels."
+          },
+          "min_height": {
+            "type": "integer",
+            "description": "Minimum height in pixels."
+          },
+          "min_duration": {
+            "type": "integer",
+            "description": "Minimum duration in seconds."
+          },
+          "max_duration": {
+            "type": "integer",
+            "description": "Maximum duration in seconds."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/popular",
+        "queryParams": {
+          "min_width": "$min_width",
+          "min_height": "$min_height",
+          "min_duration": "$min_duration",
+          "max_duration": "$max_duration",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_get_video",
+      "description": "Get one video by id: width, height, duration, user, preview image, video files (quality, file type, size, link) and preview pictures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Video id from a search or popular list."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/videos/{id}"
+      }
+    },
+    {
+      "name": "pexels_list_featured_collections",
+      "description": "List the collections featured by Pexels with id, title, description and the number of photos and videos. Use a collection id with pexels_get_collection_media.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/featured",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_list_my_collections",
+      "description": "List the collections of the Pexels account that owns the API key, with id, title, description, privacy and media counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "pexels_get_collection_media",
+      "description": "List the photos and videos in one featured collection or one of the key owner's collections, optionally only photos or only videos. Other collections answer 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Collection id from pexels_list_featured_collections or pexels_list_my_collections. Only featured collections and the key owner's own collections can be read."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only photos or only videos; both by default.",
+            "enum": [
+              "photos",
+              "videos"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order of the media in the collection, asc (default) or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, default 15, at most 80."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{id}",
+        "queryParams": {
+          "type": "$type",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

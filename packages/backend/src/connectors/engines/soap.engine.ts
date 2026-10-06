@@ -3,7 +3,7 @@ import axios from 'axios';
 import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { ssrfGuardedAxiosOptions, ssrfGuardedAxios } from '../../common/guarded-http.util';
+import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http';
 
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
@@ -92,7 +92,12 @@ export class SoapEngine {
     };
 
     // Inject authentication
+    const headersBeforeAuth = new Set(Object.keys(headers));
     this.injectAuth(headers, config.authType, config.authConfig);
+    const credentialHeaders = [
+      ...Object.keys(config.headers ?? {}),
+      ...Object.keys(headers).filter((h) => !headersBeforeAuth.has(h)),
+    ];
 
     // Resolve dynamic headers from endpoint mapping
     if (endpointMapping.headers) {
@@ -115,7 +120,7 @@ export class SoapEngine {
         timeout: 30000,
         // SOAP responses may have non-2xx status (SOAP faults return 500)
         validateStatus: (status) => status < 600,
-        ...ssrfGuardedAxiosOptions(),
+        ...outboundAxiosOptions({ credentialHeaders }),
       });
 
       // Parse the SOAP response
@@ -249,7 +254,7 @@ ${paramXml}
     try {
       await assertSafeOutboundUrl(wsdlUrl);
       const client = await soap.createClientAsync(wsdlUrl, {
-        request: ssrfGuardedAxios() as any,
+        request: outboundAxios() as any,
       });
       const wsdl = client.wsdl;
 

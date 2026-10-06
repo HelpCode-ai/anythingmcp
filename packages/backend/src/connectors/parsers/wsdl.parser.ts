@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
 import * as soap from 'soap';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { ssrfGuardedAxios } from '../../common/guarded-http.util';
+import { outboundAxios } from '../../common/outbound-http';
 
 @Injectable()
 export class WsdlParser {
@@ -15,7 +15,7 @@ export class WsdlParser {
     // imports and redirects through the guarded client.
     await assertSafeOutboundUrl(wsdlUrl);
     const client = await soap.createClientAsync(wsdlUrl, {
-      request: ssrfGuardedAxios() as any,
+      request: outboundAxios() as any,
     });
     const description = client.describe();
     const wsdl = client.wsdl;

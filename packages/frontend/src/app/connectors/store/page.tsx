@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
 import { matchesSearch } from '@/lib/marketplace-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
+import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -264,6 +265,7 @@ function AdapterStoreContent() {
   // provider sign-in for OAuth connectors. The old dialog's "Skip for now"
   // created connectors that failed every call.
   const handleImportClick = (adapter: AdapterItem) => {
+    reportPicked(adapter.slug);
     router.push(`/connectors/setup/${encodeURIComponent(adapter.slug)}`);
   };
 
@@ -309,12 +311,10 @@ function AdapterStoreContent() {
   const activeIsHidden =
     !!activeCategory && !shownCategories.some((c) => c.slug === activeCategory);
 
-  const filtered = list.filter((a) => {
-    if (activeCategory && a.category !== activeCategory) return false;
-    if (!search.trim()) return true;
-    // Match what the card actually says, not just the stored slug: the card
-    // reads "GERMANY" and "E-commerce", so those are the words people type.
-    return matchesSearch(
+  // Match what the card actually says, not just the stored slug: the card
+  // reads "GERMANY" and "E-commerce", so those are the words people type.
+  const matchesQuery = (a: AdapterItem) =>
+    matchesSearch(
       [
         a.name,
         a.description,
@@ -326,7 +326,21 @@ function AdapterStoreContent() {
       ],
       search,
     );
+
+  const filtered = list.filter((a) => {
+    if (activeCategory && a.category !== activeCategory) return false;
+    if (!search.trim()) return true;
+    return matchesQuery(a);
   });
+
+  // Reported across the whole catalog, not the category chip: the question
+  // is whether we have the app at all.
+  const reportPicked = useCatalogSearchReport(
+    token,
+    'store',
+    search,
+    loading || !search.trim() ? null : list.filter(matchesQuery).length,
+  );
 
   return (
     <AppShell

@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
-import { ssrfGuardedFetch } from '../../common/guarded-http.util';
+import { ssrfGuardedFetch } from '../../common/outbound-http';
 
 @Injectable()
 export class McpClientEngine {

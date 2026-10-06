@@ -1,0 +1,743 @@
+{
+  "slug": "wildberries",
+  "name": "Wildberries",
+  "description": "Run a Wildberries seller account from an AI agent: FBS orders and their statuses, seller warehouses and stock levels, statistics on orders and sales, stock on WB warehouses, the sales report detail, product cards and prices. 22 tools across the WB API hosts, one API token.",
+  "instructions": "This connector uses the Wildberries seller API (WB API). The API is split over several hosts, one per token category: `marketplace-api` (FBS orders, seller warehouses, seller stock), `statistics-api` (orders and sales statistics), `seller-analytics-api` (stock on WB warehouses), `finance-api` (sales report detail), `content-api` (product cards), `discounts-prices-api` (prices) and `common-api` (connection check, seller information). Every tool already calls the right host; the connector's base URL is the marketplace host.\n\n**Setup**:\n1. In the seller portal open **Settings > API integrations** (Настройки > Доступ к API) and click **Create token**.\n2. Choose the token type. For a cloud service such as this one use a **Base token**; a Personal token must not be used in cloud services according to Wildberries. A Base token has lower limits on statistics and finance methods (see below).\n3. Tick the categories you need: **Marketplace** for orders, warehouses and stock, **Statistics** for the statistics tools, **Analytics** for stock on WB warehouses, **Finance** for the sales report, **Content** for product cards, **Prices and Discounts** for prices. Choose **Read only** unless you want to update stock or prices.\n4. Copy the token (it is shown once) into `WILDBERRIES_API_TOKEN`. Tokens are valid for 180 days.\n\n**Authentication**: the token goes into the `Authorization` header as is, without `Bearer`. A 401 means the token is wrong or expired; a 403 means the token lacks the category of that host, or the method is not available for its token type.\n\n**Rate limits (strict, per seller account, token bucket)**: Marketplace methods allow 300 requests a minute with a burst of 20; any 4xx answer counts as 10 requests. Statistics orders and sales: 1 request a minute (burst 10), and with a Base token only 1 request every 3 hours. Sales report detail: 1 a minute, Base token 2 a day. Stock on WB warehouses: 3 a minute, burst 1. Product cards: 100 a minute, burst 5 (card limits: Base token 2 an hour). Prices: 10 per 6 seconds, Base token 4 an hour. Seller information: Base token once a day. On a 429 the response headers `X-Ratelimit-Retry` (seconds to wait) and `X-Ratelimit-Reset` tell you when to retry; do not retry immediately, and do not loop over statistics tools.\n\n**Where to start**: `wildberries_ping` checks the token cheaply. For live FBS work call `wildberries_list_new_orders`, then `wildberries_get_order_statuses` with the order ids. For history use `wildberries_list_orders` (up to 30 days per call, 3 months back). For figures use `wildberries_list_statistics_orders` and `wildberries_list_statistics_sales` once, with a `date_from`, and work from that result.\n\n**Ids**: `warehouse_id` comes from `wildberries_list_warehouses` (seller warehouses, not WB offices). Stock is keyed by size id `chrtId`, found in `sizes[].chrtID` of `wildberries_list_product_cards`. `nmID` is the WB article of a product.\n\n**Pagination**: `wildberries_list_orders` and `wildberries_list_supplies` start with `next` = 0 and continue with the `next` value of the previous answer. Statistics tools return up to 80,000 rows; for more, call again with `date_from` = `lastChangeDate` of the last row. Product cards use a cursor (`updated_at` + `nm_id` from the previous `cursor`). Prices use `limit` + `offset`.\n\n**Writes**: `wildberries_update_stocks` overwrites stock on a seller warehouse and `wildberries_set_prices` changes prices and discounts; both act on the live shop. Wrong field names in a stock update still return 204 without changing anything, so read the stock back afterwards.\n\n**Removed by Wildberries**: the old statistics stock report (`/api/v1/supplier/stocks`) and `/api/v5/supplier/reportDetailByPeriod` were switched off in June 2026. Use `wildberries_get_sales_report_detail` for the report, and for stock on WB warehouses either `wildberries_get_wb_warehouse_stocks` (Personal, Service or Base-with-secret token only; a Base token gets 403) or the report flow `wildberries_create_stock_report` > `wildberries_get_stock_report_status` > `wildberries_download_stock_report`, which works with a Base token (4 calls an hour).",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "wildberries",
+  "docsUrl": "https://dev.wildberries.ru/en/openapi/api-information",
+  "requiredEnvVars": [
+    "WILDBERRIES_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "WILDBERRIES_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "help": "Seller portal > Settings > API integrations > Create token. Pick the Base token type, tick the categories you need (Marketplace, Statistics, Analytics, Finance, Content, Prices and Discounts) and copy the token, which is shown once.",
+      "link": "https://seller.wildberries.ru/supplier-settings/access-to-api",
+      "pattern": "^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "patternMessage": "A Wildberries token is a JWT: three dot-separated parts starting with eyJ. Paste it without Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Wildberries refused the token. Check that it was copied whole, without Bearer in front, and that it has not expired (tokens last 180 days).",
+    "403": "The token works but lacks the category for this part of the API. Create a token with the Marketplace, Statistics, Content or Prices categories you need.",
+    "rate_limited": "Wildberries limits requests per seller account. Wait for the time in X-Ratelimit-Retry and try again; statistics methods allow only one call a minute, or one every 3 hours with a Base token."
+  },
+  "connector": {
+    "name": "Wildberries Seller API",
+    "type": "REST",
+    "baseUrl": "https://marketplace-api.wildberries.ru",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{WILDBERRIES_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "wildberries_ping"
+  },
+  "tools": [
+    {
+      "name": "wildberries_ping",
+      "description": "Check that the API token is valid and reaches the WB API. Returns a timestamp and Status OK. Cheap (3 requests per 30 seconds, burst 99); use it to test the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://common-api.wildberries.ru/ping"
+      }
+    },
+    {
+      "name": "wildberries_get_seller_info",
+      "description": "Get the seller account behind the token: legal name, seller id (sid), tax number and trade mark. Works with a token of any category, but a Base token may call it only once a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://common-api.wildberries.ru/api/v1/seller-info"
+      }
+    },
+    {
+      "name": "wildberries_list_new_orders",
+      "description": "List every new FBS assembly order (order to pack and ship from your own warehouse) that exists right now: id, nmId, chrtId, article, price, warehouseId, delivery type, required marking codes. Start here for daily order processing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/orders/new"
+      }
+    },
+    {
+      "name": "wildberries_list_orders",
+      "description": "List FBS assembly orders created in a period (at most 30 days per call, up to 3 months back), without their current status. Returns orders and a next cursor; call again with next until the list is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "next": {
+            "type": "integer",
+            "description": "Pagination cursor. 0 for the first page, then the next value from the previous answer.",
+            "default": 0
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Start of the period as a Unix timestamp in seconds (UTC). Default: 30 days ago."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "End of the period as a Unix timestamp in seconds (UTC). The period may not exceed 30 days."
+          }
+        },
+        "required": [
+          "limit",
+          "next"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/orders",
+        "queryParams": {
+          "limit": "$limit",
+          "next": "$next",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "wildberries_get_order_statuses",
+      "description": "Get the current status of up to 1000 FBS assembly orders by id: supplierStatus (new, confirm, complete, cancel), wbStatus (waiting, sorted, sold, canceled...) and whether the order can still be cancelled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Assembly order ids from wildberries_list_new_orders or wildberries_list_orders, for example [5632423]."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v3/orders/status",
+        "bodyMapping": {
+          "orders": "$order_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wildberries_list_supplies",
+      "description": "List FBS supplies (shipments that group assembly orders for hand-over to Wildberries): id, name, done, created and closed dates, cargo type. Paginate with next until the list is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Supplies per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "next": {
+            "type": "integer",
+            "description": "Pagination cursor. 0 for the first page, then the next value from the previous answer.",
+            "default": 0
+          }
+        },
+        "required": [
+          "limit",
+          "next"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/supplies",
+        "queryParams": {
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "wildberries_list_warehouses",
+      "description": "List the seller's own warehouses (id, name, linked WB office, cargo and delivery type). The id is the warehouse_id that the stock tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/warehouses"
+      }
+    },
+    {
+      "name": "wildberries_list_wb_offices",
+      "description": "List Wildberries offices (WB warehouses and sorting centres) that a seller warehouse can be linked to: id, name, city, address, coordinates, cargo type. Reference data, changes rarely.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/offices"
+      }
+    },
+    {
+      "name": "wildberries_get_stocks",
+      "description": "Read the stock on one seller warehouse for up to 1000 product sizes. Returns chrtId and amount per size. Use before and after wildberries_update_stocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Seller warehouse id from wildberries_list_warehouses."
+          },
+          "chrt_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Size ids (chrtID in sizes[] of wildberries_list_product_cards), for example [12345678]."
+          }
+        },
+        "required": [
+          "warehouse_id",
+          "chrt_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v3/stocks/{warehouse_id}",
+        "bodyMapping": {
+          "chrtIds": "$chrt_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wildberries_update_stocks",
+      "description": "Overwrite the stock of up to 1000 product sizes on one seller warehouse. Each entry sets the absolute amount, it does not add. Changes what buyers can order; read the stock back afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Seller warehouse id from wildberries_list_warehouses."
+          },
+          "stocks": {
+            "type": "array",
+            "maxItems": 1000,
+            "description": "List of size stock entries, for example [{\"chrtId\": 12345678, \"amount\": 10}]. amount is 0 to 100000.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chrtId": {
+                  "type": "integer",
+                  "description": "Size id (chrtID from wildberries_list_product_cards)."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "New stock amount, 0 to 100000."
+                }
+              },
+              "required": [
+                "chrtId",
+                "amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "warehouse_id",
+          "stocks"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v3/stocks/{warehouse_id}",
+        "bodyMapping": {
+          "stocks": "$stocks"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "wildberries_list_statistics_orders",
+      "description": "Orders statistics from the statistics host: one row per ordered unit with date, lastChangeDate, warehouse, region, article, nmId, barcode, prices, discount, cancellation and srid. Data updates every 30 minutes and is kept 90 days. Strict limit: 1 call a minute (Base token: 1 per 3 hours).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "RFC3339 date or date-time in Moscow time, for example 2026-10-01 or 2026-10-01T00:00:00. Rows changed at or after this moment are returned. For the next batch pass lastChangeDate of the last row."
+          },
+          "flag": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 (default): rows whose lastChangeDate is at or after date_from, up to 80,000. 1: all orders placed on the day of date_from; the time part is ignored."
+          }
+        },
+        "required": [
+          "date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statistics-api.wildberries.ru/api/v1/supplier/orders",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "flag": "$flag"
+        }
+      }
+    },
+    {
+      "name": "wildberries_list_statistics_sales",
+      "description": "Sales and returns statistics: one row per sold or returned unit with saleID (S for sale, R for return), dates, warehouse, article, nmId, prices, forPay and srid. Preliminary figures; use the sales report detail for accounting. Strict limit: 1 call a minute (Base token: 1 per 3 hours).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "RFC3339 date or date-time in Moscow time, for example 2026-10-01. Rows changed at or after this moment are returned. For the next batch pass lastChangeDate of the last row."
+          },
+          "flag": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 (default): rows whose lastChangeDate is at or after date_from, up to 80,000. 1: all sales and returns of the day of date_from."
+          }
+        },
+        "required": [
+          "date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statistics-api.wildberries.ru/api/v1/supplier/sales",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "flag": "$flag"
+        }
+      }
+    },
+    {
+      "name": "wildberries_get_wb_warehouse_stocks",
+      "description": "Current stock on Wildberries warehouses (FBW), one row per product size per WB warehouse, updated every 30 minutes. Needs the Analytics category and a Personal, Service or Base-with-secret token. Limit: 3 calls a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nm_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Optional WB articles (nmID) to restrict the report to. Omit for all products."
+          },
+          "chrt_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional size ids; only applied to the articles given in nm_ids."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per answer, up to 250000. Keep it small (for example 1000) when only a sample is needed.",
+            "maximum": 250000,
+            "default": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page.",
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://seller-analytics-api.wildberries.ru/api/analytics/v1/stocks-report/wb-warehouses",
+        "bodyMapping": {
+          "nmIds": "$nm_ids",
+          "chrtIds": "$chrt_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wildberries_create_stock_report",
+      "description": "Start generating the WB warehouses inventory report (stock per product on Wildberries warehouses), which also works with a Base token. Returns data.taskId; then poll wildberries_get_stock_report_status and fetch it with wildberries_download_stock_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_by_nm": {
+            "type": "boolean",
+            "description": "Break down by WB article (nmId). true is the usual choice.",
+            "default": true
+          },
+          "group_by_size": {
+            "type": "boolean",
+            "description": "Break down by size as well."
+          },
+          "group_by_barcode": {
+            "type": "boolean",
+            "description": "Break down by barcode."
+          },
+          "group_by_sa": {
+            "type": "boolean",
+            "description": "Break down by seller article (vendorCode)."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en",
+              "zh"
+            ],
+            "description": "Language of subjectName and warehouseName: ru (default), en or zh."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains",
+        "queryParams": {
+          "groupByNm": "$group_by_nm",
+          "groupBySize": "$group_by_size",
+          "groupByBarcode": "$group_by_barcode",
+          "groupBySa": "$group_by_sa",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "wildberries_get_stock_report_status",
+      "description": "Check whether a WB warehouses inventory report task is ready. Returns data.status (new, processing, done, purged, canceled). Call wildberries_download_stock_report once it is done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "data.taskId returned by wildberries_create_stock_report."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains/tasks/{task_id}/status",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "wildberries_download_stock_report",
+      "description": "Download a finished WB warehouses inventory report: per product (brand, subject, vendorCode, nmId, barcode, size) the quantity on each Wildberries warehouse, including in transit to and from buyers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "data.taskId returned by wildberries_create_stock_report, after the status is done."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://seller-analytics-api.wildberries.ru/api/v1/warehouse_remains/tasks/{task_id}/download",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "wildberries_get_sales_report_detail",
+      "description": "Detail lines of the sales (realisation) reports for a period: sales, returns, logistics, storage, fines and payouts per line, from 29 January 2024 on. The source for accounting. Needs the Finance category. Limit: 1 call a minute (Base token: 2 a day).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Start date of the report, RFC3339, for example 2026-09-01."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date of the report, RFC3339, for example 2026-09-30."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "daily"
+            ],
+            "description": "Report periodicity: weekly (default) or daily."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per answer, up to 100000.",
+            "maximum": 100000,
+            "default": 1000
+          },
+          "rrd_id": {
+            "type": "integer",
+            "description": "Line id to continue from: 0 for the first call, then rrdId of the last line received.",
+            "default": 0
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed",
+        "bodyMapping": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "period": "$period",
+          "limit": "$limit",
+          "rrdId": "$rrd_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wildberries_list_product_cards",
+      "description": "List product cards (listings) with nmID, vendorCode, brand, title, subject, characteristics, photos and sizes (chrtID, barcodes). Up to 100 per call; for the next page pass cursor.updatedAt and cursor.nmID from the answer. Search by article or barcode with text_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Cards per page, up to 100.",
+            "maximum": 100,
+            "default": 20
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Search by seller article (vendorCode), WB article (nmID) or barcode."
+          },
+          "with_photo": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1
+            ],
+            "description": "Photo filter: -1 any card (default here), 0 only cards without photos, 1 only cards with photos.",
+            "default": -1
+          },
+          "ascending": {
+            "type": "boolean",
+            "description": "Sort by updatedAt ascending (true) or descending (false, default). Use true for a full export."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Cursor for the next page: cursor.updatedAt from the previous answer."
+          },
+          "nm_id": {
+            "type": "integer",
+            "description": "Cursor for the next page: cursor.nmID from the previous answer."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en",
+              "zh"
+            ],
+            "description": "Language of name, value and object fields: ru (default), en or zh."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://content-api.wildberries.ru/content/v2/get/cards/list",
+        "queryParams": {
+          "locale": "$locale"
+        },
+        "bodyMapping": {
+          "settings": {
+            "sort": {
+              "ascending": "$ascending"
+            },
+            "filter": {
+              "withPhoto": "$with_photo",
+              "textSearch": "$text_search"
+            },
+            "cursor": {
+              "limit": "$limit",
+              "updatedAt": "$updated_at",
+              "nmID": "$nm_id"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wildberries_list_prices",
+      "description": "List products with their prices: nmID, vendorCode, currency, discount, WB Club discount and per-size price and discounted price. One article via nm_id, or all products page by page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, up to 1000.",
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Products to skip: offset plus limit of the previous call. Stop when the list comes back empty."
+          },
+          "nm_id": {
+            "type": "integer",
+            "description": "Optional WB article (nmID) to look up a single product."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "filterNmID": "$nm_id"
+        }
+      }
+    },
+    {
+      "name": "wildberries_set_prices",
+      "description": "Set prices and discounts for up to 1000 products in one upload. Returns an upload id; processing is asynchronous, check it with wildberries_get_price_upload_status. Changes live prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 1000,
+            "description": "Products to update, for example [{\"nmID\": 123, \"price\": 999, \"discount\": 30}]. Price and discount may not both be missing. Price is in the seller's currency (see wildberries_list_prices), discount in percent.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nmID": {
+                  "type": "integer",
+                  "description": "WB article."
+                },
+                "price": {
+                  "type": "integer",
+                  "description": "New price before discount."
+                },
+                "discount": {
+                  "type": "integer",
+                  "description": "New discount in percent."
+                }
+              },
+              "required": [
+                "nmID"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://discounts-prices-api.wildberries.ru/api/v2/upload/task",
+        "bodyMapping": {
+          "data": "$items"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "wildberries_get_price_upload_status",
+      "description": "Get the state of a processed price and discount upload by its id: status, upload and activation dates, total and failed product counts. Use after wildberries_set_prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "integer",
+            "description": "Upload id returned by wildberries_set_prices."
+          }
+        },
+        "required": [
+          "upload_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://discounts-prices-api.wildberries.ru/api/v2/history/tasks",
+        "queryParams": {
+          "uploadID": "$upload_id"
+        }
+      }
+    },
+    {
+      "name": "wildberries_get_card_limits",
+      "description": "Get the free and paid limits for creating product cards. Cards that can still be created = freeLimits + paidLimits minus the cards that exist. With a Base token only 2 calls an hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://content-api.wildberries.ru/content/v2/cards/limits"
+      }
+    }
+  ]
+}

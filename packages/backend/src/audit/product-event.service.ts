@@ -45,6 +45,13 @@ export const ProductEvents = {
   OAUTH_STARTED: 'oauth_started',
   SETUP_COMPLETED: 'setup_completed',
   SETUP_SAVED_DRAFT: 'setup_saved_draft',
+  /**
+   * The provider sign-in of a guided setup failed: refused at the provider
+   * (metadata.kind = 'provider_refused', metadata.error = its error code) or
+   * the code could not be exchanged ('token_exchange'). Server-only. Answers
+   * why setups that reach oauth_started never complete.
+   */
+  OAUTH_FAILED: 'oauth_failed',
   SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
   /**
    * A new cloud account was created; metadata = the first and last touch the
@@ -66,6 +73,17 @@ export const ProductEvents = {
    * Read against setup_completed: does the prompt lead to a first connector.
    */
   EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
+  /**
+   * A search of the connector catalog: metadata.query, metadata.results (how
+   * many connectors matched), metadata.via (where: 'store', 'welcome', or
+   * 'mcp' when the model searched from a chat) and, from a chat,
+   * metadata.missing (the words no connector mentions). Answers: which apps people
+   * look for that we have no connector for (results = 0), and which we have
+   * but they did not take (read against catalog_search_picked).
+   */
+  CATALOG_SEARCH: 'catalog_search',
+  /** A result was picked after a search. metadata.query, adapterSlug, via. */
+  CATALOG_SEARCH_PICKED: 'catalog_search_picked',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -76,6 +94,7 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  */
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
 ]);
@@ -150,7 +169,16 @@ export class ProductEventService {
  */
 // `kind`: what a setup involved or why its check failed ('credentials',
 // 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
-const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via'] as const;
+// `query`, `results`, `missing`: a catalog search (see sanitizeSearchQuery);
+// `missing` = the query's words no connector mentions.
+// `status`, `toolName`, `error`: why a setup check or sign-in failed (the
+// provider's message, passed through scrubProviderMessage by the server);
+// `verified`: whether a completed setup made a successful call.
+const METADATA_KEYS = [
+  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing',
+  'status', 'toolName', 'error', 'verified',
+] as const;
+const MAX_QUERY_LENGTH = 100;
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -158,13 +186,46 @@ function boundMetadata(
   if (!metadata || typeof metadata !== 'object') return null;
   const entries: Array<[string, string | number | boolean]> = [];
   for (const key of METADATA_KEYS) {
-    const v = metadata[key];
+    const v = key === 'query' || key === 'missing' ? sanitizeSearchQuery(metadata[key]) : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }
   if (entries.length === 0) return null;
   const out = Object.fromEntries(entries);
   return JSON.stringify(out).length > MAX_METADATA_BYTES ? null : out;
+}
+
+/**
+ * A search box's text, kept only when it reads like the name of an app.
+ *
+ * What people type is free text, so it can hold what should not be stored:
+ * an email address, or a key pasted into the wrong field. Those are dropped
+ * whole rather than masked; a search for an app name never looks like either.
+ */
+export function sanitizeSearchQuery(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const q = value.replace(/\s+/g, ' ').trim();
+  if (!q || q.length > MAX_QUERY_LENGTH) return null;
+  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(q)) return null;
+  // One unbroken run of 24+ letters, digits and key punctuation: a token, not a name.
+  if (/[A-Za-z0-9_\-.:/+=]{24,}/.test(q) && /\d/.test(q)) return null;
+  return q;
+}
+
+/**
+ * A provider's error message, made safe to keep: query strings dropped from
+ * URLs (keys travel there), any of the given secret values masked, long
+ * token-like runs masked, and the whole capped at 160 characters.
+ */
+export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
+  if (typeof message !== 'string' || !message.trim()) return null;
+  let out = message.replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1');
+  for (const secret of secrets) {
+    if (typeof secret === 'string' && secret.length >= 6) out = out.split(secret).join('***');
+  }
+  out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
+  out = out.replace(/\s+/g, ' ').trim();
+  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

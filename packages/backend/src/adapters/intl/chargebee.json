@@ -95,7 +95,8 @@
           "auto_collection": "$auto_collection",
           "net_term_days": "$net_term_days",
           "allow_direct_debit": "$allow_direct_debit",
-          "locale": "$locale"
+          "locale": "$locale",
+          "billing_address": "$billing_address"
         }
       }
     },

@@ -16,7 +16,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
-import { ProductEventService, ProductEvents } from '../audit/product-event.service';
+import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
 import { STARTER_PACK_MAX_INSTALL } from './starter-pack';
 
 // Public endpoints (no auth required) — used by the marketing website
@@ -49,8 +49,19 @@ export class AdaptersController {
     private readonly productEvents: ProductEventService,
   ) {}
 
-  // Declared before `:slug`, which would otherwise take "starter-pack" for
-  // an adapter slug.
+  // Declared before `:slug`, which would otherwise take these paths for an
+  // adapter slug.
+  @Get('popular-connectors')
+  @ApiOperation({
+    summary: 'Apps new workspaces connect and get working',
+    description:
+      'Catalog adapters ranked by how many workspaces had a successful call on them in the last 30 days ' +
+      '(aggregate counts only), with what each setup asks for and whether this workspace already has it.',
+  })
+  async popularConnectors(@Req() req: any) {
+    return { items: await this.adaptersService.popularConnectors(req.user.organizationId) };
+  }
+
   @Get('starter-pack')
   @ApiOperation({
     summary: 'Connectors offered to a new workspace',
@@ -181,12 +192,32 @@ export class AdaptersController {
     if (!this.verifyLimiter.take(req.user.sub)) {
       throw new HttpException('Too many attempts. Wait a minute and try again.', 429);
     }
-    return this.adaptersService.verifyCredentials(
+    const result = await this.adaptersService.verifyCredentials(
       slug,
       req.user.organizationId,
       body?.credentials,
       body?.connectorId,
     );
+    if (result.ok === false) {
+      // Recorded here rather than by the page so the provider's own words are
+      // kept (scrubbed of the values just entered): the kind alone could not
+      // tell a wrong key from a wrong address.
+      void this.productEvents.log({
+        event: ProductEvents.SETUP_VERIFY_FAILED,
+        userId: req.user.sub,
+        organizationId: req.user.organizationId,
+        metadata: {
+          adapterSlug: slug,
+          kind: result.kind,
+          ...(result.status != null ? { status: result.status } : {}),
+          ...(result.toolName ? { toolName: result.toolName } : {}),
+          ...(result.kind !== 'invalid_input'
+            ? { error: scrubProviderMessage(result.message, Object.values(body?.credentials ?? {})) }
+            : {}),
+        },
+      });
+    }
+    return result;
   }
 
   private readonly verifyLimiter = new PerKeyWindowLimiter(20, 60_000);

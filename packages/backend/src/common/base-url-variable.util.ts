@@ -216,3 +216,44 @@ function parses(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * Apply {@link subdomainOf} to every variable that stands for the first label
+ * of a host in a base-URL template (`https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2`).
+ *
+ * People paste what their browser shows: `https://acme.freshdesk.com/a/tickets`
+ * for a field that wants `acme`. Unfixed, that became
+ * `https://https://acme.freshdesk.com/a/tickets.freshdesk.com/api/v2` and every
+ * check failed with an error naming neither the field nor the fix. Returns a
+ * new map; a value that is already a bare label is untouched.
+ */
+export function normalizeSubdomainVariables(
+  template: string | null | undefined,
+  values: Record<string, string>,
+): Record<string, string> {
+  if (!template) return values;
+  let out = values;
+  for (const [, name, suffix] of template.matchAll(/:\/\/\{\{([A-Za-z0-9_]+)\}\}(\.[^/{}?#]+)/g)) {
+    const value = out[name];
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const label = subdomainOf(value, suffix);
+    if (label !== value) out = { ...out, [name]: label };
+  }
+  return out;
+}
+
+/**
+ * `https://acme.freshdesk.com/a/tickets` → `acme` for the suffix
+ * `.freshdesk.com`; `acme` stays `acme`. A host on another domain keeps its
+ * full name (minus scheme and path), which the call then reports clearly.
+ */
+export function subdomainOf(value: string, suffix: string): string {
+  const host = value
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .split(/[/?#]/)[0]
+    .toLowerCase();
+  const tail = suffix.toLowerCase();
+  if (host.endsWith(tail) && host.length > tail.length) return host.slice(0, -tail.length);
+  return host || value.trim();
+}

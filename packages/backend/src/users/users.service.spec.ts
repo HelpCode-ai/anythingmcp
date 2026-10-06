@@ -6,6 +6,7 @@ describe('UsersService', () => {
   let organizations: any;
   let lifecycle: any;
   let securityEvents: any;
+  let licenseRelease: any;
 
   const mockUser = {
     id: 'user-1',
@@ -41,7 +42,8 @@ describe('UsersService', () => {
     organizations = { assertNotLastAdmin: jest.fn() };
     lifecycle = { deactivateInOrganization: jest.fn(async () => ({ status: 'deactivated' })) };
     securityEvents = { log: jest.fn() };
-    service = new UsersService(mockPrisma, organizations, lifecycle, securityEvents);
+    licenseRelease = { releaseInBackground: jest.fn(), assertNoLiveSubscription: jest.fn() };
+    service = new UsersService(mockPrisma, organizations, lifecycle, securityEvents, licenseRelease);
   });
 
   describe('findByEmail', () => {
@@ -186,6 +188,53 @@ describe('UsersService', () => {
       expect(mockPrisma.user.delete).toHaveBeenCalledWith({
         where: { id: 'user-1' },
       });
+    });
+  });
+
+  describe('deleteSelf', () => {
+    beforeEach(() => {
+      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.organization = { delete: jest.fn() };
+      mockPrisma.oAuthAuthorizationCode = { deleteMany: jest.fn() };
+    });
+
+    it('ends the licence of a workspace deleted with the account', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([
+        {
+          organizationId: 'org-1',
+          organization: { id: 'org-1', name: 'Solo', _count: { members: 1 } },
+        },
+      ]);
+
+      await service.deleteSelf('user-1');
+
+      expect(mockPrisma.organization.delete).toHaveBeenCalledWith({ where: { id: 'org-1' } });
+      expect(licenseRelease.releaseInBackground).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves licences alone when no workspace goes with the account', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([]);
+
+      await service.deleteSelf('user-1');
+
+      expect(mockPrisma.organization.delete).not.toHaveBeenCalled();
+      expect(licenseRelease.releaseInBackground).not.toHaveBeenCalled();
+    });
+
+    it('deletes nothing while a workspace going with the account has a live subscription', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([
+        {
+          organizationId: 'org-1',
+          organization: { id: 'org-1', name: 'Solo', _count: { members: 1 } },
+        },
+      ]);
+      licenseRelease.assertNoLiveSubscription.mockRejectedValue(new Error('active subscription'));
+
+      await expect(service.deleteSelf('user-1')).rejects.toThrow('active subscription');
+
+      expect(licenseRelease.assertNoLiveSubscription).toHaveBeenCalledWith(['org-1']);
+      expect(mockPrisma.organization.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
     });
   });
 });

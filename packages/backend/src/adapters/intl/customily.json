@@ -1,0 +1,314 @@
+{
+  "slug": "customily",
+  "name": "Customily",
+  "description": "Customily product personalization for Shopify, Etsy, WooCommerce and standalone stores: list and read Design Studio product templates, and fetch what a shopper personalized (options, preview image, production files) by personalization id or order id. Logs in with the Customily account e-mail and password.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "customily",
+  "docsUrl": "https://help.customily.com/articles/4638273057-customily-api-authentication",
+  "instructions": "## Customily\nCustomily lets shoppers personalize a product (names, dates, photos, fonts, colours) on a live preview. A **product** in the Design Studio is a personalization template; a **personalization** (also called a cart item) is what one shopper created, identified by a `personalizationGUID`.\n\nThis connector uses two documented Customily APIs:\n- the **Design Studio API** at `https://app.customily.com/api` (Swagger: https://app.customily.com/swagger) for product templates;\n- the **standalone item API** at `https://sh.customily.com/api/standalone` for personalization details and production files.\n\n## Setup\nPut the e-mail (or username) and password of your Customily login into `CUSTOMILY_USERNAME` and `CUSTOMILY_PASSWORD`. The connector calls `POST https://app.customily.com/api/token` with `grant_type=password` and sends the returned JWT as `Authorization: Bearer`. Tokens last 30 days and are renewed automatically. Accounts that sign in only with Google or Shopify need a password set in Customily first. A team member login sees what that member is allowed to see.\n\n## Start here\n- `customily_count_products` checks the login and tells how many templates exist.\n- `customily_list_products` pages through templates (`from` is the offset, `page_size` the page length) and returns their ids and names. Filter with `search`; the API requires a search value, and the default single space matches every template.\n- `customily_get_product` returns one template in full (sides, elements, option sets). The answer can be large.\n\n## Orders and production files\n- Store the `personalizationGUID` (from the add-to-cart payload, or the Shopify/Etsy line item property) with the order. `customily_get_personalization` then returns the shopper's options (`optionsJson`, a JSON string of name/value/type entries), the `previewUrl`, the `exportedFiles` and whether the production file was generated.\n- If the store passed its order id when the cart record was created, `customily_list_order_personalizations` returns every personalized item of that order.\n- `exportedFiles[].url` is a placeholder until the file is generated. `customily_generate_production_file` triggers it; Customily charges per production file, so call it only for paid orders. It is installed switched off.\n\n## Pitfalls\n- Template ids and personalization ids are GUIDs; keep the dashes.\n- Data for Shopify and Etsy shops that use the Customily app directly may live in the app's own order screens; the standalone item API covers items created through Customily's standalone and custom integrations (cart records).\n- No documented rate limit; keep page sizes moderate (20 to 50).",
+  "requiredEnvVars": [
+    "CUSTOMILY_USERNAME",
+    "CUSTOMILY_PASSWORD"
+  ],
+  "envVarMeta": {
+    "CUSTOMILY_USERNAME": {
+      "label": "Customily login e-mail",
+      "kind": "credential",
+      "help": "The e-mail address or username you sign in to app.customily.com with.",
+      "link": "https://app.customily.com/"
+    },
+    "CUSTOMILY_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "The password of that Customily login. If you sign in with Google or Shopify only, set a password in Customily first.",
+      "link": "https://app.customily.com/"
+    }
+  },
+  "verifyHints": {
+    "400": "Customily refused the login. Check the e-mail and password by signing in at app.customily.com; accounts that use only Google or Shopify sign-in need a password first.",
+    "401": "Customily did not accept the token. Check the e-mail and password, then save again to log in afresh.",
+    "403": "This Customily login has no access to the requested template or data. Use an owner or a team member with access."
+  },
+  "probe": {
+    "tool": "customily_count_products"
+  },
+  "connector": {
+    "name": "Customily API",
+    "type": "REST",
+    "baseUrl": "https://app.customily.com/api",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://app.customily.com/api/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "password",
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{CUSTOMILY_USERNAME}}",
+      "password": "{{CUSTOMILY_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 2592000,
+      "proactiveRefreshSeconds": 86400,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/Product/GetProductsCount"
+  },
+  "tools": [
+    {
+      "name": "customily_count_products",
+      "description": "Count the product templates in the Customily Design Studio, optionally only those matching a search, linked to a store product, deleted or carrying given tags. Use it to check the login and to plan paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Count only templates whose name matches this text."
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "true for templates linked to a store product, false for unlinked ones."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to count deleted templates instead of active ones."
+          },
+          "full_access_only": {
+            "type": "boolean",
+            "description": "true to count only templates this login has full access to."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only templates carrying these tag ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Product/GetProductsCount",
+        "queryParams": {
+          "searchString": "$search",
+          "linked": "$linked",
+          "deleted": "$deleted",
+          "fullAccessOnly": "$full_access_only",
+          "tagIds": "$tag_ids"
+        }
+      }
+    },
+    {
+      "name": "customily_list_products",
+      "description": "List product templates from the Customily Design Studio, one page at a time, with id, name, thumbnail, tags and dates. Use the id with customily_get_product. Page with from (offset) and page_size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": " ",
+            "description": "Only templates whose name matches this text. The API requires a value; the default single space matches every template."
+          },
+          "from": {
+            "type": "integer",
+            "default": 0,
+            "description": "Offset of the first template, 0 for the first page."
+          },
+          "page_size": {
+            "type": "integer",
+            "default": 20,
+            "description": "Templates per page, e.g. 20."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. name or date as offered in the Design Studio list."
+          },
+          "sort_mode": {
+            "type": "string",
+            "description": "Sort direction, asc or desc."
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "true for templates linked to a store product, false for unlinked ones."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to list deleted templates."
+          },
+          "full_access_only": {
+            "type": "boolean",
+            "description": "true to list only templates this login has full access to."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only templates carrying these tag ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Product/GetProducts",
+        "queryParams": {
+          "searchString": "$search",
+          "from": "$from",
+          "pageSize": "$page_size",
+          "sortBy": "$sort_by",
+          "sortMode": "$sort_mode",
+          "linked": "$linked",
+          "deleted": "$deleted",
+          "fullAccessOnly": "$full_access_only",
+          "tagIds": "$tag_ids"
+        }
+      }
+    },
+    {
+      "name": "customily_get_product",
+      "description": "Get one product template in full: sides, layers, text and image elements, option sets and settings. The answer can be large; use it to see which options a template offers or how it is built.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Template id (GUID) from customily_list_products or the productId of a personalization."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Product",
+        "queryParams": {
+          "productId": "$product_id"
+        }
+      }
+    },
+    {
+      "name": "customily_get_personalization",
+      "description": "Get what a shopper personalized for one cart item: chosen options (optionsJson), template id, quantity, preview image URL, production file URLs and whether the file was generated. Use it when fulfilling an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personalization_id": {
+            "type": "string",
+            "description": "The personalizationGUID stored with the order line."
+          }
+        },
+        "required": [
+          "personalization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://sh.customily.com/api/standalone/item/{personalization_id}"
+      }
+    },
+    {
+      "name": "customily_list_order_personalizations",
+      "description": "List every personalized item of one store order, each with options, preview image and production file URLs. Works when the store passed its order id when the Customily cart record was created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The store's own order id, as sent to Customily with the cart record."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://sh.customily.com/api/standalone/item",
+        "queryParams": {
+          "orderId": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "customily_generate_production_file",
+      "description": "Generate the print-ready production file behind an exportedFiles URL after the order is paid. Customily charges per generated file. Returns a confirmation; the file is then available at the same URL.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Production file URL from exportedFiles[].url, on a customily.com domain."
+          },
+          "shop": {
+            "type": "string",
+            "description": "Your store identifier as configured in Customily, e.g. yourstore.com."
+          },
+          "order": {
+            "type": "string",
+            "description": "Optional order reference from your store."
+          }
+        },
+        "required": [
+          "url",
+          "shop"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://sh.customily.com/api/standalone/item/generate",
+        "bodyMapping": {
+          "url": "$url",
+          "shop": "$shop",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "customily_rename_product",
+      "description": "Rename a product template in the Customily Design Studio. Only the name changes; links to store products stay. Returns Customily's confirmation.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Template id (GUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New template name."
+          }
+        },
+        "required": [
+          "product_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Product/Rename",
+        "queryParams": {
+          "productId": "$product_id",
+          "name": "$name"
+        }
+      }
+    }
+  ]
+}

@@ -8,6 +8,25 @@
   "icon": "magento",
   "docsUrl": "https://devdocs.magento.com/guides/v2.4/rest/bk-rest.html",
   "requiredEnvVars": ["MAGENTO_BASE_URL", "MAGENTO_ACCESS_TOKEN"],
+  "probe": {
+    "tool": "magento_list_store_views"
+  },
+  "envVarMeta": {
+    "MAGENTO_BASE_URL": {
+      "label": "Store address",
+      "kind": "address",
+      "help": "The address of the store, without /rest or /admin.",
+      "example": "https://shop.example.com"
+    },
+    "MAGENTO_ACCESS_TOKEN": {
+      "label": "Integration access token",
+      "kind": "credential",
+      "help": "Admin → System → Extensions → Integrations → Add New Integration, grant the resources, Activate: copy the Access Token."
+    }
+  },
+  "verifyHints": {
+    "401": "Magento refused the token. Since 2.4.4 an integration token only works as a bearer token when Stores → Configuration → Services → OAuth → Consumer Settings → \"Allow OAuth Access Tokens to be used as standalone Bearer tokens\" is Yes."
+  },
   "connector": {
     "name": "Magento 2 REST",
     "type": "REST",
@@ -18,6 +37,7 @@
     }
   },
   "tools": [
+    {"name": "magento_list_store_views", "description": "List the store views of the Magento / Adobe Commerce instance (id, code, name, website). A cheap read that also confirms the access token works.", "parameters": {"type": "object", "properties": {}}, "endpointMapping": {"method": "GET", "path": "/store/storeViews"}},
     {
       "name": "magento_search_products",
       "description": "Search products with Magento's search criteria DSL. For simple filters use the flat params (sku/name/status/visibility). For complex multi-condition use searchCriteria_raw.",

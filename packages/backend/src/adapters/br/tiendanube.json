@@ -1,0 +1,500 @@
+{
+  "slug": "tiendanube",
+  "name": "Tiendanube / Nuvemshop",
+  "description": "Tiendanube (Nuvemshop in Brazil) online stores: store info, products, variants and stock, categories, orders and fulfillment orders, customers, abandoned checkouts, coupons and webhooks. REST API 2025-03 with an app access token.",
+  "instructions": "## Tiendanube / Nuvemshop\nThis connector talks to the Tiendanube REST API (Nuvemshop in Brazil, same platform and same API), version `2025-03`, at `https://api.tiendanube.com/2025-03/<store id>`. Every request goes to one store.\n\n## Credentials\nTiendanube has no API keys in the store admin: access is granted to an app. To get a token for your own store:\n1. Register at the Tiendanube or Nuvemshop Partners portal and create an app under **Apps**. Choose the scopes you need (`read_products`, `write_products`, `read_orders`, `write_orders`, `read_customers`, `read_coupons`...); a write scope includes its read scope.\n2. Install the app on your store by opening `https://www.tiendanube.com/apps/<app id>/authorize`. You are redirected to the app's redirect URL with a `code` (valid 5 minutes).\n3. Exchange it: `POST https://www.tiendanube.com/apps/authorize/token` with `client_id`, `client_secret`, `grant_type=authorization_code` and `code`. The answer has `access_token` (put it in `TIENDANUBE_ACCESS_TOKEN`) and `user_id`, which is the store id (put it in `TIENDANUBE_STORE_ID`).\nTokens do not expire; they stop working when a new one is issued for the same app or the app is uninstalled.\n\nThe token is sent as `Authorization: Bearer <token>`. Older integrations use the legacy header `Authentication: bearer <token>`, which the API still accepts; a token works with either. Tiendanube also requires a `User-Agent` with the app name and a contact; without it the API answers 400. The connector sends `AnythingMCP (support@anythingmcp.com)`.\n\n## Start here\n`tiendanube_get_store` returns the store name, languages, currency and plan. Then `tiendanube_list_orders` or `tiendanube_list_products`.\n\n## Pagination and limits\n- Lists return 30 items by default; `per_page` goes up to 200, `page` starts at 1. The total count is in the `x-total-count` header and the next page in the `Link` header (both returned in `_headers` / `_pagination`).\n- Order queries stop at 10,000 results: narrow them with `created_at_min` / `created_at_max` or a status filter.\n- Rate limit: a leaky bucket of 40 requests draining at 2 per second per store and app (10x on Next and Evolution plans). Over it the API returns 429.\n\n## Data conventions\n- Ids are integers. Product variants have their own ids; stock and price live on the variant, not on the product.\n- Product and category names, descriptions and handles are objects keyed by language (`{\"es\": \"...\", \"pt\": \"...\"}`). When creating, pass such an object or a plain string, which is applied to every language.\n- Money values are strings with two decimals (`\"5400.00\"`) in the store currency (`currency` on the order).\n- Dates are ISO 8601 with offset, e.g. `2026-09-01T00:00:00-03:00`.\n- Orders have three separate states: `status` (open, closed, cancelled), `payment_status` (pending, authorized, paid, abandoned, refunded, voided) and `shipping_status` (unpacked, unfulfilled, fulfilled).\n\n## Pitfalls\n- `published` and `visibility` on products cannot be sent together (422); this connector uses `visibility`.\n- A 402 means the store's API access is suspended for an unpaid subscription.\n- `tiendanube_cancel_order` restocks and e-mails the customer by default.",
+  "prerequisites": "Needs an access token from a Tiendanube/Nuvemshop app installed on your store: create the app in the Partners portal, install it, and exchange the code for a token. The store id is the `user_id` returned with the token.",
+  "region": "br",
+  "category": "e-commerce",
+  "icon": "tiendanube",
+  "docsUrl": "https://tiendanube.github.io/api-documentation/",
+  "requiredEnvVars": ["TIENDANUBE_STORE_ID", "TIENDANUBE_ACCESS_TOKEN"],
+  "envVarMeta": {
+    "TIENDANUBE_STORE_ID": {
+      "label": "Store id",
+      "kind": "setting",
+      "help": "The numeric store id: the user_id returned together with the access token. It is also shown in the Partners portal under the store where the app is installed.",
+      "link": "https://tiendanube.github.io/api-documentation/authentication",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The store id is a number, e.g. 817495."
+    },
+    "TIENDANUBE_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "help": "The access_token returned by POST https://www.tiendanube.com/apps/authorize/token after installing your app on the store. Paste the token only, without 'bearer'.",
+      "link": "https://tiendanube.github.io/api-documentation/authentication",
+      "pattern": "^[A-Za-z0-9]{20,}$",
+      "patternMessage": "Paste only the token (letters and digits), without the word bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Tiendanube refused the token. It stops working when the app is uninstalled or a new token is issued for the same app; install the app again and exchange a new code.",
+    "402": "API access for this store is suspended because of an unpaid subscription or app fee.",
+    "403": "The app lacks a scope for this call. Add the scope to the app in the Partners portal and reinstall it on the store.",
+    "not_found": "No store with this id for this token. The store id is the user_id returned with the token, not the shop name."
+  },
+  "probe": { "tool": "tiendanube_get_store" },
+  "connector": {
+    "name": "Tiendanube / Nuvemshop",
+    "type": "REST",
+    "baseUrl": "https://api.tiendanube.com/2025-03/{{TIENDANUBE_STORE_ID}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": { "token": "{{TIENDANUBE_ACCESS_TOKEN}}" },
+    "headers": { "User-Agent": "AnythingMCP (support@anythingmcp.com)" },
+    "healthcheckPath": "/store"
+  },
+  "tools": [
+    {
+      "name": "tiendanube_get_store",
+      "description": "Get the store's settings: name, languages and main language, currency, country, contact e-mail, domains and plan. No parameters; use it first to check the connection and learn the store languages.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/store" }
+    },
+    {
+      "name": "tiendanube_list_products",
+      "description": "List products with their variants (price, stock, SKU), images, categories and visibility. Filter by text, category, stock range, dates or visibility. 30 per page by default, up to 200.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Text to find in product names, tags or SKUs." },
+          "ids": { "type": "string", "description": "Comma-separated product ids, up to 30." },
+          "category_id": { "type": "integer", "description": "Only products in this category (from tiendanube_list_categories)." },
+          "visibility": { "type": "string", "description": "visible, unlisted or hidden; several comma-separated." },
+          "min_stock": { "type": "integer", "description": "Only products with at least this stock." },
+          "max_stock": { "type": "integer", "description": "Only products with at most this stock, e.g. 0 for sold-out items." },
+          "created_at_min": { "type": "string", "description": "Created on or after, ISO 8601." },
+          "created_at_max": { "type": "string", "description": "Created on or before, ISO 8601." },
+          "updated_at_min": { "type": "string", "description": "Updated on or after, ISO 8601." },
+          "updated_at_max": { "type": "string", "description": "Updated on or before, ISO 8601." },
+          "sort_by": { "type": "string", "enum": ["user", "price-ascending", "price-descending", "alpha-ascending", "alpha-descending", "created-at-ascending", "created-at-descending", "best-selling"], "description": "Sort order." },
+          "fields": { "type": "string", "description": "Comma-separated fields to return, e.g. id,name,variants." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200. Default 30." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "q": "$q",
+          "ids": "$ids",
+          "category_id": "$category_id",
+          "visibility": "$visibility",
+          "min_stock": "$min_stock",
+          "max_stock": "$max_stock",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "sort_by": "$sort_by",
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": ["link", "x-total-count"]
+      }
+    },
+    {
+      "name": "tiendanube_get_product",
+      "description": "Get one product by id with names and descriptions per language, variants with price, promotional price, stock and SKU, images, categories, tags, SEO fields and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id from tiendanube_list_products." }
+        },
+        "required": ["product_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/products/{product_id}" }
+    },
+    {
+      "name": "tiendanube_get_product_by_sku",
+      "description": "Find the product that has a variant with the given SKU and return it with all its variants. Use it when an order line, a supplier list or a spreadsheet gives you a SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "description": "Variant SKU, exactly as stored." }
+        },
+        "required": ["sku"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/products/sku/{sku}", "encodePathParams": true }
+    },
+    {
+      "name": "tiendanube_create_product",
+      "description": "Create a product with its variants, images and categories. Names and descriptions take a string or an object per language. Returns the new product with its id and variant ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "object", "description": "Name per language, e.g. {\"es\": \"Remera\", \"pt\": \"Camiseta\"}." },
+          "description": { "type": "object", "description": "HTML description per language." },
+          "variants": { "type": "array", "description": "Variants: [{\"price\": \"19.90\", \"stock\": 10, \"sku\": \"ABC-1\", \"values\": [{\"es\": \"M\"}]}]. Values match attributes.", "items": { "type": "object" } },
+          "attributes": { "type": "array", "description": "Up to 3 variant attributes, e.g. [{\"es\": \"Talle\"}].", "items": { "type": "object" } },
+          "images": { "type": "array", "description": "Images by URL: [{\"src\": \"https://...\"}]. Up to 9 here.", "items": { "type": "object" } },
+          "categories": { "type": "array", "description": "Category ids.", "items": { "type": "integer" } },
+          "tags": { "type": "string", "description": "Comma-separated tags." },
+          "brand": { "type": "string", "description": "Brand name." },
+          "visibility": { "type": "string", "enum": ["visible", "unlisted", "hidden"], "description": "Visibility in the storefront." },
+          "free_shipping": { "type": "boolean", "description": "Eligible for free shipping." },
+          "requires_shipping": { "type": "boolean", "description": "false for digital products." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "variants": "$variants",
+          "attributes": "$attributes",
+          "images": "$images",
+          "categories": "$categories",
+          "tags": "$tags",
+          "brand": "$brand",
+          "visibility": "$visibility",
+          "free_shipping": "$free_shipping",
+          "requires_shipping": "$requires_shipping"
+        }
+      }
+    },
+    {
+      "name": "tiendanube_update_product",
+      "description": "Update product-level fields: name, description, categories, tags, brand, visibility, SEO title and description. Prices and stock are on variants: use tiendanube_update_variant or tiendanube_update_stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id." },
+          "name": { "type": "object", "description": "Name per language." },
+          "description": { "type": "object", "description": "HTML description per language." },
+          "categories": { "type": "array", "description": "Category ids (replaces the list).", "items": { "type": "integer" } },
+          "tags": { "type": "string", "description": "Comma-separated tags (replaces them)." },
+          "brand": { "type": "string", "description": "Brand name." },
+          "visibility": { "type": "string", "enum": ["visible", "unlisted", "hidden"], "description": "Visibility in the storefront." },
+          "seo_title": { "type": "object", "description": "SEO title per language, up to 70 characters." },
+          "seo_description": { "type": "object", "description": "SEO description per language, up to 320 characters." }
+        },
+        "required": ["product_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "categories": "$categories",
+          "tags": "$tags",
+          "brand": "$brand",
+          "visibility": "$visibility",
+          "seo_title": "$seo_title",
+          "seo_description": "$seo_description"
+        }
+      }
+    },
+    {
+      "name": "tiendanube_delete_product",
+      "description": "Delete a product with all its variants and images from the store. This cannot be undone; to take a product offline temporarily set its visibility to hidden instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id." }
+        },
+        "required": ["product_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/products/{product_id}" },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "tiendanube_list_variants",
+      "description": "List the variants of one product with id, attribute values, price, promotional price, cost, stock, SKU, weight and dimensions. Use it to get variant ids before changing price or stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        },
+        "required": ["product_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/variants",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "tiendanube_update_variant",
+      "description": "Update one variant: price, promotional price, cost, stock, SKU or weight. Only the fields passed change. Money values are strings with two decimals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id." },
+          "variant_id": { "type": "integer", "description": "Variant id from tiendanube_list_variants." },
+          "price": { "type": "string", "description": "New price, e.g. \"19.90\"." },
+          "promotional_price": { "type": "string", "description": "Sale price, or null to remove it." },
+          "cost": { "type": "string", "description": "Cost price." },
+          "stock": { "type": "integer", "description": "New stock; omit to keep it." },
+          "sku": { "type": "string", "description": "New SKU." },
+          "weight": { "type": "string", "description": "Weight in kg, e.g. \"0.350\"." }
+        },
+        "required": ["product_id", "variant_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}/variants/{variant_id}",
+        "bodyMapping": {
+          "price": "$price",
+          "promotional_price": "$promotional_price",
+          "cost": "$cost",
+          "stock": "$stock",
+          "sku": "$sku",
+          "weight": "$weight"
+        }
+      }
+    },
+    {
+      "name": "tiendanube_update_stock",
+      "description": "Change the stock of one variant or of all variants of a product: replace it with a value, or add / remove a quantity. Returns the updated variants. Removing more than available leaves 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Product id." },
+          "action": { "type": "string", "enum": ["replace", "variation"], "description": "replace sets the stock to value; variation adds value (negative removes)." },
+          "value": { "type": "integer", "description": "New stock for replace, or the quantity to add or remove for variation." },
+          "variant_id": { "type": "integer", "description": "Only this variant; omit to change all variants of the product." }
+        },
+        "required": ["product_id", "action", "value"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{product_id}/variants/stock",
+        "bodyMapping": { "action": "$action", "value": "$value", "id": "$variant_id" }
+      }
+    },
+    {
+      "name": "tiendanube_list_categories",
+      "description": "List the store's product categories with names per language, handle, parent and subcategory ids. Use the ids to filter products or assign categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_id": { "type": "integer", "description": "Only children of this category." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": { "parent_id": "$parent_id", "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "tiendanube_list_orders",
+      "description": "List orders, newest first, with number, customer, products, totals, payment and shipping status. Filter by status, dates, totals or a search text. 30 per page by default, up to 200.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["any", "open", "closed", "cancelled"], "description": "Order state. Default any." },
+          "payment_status": { "type": "string", "enum": ["any", "pending", "authorized", "paid", "abandoned", "refunded", "voided"], "description": "Payment state." },
+          "shipping_status": { "type": "string", "enum": ["any", "unpacked", "unfulfilled", "fulfilled"], "description": "Shipping state; unfulfilled means not shipped." },
+          "channels": { "type": "string", "enum": ["form", "store", "api", "meli", "pos"], "description": "Sales channel: storefront, draft (form), API, Mercado Libre or point of sale." },
+          "q": { "type": "string", "description": "Order number, or text in the customer name or e-mail." },
+          "customer_ids": { "type": "string", "description": "Comma-separated customer ids." },
+          "created_at_min": { "type": "string", "description": "Created on or after, ISO 8601, e.g. 2026-09-01T00:00:00-03:00." },
+          "created_at_max": { "type": "string", "description": "Created on or before, ISO 8601." },
+          "updated_at_min": { "type": "string", "description": "Updated on or after, ISO 8601." },
+          "updated_at_max": { "type": "string", "description": "Updated on or before, ISO 8601." },
+          "total_min": { "type": "number", "description": "Minimum order total." },
+          "total_max": { "type": "number", "description": "Maximum order total." },
+          "fields": { "type": "string", "description": "Comma-separated fields to return, e.g. id,number,total,created_at." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200. Default 30." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "status": "$status",
+          "payment_status": "$payment_status",
+          "shipping_status": "$shipping_status",
+          "channels": "$channels",
+          "q": "$q",
+          "customer_ids": "$customer_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "total_min": "$total_min",
+          "total_max": "$total_max",
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": ["link", "x-total-count"]
+      }
+    },
+    {
+      "name": "tiendanube_get_order",
+      "description": "Get one order by id with customer and addresses, line items, discounts and coupons, totals, payment details, shipping option and tracking, and its open/closed/cancelled state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id (not the order number) from tiendanube_list_orders." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/orders/{order_id}" }
+    },
+    {
+      "name": "tiendanube_list_fulfillment_orders",
+      "description": "List the fulfillment orders of an order: the shipments it is split into, with origin location, items, shipping carrier, tracking info and status. Use it to follow the delivery of an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/orders/{order_id}/fulfillment-orders" }
+    },
+    {
+      "name": "tiendanube_close_order",
+      "description": "Close (archive) an order once it is handled. A closed order can be reopened with tiendanube_open_order. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/orders/{order_id}/close" }
+    },
+    {
+      "name": "tiendanube_open_order",
+      "description": "Reopen a closed order so it shows among open orders again. Does not work on cancelled orders. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/orders/{order_id}/open" }
+    },
+    {
+      "name": "tiendanube_cancel_order",
+      "description": "Cancel an order. By default the customer is e-mailed and the stock is put back; set email or restock to false to avoid that. Cannot be undone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id." },
+          "reason": { "type": "string", "enum": ["customer", "inventory", "fraud", "other"], "description": "Why the order is cancelled." },
+          "email": { "type": "boolean", "description": "Notify the customer. Default true." },
+          "restock": { "type": "boolean", "description": "Return the items to stock. Default true." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/cancel",
+        "bodyMapping": { "reason": "$reason", "email": "$email", "restock": "$restock" }
+      },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "tiendanube_list_customers",
+      "description": "List customers with name, e-mail, phone, identification, addresses, total spent and last order id. Search by text or exact e-mail, filter by dates. 30 per page by default, up to 200.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Text in the customer name, e-mail or identification (CPF/DNI)." },
+          "email": { "type": "string", "description": "Exact e-mail address." },
+          "created_at_min": { "type": "string", "description": "Created on or after, ISO 8601." },
+          "created_at_max": { "type": "string", "description": "Created on or before, ISO 8601." },
+          "updated_at_min": { "type": "string", "description": "Updated on or after, ISO 8601." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "q": "$q",
+          "email": "$email",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": ["link", "x-total-count"]
+      }
+    },
+    {
+      "name": "tiendanube_get_customer",
+      "description": "Get one customer by id with contact details, billing and shipping addresses, accepted marketing, total spent and the id of the last order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "integer", "description": "Customer id from tiendanube_list_customers or an order." }
+        },
+        "required": ["customer_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{customer_id}" }
+    },
+    {
+      "name": "tiendanube_list_abandoned_checkouts",
+      "description": "List abandoned checkouts: carts where the buyer entered contact details but did not pay, with products, totals, contact and the recovery URL. Use it for cart recovery follow-ups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_max": { "type": "string", "description": "Created on or before, ISO 8601." },
+          "updated_at_max": { "type": "string", "description": "Updated on or before, ISO 8601." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/checkouts",
+        "queryParams": { "created_at_max": "$created_at_max", "updated_at_max": "$updated_at_max", "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "tiendanube_list_coupons",
+      "description": "List discount coupons with code, type (percentage, absolute, shipping), value, validity dates, usage count and limits. Filter by code, status or validity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Coupon code to look for." },
+          "valid": { "type": "boolean", "description": "true for coupons usable today." },
+          "status": { "type": "string", "enum": ["activated", "deactivated"], "description": "Coupon status." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": { "q": "$q", "valid": "$valid", "status": "$status", "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "tiendanube_list_webhooks",
+      "description": "List the webhooks registered by this app on the store, with id, event (order/created, product/updated...) and target URL. Only the app's own webhooks are visible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": { "type": "string", "description": "Only this event, e.g. order/paid." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." },
+          "per_page": { "type": "integer", "description": "Results per page, up to 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": { "event": "$event", "page": "$page", "per_page": "$per_page" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,391 @@
+{
+  "slug": "fxmacrodata",
+  "name": "FXMacroData",
+  "description": "Official macroeconomic releases, central-bank policy rates, release calendars and FX rates for 22 currencies via the FXMacroData API. 5 read-only tools; the data catalogue, the USD calendar and recent USD releases work without an API key.",
+  "instructions": "This connector reads the FXMacroData REST API (api.fxmacrodata.com/v1): macroeconomic releases, central-bank policy rates, release calendars and FX rates for 22 currencies (AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD). Each value comes from the official publisher (BLS, ECB, RBA, ONS and so on) and is timestamped at publication. Every tool is a read-only GET.\n\n**Setup**: nothing is required to start. Without a key the API serves:\n- the data catalogue for every currency;\n- the USD release calendar;\n- USD announcements for the most recent 90 days, each release readable 15 minutes after it is published.\n\nOther currencies, FX rates, full history and real-time releases need a key: subscribe at https://fxmacrodata.com/subscribe and set `FXMACRODATA_API_KEY`. The key is sent as the `X-API-Key` header, and only when it is set; a wrong key is answered with 401 `invalid_api_key` even on the free routes. Keyless traffic has a fair-use allowance of 100 requests a day.\n\n**Free-tier answers say so**: a keyless announcement response carries `freemium_window` (history cut to 90 days) and `freemium_delay` (15-minute delay, `withheld_count`, `message`). When `freemium_delay.withheld_count` is above zero, a newer release has been published that the free tier cannot show yet: say so, and do not present the older value as the current one. A route that needs a key answers 401 with `code: api_key_required`; the data exists behind a subscription, it is not missing.\n\n**Tools**\n- `fxmacrodata_data_catalogue`: start here. Lists every indicator slug a currency publishes (`inflation`, `policy_rate`, `unemployment`, `gdp`, `non_farm_payrolls`, bond yields...) with unit, frequency, source and coverage. Use its slugs in the other tools.\n- `fxmacrodata_latest_announcements`: the most recent release of every indicator for one currency.\n- `fxmacrodata_indicator_history`: the release history of one indicator, filtered by `start_date`/`end_date`.\n- `fxmacrodata_release_calendar`: scheduled releases for one currency.\n- `fxmacrodata_fx_rates`: daily FX rates for a pair of supported currencies (key required).\n\n**Reading the data**\n- `date` on an announcement or calendar row is the reference period the value describes (the month, for CPI), NOT the day it was released. Release timing is `announcement_datetime` (Unix seconds, UTC) and `announcement_datetime_local` (publisher time zone). Sort and compare releases by `announcement_datetime`.\n- A row with `release_time_assumed: true` has a release time derived from the series' usual publication lag rather than captured from the release.\n- `val` is the value; `source_url` links the official publication. Credit the publisher (for example \"Bureau of Labor Statistics, via FXMacroData\").\n- List endpoints return 20 rows by default and take `limit` up to 100. To read a full range, repeat the call with `offset` = `pagination.next_offset` while `pagination.has_more` is true.\n- Dates are `YYYY-MM-DD`. Currency codes are lowercase.\n\nDocs: https://fxmacrodata.com/documentation",
+  "region": "intl",
+  "category": "finance",
+  "icon": "fxmacrodata",
+  "docsUrl": "https://fxmacrodata.com/documentation",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "FXMACRODATA_API_KEY"
+  ],
+  "envVarMeta": {
+    "FXMACRODATA_API_KEY": {
+      "label": "API key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Leave empty for the free tier (data catalogue, USD calendar, recent USD releases). A key unlocks every currency, FX rates, full history and real-time releases.",
+      "link": "https://fxmacrodata.com/subscribe",
+      "pattern": "^\\S+$",
+      "patternMessage": "The key is a single token with no spaces or line breaks."
+    }
+  },
+  "probe": {
+    "tool": "fxmacrodata_data_catalogue",
+    "params": {
+      "currency": "usd"
+    }
+  },
+  "connector": {
+    "name": "FXMacroData API",
+    "type": "REST",
+    "baseUrl": "https://api.fxmacrodata.com/v1",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "fxmacrodata_data_catalogue",
+      "description": "List every indicator FXMacroData publishes for one currency: slug, name, unit, frequency, official source and coverage (earliest/latest available date, freshness). Call this first to find the indicator slugs used by the other tools. Works without an API key for every currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Lowercase ISO currency code, e.g. 'usd', 'eur', 'jpy'."
+          }
+        },
+        "required": [
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data_catalogue/{currency}",
+        "encodePathParams": true,
+        "headers": {
+          "Accept": "application/json",
+          "X-API-Key": "${FXMACRODATA_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "fxmacrodata_latest_announcements",
+      "description": "The most recent official release of every indicator for one currency (policy rate, CPI, GDP, unemployment, payrolls, bond yields...), each with val, the previous value, the reference period in `date` and the release time in `announcement_datetime`. USD works without an API key on a 15-minute delay (see freemium_delay in the response); other currencies need FXMACRODATA_API_KEY.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Lowercase ISO currency code, e.g. 'usd', 'eur', 'gbp'."
+          }
+        },
+        "required": [
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/announcements/{currency}/latest",
+        "encodePathParams": true,
+        "headers": {
+          "Accept": "application/json",
+          "X-API-Key": "${FXMACRODATA_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "fxmacrodata_indicator_history",
+      "description": "Release history of one indicator for one currency, with val, the reference period in `date` and the release time in `announcement_datetime`. Get the indicator slug from fxmacrodata_data_catalogue. Paginated: up to 100 rows per call; call again with offset = pagination.next_offset while pagination.has_more is true. Without an API key only USD works, limited to the most recent 90 days (see freemium_window and freemium_delay in the response).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Lowercase ISO currency code, e.g. 'usd', 'aud'."
+          },
+          "indicator": {
+            "type": "string",
+            "description": "Indicator slug from fxmacrodata_data_catalogue, e.g. 'inflation', 'policy_rate', 'unemployment', 'non_farm_payrolls'."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Earliest reference date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Latest reference date, YYYY-MM-DD. Must not be before start_date."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1-100. The API returns 20 when omitted."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip. To read a whole range, call again with offset = pagination.next_offset while pagination.has_more is true."
+          }
+        },
+        "required": [
+          "currency",
+          "indicator"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/announcements/{currency}/{indicator}",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "headers": {
+          "Accept": "application/json",
+          "X-API-Key": "${FXMACRODATA_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "fxmacrodata_release_calendar",
+      "description": "Scheduled releases for one currency: indicator (`release`), name, importance and the scheduled time in `announcement_datetime` (Unix seconds, UTC) and `announcement_datetime_utc`. If a row carries `date`, that is the reference period, not the release day: time releases by announcement_datetime. USD works without an API key; other currencies need FXMACRODATA_API_KEY.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Lowercase ISO currency code, e.g. 'usd', 'eur'."
+          },
+          "indicator": {
+            "type": "string",
+            "description": "Optional indicator slug to keep only that release, e.g. 'policy_rate'."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Earliest release date to include, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Latest release date to include, YYYY-MM-DD. Must not be before start_date."
+          }
+        },
+        "required": [
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar/{currency}",
+        "encodePathParams": true,
+        "queryParams": {
+          "indicator": "$indicator",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        },
+        "headers": {
+          "Accept": "application/json",
+          "X-API-Key": "${FXMACRODATA_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "fxmacrodata_fx_rates",
+      "description": "Daily FX rates for a currency pair where both legs are supported currencies, e.g. base 'eur' and quote 'usd' for EUR/USD. Always needs FXMACRODATA_API_KEY; without one the API answers 401 api_key_required. Paginated: up to 100 rows per call; call again with offset = pagination.next_offset while pagination.has_more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Base currency, lowercase, e.g. 'eur'."
+          },
+          "quote": {
+            "type": "string",
+            "enum": [
+              "aud",
+              "brl",
+              "cad",
+              "chf",
+              "cnh",
+              "cny",
+              "dkk",
+              "eur",
+              "gbp",
+              "huf",
+              "ils",
+              "jpy",
+              "krw",
+              "myr",
+              "ngn",
+              "nok",
+              "nzd",
+              "pen",
+              "sek",
+              "thb",
+              "twd",
+              "usd"
+            ],
+            "description": "Quote currency, lowercase, e.g. 'usd'."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "First date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Last date, YYYY-MM-DD. Must not be before start_date."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1-100. The API returns 20 when omitted."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip. To read a whole range, call again with offset = pagination.next_offset while pagination.has_more is true."
+          }
+        },
+        "required": [
+          "base",
+          "quote"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forex/{base}/{quote}",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "headers": {
+          "Accept": "application/json",
+          "X-API-Key": "${FXMACRODATA_API_KEY}"
+        }
+      }
+    }
+  ]
+}

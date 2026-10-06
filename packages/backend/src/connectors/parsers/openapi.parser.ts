@@ -7,7 +7,7 @@ import axios from 'axios';
 const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 
 export interface ParsedTool {
   name: string;
@@ -192,7 +192,7 @@ export class OpenApiParser {
     this.logger.debug(`Fetching OpenAPI spec from: ${url}`);
 
     await assertSafeOutboundUrl(url);
-    const response = await axios.get(url, { timeout: 15000, ...ssrfGuardedAxiosOptions() });
+    const response = await axios.get(url, { timeout: 15000, ...outboundAxiosOptions() });
 
     // If the response is already a valid spec object, parse directly
     if (typeof response.data === 'object' && response.data !== null) {
@@ -244,7 +244,7 @@ export class OpenApiParser {
         await assertSafeOutboundUrl(specUrl);
         const specResp = await axios.get(specUrl, {
           timeout: 15000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions(),
         });
         return specResp.data;
       } catch {
@@ -258,7 +258,7 @@ export class OpenApiParser {
       await assertSafeOutboundUrl(initJsUrl);
       const initResp = await axios.get(initJsUrl, {
         timeout: 15000,
-        ...ssrfGuardedAxiosOptions(),
+        ...outboundAxiosOptions(),
       });
       const initJs = typeof initResp.data === 'string' ? initResp.data : '';
       // The spec is embedded as: let defined = { ... "swaggerDoc": { <the spec> }, ... }
@@ -299,7 +299,7 @@ export class OpenApiParser {
         await assertSafeOutboundUrl(candidate);
         const resp = await axios.get(candidate, {
           timeout: 5000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions(),
         });
         if (
           typeof resp.data === 'object' &&

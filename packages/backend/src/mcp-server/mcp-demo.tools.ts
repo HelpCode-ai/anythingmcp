@@ -21,6 +21,7 @@ const KEYLESS_COUNT = ADAPTERS.filter((a) => a.authType === 'NONE').length;
 const SITE = 'https://anythingmcp.com';
 const REPO = 'https://github.com/HelpCode-ai/anythingmcp';
 const CLOUD = 'https://cloud.anythingmcp.com';
+const CLAUDE_DIRECTORY = 'https://claude.ai/directory/anythingmcp';
 
 const OVERVIEW = `AnythingMCP gives Claude, ChatGPT and Copilot safe access to the software a company already runs: ${ADAPTER_COUNT} ready connectors plus any REST, SOAP, GraphQL or SQL system, without code. Self-hosted, open source (AGPL-3.0), and it learns how your systems connect.
 
@@ -32,7 +33,7 @@ This is a PUBLIC, READ-ONLY demo endpoint: it only describes the product and exp
 
 Next steps — call:
 • "anythingmcp_get_started" to install your own instance
-• "anythingmcp_connect_client" to connect Claude / ChatGPT / Gemini / Copilot / Cursor
+• "anythingmcp_connect_client" to connect Claude / ChatGPT / Meta Muse / Gemini / Copilot / Cursor
 • "anythingmcp_list_connectors" to see the ${ADAPTER_COUNT} pre-built connectors`;
 
 const GET_STARTED = `Run your own AnythingMCP (Docker required):
@@ -51,8 +52,9 @@ Prefer not to self-host? Use the managed cloud: ${CLOUD}
 Full guides (EN/DE/IT): ${SITE}/guides`;
 
 const CONNECT: Record<string, string> = {
-  claude: `Claude (Desktop, Code, claude.ai): open Customize → Connectors → + → "Add custom connector" and paste your AnythingMCP server URL (e.g. http://localhost:4000/mcp or your cloud URL). OAuth 2.0 is supported out of the box. Guide: ${SITE}/guides`,
+  claude: `Claude (Desktop, Code, claude.ai): on AnythingMCP Cloud the fastest path is the Claude Directory: ${CLAUDE_DIRECTORY}, then Connect. Otherwise open Customize → Connectors → + → "Add custom connector" and paste your AnythingMCP server URL (e.g. http://localhost:4000/mcp or your cloud URL). OAuth 2.0 is supported out of the box. Guide: ${SITE}/guides`,
   chatgpt: `ChatGPT: AnythingMCP gives you the MCP backend behind "apps in ChatGPT" (formerly connectors). Add your AnythingMCP URL as a connector/app in ChatGPT's settings, or use it as the tool layer of an Apps SDK app. Guide: ${SITE}/guides`,
+  muse: `Meta Muse: in Muse open Settings → Connectors → Add custom connector and paste your AnythingMCP server URL (e.g. ${CLOUD}/mcp/<server-id>). Muse opens the AnythingMCP sign-in page: sign in and approve access, then ask Muse to use a tool. Or ask Muse in a chat: "Create a Custom Connector for a new remote MCP server, then connect to it: Name: AnythingMCP, Transport: remote streamable HTTP, URL: <your server URL>, Auth: OAuth". Muse is available in the US and Canada; it connects from Meta's servers, so a self-hosted instance needs a public HTTPS URL. Guide: ${SITE}/guides`,
   gemini: `Google Gemini: point Gemini's MCP/tooling at your AnythingMCP server URL over HTTP/SSE. Guide: ${SITE}/guides`,
   copilot: `GitHub Copilot: add your AnythingMCP server URL as an MCP server (Streamable HTTP). Guide: ${SITE}/guides`,
   cursor: `Cursor: add your AnythingMCP server URL as an MCP server (Streamable HTTP) in Cursor's MCP settings. Guide: ${SITE}/guides`,
@@ -103,10 +105,10 @@ export function registerDemoTools(server: McpServer): void {
     'anythingmcp_connect_client',
     {
       description:
-        'Setup instructions to connect an AI client (Claude, ChatGPT, Gemini, Copilot, Cursor) to AnythingMCP.',
+        'Setup instructions to connect an AI client (Claude, ChatGPT, Meta Muse, Gemini, Copilot, Cursor) to AnythingMCP.',
       inputSchema: z.object({
         client: z
-          .enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor'])
+          .enum(['claude', 'chatgpt', 'muse', 'gemini', 'copilot', 'cursor'])
           .describe('Which AI client to connect.'),
       }),
     },

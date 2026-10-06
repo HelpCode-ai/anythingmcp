@@ -132,7 +132,7 @@ export default function DashboardPage() {
             <div>
               <div className="text-sm font-semibold">Next step: connect your AI client</div>
               <div className="mt-0.5 text-xs text-[var(--text-2)]">
-                Your connectors are ready. Add your MCP server to Claude, ChatGPT or Cursor and make the first call.
+                Your connectors are ready. Add your MCP server to Claude, ChatGPT, Meta Muse or Cursor and make the first call.
               </div>
             </div>
             <Link href={connectHref} className="shrink-0">
@@ -302,7 +302,7 @@ export default function DashboardPage() {
           <Card className="flex flex-col gap-2.5 p-5">
             <div className="mb-1 text-sm font-semibold">Quick actions</div>
             <QuickAction href="/connectors/new" tone="info" title="Add a connector" desc="REST, SOAP, GraphQL, DB or MCP" icon={<PlusIcon />} />
-            <QuickAction href="/mcp-server" tone="emerald" title="Configure a client" desc="Claude, ChatGPT, Cursor…" icon={<ServerStatIcon />} />
+            <QuickAction href="/mcp-server" tone="emerald" title="Configure a client" desc="Claude, ChatGPT, Muse, Cursor…" icon={<ServerStatIcon />} />
             <QuickAction
               href="/knowledge-graph"
               tone="purple"
