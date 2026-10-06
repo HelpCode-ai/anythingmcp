@@ -165,6 +165,26 @@ describe('McpClientEngine endpoint resolution', () => {
     });
   });
 
+  describe('tools/list pagination', () => {
+    it('follows nextCursor until the server stops sending one', async () => {
+      client.listTools
+        .mockResolvedValueOnce({ tools: [{ name: 'a', inputSchema: {} }], nextCursor: 'p2' })
+        .mockResolvedValueOnce({ tools: [{ name: 'b', inputSchema: {} }], nextCursor: 'p3' })
+        .mockResolvedValueOnce({ tools: [{ name: 'c', inputSchema: {} }] });
+
+      const tools = await engine.listTools(config('https://mcp.atlassian.com/v2/mcp'));
+
+      expect(tools.map((t) => t.name)).toEqual(['a', 'b', 'c']);
+      expect(client.listTools.mock.calls).toEqual([[undefined], [{ cursor: 'p2' }], [{ cursor: 'p3' }]]);
+    });
+
+    it('stops at a ceiling when a server never stops paginating', async () => {
+      client.listTools.mockResolvedValue({ tools: [{ name: 'x', inputSchema: {} }], nextCursor: 'again' });
+      const tools = await engine.listTools(config('https://mcp.example.com/mcp'));
+      expect(tools).toHaveLength(50);
+    });
+  });
+
   describe('a server at the root of its host (Stripe, Apify)', () => {
     it('reaches the root when the tool path is "/", for calls and for discovery', async () => {
       await engine.execute(

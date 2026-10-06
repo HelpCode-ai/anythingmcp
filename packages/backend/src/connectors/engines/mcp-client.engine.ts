@@ -6,6 +6,9 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
 import { ssrfGuardedFetch } from '../../common/outbound-http';
 
+/** Pages of tools/list followed at most (MCP pagination). */
+const MAX_TOOL_LIST_PAGES = 50;
+
 @Injectable()
 export class McpClientEngine {
   private readonly logger = new Logger(McpClientEngine.name);
@@ -159,9 +162,19 @@ export class McpClientEngine {
       } catch (err) {
         throw explainMcpConnectError(err, mcpUrl, config.authType);
       }
-      const result = await client.listTools();
+      // tools/list is paginated (MCP spec): a server with a large catalogue
+      // (Atlassian with ?tools=all) returns a nextCursor. Follow it, with a
+      // ceiling so a server that never stops cannot hold the request.
+      const tools: Awaited<ReturnType<Client['listTools']>>['tools'] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_TOOL_LIST_PAGES; page++) {
+        const result = await client.listTools(cursor ? { cursor } : undefined);
+        tools.push(...(result.tools || []));
+        cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : undefined;
+        if (!cursor) break;
+      }
 
-      return (result.tools || []).map((tool) => ({
+      return tools.map((tool) => ({
         name: tool.name,
         description: tool.description || '',
         inputSchema: (tool.inputSchema as Record<string, unknown>) || {

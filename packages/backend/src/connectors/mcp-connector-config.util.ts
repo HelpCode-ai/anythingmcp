@@ -21,13 +21,14 @@ export function mcpToolPrefixOf(config: unknown): string | undefined {
 
 /**
  * The name a remote tool gets here. Without a prefix it is the remote name,
- * unchanged. With one, characters outside `[A-Za-z0-9_]` become `_` (Notion's
- * `notion-search`, Apify's `search-actors`) and the prefix is added unless the
- * name already starts with it (`firecrawl_scrape` stays as it is).
+ * unchanged. With one, runs of characters outside `[A-Za-z0-9_]` become a
+ * single `_` (Notion's `notion-search`, Apify's `apify--rag-web-browser`) and
+ * the prefix is added unless the name already starts with it
+ * (`firecrawl_scrape` stays as it is).
  */
 export function localMcpToolName(remoteName: string, prefix?: string): string {
   if (!prefix) return remoteName;
-  const normalized = remoteName.replace(/[^A-Za-z0-9_]/g, '_');
+  const normalized = remoteName.replace(/[^A-Za-z0-9_]+/g, '_').replace(/_{2,}/g, '_');
   return normalized.toLowerCase().startsWith(prefix.toLowerCase())
     ? normalized
     : `${prefix}${normalized}`;
