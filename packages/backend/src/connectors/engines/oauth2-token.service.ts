@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -543,19 +542,21 @@ export class OAuth2TokenService {
 /**
  * What the cache, the mutex and the last error are keyed on. A saved
  * connector is keyed on its id. A config without one (tried before it is
- * saved) is keyed on its own credentials: the token URL alone, the old key,
- * is the same for every workspace that uses the provider, so one workspace's
- * token could be served to another's call.
+ * saved) gets a key of its own, tied to that config object: the token URL
+ * alone, the old key, is the same for every workspace that uses the
+ * provider, so one workspace's token could be served to another's call.
  */
+const unsavedKeys = new WeakMap<object, string>();
+let unsavedSeq = 0;
+
 function keyFor(authConfig: Record<string, unknown>, connectorId?: string): string {
   if (connectorId) return connectorId;
-  const parts = [
-    authConfig.tokenUrl,
-    authConfig.clientId,
-    authConfig.clientSecret,
-    authConfig.refreshToken,
-  ].map((v) => String(v ?? ''));
-  return `unsaved:${createHash('sha256').update(parts.join('\n')).digest('hex')}`;
+  let key = unsavedKeys.get(authConfig);
+  if (!key) {
+    key = `unsaved:${++unsavedSeq}`;
+    unsavedKeys.set(authConfig, key);
+  }
+  return key;
 }
 
 /** An error the install-form probe and the tool path classify as rejected credentials. */
