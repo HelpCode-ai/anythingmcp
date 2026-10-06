@@ -213,7 +213,7 @@ const SETUP_TOOL_SPECS: Array<{
     name: 'setup_get_status',
     title: 'Setup status',
     description:
-      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. Call it after the user says they completed a setup link.",
+      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. While the workspace is on its free trial, also the days left and, for an administrator, the page where a plan is chosen. Call it after the user says they completed a setup link.",
     parameters: { type: 'object', properties: {} },
     readOnly: true,
   },
@@ -832,14 +832,15 @@ function resultBody(result: TextResult): unknown {
 }
 
 /**
- * A setup answer without plan quotas or upgrade links. OpenAI does not allow a
- * plugin to promote upgrades or link to a page that starts one, so on the
- * ChatGPT tools a connector limit is explained without either.
+ * A setup answer without plan quotas, trial state or upgrade links. OpenAI
+ * does not allow a plugin to promote upgrades or link to a page that starts
+ * one, so on the ChatGPT tools a connector limit is explained without either.
  */
 function withoutPlanDetails(body: unknown): unknown {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
   const {
     connectorsLeftOnThisPlan: _left,
+    trial: _trial,
     upgradeUrl,
     whatTheUserCanDo,
     ...rest

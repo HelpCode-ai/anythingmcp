@@ -27,7 +27,10 @@ import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
 import { RefreshTokenRevocationMiddleware } from './auth/refresh-token-revocation.middleware';
 import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middleware';
-import { AuthorizePkceMiddleware } from './auth/authorize-pkce.middleware';
+import {
+  AuthorizePkceMiddleware,
+  pkceExemptionsConfigured,
+} from './auth/authorize-pkce.middleware';
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
 import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
 import { IdentityProvidersModule } from './identity-providers/identity-providers.module';
@@ -97,6 +100,15 @@ if (useOAuth) {
       // without an account: from the login page they create one, verify their
       // email and come back to approve. 30 minutes covers that comfortably.
       oauthSessionExpiresIn: 30 * 60 * 1000,
+      // Upstream requires PKCE itself, with no way to exempt a client. When an
+      // operator lists PKCE-exempt confidential clients (Copilot Studio
+      // connectors cannot send PKCE), AuthorizePkceMiddleware becomes the one
+      // place that enforces it on /authorize: S256 for every other client, and
+      // the exemption only for listed clients registered with a secret. Codes
+      // without a challenge can then only be issued to those clients, and the
+      // token endpoint still checks any challenge that was sent. With no list,
+      // upstream keeps enforcing PKCE as well.
+      requirePkce: !pkceExemptionsConfigured(),
     }),
   );
 }

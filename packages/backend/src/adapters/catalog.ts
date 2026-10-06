@@ -36,6 +36,7 @@ import * as klardaten from './de/klardaten.json';
 import * as lexwareOffice from './de/lexware-office.json';
 import * as matrix42 from './de/matrix42.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
+import * as moco from './de/moco.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
 import * as openproject from './de/openproject.json';
@@ -534,6 +535,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lexwareOffice as unknown as AdapterDefinition,
   matrix42 as unknown as AdapterDefinition,
   mfrFieldservice as unknown as AdapterDefinition,
+  moco as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
   openproject as unknown as AdapterDefinition,

@@ -33,7 +33,9 @@ run_migrations() {
   # where the error still says what actually went wrong. Docker's restart policy
   # retries, which is also the right behaviour when the database is simply not
   # accepting connections yet.
-  if ! npx prisma migrate deploy; then
+  # The Prisma CLI is called through node, not npx: the runtime image ships
+  # without npm (see the Dockerfile's runner stage).
+  if ! node node_modules/prisma/build/index.js migrate deploy; then
     echo "==> Migrations failed — refusing to start against an unknown schema." >&2
     exit 1
   fi

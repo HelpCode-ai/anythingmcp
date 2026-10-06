@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/logo-icon';
 import { cn } from '@/lib/utils';
+import { GithubStarButton } from '@/components/github-star-button';
 
 /* ── Inline icons (match the redesign prototype) ── */
 function I({ d, children, ...p }: { d?: string; children?: React.ReactNode } & React.SVGProps<SVGSVGElement>) {
@@ -144,6 +145,8 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
           </div>
         ))}
       </nav>
+
+      <GithubStarButton />
 
       {/* Footer: Settings + workspace switcher */}
       <div className="relative border-t border-[var(--border)] p-3" ref={wsRef}>

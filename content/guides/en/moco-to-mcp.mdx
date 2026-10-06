@@ -1,0 +1,42 @@
+---
+title: "How to Connect MOCO to MCP for AI Agents"
+description: "Browse MOCO projects, time entries, companies and invoices, and book time through AnythingMCP."
+category: "connectors"
+keyword: "MOCO MCP Server, MOCO API AI, MOCO time tracking MCP"
+publishedAt: "2026-10-06"
+adapterSlug: "moco"
+---
+
+## MOCO with AI agents
+
+The MOCO adapter exposes eight tools for project reporting, time tracking and invoice lookup. It uses MOCO's REST API v1 with a key from your own MOCO account.
+
+## Quick setup
+
+In MOCO, open **Profile → Integrations** and copy your personal API key. It inherits your user permissions. An account API key is also available under **Settings → Extensions → API & Webhooks**, with either read-only or full access. Choose full access only if you want to book time.
+
+In AnythingMCP, open the connector store, select **MOCO**, and set:
+
+| Field | Example | Meaning |
+|-------|---------|---------|
+| `MOCO_SUBDOMAIN` | `agency` | The first part of `agency.mocoapp.com`, without `https://` |
+| `MOCO_API_KEY` | Your key | The personal or account API key |
+
+The connection check lists users visible to the key. If it fails, verify the account subdomain, key and permissions.
+
+## Available tools
+
+| Tool | What it does |
+|------|--------------|
+| `moco_list_users` | Lists visible users |
+| `moco_list_projects` | Lists projects, optionally filtering archived or recently changed ones |
+| `moco_get_project` | Gets project details and task IDs |
+| `moco_list_activities` | Lists time entries in a required date range |
+| `moco_list_companies` | Finds customers, suppliers and organizations |
+| `moco_list_invoices` | Filters invoices by status, date or company |
+| `moco_report_utilization` | Shows utilization for a date range |
+| `moco_create_activity` | Books a time entry for the key's user |
+
+For time reports, use dates in `YYYY-MM-DD` format, such as `2026-10-01` through `2026-10-31`. Lists can span multiple pages; pass `page` starting at 1. To book time, find a project and its task ID first, then provide the duration in **seconds** (`7200` for two hours). Creating an activity is a real write and repeated calls create duplicate entries.
+
+The adapter does not include invoice creation, PDF downloads, webhooks or delete operations. See [MOCO's API reference](https://docs.mocoapp.com/api/docs/v1) for the underlying API.
