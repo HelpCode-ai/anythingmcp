@@ -4,7 +4,7 @@ import { encrypt } from '../common/crypto/encryption.util';
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -53,6 +53,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any } =
   const licenseGuard: any = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
     getUsage: jest.fn().mockResolvedValue({ connectors: { current: 1, max: 5 } }),
+    getTrialState: jest.fn().mockResolvedValue(opts.trial ?? null),
   };
   const securityEvents: any = { log: jest.fn() };
   const productEvents: any = { log: jest.fn() };
@@ -204,6 +205,64 @@ describe('ConnectorSetupService — install', () => {
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body.upgradeUrl).toBeUndefined();
     expect(out.body.whatTheUserCanDo).toMatch(/administrator/);
+  });
+});
+
+describe('ConnectorSetupService — status', () => {
+  const DAY = 86_400_000;
+  const running = (days: number, cardTrialAvailable = true) => ({
+    endsAt: new Date(Date.now() + days * DAY - 60_000),
+    active: true,
+    cardTrialAvailable,
+  });
+
+  it('tells an admin on the free trial the days left and the card-trial page', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(5) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toEqual({
+      daysLeft: 5,
+      endsAt: expect.any(String),
+      choosePlanUrl: 'https://cloud.example.com/start-trial',
+      afterTheTrial: expect.stringMatching(/Nothing is charged before then/),
+    });
+  });
+
+  it('sends an admin to the licence page once a card trial no longer fits', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(1, false) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toMatchObject({ daysLeft: 1, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    expect(out.trial.afterTheTrial).not.toMatch(/card/i);
+  });
+
+  it('tells an editor the days left, without a billing link', async () => {
+    const { service, ctx } = build({ role: 'EDITOR', trial: running(3) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toEqual({ daysLeft: 3, endsAt: expect.any(String), afterTheTrial: 'A workspace administrator can choose a plan.' });
+  });
+
+  it('reports an ended trial, with the licence page for an admin', async () => {
+    const ended = { endsAt: new Date(Date.now() - DAY), active: false, cardTrialAvailable: false };
+    const admin: any = (await build({ role: 'ADMIN', trial: ended }).service.status(build().ctx)).body;
+    expect(admin.trial).toMatchObject({ ended: true, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    const editor: any = (await build({ role: 'EDITOR', trial: ended }).service.status(build().ctx)).body;
+    expect(editor.trial).toEqual({ ended: true, endedAt: expect.any(String), afterTheTrial: expect.stringMatching(/administrator/) });
+  });
+
+  it('says nothing about plans on a paid plan, self-hosted, or when the licence cannot be read', async () => {
+    const paid: any = (await build({ role: 'ADMIN' }).service.status(build().ctx)).body;
+    expect(paid.trial).toBeUndefined();
+    const broken = build({ role: 'ADMIN' });
+    broken.licenseGuard.getTrialState.mockRejectedValueOnce(new Error('db down'));
+    const out: any = (await broken.service.status(broken.ctx)).body;
+    expect(out.trial).toBeUndefined();
+    expect(out.connectors).toEqual([]);
+  });
+
+  it('keeps billing out of every other setup answer', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(5) });
+    const found: any = (await service.find(ctx, { query: 'etsy' })).body;
+    const installed: any = (await service.install(ctx, { adapter: 'openplz' })).body;
+    expect(JSON.stringify([found, installed])).not.toMatch(/start-trial|choosePlanUrl|daysLeft/);
   });
 });
 

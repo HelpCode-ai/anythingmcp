@@ -308,12 +308,61 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
       });
     }
+    const trial = await this.trialAnswer(ctx);
     return {
       body: {
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
+        ...(trial ? { trial } : {}),
       },
     };
+  }
+
+  /**
+   * The workspace's free trial, as part of its status: days left and, for an
+   * admin, the page where a plan is chosen. Facts only, in this one answer:
+   * no other tool carries it, and nothing here tells the model what to say.
+   * The card trial while 48 hours remain (the same end date, nothing charged
+   * before it), the licence page after that. Members get no billing link.
+   */
+  private async trialAnswer(ctx: SetupContext): Promise<Record<string, unknown> | null> {
+    const state = await this.licenseGuard.getTrialState(ctx.organizationId).catch(() => null);
+    if (!state) return null;
+    const member = await this.prisma.organizationMember
+      .findFirst({
+        where: { userId: ctx.userId, organizationId: ctx.organizationId, deactivatedAt: null },
+        select: { role: true },
+      })
+      .catch(() => null);
+    const admin = member?.role === 'ADMIN';
+    const endsAt = state.endsAt.toISOString();
+
+    if (!state.active) {
+      return {
+        ended: true,
+        endedAt: endsAt,
+        ...(admin
+          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
+          : { afterTheTrial: 'The trial has ended. A workspace administrator can choose a plan.' }),
+      };
+    }
+    const daysLeft = Math.max(1, Math.ceil((state.endsAt.getTime() - Date.now()) / 86_400_000));
+    if (!admin) {
+      return { daysLeft, endsAt, afterTheTrial: 'A workspace administrator can choose a plan.' };
+    }
+    return state.cardTrialAvailable
+      ? {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/start-trial`,
+          afterTheTrial: 'Adding a card keeps the workspace running when the trial ends. Nothing is charged before then.',
+        }
+      : {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/settings/license`,
+          afterTheTrial: 'Choosing a plan keeps the workspace running when the trial ends.',
+        };
   }
 
   // ── Links ─────────────────────────────────────────────────────────────

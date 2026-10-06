@@ -546,6 +546,18 @@ describe('ChatGPT tool set', () => {
     expect(added.body.error).toBe('Trial limit reached (10 connectors).');
   });
 
+  it('leaves the trial out of the connection status', async () => {
+    const run = jest.fn(async () => ({
+      body: {
+        connectors: [{ name: 'Etsy', status: 'ready' }],
+        trial: { daysLeft: 4, endsAt: '2026-10-10T08:00:00.000Z', choosePlanUrl: 'https://cloud.example.com/start-trial' },
+      },
+    }));
+    const { client } = await connectGpt([], makeDeps({ setup: { organizationId: 'org-A', run } } as any));
+    const status = await call(client, 'anythingmcp_connection_status', {});
+    expect(status.body).toEqual({ connectors: [{ name: 'Etsy', status: 'ready' }] });
+  });
+
   it('marks adding a connector as a write, and refuses it to callers who may not', async () => {
     const { client } = await connectGpt([]);
     const add = (await client.listTools()).tools.find((t) => t.name === 'anythingmcp_add_connector');
