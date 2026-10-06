@@ -10,6 +10,7 @@ describe('OrganizationsService', () => {
   let prisma: any;
   let events: any[];
   let service: OrganizationsService;
+  let licenseRelease: any;
   const ctx = { actorUserId: 'admin-1', ip: '127.0.0.1', userAgent: 'jest' };
 
   beforeEach(() => {
@@ -35,9 +36,11 @@ describe('OrganizationsService', () => {
       },
       $transaction: jest.fn((fn: any) => fn(prisma)),
     };
+    licenseRelease = { releaseInBackground: jest.fn() };
     service = new OrganizationsService(
       prisma,
       new SecurityEventService(prisma as unknown as PrismaService),
+      licenseRelease,
     );
   });
 
@@ -278,6 +281,40 @@ describe('OrganizationsService', () => {
         where: { id: 'u1' },
         data: { organizationId: null },
       });
+    });
+  });
+
+  describe('deleteOrganization', () => {
+    it("ends the deleted workspace's licence on the licence site", async () => {
+      prisma.organization = {
+        findUnique: jest.fn(async (args: any) =>
+          args.where.id === ORG ? { id: ORG, name: 'Acme' } : { id: 'org-2', name: 'Other' },
+        ),
+        delete: jest.fn(async () => ({})),
+      };
+      prisma.user.findMany = jest.fn(async () => []);
+      prisma.user.findUnique = jest.fn(async () => ({
+        id: 'admin-1',
+        email: 'a@example.com',
+        name: 'A',
+        role: 'ADMIN',
+        organizationId: 'org-2',
+        mcpRoleId: null,
+      }));
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      prisma.organizationMember.findFirst.mockResolvedValue({ organizationId: 'org-2', role: 'ADMIN' });
+
+      await service.deleteOrganization('admin-1', ORG, 'Acme');
+
+      expect(prisma.organization.delete).toHaveBeenCalledWith({ where: { id: ORG } });
+      expect(licenseRelease.releaseInBackground).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases nothing when the deletion is refused', async () => {
+      prisma.organization = { findUnique: jest.fn(async () => ({ id: ORG, name: 'Acme' })) };
+
+      await expect(service.deleteOrganization('admin-1', ORG, 'Wrong')).rejects.toThrow();
+      expect(licenseRelease.releaseInBackground).not.toHaveBeenCalled();
     });
   });
 });

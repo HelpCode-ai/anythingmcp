@@ -15,6 +15,14 @@ function makeLicense(repaired = 0) {
   } as any;
 }
 
+function makeRelease(released = 0) {
+  return {
+    releaseOrphanedLicenses: jest
+      .fn()
+      .mockResolvedValue({ examined: released, released, refused: 0, failed: 0 }),
+  } as any;
+}
+
 describe('OnboardingCronService — activation pass', () => {
   function makeService(overrides: {
     onboardingCandidates?: any[];
@@ -46,7 +54,7 @@ describe('OnboardingCronService — activation pass', () => {
     } as any;
     const license = makeLicense();
     return {
-      service: new OnboardingCronService(prisma, email, license),
+      service: new OnboardingCronService(prisma, email, license, makeRelease()),
       findMany,
       update,
       email,
@@ -163,7 +171,7 @@ describe('OnboardingCronService — trial status transition', () => {
     } as any;
     const email = {} as any;
     const { OnboardingCronService } = await import('./onboarding-cron.service');
-    const svc = new OnboardingCronService(prisma, email, makeLicense());
+    const svc = new OnboardingCronService(prisma, email, makeLicense(), makeRelease());
 
     const out = await svc.run();
 
@@ -189,7 +197,8 @@ describe('OnboardingCronService — trial repair', () => {
       },
     } as any;
     const license = makeLicense(4);
-    const svc = new OnboardingCronService(prisma, {} as any, license);
+    const release = makeRelease(2);
+    const svc = new OnboardingCronService(prisma, {} as any, license, release);
 
     const out = await svc.run();
 
@@ -198,6 +207,9 @@ describe('OnboardingCronService — trial repair', () => {
     expect(out.trialsRepaired).toBe(4);
     // And paid licences get re-checked against the licence server.
     expect(license.reverifyPaidLicenses).toHaveBeenCalledTimes(1);
+    // And deleted workspaces' licences are ended on the licence site.
+    expect(release.releaseOrphanedLicenses).toHaveBeenCalledTimes(1);
+    expect(out.licensesReleased).toBe(2);
     expect(out.licensesReverified).toBe(3);
     expect(out.licensesDeactivated).toBe(1);
   });
@@ -240,7 +252,7 @@ describe('OnboardingCronService — onboarding pass', () => {
       sendOnboardingReminderEmail: jest.fn().mockResolvedValue(true),
       sendActivationReminderEmail: jest.fn().mockResolvedValue(true),
     } as any;
-    return { service: new OnboardingCronService(prisma, email, makeLicense()), email, update, prisma };
+    return { service: new OnboardingCronService(prisma, email, makeLicense(), makeRelease()), email, update, prisma };
   }
   const user = (over: Partial<any>) => ({
     id: 'u1',

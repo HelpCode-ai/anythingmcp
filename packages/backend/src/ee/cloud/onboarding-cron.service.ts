@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { EmailService } from '../../settings/email.service';
 import { LicenseService } from '../../license/license.service';
+import { LicenseReleaseService } from '../../license/license-release.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
@@ -38,6 +39,7 @@ export class OnboardingCronService {
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly license: LicenseService,
+    private readonly licenseRelease: LicenseReleaseService,
   ) {}
 
   async run(): Promise<{
@@ -52,6 +54,7 @@ export class OnboardingCronService {
     trialsRepaired: number;
     licensesReverified: number;
     licensesDeactivated: number;
+    licensesReleased: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -67,6 +70,7 @@ export class OnboardingCronService {
       trialsRepaired: 0,
       licensesReverified: 0,
       licensesDeactivated: 0,
+      licensesReleased: 0,
       skipped: 0,
     };
 
@@ -225,12 +229,17 @@ export class OnboardingCronService {
     out.licensesReverified = reverified.checked;
     out.licensesDeactivated = reverified.deactivated;
 
+    // Licences of deleted workspaces the licence site has not confirmed
+    // ended yet: a release right after the deletion can fail.
+    out.licensesReleased = (await this.licenseRelease.releaseOrphanedLicenses()).released;
+
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
+        `licensesReleased=${out.licensesReleased} ` +
         `skipped=${out.skipped}`,
     );
     return out;

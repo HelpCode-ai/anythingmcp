@@ -12,10 +12,19 @@ import { Prisma } from '../generated/prisma/client';
 // any self-hosted operator point verification at a server of their own and
 // unlock paid features. LICENSE_API_URL applies outside production only (local
 // end-to-end runs against a local licence site).
-const LICENSE_API_URL =
+export const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
     ? 'https://anythingmcp.com'
     : process.env.LICENSE_API_URL?.replace(/\/+$/, '') || 'http://localhost:3100';
+
+/**
+ * Headers that mark a call to the licence site as coming from this server
+ * (LICENSE_SERVICE_TOKEN). Empty when the token is unset.
+ */
+export function licenseServiceHeaders(): Record<string, string> {
+  const token = process.env.LICENSE_SERVICE_TOKEN;
+  return token ? { 'x-amcp-service-token': token } : {};
+}
 
 /**
  * How hard we chase a trial licence before giving up. The licence API is a
@@ -280,8 +289,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * Unset in self-hosted installs, where the public limit is the right one.
    */
   private serviceHeaders(): Record<string, string> {
-    const token = process.env.LICENSE_SERVICE_TOKEN;
-    return token ? { 'x-amcp-service-token': token } : {};
+    return licenseServiceHeaders();
   }
 
   /** Retry only what can succeed on a second try: throttling, upstream faults, no answer at all. */
