@@ -35,14 +35,26 @@ export function GithubStarButton() {
   };
 
   return (
-    <div className="mx-3 mb-2 px-3 py-2.5 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-xs flex items-center justify-between gap-2 shadow-sm transition-colors hover:border-[var(--text-3)] group">
+    <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs shadow-sm transition-colors hover:border-[var(--text-3)] group">
       <a
         href="https://github.com/HelpCode-ai/anythingmcp"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-2 flex-1 min-w-0 text-[var(--text)] hover:text-[var(--text)] no-underline"
+        className="flex min-w-0 flex-1 items-center gap-2 text-[var(--text)] hover:text-[var(--text)] no-underline"
       >
-        <span className="text-amber-500 font-medium flex-shrink-0">⭐</span>
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-amber-500 flex-shrink-0"
+        >
+          <path d="m12 3 2.2 4.6 5 .7-3.6 3.5.9 5L12 14.9 7.5 16.8l.9-5L4.8 8.3l5-.7z" />
+        </svg>
         <span className="truncate font-medium">Star on GitHub</span>
       </a>
       <button
@@ -50,9 +62,20 @@ export function GithubStarButton() {
         onClick={handleDismiss}
         title="Hide button"
         aria-label="Hide Star on GitHub button"
-        className="text-[var(--text-3)] hover:text-[var(--text)] p-0.5 rounded transition-colors opacity-60 group-hover:opacity-100 flex-shrink-0"
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[var(--text-3)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] transition-colors"
       >
-        ×
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
       </button>
     </div>
   );
