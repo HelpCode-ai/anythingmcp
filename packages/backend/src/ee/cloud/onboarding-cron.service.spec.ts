@@ -281,10 +281,20 @@ describe('OnboardingCronService — onboarding pass', () => {
     );
   });
 
-  it('waits the usual 24h for a user with no AI client yet', async () => {
+  it('nudges a user with no AI client an hour after sign-up, without naming one', async () => {
     const { service, email } = makeService({ candidates: [user({})] });
     await service.run();
-    expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+  });
+
+  it('asks the database only for users who signed up at least an hour ago', async () => {
+    const { service, prisma } = makeService({ candidates: [] });
+    const before = Date.now();
+    await service.run();
+    const where = prisma.user.findMany.mock.calls[0][0].where;
+    const ageMs = before - where.createdAt.lte.getTime();
+    expect(ageMs).toBeGreaterThanOrEqual(HOUR - 1000);
+    expect(ageMs).toBeLessThan(HOUR + 60_000);
   });
 
   it('still reminds a user who pressed Skip on /welcome with an empty workspace', async () => {

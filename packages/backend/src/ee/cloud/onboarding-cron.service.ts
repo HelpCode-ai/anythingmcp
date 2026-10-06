@@ -6,8 +6,13 @@ import { LicenseReleaseService } from '../../license/license-release.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
-/** How long after connecting an AI client to an empty workspace we nudge. */
-const AI_CLIENT_NUDGE_AFTER = HOURS(2);
+/**
+ * How long after signing up a user with an empty workspace gets the first
+ * nudge: how to connect an app, from the chat or the dashboard. It used to be
+ * 24 hours (2 for someone who had connected an AI client), by when most of
+ * those sign-ups had left. The cron runs hourly.
+ */
+const FIRST_NUDGE_AFTER = HOURS(1);
 const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
 
 /**
@@ -97,7 +102,7 @@ export class OnboardingCronService {
     };
 
     // Candidate set: verified, ≤2 reminders, not opted out, registered
-    // between AI_CLIENT_NUDGE_AFTER and 14d ago. We bound at 14d so a user
+    // between FIRST_NUDGE_AFTER and 14d ago. We bound at 14d so a user
     // who signed up months ago doesn't suddenly get woken up if we ever
     // backfill columns.
     //
@@ -112,7 +117,7 @@ export class OnboardingCronService {
         emailMarketingOptOut: false,
         onboardingReminderCount: { lt: 2 },
         createdAt: {
-          lte: new Date(now - AI_CLIENT_NUDGE_AFTER),
+          lte: new Date(now - FIRST_NUDGE_AFTER),
           gte: new Date(now - HOURS(24 * 14)),
         },
       },
@@ -180,11 +185,11 @@ export class OnboardingCronService {
         ? now - u.onboardingLastReminderAt.getTime()
         : Infinity;
 
-      // First nudge: 24h after signup, or as soon as an AI client has been
-      // connected for AI_CLIENT_NUDGE_AFTER, whichever comes first. The
-      // second one names the client, because that is what the user just did.
+      // First nudge: an hour after signup (every candidate is at least that
+      // old). Someone who already connected an AI client is told to ask it
+      // for the app in the same chat, naming the client.
       const aiClient = aiClients.get(u.id);
-      if (u.onboardingReminderCount === 0 && (age >= HOURS(24) || aiClient)) {
+      if (u.onboardingReminderCount === 0) {
         const ok = await this.email.sendOnboardingReminderEmail(
           u.email,
           u.name || 'there',
@@ -481,8 +486,8 @@ export class OnboardingCronService {
    * caps it at one send.
    */
   /**
-   * Users among `userIds` with a live AI-client connection made at least
-   * AI_CLIENT_NUDGE_AFTER ago, mapped to the client's display name.
+   * Users among `userIds` with a live AI-client connection, mapped to the
+   * client's display name.
    */
   private async connectedAiClients(userIds: string[], now: number): Promise<Map<string, string>> {
     const out = new Map<string, string>();
@@ -491,7 +496,7 @@ export class OnboardingCronService {
       where: {
         userId: { in: userIds },
         revokedAt: null,
-        createdAt: { lte: new Date(now - AI_CLIENT_NUDGE_AFTER) },
+        createdAt: { lte: new Date(now) },
       },
       select: { userId: true, clientId: true },
     });

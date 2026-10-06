@@ -502,25 +502,32 @@ export class EmailService {
     const client = opts?.aiClient ? escapeHtml(opts.aiClient) : undefined;
     const safeName = escapeHtml(name);
 
+    const button = (href: string, label: string) =>
+      `<p><a href="${href}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">${label}</a></p>`;
+    const askExamples = '<em>"Connect my Shopify store"</em> or <em>"Add HubSpot"</em>';
+
     const subject = client
-      ? `${opts!.aiClient} is connected. Now give it something to work with`
+      ? `${opts!.aiClient} is connected. Now ask it for your first app`
       : dayNumber === 1
-        ? 'Connect your first tool in 60 seconds — AnythingMCP'
+        ? 'Connect your first app in two minutes: AnythingMCP'
         : 'Still here? Pick a tool to try — AnythingMCP';
 
     const body = client
       ? `<p>Hi ${safeName},</p>
-           <p>You connected ${client} to AnythingMCP, but your workspace has no connectors yet, so ${client} has nothing to reach.</p>
-           <p>Add the app you want it to work with: Etsy, Odoo, weclapp, Lexware, Telegram, Shopify and 260 more are ready to install. As soon as one is in, ask ${client} about it in the same chat.</p>
-           <p><a href="${storeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Add your first connector →</a></p>`
+           <p>You connected ${client} to AnythingMCP, but your workspace has no apps yet, so ${client} has nothing to reach.</p>
+           <p><strong>Ask ${client} for one, in the chat:</strong> ${askExamples}. It finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat. (This works when ${client} is connected through <code>${cloudUrl}/mcp</code>, which is what Claude's connector directory uses.)</p>
+           <p>Prefer clicking? Etsy, Odoo, weclapp, Lexware, Shopify and 260 more are in the dashboard.</p>
+           ${button(storeUrl, 'Add your first app →')}`
       : dayNumber === 1
         ? `<p>Hi ${safeName},</p>
-           <p>You signed up for AnythingMCP yesterday but haven't connected anything yet. The fastest path to your first AI superpower is picking a ready-made connector from the marketplace: Etsy, Odoo, weclapp, Lexware, Sendcloud, GitHub… 265 are pre-wired.</p>
-           <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Open the welcome wizard →</a></p>
-           <p style="font-size:13px;color:#666;">Should take about a minute.</p>`
+           <p>Your AnythingMCP workspace is ready but has no apps yet. Two ways to add one:</p>
+           <p><strong>From the chat.</strong> Add AnythingMCP to Claude (it is in <a href="https://claude.ai/directory/anythingmcp">Claude's connector directory</a>) or to ChatGPT with <code>${cloudUrl}/mcp</code>. Then ask: ${askExamples}. The assistant installs the connector and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.</p>
+           <p><strong>From the dashboard.</strong> Pick one of 265 ready-made connectors: Etsy, Odoo, weclapp, Lexware, Sendcloud, GitHub…</p>
+           ${button(welcomeUrl, 'Open the welcome wizard →')}
+           <p style="font-size:13px;color:#666;">Stuck, or the app you need is missing? Reply and tell us which one.</p>`
         : `<p>Hi ${safeName},</p>
            <p>Just checking in — your AnythingMCP account is still waiting for its first connector. If anything got in your way, hit reply and tell us what; we read every reply.</p>
-           <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Pick a connector →</a></p>`;
+           ${button(welcomeUrl, 'Pick a connector →')}`;
 
     try {
       await transport.transporter.sendMail({
@@ -539,12 +546,10 @@ export class EmailService {
         `,
         text: `Hi ${name},\n\n${
           opts?.aiClient
-            ? `You connected ${opts.aiClient} to AnythingMCP, but your workspace has no connectors yet.\n\nAdd your first connector: ${storeUrl}`
-            : `${
-                dayNumber === 1
-                  ? "You signed up for AnythingMCP yesterday but haven't connected anything yet."
-                  : 'Your AnythingMCP account is still waiting for its first connector.'
-              }\n\nOpen the wizard: ${welcomeUrl}`
+            ? `You connected ${opts.aiClient} to AnythingMCP, but your workspace has no apps yet. Ask ${opts.aiClient} in the chat, e.g. "Connect my Shopify store": it installs the connector and gives you a one-time link to sign in to the app.\n\nOr add one in the dashboard: ${storeUrl}`
+            : dayNumber === 1
+              ? `Your AnythingMCP workspace is ready but has no apps yet.\n\nFrom the chat: add AnythingMCP to Claude (connector directory) or ChatGPT with ${cloudUrl}/mcp, then ask "Connect my Shopify store". The assistant installs the connector and gives you a one-time link to sign in to the app.\n\nFrom the dashboard: ${welcomeUrl}`
+              : `Your AnythingMCP account is still waiting for its first connector.\n\nOpen the wizard: ${welcomeUrl}`
         }\n\nUnsubscribe: ${unsubUrl}`,
       });
       this.logger.log(
