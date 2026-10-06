@@ -109,6 +109,11 @@ x-backend: &backend
     - SERVER_URL=https://${DOMAIN}
     - FRONTEND_URL=https://${DOMAIN}
     - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
+    # OAuth clients allowed to authorize without PKCE (comma-separated ids).
+    # Only for confidential clients registered with a secret, such as the
+    # Microsoft Copilot Studio connector, whose platform cannot send PKCE.
+    # Unset = PKCE required for every client.
+    - OAUTH_PKCE_EXEMPT_CLIENT_IDS=${OAUTH_PKCE_EXEMPT_CLIENT_IDS:-}
     # MCP Streamable HTTP response framing. `true` = single-shot
     # `application/json` responses; `false` = SSE-framed `text/event-stream`.
     # Microsoft Copilot Studio's MCP client cannot deserialize SSE-framed

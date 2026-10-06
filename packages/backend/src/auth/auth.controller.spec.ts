@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
 import { ProductEventService } from '../audit/product-event.service';
 
@@ -280,6 +280,17 @@ describe('AuthController — answers that do not reveal accounts', () => {
       expect(sent).toEqual(['verify new@example.com']);
     });
 
+    it('refuses a throwaway address before looking it up, and creates nothing', async () => {
+      const { controller, users, usersService, sent } = makeController({ mode: 'cloud' });
+      await expect(controller.register({}, signup('lala@yopmail.com'))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await flush();
+      expect(usersService.findByEmail).not.toHaveBeenCalled();
+      expect(users).toEqual([]);
+      expect(sent).toEqual([]);
+    });
+
     it('does not sign anyone in to an existing account with the sign-up password', async () => {
       const { controller } = makeController({ mode: 'cloud', accounts: [EXISTING] });
       await controller.register({}, signup('taken@example.com'));
@@ -300,6 +311,13 @@ describe('AuthController — answers that do not reveal accounts', () => {
       await expect(controller.register({}, signup('taken@example.com'))).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+
+    it('accepts a throwaway address: the operator decides who signs up', async () => {
+      const { controller } = makeController({ mode: 'self-hosted' });
+      await expect(controller.register({}, signup('lala@yopmail.com'))).resolves.toMatchObject({
+        accessToken: 'jwt',
+      });
     });
 
     it('makes the first user an admin of a new workspace', async () => {

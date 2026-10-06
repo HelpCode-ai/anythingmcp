@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SettingsModule } from '../../settings/settings.module';
 import { LicenseModule } from '../../license/license.module';
+import { LicenseReleaseModule } from '../../license/license-release.module';
 import { OnboardingCronController } from './onboarding-cron.controller';
 import { OnboardingCronService } from './onboarding-cron.service';
 import { KgCronController } from './kg-cron.controller';
@@ -16,7 +17,7 @@ import { KgCronService } from './kg-cron.service';
  * - Future: usage metering, multi-tenant routing, billing webhooks
  */
 @Module({
-  imports: [SettingsModule, LicenseModule],
+  imports: [SettingsModule, LicenseModule, LicenseReleaseModule],
   controllers: [OnboardingCronController, KgCronController],
   providers: [OnboardingCronService, KgCronService],
 })

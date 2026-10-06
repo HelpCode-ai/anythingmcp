@@ -120,6 +120,12 @@ const SEARCH_HOSTS = [
   'baidu.com',
   'qwant.com',
 ];
+/**
+ * utm_source values an AI assistant uses for its links. `meta` (Meta AI and
+ * Muse) is not here: a Meta social post tagged utm_source=meta,
+ * utm_medium=social stays social (see classifyTouch).
+ */
+const AI_SOURCES = ['chatgpt', 'openai', 'claude', 'perplexity', 'gemini', 'copilot', 'muse'];
 const PAID_MEDIUMS = ['cpc', 'ppc', 'paid', 'paidsearch', 'paid_search', 'paid-search', 'cpm', 'display', 'paid_social', 'paidsocial'];
 
 /** host equals `domain` or is a subdomain of it. */
@@ -143,7 +149,7 @@ export function classifyTouch(t: Omit<StoredTouch, 'channel'>): Channel {
     return 'google_ads';
   }
   if (paidMedium) return 'paid_other';
-  if (onAny(source, AI_HOSTS) || ['chatgpt', 'openai', 'claude', 'perplexity', 'gemini', 'copilot'].includes(source)) {
+  if (onAny(source, AI_HOSTS) || AI_SOURCES.includes(source) || (source === 'meta' && medium !== 'social')) {
     return 'ai_assistant';
   }
   if (medium === 'email' || medium === 'newsletter') return 'email';

@@ -1152,6 +1152,11 @@ export default function ConnectorDetailPage() {
                   <div>
                     <label className="block text-sm font-medium mb-1">Header Name</label>
                     <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    {editAuthKey && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(editAuthKey) && (
+                      <p className="mt-1 text-[12px]" style={{ color: 'var(--danger)' }}>
+                        The HTTP header the key is sent in, e.g. X-API-Key: letters, digits and - only, no spaces.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">API Key</label>

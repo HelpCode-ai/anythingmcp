@@ -335,6 +335,23 @@ describe('RestEngine', () => {
     );
   });
 
+  it('refuses a header name with spaces before sending, and says which field is wrong', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await expect(
+      engine.execute(
+        {
+          baseUrl: 'https://api.example.com',
+          authType: 'API_KEY',
+          authConfig: { headerName: 'Valentino API Key', apiKey: 'sk-test' },
+        },
+        { method: 'GET', path: '/' },
+        {},
+      ),
+    ).rejects.toThrow(/"Valentino API Key" is not a valid HTTP header name.*X-API-Key/);
+    expect(mockedAxios).not.toHaveBeenCalled();
+  });
+
   it('should inject bearer token auth', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 
@@ -1163,6 +1180,109 @@ describe('RestEngine', () => {
       const serialized = query(cfg.params);
       expect(serialized).toContain('hostnames=web01&hostnames=db01');
       expect(serialized).not.toContain('hostnames%5B%5D');
+    });
+  });
+
+  /**
+   * A DELETE used to drop its bodyMapping without a word: Coda's bulk delete
+   * went out with no `rowIds` and Klaviyo's list removal with no `data`, so the
+   * vendor saw a request without the ids the model had supplied (#890).
+   */
+  describe('DELETE with a body', () => {
+    type Tool = { name: string; endpointMapping: Record<string, unknown> };
+    const toolOf = (file: string, name: string): Tool =>
+      (require(file) as { tools: Tool[] }).tools.find((t) => t.name === name)!;
+    const sent = () =>
+      mockedAxios.mock.calls[0][0] as unknown as {
+        method: string;
+        url: string;
+        data?: unknown;
+        headers: Record<string, string>;
+      };
+
+    it('sends the mapped body of a bulk delete (Coda rowIds)', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const tool = toolOf('../../adapters/intl/coda.json', 'coda_delete_rows');
+
+      await engine.execute(
+        { baseUrl: 'https://coda.io/apis/v1', authType: 'NONE' },
+        tool.endpointMapping as never,
+        { docId: 'd1', tableId: 't1', rowIds: ['i-1', 'i-2'] },
+      );
+
+      expect(sent().method).toBe('DELETE');
+      expect(sent().url).toBe('https://coda.io/apis/v1/docs/d1/tables/t1/rows');
+      expect(sent().data).toEqual({ rowIds: ['i-1', 'i-2'] });
+    });
+
+    it('sends a JSON:API body with the content type the tool sets (Klaviyo)', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const tool = toolOf(
+        '../../adapters/intl/klaviyo.json',
+        'klaviyo_remove_profiles_from_list',
+      );
+      const data = [{ type: 'profile', id: '01ABC' }];
+
+      await engine.execute(
+        { baseUrl: 'https://a.klaviyo.com/api', authType: 'NONE' },
+        tool.endpointMapping as never,
+        { listId: 'L1', data },
+      );
+
+      expect(sent().url).toBe(
+        'https://a.klaviyo.com/api/lists/L1/relationships/profiles',
+      );
+      expect(sent().data).toEqual({ data });
+      expect(sent().headers['Content-Type']).toBe('application/vnd.api+json');
+    });
+
+    it('sends a bodyTemplate on DELETE', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        {
+          method: 'DELETE',
+          path: '/items',
+          bodyTemplate: '{"ids": ${ids}}',
+        },
+        { ids: [1, 2] },
+      );
+      expect(sent().data).toEqual({ ids: [1, 2] });
+    });
+
+    it('sends no body when every mapped field is unset', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        {
+          method: 'DELETE',
+          path: '/meetings/{id}',
+          bodyMapping: { reason: '$reason' },
+        },
+        { id: 'm1' },
+      );
+      expect(sent()).not.toHaveProperty('data');
+    });
+
+    it('still sends no body on a DELETE without a mapping', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'DELETE', path: '/items/{id}' },
+        { id: '7' },
+      );
+      expect(sent().url).toBe('https://api.example.com/items/7');
+      expect(sent()).not.toHaveProperty('data');
+    });
+
+    it('never sends a body on GET', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/items', bodyMapping: { q: '$q' } },
+        { q: 'x' },
+      );
+      expect(sent()).not.toHaveProperty('data');
     });
   });
 

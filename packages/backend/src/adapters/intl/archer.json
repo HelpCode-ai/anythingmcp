@@ -1,0 +1,474 @@
+{
+  "slug": "archer",
+  "name": "Archer IRM",
+  "description": "Read Archer IRM (formerly RSA Archer) GRC data through its REST and Content APIs: applications, levels, fields and values lists, plus risk, control, finding and incident records searched with OData. Session login with an Archer account.",
+  "region": "intl",
+  "category": "data",
+  "icon": "archer",
+  "docsUrl": "https://help.archerirm.cloud/",
+  "prerequisites": "An Archer user account that logs in with a password (not only single sign-on), with read access to the applications you want to query. Records are searchable only in applications where an administrator enabled the Content API.",
+  "instructions": "**What this connects to**: Archer IRM (formerly RSA Archer) through its REST API: the platform API under `/api/core` for application metadata and records by id, and the Content API under `/contentapi` (OData) for searching records with readable field names. Every call runs with the permissions of the Archer user the connector logs in as. This first version only reads.\n\n**Start with `archer_list_applications`** to see the applications (risk register, findings, controls, incidents, policies, vendors...). To read records, use `archer_list_content_endpoints` and `archer_query_records` with the alias it lists. For field-level detail, `archer_list_application_fields` maps field ids to names and `archer_get_values_list` turns value ids into labels.\n\n**Authentication**: the connector posts the instance name, user name, user domain and password to `/api/core/security/login` and sends the returned session token as `Authorization: Archer session-id=\"<token>\"`. It logs in again when the session times out (Archer's session timeout, often 20 to 30 minutes, applies). Use a dedicated API account; accounts that log in through single sign-on only cannot use the REST login. The instance name is shown on the Archer login page and in Administration > Installation Settings.\n\n**Base URL**: the address you open Archer on, e.g. `https://yourcompany.archerirm.com` for Archer SaaS. On-premise installs often live under a virtual directory such as `https://archer.example.com/RSAarcher`; include it.\n\n**Content API**: records are only reachable through `/contentapi` for applications where an administrator enabled the Content API and gave the application and fields an alias (Application Builder > application > Content API). `$top` and `$skip` page through records; keep `$select` short, because large records with many cross-references are slow.\n\n**Reports**: Archer serves saved reports and statistic searches only through its SOAP web services, which this connector does not call. Rebuild the report as a `query_records` filter instead.\n\n**Pitfalls**: ids are numbers (application, level, field, values list, content). Platform answers wrap the data as `RequestedObject` with `IsSuccessful`; a false value with `ValidationMessages` means the request was refused. A 401 means the session or login failed; a 403 means the account lacks the permission for that application.",
+  "requiredEnvVars": [
+    "ARCHER_URL",
+    "ARCHER_INSTANCE",
+    "ARCHER_USERNAME",
+    "ARCHER_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "ARCHER_USER_DOMAIN"
+  ],
+  "envVarMeta": {
+    "ARCHER_URL": {
+      "label": "Archer address",
+      "kind": "address",
+      "help": "The address you open Archer on, with https://, without /apps or a trailing slash. Include the virtual directory of an on-premise install, e.g. https://archer.example.com/RSAarcher.",
+      "example": "https://yourcompany.archerirm.com",
+      "pattern": "^https://[^\\s?#]+[^/\\s?#]$",
+      "patternMessage": "The https:// address of Archer, without a trailing slash."
+    },
+    "ARCHER_INSTANCE": {
+      "label": "Instance name",
+      "kind": "setting",
+      "help": "The instance name you enter on the Archer login page (often a number for Archer SaaS). An administrator sees it in Archer Control Panel or Administration > Installation Settings.",
+      "example": "123456"
+    },
+    "ARCHER_USERNAME": {
+      "label": "User name",
+      "kind": "credential",
+      "help": "User name of the Archer account the connector logs in as. Prefer a dedicated API account with read-only access."
+    },
+    "ARCHER_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "That account's Archer password."
+    },
+    "ARCHER_USER_DOMAIN": {
+      "label": "User domain",
+      "kind": "setting",
+      "help": "Only for accounts that belong to a user domain; leave empty otherwise."
+    }
+  },
+  "verifyHints": {
+    "401": "Archer refused the login or the session. Check the instance name, user name, password and user domain, and that the account may log in with a password (not single sign-on only) and is not locked.",
+    "403": "The Archer account lacks access to this application or record. Give its role read access in Access Roles.",
+    "not_found": "No Archer REST API at this address. Use the address you open Archer on, including the virtual directory of an on-premise install (e.g. /RSAarcher). For record searches, the application also needs the Content API enabled."
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "Archer IRM",
+    "type": "REST",
+    "baseUrl": "{{ARCHER_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{ARCHER_URL}}/api/core/security/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "InstanceName": "{{ARCHER_INSTANCE}}",
+        "Username": "${username}",
+        "UserDomain": "{{ARCHER_USER_DOMAIN}}",
+        "Password": "${password}"
+      },
+      "username": "{{ARCHER_USERNAME}}",
+      "password": "{{ARCHER_PASSWORD}}",
+      "tokenJsonPath": "RequestedObject.SessionToken",
+      "tokenTTLSeconds": 1200,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Archer session-id=\"${token}\""
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/core/system/application"
+  },
+  "probe": {
+    "tool": "archer_list_applications",
+    "params": {
+      "top": 1,
+      "select": "Id,Name"
+    }
+  },
+  "tools": [
+    {
+      "name": "archer_list_applications",
+      "description": "All applications (modules) of the Archer instance with id, name, alias, type, status and GUID. Start here: the id leads to levels and fields, the alias to the Content API for records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. Name eq 'Risk Register' or Status eq 1. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. Id,Name,Alias."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of items to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. Name asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/application",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$top": "$top",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "archer_get_application",
+      "description": "One application by id: name, alias, description, type, status, whether it is a sub-form or questionnaire, and its GUID. Use it to confirm which application a record belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "integer",
+            "description": "Numeric application (module) id from list_applications (RequestedObject.Id)."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/application/{application_id}"
+      }
+    },
+    {
+      "name": "archer_list_levels",
+      "description": "The levels of an application. Single-level applications have one level; leveled applications (e.g. an asset hierarchy) have several. Field definitions are listed per level id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "integer",
+            "description": "Numeric application (module) id from list_applications (RequestedObject.Id)."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/level/module/{application_id}"
+      }
+    },
+    {
+      "name": "archer_list_level_fields",
+      "description": "Field definitions of one level: id, name, alias, type (text, numeric, date, values list, cross-reference, user/groups...), key field flag and, for values lists, the values list id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "level_id": {
+            "type": "integer",
+            "description": "Level id from list_levels (RequestedObject.Id)."
+          }
+        },
+        "required": [
+          "level_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/fielddefinition/level/{level_id}"
+      }
+    },
+    {
+      "name": "archer_list_application_fields",
+      "description": "Field definitions of every level of an application in one call: id, name, alias, type and related ids. Use it to map field ids in record answers to readable names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "integer",
+            "description": "Numeric application (module) id from list_applications (RequestedObject.Id)."
+          }
+        },
+        "required": [
+          "application_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/fielddefinition/application/{application_id}"
+      }
+    },
+    {
+      "name": "archer_get_field",
+      "description": "One field definition by id with its type, alias, level, required flag and, for values-list fields, the values list id. Use it to decode a field id seen in a record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "description": "Field id from list_level_fields or list_application_fields."
+          }
+        },
+        "required": [
+          "field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/fielddefinition/{field_id}"
+      }
+    },
+    {
+      "name": "archer_get_values_list",
+      "description": "The values of a values list (the choices behind a values-list field) as a flat list with value id, name, numeric value and parent. Use it to turn value ids in records into labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "values_list_id": {
+            "type": "integer",
+            "description": "Values list id: the RelatedValuesListId of a values-list field definition."
+          }
+        },
+        "required": [
+          "values_list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/valueslistvalue/flat/valueslist/{values_list_id}"
+      }
+    },
+    {
+      "name": "archer_get_record",
+      "description": "One record (content) by its content id through the platform API: level id, sequential id and every field value keyed by field id. Decode field ids with list_application_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_id": {
+            "type": "integer",
+            "description": "Content (record) id, e.g. from query_records (the application's Id field) or a tracking id shown in Archer."
+          }
+        },
+        "required": [
+          "content_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/content/{content_id}"
+      }
+    },
+    {
+      "name": "archer_get_field_values",
+      "description": "Values of chosen fields for chosen records in one call (POST read with X-Http-Method-Override: GET). Use it to pull a few fields for many records without loading each record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Field ids to read."
+          },
+          "content_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Content (record) ids to read them for."
+          }
+        },
+        "required": [
+          "field_ids",
+          "content_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/core/content/fieldcontent",
+        "headers": {
+          "X-Http-Method-Override": "GET"
+        },
+        "bodyMapping": {
+          "FieldIds": "$field_ids",
+          "ContentIds": "$content_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "archer_list_content_endpoints",
+      "description": "The applications and questionnaires published through the Content API, with the alias to pass to query_records. Only applications where an administrator enabled the Content API appear.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contentapi/"
+      }
+    },
+    {
+      "name": "archer_query_records",
+      "description": "Records of one application through the Content API (OData): readable field aliases instead of ids, with $filter, $select, $orderby and paging. The main tool for searching risks, findings, controls, policies or incidents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string",
+            "description": "Content API alias of the application, from list_content_endpoints, e.g. Risk_Register or Findings."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. Name eq 'Risk Register' or Status eq 1. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. Id,Name,Alias."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of items to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. Name asc."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging."
+          }
+        },
+        "required": [
+          "alias"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contentapi/{alias}",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "archer_get_content_record",
+      "description": "One record of an application through the Content API by its content id, with field values keyed by field alias. Use it after query_records to read every field of one record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string",
+            "description": "Content API alias of the application, from list_content_endpoints."
+          },
+          "content_id": {
+            "type": "integer",
+            "description": "Content (record) id."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated field aliases to return."
+          }
+        },
+        "required": [
+          "alias",
+          "content_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contentapi/{alias}({content_id})",
+        "queryParams": {
+          "$select": "$select"
+        }
+      }
+    },
+    {
+      "name": "archer_list_users",
+      "description": "Archer user accounts with id, user name, first and last name, display name, account status and last login. Use it to resolve user ids in record fields such as owner or reviewer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. Name eq 'Risk Register' or Status eq 1. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. Id,Name,Alias."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of items to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. Name asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/user",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$top": "$top",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "archer_list_groups",
+      "description": "Archer groups with id, name and description. Use it to resolve group ids in user/groups fields and to see who is in charge of a record type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. Name eq 'Risk Register' or Status eq 1. Strings in single quotes."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated properties to return, e.g. Id,Name,Alias."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of items to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. Name asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/core/system/group",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$top": "$top",
+          "$orderby": "$orderby"
+        }
+      }
+    }
+  ]
+}

@@ -18,6 +18,8 @@ import { decrypt } from '../common/crypto/encryption.util';
 
 /** How long a setup link handed to the user stays valid. */
 export const SETUP_LINK_TTL_MS = 30 * 60 * 1000;
+/** How long expired setup links stay in the table, for measurement only. */
+export const SETUP_LINK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Installs through a chat, per user and hour. A model does not need more. */
 const INSTALLS_PER_HOUR = 10;
 
@@ -83,6 +85,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .filter((s): s is string => !!s),
     );
 
+    // Query words no connector mentions anywhere: the app that is missing.
+    const unmatched = new Set(words);
     const scored = this.adapters
       .listAll()
       .filter((a) => !isExcludedAdapterSlug(a.slug))
@@ -94,12 +98,31 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           if (a.slug === w || name === w) score += 10;
           else if (a.slug.startsWith(w) || name.split(/\s+/).some((n) => n.startsWith(w))) score += 5;
           else if (text.includes(w)) score += 1;
+          if (text.includes(w)) unmatched.delete(w);
         }
         return { a, score: words.length ? score : (a.priority ?? 0) };
       })
       .filter((x) => !words.length || x.score > 0)
       .sort((x, y) => y.score - x.score || (y.a.priority ?? 0) - (x.a.priority ?? 0))
       .slice(0, limit);
+
+    if (words.length) {
+      // `results` alone overstates coverage: "printify shop" returns every
+      // connector whose description says "shop". `missing` keeps the words no
+      // connector mentions at all, here "printify".
+      void this.productEvents.log({
+        event: ProductEvents.CATALOG_SEARCH,
+        userId: ctx.userId,
+        organizationId: ctx.organizationId,
+        metadata: {
+          query: String(args.query),
+          results: scored.length,
+          via: 'mcp',
+          ...(unmatched.size ? { missing: [...unmatched].join(' ') } : {}),
+          ...(scored.length ? { adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
+        },
+      });
+    }
 
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
     return {
@@ -162,7 +185,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      if (value !== undefined && value !== null && String(value).trim() !== '') settings[name] = String(value).trim();
+      const text = value !== undefined && value !== null ? String(value).trim() : '';
+      if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' does not look right. ${d.patternMessage ?? d.help ?? ''}`.trim(),
+            hint: 'Ask the user to check the value, or install without it: they can enter it on the page linked in the answer.',
+          },
+        };
+      }
+      if (text) settings[name] = text;
     }
 
     if (!this.takeInstallSlot(ctx.userId)) {
@@ -192,7 +225,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       event: ProductEvents.SETUP_COMPLETED,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
-      metadata: { adapterSlug: slug, via: 'mcp' },
+      // A chat install checks nothing but the import probe; `verified` keeps
+      // these apart from setups that made a successful call.
+      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);
@@ -273,12 +308,61 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
       });
     }
+    const trial = await this.trialAnswer(ctx);
     return {
       body: {
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
+        ...(trial ? { trial } : {}),
       },
     };
+  }
+
+  /**
+   * The workspace's free trial, as part of its status: days left and, for an
+   * admin, the page where a plan is chosen. Facts only, in this one answer:
+   * no other tool carries it, and nothing here tells the model what to say.
+   * The card trial while 48 hours remain (the same end date, nothing charged
+   * before it), the licence page after that. Members get no billing link.
+   */
+  private async trialAnswer(ctx: SetupContext): Promise<Record<string, unknown> | null> {
+    const state = await this.licenseGuard.getTrialState(ctx.organizationId).catch(() => null);
+    if (!state) return null;
+    const member = await this.prisma.organizationMember
+      .findFirst({
+        where: { userId: ctx.userId, organizationId: ctx.organizationId, deactivatedAt: null },
+        select: { role: true },
+      })
+      .catch(() => null);
+    const admin = member?.role === 'ADMIN';
+    const endsAt = state.endsAt.toISOString();
+
+    if (!state.active) {
+      return {
+        ended: true,
+        endedAt: endsAt,
+        ...(admin
+          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
+          : { afterTheTrial: 'The trial has ended. A workspace administrator can choose a plan.' }),
+      };
+    }
+    const daysLeft = Math.max(1, Math.ceil((state.endsAt.getTime() - Date.now()) / 86_400_000));
+    if (!admin) {
+      return { daysLeft, endsAt, afterTheTrial: 'A workspace administrator can choose a plan.' };
+    }
+    return state.cardTrialAvailable
+      ? {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/start-trial`,
+          afterTheTrial: 'Adding a card keeps the workspace running when the trial ends. Nothing is charged before then.',
+        }
+      : {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/settings/license`,
+          afterTheTrial: 'Choosing a plan keeps the workspace running when the trial ends.',
+        };
   }
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -290,7 +374,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   /** A fresh one-time link to finish this connector, for this user. */
   async createLink(ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase'>, connectorId: string): Promise<string> {
     const token = randomBytes(24).toString('base64url');
-    await this.prisma.connectorSetupLink.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => undefined);
+    // Expired links stop working at once (resolveLink checks expiresAt); the
+    // rows are kept a week so the share of links that get opened can be read.
+    await this.prisma.connectorSetupLink
+      .deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - SETUP_LINK_RETENTION_MS) } } })
+      .catch(() => undefined);
     await this.prisma.connectorSetupLink.create({
       data: {
         tokenHash: this.hash(token),
@@ -395,3 +483,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     });
   }
 }
+
+/** A broken pattern in an adapter never blocks an install. */
+function matchesPattern(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return true;
+  }
+}
+

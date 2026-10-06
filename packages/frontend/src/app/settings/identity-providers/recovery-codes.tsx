@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { recoveryCodes as api, type RecoveryCodeStatus } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/toast';
+import { copyText } from '@/lib/clipboard';
 
 /**
  * Break-glass credentials for the signed-in admin.
@@ -57,7 +58,7 @@ export function RecoveryCodesCard({
 
   const handleCopy = async () => {
     if (!issued) return;
-    await navigator.clipboard.writeText(issued.join('\n'));
+    if (!(await copyText(issued.join('\n')))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

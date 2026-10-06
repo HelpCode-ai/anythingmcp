@@ -1,0 +1,451 @@
+{
+  "slug": "printify",
+  "name": "Printify",
+  "description": "Printify print-on-demand: shops, products, the blueprint catalog with print providers, variants and shipping, the image library, orders and webhooks. Printify REST API v1 with a personal access token.",
+  "instructions": "## Printify\nThis connector talks to the Printify REST API v1 (`https://api.printify.com/v1`). Printify prints and ships products on demand; the merchant designs a product in Printify and Printify publishes it to a sales channel such as Etsy, Shopify, WooCommerce or a custom API store.\n\n## Setup\n1. In Printify open **My Profile → Connections** and click **Generate** under Personal Access Tokens.\n2. Pick the access scopes. For everything this connector does: `shops.read`, `catalog.read`, `print_providers.read`, `products.read`, `products.write`, `orders.read`, `orders.write`, `uploads.read`, `uploads.write`, `webhooks.read`. A read-only setup only needs the `*.read` scopes.\n3. Copy the token (it is shown once) into `PRINTIFY_API_TOKEN`. Tokens expire after one year; generate a new one then.\n\nThe token is sent as `Authorization: Bearer <token>`. Printify also requires a `User-Agent` header on every request; the connector sends one.\n\n## Start here\nCall `printify_list_shops` first. Every product, order and webhook belongs to a shop, and the shop `id` (a number) is the `shop_id` of all shop tools. The `sales_channel` field tells where the shop publishes (for example `etsy`, `shopify`, `custom_integration`, or `disconnected`).\n\n## Printify and Etsy\nAn Etsy shop connected to Printify appears in `printify_list_shops` with `sales_channel` `etsy`. Products are created and edited in Printify; `printify_publish_product` pushes them to the Etsy listing (title, description, images, variants, tags and, for Etsy, the shipping profile). Etsy orders for Printify products arrive automatically and show up in `printify_list_orders`; there is no need to create them with `printify_create_order`. Use the Etsy connector for listing statistics, reviews and buyer messages, and this one for production, costs and fulfillment. Edit a published product in Printify and publish again rather than editing the Etsy listing directly, or the two drift apart.\n\n## Building a product\n1. `printify_list_blueprints` to find the base product (a blueprint, for example a t-shirt model).\n2. `printify_list_blueprint_print_providers` for who can print it, then `printify_list_variants` for sizes, colours and print area placeholders, and `printify_get_shipping` for shipping costs.\n3. `printify_upload_image` with a public image URL; keep the returned image `id`.\n4. `printify_create_product` with blueprint, print provider, variants (price in cents) and print areas referencing the image id.\n5. `printify_publish_product` to send it to the sales channel.\n\n## Ids, money and pagination\n- Shop ids and catalog ids (blueprint, print provider, variant) are integers; product, order, upload and webhook ids are 24-character hex strings.\n- Prices and costs are integers in cents of the shop currency (`2499` = 24.99).\n- Lists of products, orders and uploads are paged: `page` starts at 1; `limit` is at most 50 for products, 10 for orders and 100 for uploads. The answer carries `current_page`, `last_page` and `total`.\n\n## Rate limits\n600 requests per minute per account, and 100 per minute for catalog endpoints. Publishing is limited to 200 calls per 30 minutes. Printify asks that errors stay below 5% of all requests, so look ids up before guessing them.\n\n## Pitfalls\n- `printify_send_order_to_production` charges the merchant's Printify balance or card. `printify_cancel_order` only works while the order is `on-hold` or `payment-not-received`.\n- `printify_publish_product` does nothing visible on a shop with no sales channel; on a custom API store it only fires the publish event.\n- Variants that are out of stock are hidden from `printify_list_variants` unless `show_out_of_stock` is 1.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "printify",
+  "docsUrl": "https://developers.printify.com/",
+  "requiredEnvVars": ["PRINTIFY_API_TOKEN"],
+  "envVarMeta": {
+    "PRINTIFY_API_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "help": "Printify → My Profile → Connections → Personal Access Tokens → Generate. Choose the access scopes, then copy the token; it is shown only once and is valid for one year.",
+      "link": "https://printify.com/app/account/connections",
+      "pattern": "^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "patternMessage": "A Printify token is a long string starting with eyJ, made of three parts separated by dots."
+    }
+  },
+  "verifyHints": {
+    "401": "Printify refused the token. Tokens expire after one year and are shown only once: generate a new one under My Profile → Connections.",
+    "403": "The token lacks an access scope. Generate a token that includes at least shops.read, then the scopes for the tools you use.",
+    "rate_limited": "Printify allows 600 requests per minute per account (100 for the catalog). Wait a minute and try again."
+  },
+  "probe": { "tool": "printify_list_shops" },
+  "connector": {
+    "name": "Printify",
+    "type": "REST",
+    "baseUrl": "https://api.printify.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": { "token": "{{PRINTIFY_API_TOKEN}}" },
+    "headers": { "User-Agent": "AnythingMCP" },
+    "healthcheckPath": "/shops.json"
+  },
+  "tools": [
+    {
+      "name": "printify_list_shops",
+      "description": "List the shops in the Printify account with their id, title and sales channel (etsy, shopify, custom_integration, disconnected). Call this first: the shop id is needed by every product, order and webhook tool.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/shops.json" }
+    },
+    {
+      "name": "printify_list_blueprints",
+      "description": "List every blueprint in the Printify catalog: the base products (t-shirts, mugs, posters...) with id, title, brand, model and images. Use it to find the blueprint_id before choosing a print provider.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/catalog/blueprints.json" }
+    },
+    {
+      "name": "printify_get_blueprint",
+      "description": "Get one catalog blueprint by id: title, description, brand, model and product images. Use it to read the details of a base product found with printify_list_blueprints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blueprint_id": { "type": "integer", "description": "Blueprint id from printify_list_blueprints." }
+        },
+        "required": ["blueprint_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/catalog/blueprints/{blueprint_id}.json" }
+    },
+    {
+      "name": "printify_list_blueprint_print_providers",
+      "description": "List the print providers that can produce a blueprint, with their id, name and decoration methods (dtg, embroidery...). Pick one to read its variants, shipping and costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blueprint_id": { "type": "integer", "description": "Blueprint id from printify_list_blueprints." }
+        },
+        "required": ["blueprint_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/catalog/blueprints/{blueprint_id}/print_providers.json" }
+    },
+    {
+      "name": "printify_list_variants",
+      "description": "List the variants (size, colour) of a blueprint at one print provider, with variant ids and the print area placeholders and their dimensions. Variant ids are needed to create products and orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blueprint_id": { "type": "integer", "description": "Blueprint id from printify_list_blueprints." },
+          "print_provider_id": { "type": "integer", "description": "Print provider id from printify_list_blueprint_print_providers." },
+          "show_out_of_stock": { "type": "integer", "enum": [0, 1], "description": "1 to include variants that are out of stock, 0 or omitted for in-stock variants only." }
+        },
+        "required": ["blueprint_id", "print_provider_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json",
+        "queryParams": { "show-out-of-stock": "$show_out_of_stock" }
+      }
+    },
+    {
+      "name": "printify_get_shipping",
+      "description": "Get the shipping profiles of a blueprint at one print provider: handling time and first-item and additional-item costs in cents per variant and country. Use it to price products and estimate delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blueprint_id": { "type": "integer", "description": "Blueprint id from printify_list_blueprints." },
+          "print_provider_id": { "type": "integer", "description": "Print provider id from printify_list_blueprint_print_providers." }
+        },
+        "required": ["blueprint_id", "print_provider_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/shipping.json" }
+    },
+    {
+      "name": "printify_list_print_providers",
+      "description": "List all Printify print providers with their id, title and location. Use it to compare providers or find one in a given country.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/catalog/print_providers.json" }
+    },
+    {
+      "name": "printify_get_print_provider",
+      "description": "Get one print provider by id: name, location and the blueprints it produces. Use it to see what else a provider can print.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "print_provider_id": { "type": "integer", "description": "Print provider id from printify_list_print_providers." }
+        },
+        "required": ["print_provider_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/catalog/print_providers/{print_provider_id}.json" }
+    },
+    {
+      "name": "printify_list_products",
+      "description": "List the products of a shop, newest first, with title, variants and prices, images, print areas, visibility and the sales channel listing in `external`. Paged: up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "limit": { "type": "integer", "description": "Products per page, 1-50. Default 10." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/products.json",
+        "queryParams": { "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "printify_get_product",
+      "description": "Get one product of a shop with all details: variants with price, cost and SKU, print areas and images, mockups, tags, publishing state and the linked sales channel listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "product_id": { "type": "string", "description": "Product id (24 hex characters) from printify_list_products." }
+        },
+        "required": ["shop_id", "product_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/shops/{shop_id}/products/{product_id}.json" }
+    },
+    {
+      "name": "printify_create_product",
+      "description": "Create a product in a shop from a blueprint and print provider: title, description, variants with prices in cents and print areas placing uploaded images. Returns the new product. It is not published until printify_publish_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "title": { "type": "string", "description": "Product title." },
+          "description": { "type": "string", "description": "Product description (HTML allowed)." },
+          "blueprint_id": { "type": "integer", "description": "Blueprint id from printify_list_blueprints." },
+          "print_provider_id": { "type": "integer", "description": "Print provider id from printify_list_blueprint_print_providers." },
+          "variants": {
+            "type": "array",
+            "description": "Variants to offer: [{\"id\": 17390, \"price\": 2499, \"is_enabled\": true}]. Ids from printify_list_variants, price in cents.",
+            "items": { "type": "object" }
+          },
+          "print_areas": {
+            "type": "array",
+            "description": "Print areas: [{\"variant_ids\": [17390], \"placeholders\": [{\"position\": \"front\", \"images\": [{\"id\": \"<upload id>\", \"x\": 0.5, \"y\": 0.5, \"scale\": 1, \"angle\": 0}]}]}].",
+            "items": { "type": "object" }
+          },
+          "tags": { "type": "array", "description": "Tags passed to the sales channel listing.", "items": { "type": "string" } },
+          "safety_information": { "type": "string", "description": "GPSR safety information shown to EU buyers (manufacturer, product info, warnings, care)." }
+        },
+        "required": ["shop_id", "title", "description", "blueprint_id", "print_provider_id", "variants", "print_areas"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/products.json",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "blueprint_id": "$blueprint_id",
+          "print_provider_id": "$print_provider_id",
+          "variants": "$variants",
+          "print_areas": "$print_areas",
+          "tags": "$tags",
+          "safety_information": "$safety_information"
+        }
+      }
+    },
+    {
+      "name": "printify_update_product",
+      "description": "Update a product: title, description, tags, variant prices and enabled flags, or print areas. Only the fields passed are changed. Publish again afterwards to push the change to the sales channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "product_id": { "type": "string", "description": "Product id from printify_list_products." },
+          "title": { "type": "string", "description": "New title." },
+          "description": { "type": "string", "description": "New description (HTML allowed)." },
+          "tags": { "type": "array", "description": "New tag list (replaces the old one).", "items": { "type": "string" } },
+          "variants": { "type": "array", "description": "Variants with id, price in cents and is_enabled.", "items": { "type": "object" } },
+          "print_areas": { "type": "array", "description": "Replacement print areas, same shape as in printify_create_product.", "items": { "type": "object" } }
+        },
+        "required": ["shop_id", "product_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shops/{shop_id}/products/{product_id}.json",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "tags": "$tags",
+          "variants": "$variants",
+          "print_areas": "$print_areas"
+        }
+      }
+    },
+    {
+      "name": "printify_delete_product",
+      "description": "Delete a product from a Printify shop. This cannot be undone. A listing already published to the sales channel is not removed by Printify; check it there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "product_id": { "type": "string", "description": "Product id from printify_list_products." }
+        },
+        "required": ["shop_id", "product_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/shops/{shop_id}/products/{product_id}.json" },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "printify_publish_product",
+      "description": "Publish a product to the shop's sales channel (for example the Etsy listing). Each flag says which parts to push; omitted flags count as true. Limited to 200 calls per 30 minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "product_id": { "type": "string", "description": "Product id from printify_list_products." },
+          "title": { "type": "boolean", "default": true, "description": "Push the title." },
+          "description": { "type": "boolean", "default": true, "description": "Push the description." },
+          "images": { "type": "boolean", "default": true, "description": "Push the mockup images." },
+          "variants": { "type": "boolean", "default": true, "description": "Push variants and prices." },
+          "tags": { "type": "boolean", "default": true, "description": "Push the tags." },
+          "key_features": { "type": "boolean", "default": true, "description": "Push the key features." },
+          "shipping_template": { "type": "boolean", "default": true, "description": "Push the shipping profile (Etsy and Amazon only)." }
+        },
+        "required": ["shop_id", "product_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/products/{product_id}/publish.json",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "images": "$images",
+          "variants": "$variants",
+          "tags": "$tags",
+          "keyFeatures": "$key_features",
+          "shipping_template": "$shipping_template"
+        }
+      },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "printify_list_uploads",
+      "description": "List the images in the account's media library with id, file name, size, dimensions and preview URL. Paged: up to 100 per page. Image ids are used in product print areas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Images per page, 1-100. Default 10." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uploads.json",
+        "queryParams": { "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "printify_get_upload",
+      "description": "Get one uploaded image by id: file name, dimensions, size, MIME type, preview URL and upload time. Use it to check an image before placing it on a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_id": { "type": "string", "description": "Image id from printify_list_uploads or printify_upload_image." }
+        },
+        "required": ["image_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/uploads/{image_id}.json" }
+    },
+    {
+      "name": "printify_upload_image",
+      "description": "Upload an image to the media library from a public URL (preferred) or base64 contents. Returns the image id to use in print areas. Printify downloads the URL itself, so it must be reachable from the internet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_name": { "type": "string", "description": "File name with extension, e.g. design.png." },
+          "url": { "type": "string", "format": "uri", "description": "Public URL of the image. Use this or contents." },
+          "contents": { "type": "string", "description": "Base64-encoded image contents, for small files only (under 5 MB). Use this or url." }
+        },
+        "required": ["file_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/uploads/images.json",
+        "bodyMapping": { "file_name": "$file_name", "url": "$url", "contents": "$contents" }
+      }
+    },
+    {
+      "name": "printify_list_orders",
+      "description": "List the orders of a shop, newest first, with status, line items and costs, shipping address, shipments and tracking. Filter by status or SKU. Paged: at most 10 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "status": { "type": "string", "enum": ["pending", "on-hold", "sending-to-production", "in-production", "canceled", "fulfilled", "partially-fulfilled", "payment-not-received", "has-issues", "cost-calculation", "unfulfillable"], "description": "Only orders with this status." },
+          "sku": { "type": "string", "description": "Only orders that contain a product with this SKU." },
+          "limit": { "type": "integer", "description": "Orders per page, 1-10. Default 10." },
+          "page": { "type": "integer", "description": "Page number, starting at 1." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/orders.json",
+        "queryParams": { "status": "$status", "sku": "$sku", "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "printify_get_order",
+      "description": "Get one order with status, line items with production cost and shipping cost in cents, the address, shipments with carrier and tracking number, and print provider details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "order_id": { "type": "string", "description": "Order id (24 hex characters) from printify_list_orders." }
+        },
+        "required": ["shop_id", "order_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/shops/{shop_id}/orders/{order_id}.json" }
+    },
+    {
+      "name": "printify_calculate_shipping",
+      "description": "Calculate the shipping cost of a would-be order for an address without creating it. Returns the cost in cents for standard, priority, express and economy shipping where available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "line_items": {
+            "type": "array",
+            "description": "Items: [{\"product_id\": \"...\", \"variant_id\": 17887, \"quantity\": 1}], or {\"sku\": \"...\", \"quantity\": 1}, or {\"blueprint_id\", \"print_provider_id\", \"variant_id\", \"quantity\"}.",
+            "items": { "type": "object" }
+          },
+          "address_to": {
+            "type": "object",
+            "description": "Destination: first_name, last_name, email, phone, country (ISO 2-letter), region, address1, address2, city, zip."
+          }
+        },
+        "required": ["shop_id", "line_items", "address_to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/orders/shipping.json",
+        "bodyMapping": { "line_items": "$line_items", "address_to": "$address_to" }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "printify_create_order",
+      "description": "Create an order in a shop for existing products (product_id + variant_id), SKUs, or catalog items with print areas. It is placed on hold until printify_send_order_to_production; orders from Etsy or Shopify arrive by themselves.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "external_id": { "type": "string", "description": "Your own unique order reference." },
+          "label": { "type": "string", "description": "Optional label shown in Printify." },
+          "line_items": {
+            "type": "array",
+            "description": "Items: [{\"product_id\": \"...\", \"variant_id\": 17887, \"quantity\": 1}] or [{\"sku\": \"...\", \"quantity\": 1}].",
+            "items": { "type": "object" }
+          },
+          "shipping_method": { "type": "integer", "enum": [1, 2, 3, 4], "description": "1 standard, 2 priority, 3 Printify Express, 4 economy." },
+          "send_shipping_notification": { "type": "boolean", "description": "Let Printify e-mail the customer when the order ships." },
+          "address_to": {
+            "type": "object",
+            "description": "Recipient: first_name, last_name, email, phone, country (ISO 2-letter), region, address1, address2, city, zip."
+          }
+        },
+        "required": ["shop_id", "external_id", "line_items", "shipping_method", "address_to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/orders.json",
+        "bodyMapping": {
+          "external_id": "$external_id",
+          "label": "$label",
+          "line_items": "$line_items",
+          "shipping_method": "$shipping_method",
+          "send_shipping_notification": "$send_shipping_notification",
+          "address_to": "$address_to"
+        }
+      }
+    },
+    {
+      "name": "printify_send_order_to_production",
+      "description": "Send an on-hold order to production. Printify charges the order to the merchant's balance or card and passes it to the print provider; it can no longer be edited.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "order_id": { "type": "string", "description": "Order id from printify_list_orders." }
+        },
+        "required": ["shop_id", "order_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/shops/{shop_id}/orders/{order_id}/send_to_production.json" },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "printify_cancel_order",
+      "description": "Cancel an order. Only accepted while its status is on-hold or payment-not-received; orders already in production cannot be canceled through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
+          "order_id": { "type": "string", "description": "Order id from printify_list_orders." }
+        },
+        "required": ["shop_id", "order_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/shops/{shop_id}/orders/{order_id}/cancel.json" },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "printify_list_webhooks",
+      "description": "List the webhooks installed on a shop with id, topic (order:created, product:publish:started...) and target URL. Use it to see which systems are notified of shop events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/shops/{shop_id}/webhooks.json" }
+    }
+  ]
+}

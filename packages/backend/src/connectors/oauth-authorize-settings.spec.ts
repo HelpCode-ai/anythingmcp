@@ -70,13 +70,13 @@ describe('resolveRestAuthorizeSettings', () => {
       etsyCatalog,
     );
     expect(settings.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
-    expect(settings.scope).toBe('email_r shops_r listings_r transactions_r');
+    expect(settings.scope).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
     expect(settings.tokenUrl).toBe('https://api.etsy.com/v3/public/oauth/token');
     // Etsy authenticates the client in the body: nothing to adopt there.
     expect(settings.tokenAuthMethod).toBeUndefined();
     expect(settings.adopted).toEqual({
       authorizationUrl: 'https://www.etsy.com/oauth/connect',
-      scopes: 'email_r shops_r listings_r transactions_r',
+      scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
     });
   });
 

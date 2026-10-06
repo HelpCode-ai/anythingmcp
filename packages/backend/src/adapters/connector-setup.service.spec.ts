@@ -1,10 +1,10 @@
-import { ConnectorSetupService } from './connector-setup.service';
+import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
 import { encrypt } from '../common/crypto/encryption.util';
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -53,12 +53,13 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any } =
   const licenseGuard: any = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
     getUsage: jest.fn().mockResolvedValue({ connectors: { current: 1, max: 5 } }),
+    getTrialState: jest.fn().mockResolvedValue(opts.trial ?? null),
   };
   const securityEvents: any = { log: jest.fn() };
   const productEvents: any = { log: jest.fn() };
   const service = new ConnectorSetupService(prisma, adapters as unknown as AdaptersService, licenseGuard, { register: jest.fn() } as any, securityEvents, productEvents);
   const ctx = { userId: 'u1', organizationId: 'org-1', serverIds: ['srv-granted'], dashboardBase: 'https://cloud.example.com' };
-  return { service, prisma, adapters, licenseGuard, securityEvents, links, serverConnectors, ctx };
+  return { service, prisma, adapters, licenseGuard, securityEvents, productEvents, links, serverConnectors, ctx };
 }
 
 describe('ConnectorSetupService — who may', () => {
@@ -77,6 +78,30 @@ describe('ConnectorSetupService — find', () => {
     expect(etsy.settingsYouMayPass.map((s: any) => s.name)).toEqual(['ETSY_CLIENT_ID']);
     expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared secret');
     expect(out.connectorsLeftOnThisPlan).toBe(4);
+  });
+
+  it('records what the chat searched for and how well the catalog answered', async () => {
+    const { service, ctx, productEvents } = build();
+    await service.find(ctx, { query: 'etsy' });
+    await service.find(ctx, { query: 'quarzwerk shop' });
+    await service.find(ctx, { query: 'zzqx' });
+    await service.find(ctx, {});
+    const logged = productEvents.log.mock.calls.map(([e]: any) => e);
+    expect(logged).toHaveLength(3);
+    expect(logged[0]).toEqual(
+      expect.objectContaining({
+        event: 'catalog_search',
+        userId: 'u1',
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({ query: 'etsy', via: 'mcp' }),
+      }),
+    );
+    expect(logged[0].metadata.adapterSlug.split(',')[0]).toBe('etsy');
+    expect(logged[0].metadata.missing).toBeUndefined();
+    // "shop" returns shop connectors, but the app itself is missing.
+    expect(logged[1].metadata).toEqual(expect.objectContaining({ query: 'quarzwerk shop', missing: 'quarzwerk' }));
+    expect(logged[1].metadata.results).toBeGreaterThan(0);
+    expect(logged[2].metadata).toEqual({ query: 'zzqx', results: 0, missing: 'zzqx', via: 'mcp' });
   });
 
   it('never offers payment, banking or trading connectors', async () => {
@@ -124,7 +149,7 @@ describe('ConnectorSetupService — install', () => {
 
   it('asks for the sign-in when an OAuth connector has its app keys', async () => {
     const { service, ctx } = build();
-    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'ks' } });
+    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
     expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
@@ -136,6 +161,14 @@ describe('ConnectorSetupService — install', () => {
     const out = await service.install(ctx, { adapter: 'openplz' });
     expect(out.isError).toBe(true);
     expect(JSON.stringify(out.body)).toContain('an hour');
+  });
+
+  it('refuses a setting that does not match its pattern, with what to check', async () => {
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abc123:secret' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/Keystring.*does not look right.*24 lowercase/);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
 
   it('respects the trial limit', async () => {
@@ -175,11 +208,77 @@ describe('ConnectorSetupService — install', () => {
   });
 });
 
+describe('ConnectorSetupService — status', () => {
+  const DAY = 86_400_000;
+  const running = (days: number, cardTrialAvailable = true) => ({
+    endsAt: new Date(Date.now() + days * DAY - 60_000),
+    active: true,
+    cardTrialAvailable,
+  });
+
+  it('tells an admin on the free trial the days left and the card-trial page', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(5) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toEqual({
+      daysLeft: 5,
+      endsAt: expect.any(String),
+      choosePlanUrl: 'https://cloud.example.com/start-trial',
+      afterTheTrial: expect.stringMatching(/Nothing is charged before then/),
+    });
+  });
+
+  it('sends an admin to the licence page once a card trial no longer fits', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(1, false) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toMatchObject({ daysLeft: 1, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    expect(out.trial.afterTheTrial).not.toMatch(/card/i);
+  });
+
+  it('tells an editor the days left, without a billing link', async () => {
+    const { service, ctx } = build({ role: 'EDITOR', trial: running(3) });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.trial).toEqual({ daysLeft: 3, endsAt: expect.any(String), afterTheTrial: 'A workspace administrator can choose a plan.' });
+  });
+
+  it('reports an ended trial, with the licence page for an admin', async () => {
+    const ended = { endsAt: new Date(Date.now() - DAY), active: false, cardTrialAvailable: false };
+    const admin: any = (await build({ role: 'ADMIN', trial: ended }).service.status(build().ctx)).body;
+    expect(admin.trial).toMatchObject({ ended: true, choosePlanUrl: 'https://cloud.example.com/settings/license' });
+    const editor: any = (await build({ role: 'EDITOR', trial: ended }).service.status(build().ctx)).body;
+    expect(editor.trial).toEqual({ ended: true, endedAt: expect.any(String), afterTheTrial: expect.stringMatching(/administrator/) });
+  });
+
+  it('says nothing about plans on a paid plan, self-hosted, or when the licence cannot be read', async () => {
+    const paid: any = (await build({ role: 'ADMIN' }).service.status(build().ctx)).body;
+    expect(paid.trial).toBeUndefined();
+    const broken = build({ role: 'ADMIN' });
+    broken.licenseGuard.getTrialState.mockRejectedValueOnce(new Error('db down'));
+    const out: any = (await broken.service.status(broken.ctx)).body;
+    expect(out.trial).toBeUndefined();
+    expect(out.connectors).toEqual([]);
+  });
+
+  it('keeps billing out of every other setup answer', async () => {
+    const { service, ctx } = build({ role: 'ADMIN', trial: running(5) });
+    const found: any = (await service.find(ctx, { query: 'etsy' })).body;
+    const installed: any = (await service.install(ctx, { adapter: 'openplz' })).body;
+    expect(JSON.stringify([found, installed])).not.toMatch(/start-trial|choosePlanUrl|daysLeft/);
+  });
+});
+
 describe('ConnectorSetupService — links', () => {
   async function linkFor(build_: ReturnType<typeof build>) {
     const out: any = await build_.service.install(build_.ctx, { adapter: 'weclapp', settings: { WECLAPP_TENANT: 'acme' } });
     return out.body.finishSetupUrl.split('/s/')[1] as string;
   }
+
+  it('keeps expired links a week (for measurement), not just until they expire', async () => {
+    const b = build();
+    const before = Date.now();
+    await linkFor(b);
+    const cutoff: Date = b.prisma.connectorSetupLink.deleteMany.mock.calls[0][0].where.expiresAt.lt;
+    expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(SETUP_LINK_RETENTION_MS - 1000);
+  });
 
   it('opens once, for the user it was made for, on the guided setup of that connector', async () => {
     const b = build();

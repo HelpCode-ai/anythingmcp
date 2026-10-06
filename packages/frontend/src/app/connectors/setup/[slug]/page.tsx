@@ -20,6 +20,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/clipboard';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -72,9 +73,17 @@ function SetupContent() {
       .describe(slug, token)
       .then((d) => {
         setInfo(d);
-        if (!started.current) {
+        // Once per tab session: a reload or a return from the provider is the
+        // same setup, and counting each visit inflated "started".
+        const onceKey = `amcp:setup_started:${slug}`;
+        let seen = false;
+        try {
+          seen = !!sessionStorage.getItem(onceKey);
+          sessionStorage.setItem(onceKey, '1');
+        } catch {}
+        if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, existing: !!existingId });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind });
         }
       })
       .catch((e: Error) => setLoadError(e.message || 'This connector is not available.'));
@@ -104,9 +113,19 @@ function SetupContent() {
       .then(async (c) => {
         if (c?.setupStatus === 'ready') {
           const test = await connectors.test(existingId, token).catch(() => null);
-          setResult({ connectorId: existingId, status: (test as any)?.message });
+          // The sign-in can succeed with wrong app keys (Etsy's token exchange
+          // does not check the shared secret), so only a call to the API tells.
+          // A refusal sends the user back to the keys, not to "is ready".
+          if (test && test.ok === false && test.kind === 'auth_failed') {
+            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization' });
+            setVerifyFailed({ ok: false, kind: 'auth_failed', message: test.message } as VerifyResult);
+            setError('');
+            setPhase('form');
+            return;
+          }
+          setResult({ connectorId: existingId, status: test?.message });
           setPhase('done');
-          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser' });
+          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
         } else {
           setError('The authorization did not complete. Try again.');
           setPhase('form');
@@ -143,7 +162,7 @@ function SetupContent() {
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = 'Required';
       else if (v && f.pattern) {
         try {
-          if (!new RegExp(f.pattern).test(v)) errs[f.name] = f.example ? `Looks wrong. Example: ${f.example}` : 'Looks wrong';
+          if (!new RegExp(f.pattern).test(v)) errs[f.name] = f.patternMessage ?? (f.example ? `Looks wrong. Example: ${f.example}` : 'Looks wrong');
         } catch {
           /* a broken pattern never blocks the form */
         }
@@ -187,7 +206,7 @@ function SetupContent() {
       const check =
         info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), existingId ?? undefined);
       if (check && check.ok === false) {
-        productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: check.kind });
+        // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, 'Required'])));
         }
@@ -198,7 +217,7 @@ function SetupContent() {
       const id = await save();
       setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined });
       setPhase('done');
-      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind });
+      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind, verified: check?.ok === true });
     } catch (e) {
       fail(e);
     }
@@ -348,6 +367,15 @@ function SetupContent() {
           </div>
         </div>
 
+        {info.prerequisites && (
+          <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            <p className="mb-1 font-medium text-[var(--text)]">Before you start</p>
+            <div className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert [&_p]:my-1">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.prerequisites}</ReactMarkdown>
+            </div>
+          </div>
+        )}
+
         {isOAuth && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>
@@ -357,7 +385,7 @@ function SetupContent() {
             <div className="mt-2 flex items-center gap-2">
               <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">{redirectUri ?? '…'}</code>
               {redirectUri && (
-                <Button size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(redirectUri)}>
+                <Button size="sm" variant="secondary" onClick={() => void copyText(redirectUri)}>
                   Copy
                 </Button>
               )}
@@ -397,11 +425,21 @@ function SetupContent() {
                   : `${info.name} answered with an error.`}
             </p>
             <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
-            {verifyFailed.kind !== 'invalid_input' && (
-              <button type="button" onClick={() => saveAnyway(false)} className="mt-2 text-xs underline">
-                Save anyway
-              </button>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {verifyFailed.suggest && (
+                <Link
+                  href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
+                  className="text-xs font-medium underline"
+                >
+                  Set up {verifyFailed.suggestName ?? 'the other connector'} instead
+                </Link>
+              )}
+              {verifyFailed.kind !== 'invalid_input' && (
+                <button type="button" onClick={() => saveAnyway(false)} className="text-xs underline">
+                  Save anyway
+                </button>
+              )}
+            </div>
           </div>
         )}
         {error && (

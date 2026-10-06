@@ -1,0 +1,314 @@
+{
+  "slug": "inoreader",
+  "name": "Inoreader",
+  "description": "Inoreader RSS reader: subscriptions, folders and tags, unread counts, articles of any feed, folder or tag with paging, and marking articles read, unread or starred. Inoreader API with OAuth 2.0.",
+  "instructions": "## Inoreader\nThis connector uses the Inoreader API (`https://www.inoreader.com/reader/api/0`), a Google Reader style API: the user's feeds, folders and tags, unread counts, articles, and marking articles read or starred.\n\n## Setup\n1. The Inoreader account needs a paid plan: users on the Free plan get no API access.\n2. In your Inoreader preferences open the developer section and use the **Create new application** link. Set the OAuth redirect URI to `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`) and the scope to read and write.\n3. Copy the **App ID** into `INOREADER_APP_ID` and the **App Key** into `INOREADER_APP_KEY`, install the connector, then click **Authorize with Provider** and sign in to Inoreader. The connector stores the refresh token and renews access tokens itself.\n\nThe access token is sent as `Authorization: Bearer <token>`; the App ID and key also travel as the `AppId` and `AppKey` headers, which Inoreader checks on every request.\n\n## Rate limits\nEach app has two daily quotas: zone 1 (reads: user info, subscriptions, tags, unread counts, stream contents, item ids) and zone 2 (writes: edit-tag, mark-all-as-read). Default limits are low, around 100 requests a day per zone; you can ask for more in the app settings. Over the limit Inoreader answers 429 until the reset. Prefer `inoreader_get_unread_counts` and `inoreader_list_item_ids` to repeated full article reads, and use `n` up to 100 to fetch more per call.\n\n## Stream ids\n`user/-/state/com.google/reading-list` (everything), `user/-/state/com.google/starred`, `user/-/state/com.google/read`, `user/-/label/<folder or tag>` and `feed/<feed URL>`. The `-` stands for the current user. To get unread articles only, pass `xt` = `user/-/state/com.google/read`.\n\n## Paging\nArticle answers carry a `continuation` string; pass it as `c` to get the next page, and stop when it is missing. `ot` limits to articles newer than a Unix timestamp.\n\n## Start here\n`inoreader_get_unread_counts` or `inoreader_list_tags` for an overview, then `inoreader_get_stream_contents` on a folder with `xt` for unread articles. Mark them read with `inoreader_edit_item_tags` (`add` = `user/-/state/com.google/read`). `inoreader_mark_all_as_read` affects a whole stream; confirm with the user first. Subscribing and unsubscribing feeds is not offered.",
+  "region": "intl",
+  "category": "knowledge",
+  "icon": "inoreader",
+  "docsUrl": "https://www.inoreader.com/developers/",
+  "prerequisites": "A paid Inoreader plan (the Free plan has no API access) and an application of your own, created with Create new application in your Inoreader preferences, with the redirect URI from the instructions.",
+  "requiredEnvVars": [
+    "INOREADER_APP_ID",
+    "INOREADER_APP_KEY"
+  ],
+  "envVarMeta": {
+    "INOREADER_APP_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Inoreader preferences → developer section → your application: App ID (a number). It is also the OAuth client id.",
+      "link": "https://www.inoreader.com/developers/register-app",
+      "pattern": "^\\d{6,}$",
+      "patternMessage": "The App ID is a number, for example 1000001414."
+    },
+    "INOREADER_APP_KEY": {
+      "label": "App Key",
+      "kind": "credential",
+      "help": "Same page, the App Key next to the App ID. It is also the OAuth client secret.",
+      "link": "https://www.inoreader.com/developers/register-app"
+    }
+  },
+  "verifyHints": {
+    "401": "Inoreader did not accept the access token. Authorize the connector again with Authorize with Provider.",
+    "403": "Inoreader refused the app: check the App ID and App Key, and that the account is on a paid plan.",
+    "rate_limited": "The app's daily zone limit is used up. Wait for the reset or ask Inoreader for a higher limit in the app settings."
+  },
+  "connector": {
+    "name": "Inoreader",
+    "type": "REST",
+    "baseUrl": "https://www.inoreader.com/reader/api/0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{INOREADER_APP_ID}}",
+      "clientSecret": "{{INOREADER_APP_KEY}}",
+      "authorizationUrl": "https://www.inoreader.com/oauth2/auth",
+      "tokenUrl": "https://www.inoreader.com/oauth2/token",
+      "scopes": "read write",
+      "extraHeaders": {
+        "AppId": "{{INOREADER_APP_ID}}",
+        "AppKey": "{{INOREADER_APP_KEY}}"
+      }
+    },
+    "healthcheckPath": "/user-info"
+  },
+  "tools": [
+    {
+      "name": "inoreader_get_user_info",
+      "description": "Get the signed-in Inoreader user: user id, user name, email and sign-up time. Use it to check the connection and to read the numeric user id that appears in label ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user-info"
+      }
+    },
+    {
+      "name": "inoreader_list_subscriptions",
+      "description": "List the feeds the user follows: feed id (feed/<url>), title, folders (categories), feed URL, website URL and icon. Use a feed id as stream_id in the stream tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_assets": {
+            "type": "integer",
+            "description": "Pass 1 to include team channels (Inoreader Teams).",
+            "enum": [
+              1
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription/list",
+        "queryParams": {
+          "team_assets": "$team_assets"
+        }
+      }
+    },
+    {
+      "name": "inoreader_list_tags",
+      "description": "List the user's folders, tags and saved searches with their type and, by default, unread and unseen counts. Folder and tag ids look like user/1005921515/label/News.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counts": {
+            "type": "integer",
+            "description": "1 (default) to include unread_count and unseen_count, 0 to leave them out.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tag/list",
+        "queryParams": {
+          "types": 1,
+          "counts": "$counts"
+        }
+      }
+    },
+    {
+      "name": "inoreader_get_unread_counts",
+      "description": "Get unread article counts for every feed, folder and tag, with the timestamp of the newest article. A count equal to max means max or more.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/unread-count"
+      }
+    },
+    {
+      "name": "inoreader_get_stream_contents",
+      "description": "Read articles of a feed, folder, tag or the whole reading list: title, author, published time, summary content, link, origin feed and categories (read, starred, labels). Paged with a continuation string.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Stream id: user/-/state/com.google/reading-list (all articles), user/-/state/com.google/starred, user/-/label/<folder or tag name>, or feed/<feed URL> from inoreader_list_subscriptions.",
+            "default": "user/-/state/com.google/reading-list"
+          },
+          "n": {
+            "type": "integer",
+            "description": "Number of articles to return, default 20, at most 100."
+          },
+          "r": {
+            "type": "string",
+            "description": "Pass o for oldest first; newest first by default.",
+            "enum": [
+              "o"
+            ]
+          },
+          "ot": {
+            "type": "integer",
+            "description": "Only articles newer than this Unix timestamp (seconds)."
+          },
+          "xt": {
+            "type": "string",
+            "description": "Exclude target. user/-/state/com.google/read returns only unread articles."
+          },
+          "it": {
+            "type": "string",
+            "description": "Include target: user/-/state/com.google/starred or user/-/state/com.google/like."
+          },
+          "c": {
+            "type": "string",
+            "description": "Continuation string from the previous answer, to get the next page."
+          },
+          "annotations": {
+            "type": "integer",
+            "description": "Pass 1 to include the user's highlights and notes on each article.",
+            "enum": [
+              1
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stream/contents/{stream_id}",
+        "queryParams": {
+          "n": "$n",
+          "r": "$r",
+          "ot": "$ot",
+          "xt": "$xt",
+          "it": "$it",
+          "c": "$c",
+          "annotations": "$annotations"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "inoreader_list_item_ids",
+      "description": "List only article ids (with their folders and timestamps) for a stream, up to 1000 per call. Lighter than stream contents; use it to collect ids before marking articles read or starred.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Stream id: user/-/state/com.google/reading-list (all articles), user/-/state/com.google/starred, user/-/label/<folder or tag name>, or feed/<feed URL> from inoreader_list_subscriptions.",
+            "default": "user/-/state/com.google/reading-list"
+          },
+          "n": {
+            "type": "integer",
+            "description": "Number of ids to return, default 20, at most 1000."
+          },
+          "r": {
+            "type": "string",
+            "description": "Pass o for oldest first; newest first by default.",
+            "enum": [
+              "o"
+            ]
+          },
+          "ot": {
+            "type": "integer",
+            "description": "Only articles newer than this Unix timestamp (seconds)."
+          },
+          "xt": {
+            "type": "string",
+            "description": "Exclude target. user/-/state/com.google/read returns only unread articles."
+          },
+          "it": {
+            "type": "string",
+            "description": "Include target: user/-/state/com.google/starred or user/-/state/com.google/like."
+          },
+          "c": {
+            "type": "string",
+            "description": "Continuation string from the previous answer, to get the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stream/items/ids",
+        "queryParams": {
+          "s": "$stream_id",
+          "n": "$n",
+          "r": "$r",
+          "ot": "$ot",
+          "xt": "$xt",
+          "it": "$it",
+          "c": "$c",
+          "output": "json"
+        }
+      }
+    },
+    {
+      "name": "inoreader_edit_item_tags",
+      "description": "Add or remove a state or tag on articles: mark read or unread, star or unstar, apply or remove a tag. Up to many article ids per call. Answers OK.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_ids": {
+            "type": "array",
+            "description": "Article ids from inoreader_get_stream_contents (the id field) or inoreader_list_item_ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "add": {
+            "type": "string",
+            "description": "Tag to add: user/-/state/com.google/read (mark read), user/-/state/com.google/starred (star), or user/-/label/<tag name>."
+          },
+          "remove": {
+            "type": "string",
+            "description": "Tag to remove, same forms as add. Removing user/-/state/com.google/read marks the articles unread."
+          }
+        },
+        "required": [
+          "item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/edit-tag",
+        "queryParams": {
+          "i": "$item_ids",
+          "a": "$add",
+          "r": "$remove"
+        }
+      }
+    },
+    {
+      "name": "inoreader_mark_all_as_read",
+      "description": "Mark every article in a feed, folder or tag as read, up to a timestamp so newer articles the user has not seen stay unread. Cannot be undone in bulk.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Stream id of the feed, folder or tag to mark read: feed/<url>, user/-/label/<name>, or user/-/state/com.google/reading-list for everything."
+          },
+          "ts": {
+            "type": "integer",
+            "description": "Unix timestamp in seconds: only articles up to this time are marked read. Use the time the user last looked at the stream."
+          }
+        },
+        "required": [
+          "stream_id",
+          "ts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mark-all-as-read",
+        "queryParams": {
+          "s": "$stream_id",
+          "ts": "$ts"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

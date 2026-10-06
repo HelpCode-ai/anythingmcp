@@ -65,8 +65,6 @@ function readPolicy(env: NodeJS.ProcessEnv = process.env): SsrfPolicy {
  * no-op when the service isn't wired (unit tests, scripts).
  */
 let dbAllowedHostsProvider: (() => Promise<string[]>) | null = null;
-/** Last list the DB provider returned, for the synchronous redirect check. */
-let lastDbAllowedHosts: string[] = [];
 
 /**
  * Wire a DB-backed list provider into the guard. Called once by
@@ -125,16 +123,56 @@ function isPublicIp(ip: string, policy: SsrfPolicy): boolean {
     return true;
   }
 
-  // IPv6
-  const lower = ip.toLowerCase();
-  if (lower === '::' || lower === '::1') return policy.allowLoopback;
-  if (lower.startsWith('fe80:') || lower.startsWith('fe80::')) return false; // link-local
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return policy.allowPrivate; // ULA
-  if (lower.startsWith('ff')) return false; // multicast
-  // IPv4-mapped (::ffff:a.b.c.d)
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPublicIp(mapped[1], policy);
+  // IPv6, on the eight 16-bit groups so that every spelling of an address
+  // (`::ffff:7f00:1`, `::ffff:127.0.0.1`, `0:0:0:0:0:ffff:7f00:1`) is judged
+  // the same.
+  const g = ipv6Groups(ip);
+  if (!g) return false;
+  const embeddedV4 = (hi: number, lo: number) =>
+    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+  const zeroUpTo = (n: number) => g.slice(0, n).every((x) => x === 0);
+  // :: (unspecified) and ::1 (loopback)
+  if (zeroUpTo(7) && (g[7] === 0 || g[7] === 1)) return policy.allowLoopback;
+  // IPv4-mapped ::ffff:a.b.c.d
+  if (zeroUpTo(5) && g[5] === 0xffff) return isPublicIp(embeddedV4(g[6], g[7]), policy);
+  // IPv4-compatible ::a.b.c.d (deprecated, still routed by some stacks)
+  if (zeroUpTo(6)) return isPublicIp(embeddedV4(g[6], g[7]), policy);
+  // NAT64 64:ff9b::a.b.c.d reaches the embedded IPv4 address
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) {
+    return isPublicIp(embeddedV4(g[6], g[7]), policy);
+  }
+  // 6to4 2002:AABB:CCDD::/48 embeds a.b.c.d
+  if (g[0] === 0x2002) return isPublicIp(embeddedV4(g[1], g[2]), policy);
+  if ((g[0] & 0xffc0) === 0xfe80) return false; // link-local fe80::/10
+  if ((g[0] & 0xfe00) === 0xfc00) return policy.allowPrivate; // ULA fc00::/7
+  if ((g[0] & 0xff00) === 0xff00) return false; // multicast
   return true;
+}
+
+/** The eight 16-bit groups of an IPv6 address, or null when it does not parse. */
+function ipv6Groups(ip: string): number[] | null {
+  let text = ip.toLowerCase().split('%')[0];
+  // A trailing dotted IPv4 part stands for the last two groups.
+  const v4 = text.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) {
+    const parts = v4[2].split('.').map((p) => parseInt(p, 10));
+    if (parts.some((p) => Number.isNaN(p) || p > 255)) return null;
+    text =
+      v4[1] +
+      ((parts[0] << 8) | parts[1]).toString(16) +
+      ':' +
+      ((parts[2] << 8) | parts[3]).toString(16);
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail].map(
+    (h) => (/^[0-9a-f]{1,4}$/.test(h) ? parseInt(h, 16) : NaN),
+  );
+  return groups.some((x) => Number.isNaN(x)) ? null : groups;
 }
 
 /**
@@ -164,7 +202,8 @@ export async function assertSafeOutboundUrl(
     );
   }
 
-  await assertSafeOutboundHost(parsed.hostname, env);
+  // An IPv6 literal comes back bracketed ("[::1]"); the checks want the address.
+  await assertSafeOutboundHost(parsed.hostname.replace(/^\[|\]$/g, ''), env);
 }
 
 /**
@@ -206,7 +245,6 @@ async function vetHost(
   if (dbAllowedHostsProvider) {
     try {
       const dbHosts = await dbAllowedHostsProvider();
-      lastDbAllowedHosts = dbHosts;
       if (hostMatchesAllowlist(hostname, dbHosts)) return null;
     } catch {
       // Provider failure: fall through to IP-based checks rather than
@@ -270,13 +308,14 @@ async function vetHost(
  * connects, and connects only to the addresses it checked.
  *
  * {@link assertSafeOutboundUrl} on its own checks the URL once, before the
- * request: the HTTP client then resolves the name again (a DNS answer can
- * change in between) and follows redirects to hosts nobody checked. With this
- * lookup the check and the connection use the same answer, on every hop.
+ * request: the HTTP client then resolves the name again, and a DNS answer can
+ * change in between. With this lookup the check and the connection use the
+ * same answer.
  *
  * Node does not call `lookup` for a literal IP, so callers must still run
  * {@link assertSafeOutboundUrl} on each URL they request (including every
- * redirect target): that is what covers `http://169.254.169.254/`.
+ * redirect target): that is what covers `http://169.254.169.254/`. The
+ * helpers in outbound-http.ts do both.
  */
 export function ssrfGuardedLookup(
   env: NodeJS.ProcessEnv = process.env,
@@ -327,38 +366,6 @@ function envProxyHosts(env: NodeJS.ProcessEnv): Set<string> {
     }
   }
   return hosts;
-}
-
-/**
- * Synchronous check for a redirect target, for HTTP clients whose redirect
- * hook cannot wait (axios' `beforeRedirect`). Covers what a guarded lookup
- * cannot see: the scheme, and literal IPs, which Node connects to without
- * calling `lookup`. Hostnames are left to the lookup at connect time.
- */
-export function assertSafeRedirectTarget(
-  target: { protocol?: string | null; hostname?: string | null },
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  const policy = readPolicy(env);
-  if (!policy.enabled) return;
-  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-    throw new SsrfBlockedError(
-      `SSRF guard: protocol '${target.protocol}' is not allowed`,
-    );
-  }
-  const hostname = (target.hostname ?? '').replace(/^\[|\]$/g, '');
-  if (!isIP(hostname)) return;
-  if (
-    hostMatchesAllowlist(hostname, policy.allowedHosts) ||
-    hostMatchesAllowlist(hostname, lastDbAllowedHosts)
-  ) {
-    return;
-  }
-  if (!isPublicIp(hostname, policy)) {
-    throw new SsrfBlockedError(
-      `SSRF guard: address '${hostname}' is not a public IP`,
-    );
-  }
 }
 
 /**

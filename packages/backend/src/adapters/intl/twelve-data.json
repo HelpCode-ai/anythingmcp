@@ -1,0 +1,1078 @@
+{
+  "slug": "twelve-data",
+  "name": "Twelve Data",
+  "description": "Market data for AI agents from Twelve Data: real-time quotes and prices, historical time series, exchange rates and currency conversion, symbol search, stock, forex and crypto lists, exchanges and market hours, and RSI, MACD, SMA, EMA and Bollinger Bands. 19 read-only tools, API key.",
+  "instructions": "This connector uses the Twelve Data REST API (`https://api.twelvedata.com`) for market data on stocks, ETFs, forex and cryptocurrencies. All tools only read.\n\n**Setup**:\n1. Create a free account at https://twelvedata.com and open the dashboard's **API Keys** page.\n2. Copy the key into `TWELVE_DATA_API_KEY`. It is sent in the `Authorization: apikey <key>` header, as Twelve Data recommends, so it never appears in a URL or a log.\n\n**Plans and limits**: the free Basic plan allows **8 API credits per minute and 800 per day**. Most tools cost 1 credit per symbol and call; reference lists (stocks, forex pairs, exchanges, symbol search, market state, earliest timestamp, API usage) cost 1 credit per call. Going over returns HTTP 429; wait for the next minute. Free plans cover US equities, forex and crypto; many non-US exchanges, fundamentals and some data need a paid plan and answer 403 otherwise. `twelve_data_get_api_usage` shows the usage of the last minute and of the day against the plan limits.\n\n**Where to start**: resolve a name into a symbol with `twelve_data_search_symbols` (for example Siemens -> SIE on XETR). Then `twelve_data_get_price` for a number, `twelve_data_get_quote` for change, volume and 52-week range, or `twelve_data_get_time_series` for history. For currencies use `twelve_data_get_exchange_rate` or `twelve_data_convert_currency` with a pair such as EUR/USD.\n\n**Symbols**: stocks use the ticker (AAPL); when a ticker is listed on several exchanges pass `exchange` (name or MIC). Forex and crypto pairs use a slash: EUR/USD, BTC/USD, ETH/BTC.\n\n**Time series and indicators**: `interval` is one of 1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 8h, 1day, 1week, 1month. `outputsize` is 1 to 5000 data points (the tools default to 30). With `start_date` and `end_date` the API returns all points in that range. Values come newest first unless `order` is asc. Datetimes are in the exchange's timezone unless `timezone` is set (UTC for forex and crypto). Prices are strings in the JSON; convert before computing. Indicators here default to the close price.\n\n**Errors**: errors come back as `{\"code\": 400, \"message\": \"...\", \"status\": \"error\"}` with the same HTTP status: 400 bad parameter (the message lists valid values), 401 bad key, 403 plan does not include the data, 404 no data for the parameters, 429 credits exhausted.\n\n**Demo key**: Twelve Data documents the key `demo` for trying a few symbols (for example AAPL, EUR/USD, BTC/USD); it is not meant for real use.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "twelve-data",
+  "docsUrl": "https://twelvedata.com/docs",
+  "requiredEnvVars": [
+    "TWELVE_DATA_API_KEY"
+  ],
+  "envVarMeta": {
+    "TWELVE_DATA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "twelvedata.com > sign in > Dashboard > API Keys. The free Basic plan gives 8 credits a minute and 800 a day.",
+      "link": "https://twelvedata.com/account/api-keys",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "A Twelve Data API key is a string of letters and digits, usually 32 characters."
+    }
+  },
+  "verifyHints": {
+    "401": "Twelve Data refused the key. Copy it again from Dashboard > API Keys; the public demo key only works for a few sample symbols.",
+    "403": "The key works, but your Twelve Data plan does not include this data. Try a US stock, forex or crypto symbol, or upgrade the plan.",
+    "rate_limited": "The Twelve Data plan's credits are used up for this minute (8 a minute on the free plan). Wait a minute and try again."
+  },
+  "connector": {
+    "name": "Twelve Data API",
+    "type": "REST",
+    "baseUrl": "https://api.twelvedata.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "apikey {{TWELVE_DATA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "twelve_data_get_api_usage"
+  },
+  "tools": [
+    {
+      "name": "twelve_data_get_api_usage",
+      "description": "Show the requests made in the last minute and today, the plan's per-minute and daily limits, and the plan category. Costs 1 credit; use it to check the key and the capacity left.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api_usage"
+      }
+    },
+    {
+      "name": "twelve_data_get_quote",
+      "description": "Real-time quote for one instrument: name, exchange, currency, open, high, low, close, volume, previous close, change and percent change, 52-week range, and whether the market is open. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval the quote is built on, default 1day."
+          },
+          "eod": {
+            "type": "boolean",
+            "description": "true returns the data of the last closed day instead of live values."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the returned datetimes: Exchange (default, local exchange time), UTC, or an IANA name such as Europe/Berlin."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quote",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange",
+          "interval": "$interval",
+          "eod": "$eod",
+          "dp": "$dp",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_price",
+      "description": "Latest traded price of one instrument as a single number. The cheapest way to read a price (1 credit per symbol); use twelve_data_get_quote for change and volume.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/price",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange",
+          "dp": "$dp"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_time_series",
+      "description": "Historical OHLCV bars for one instrument at an interval (1min to 1month): meta (symbol, currency, exchange, timezone) and values with datetime, open, high, low, close, volume. Newest first by default. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Optional start, 2006-01-02 or 2006-01-02T15:04:05, in the exchange timezone (UTC for forex and crypto)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Optional end, same format as start_date."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "description": "desc (default) newest first, asc oldest first."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "adjust": {
+            "type": "string",
+            "enum": [
+              "all",
+              "splits",
+              "dividends",
+              "none"
+            ],
+            "description": "Price adjustment: splits (default), dividends, all or none."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the returned datetimes: Exchange (default, local exchange time), UTC, or an IANA name such as Europe/Berlin."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time_series",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "order": "$order",
+          "exchange": "$exchange",
+          "adjust": "$adjust",
+          "timezone": "$timezone",
+          "dp": "$dp"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_eod",
+      "description": "Closing price of the last trading day (or of a given date) for one instrument, with exchange, currency and datetime. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional date, 2006-01-02. Default: the latest closed day."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eod",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange",
+          "date": "$date",
+          "dp": "$dp"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_exchange_rate",
+      "description": "Real-time exchange rate of a forex or crypto pair, for example EUR/USD or BTC/ETH, with its timestamp. Optional date for a historical rate. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Currency pair with a slash, for example EUR/USD or BTC/ETH."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional date or datetime for a historical rate, 2006-01-02 or 2006-01-02T15:04:05."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the returned datetimes: Exchange (default, local exchange time), UTC, or an IANA name such as Europe/Berlin."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/exchange_rate",
+        "queryParams": {
+          "symbol": "$symbol",
+          "date": "$date",
+          "dp": "$dp",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_convert_currency",
+      "description": "Convert an amount from the base to the quote currency of a forex or crypto pair at the real-time (or a historical) rate. Returns the rate and the converted amount. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Currency pair with a slash, base/quote, for example USD/JPY."
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Amount of the base currency to convert, for example 1250.50."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional date or datetime for a historical rate, 2006-01-02."
+          },
+          "dp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "Decimal places in the values, 0 to 11."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the returned datetimes: Exchange (default, local exchange time), UTC, or an IANA name such as Europe/Berlin."
+          }
+        },
+        "required": [
+          "symbol",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/currency_conversion",
+        "queryParams": {
+          "symbol": "$symbol",
+          "amount": "$amount",
+          "date": "$date",
+          "dp": "$dp",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_search_symbols",
+      "description": "Find instruments by ticker or name, ordered by relevance: symbol, instrument name, exchange, MIC, currency, country and type. Use it to resolve a company or asset name into the symbol other tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker or name to search, for example Tesla, TSLA or Siemens."
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120,
+            "default": 10,
+            "description": "Number of data points, 1 to 120. Default 10 here; keep it small to save context."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/symbol_search",
+        "queryParams": {
+          "symbol": "$symbol",
+          "outputsize": "$outputsize"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_list_stocks",
+      "description": "List stock symbols covered by Twelve Data, updated daily: symbol, name, currency, exchange, MIC, country, type. Filter by exchange, country, type or symbol; the full list is very long.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Optional exact ticker to look up."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional country name or ISO code, for example Germany or DE."
+          },
+          "type": {
+            "type": "string",
+            "description": "Optional instrument type, for example Common Stock, ETF, REIT or Preferred Stock."
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Number of data points, 1 to 5000. Default 50 here; keep it small to save context."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange",
+          "country": "$country",
+          "type": "$type",
+          "outputsize": "$outputsize",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_list_forex_pairs",
+      "description": "List the forex pairs available, updated daily: symbol (for example EUR/USD), currency group, base and quote currency. Filter by base or quote currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Optional pair to look up, for example EUR/USD."
+          },
+          "currency_base": {
+            "type": "string",
+            "description": "Optional base currency, for example EUR."
+          },
+          "currency_quote": {
+            "type": "string",
+            "description": "Optional quote currency, for example USD."
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Number of data points, 1 to 5000. Default 50 here; keep it small to save context."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forex_pairs",
+        "queryParams": {
+          "symbol": "$symbol",
+          "currency_base": "$currency_base",
+          "currency_quote": "$currency_quote",
+          "outputsize": "$outputsize"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_list_cryptocurrencies",
+      "description": "List the cryptocurrency pairs available, updated daily: symbol (for example BTC/USD), the exchanges that quote it, base and quote currency. Filter by symbol, exchange or currencies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Optional pair to look up, for example ETH/BTC."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional crypto exchange, for example Binance."
+          },
+          "currency_base": {
+            "type": "string",
+            "description": "Optional base currency, for example BTC."
+          },
+          "currency_quote": {
+            "type": "string",
+            "description": "Optional quote currency, for example USD."
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Number of data points, 1 to 5000. Default 50 here; keep it small to save context."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cryptocurrencies",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange",
+          "currency_base": "$currency_base",
+          "currency_quote": "$currency_quote",
+          "outputsize": "$outputsize"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_list_exchanges",
+      "description": "List equity exchanges: name, MIC code, country, timezone and access plan. Filter by name, MIC code or country. Use it to find the exchange or MIC for a listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional exchange name, for example NASDAQ."
+          },
+          "code": {
+            "type": "string",
+            "description": "Optional MIC code, for example XNAS."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional country, for example United States."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/exchanges",
+        "queryParams": {
+          "name": "$name",
+          "code": "$code",
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_earliest_timestamp",
+      "description": "Return the earliest date and time for which data exists for an instrument at an interval. Use it before requesting long time series to know where history starts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the returned datetimes: Exchange (default, local exchange time), UTC, or an IANA name such as Europe/Berlin."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/earliest_timestamp",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "exchange": "$exchange",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_market_state",
+      "description": "Show whether stock exchanges are open now, with time to open, time to close and time since open. Filter by exchange name, MIC code or country; without filters all exchanges are listed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name, for example NYSE."
+          },
+          "code": {
+            "type": "string",
+            "description": "Optional MIC code, for example XNYS."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional country, for example United States."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/market_state",
+        "queryParams": {
+          "exchange": "$exchange",
+          "code": "$code",
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_rsi",
+      "description": "Relative Strength Index (0 to 100) series for an instrument; above 70 is commonly read as overbought, below 30 as oversold. Values newest first. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "time_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Periods to average over, default 14."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low",
+              "volume"
+            ],
+            "default": "close",
+            "description": "Price field the indicator is computed on. Default close here (the API's own default is open)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rsi",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "exchange": "$exchange",
+          "time_period": "$time_period",
+          "series_type": "$series_type"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_macd",
+      "description": "Moving Average Convergence Divergence series for an instrument: macd line, signal line and histogram per datetime, to spot trend changes. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "fast_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Fast moving average periods, default 12."
+          },
+          "slow_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Slow moving average periods, default 26."
+          },
+          "signal_period": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Signal line periods, default 9."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low",
+              "volume"
+            ],
+            "default": "close",
+            "description": "Price field the indicator is computed on. Default close here (the API's own default is open)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/macd",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "exchange": "$exchange",
+          "fast_period": "$fast_period",
+          "slow_period": "$slow_period",
+          "signal_period": "$signal_period",
+          "series_type": "$series_type"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_sma",
+      "description": "Simple Moving Average series for an instrument over time_period bars, for trend direction and support levels. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "time_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Periods to average over, for example 50 or 200. Default 9."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low",
+              "volume"
+            ],
+            "default": "close",
+            "description": "Price field the indicator is computed on. Default close here (the API's own default is open)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sma",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "exchange": "$exchange",
+          "time_period": "$time_period",
+          "series_type": "$series_type"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_ema",
+      "description": "Exponential Moving Average series for an instrument over time_period bars; reacts faster to recent prices than the SMA. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "time_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Periods to average over, for example 20. Default 9."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low",
+              "volume"
+            ],
+            "default": "close",
+            "description": "Price field the indicator is computed on. Default close here (the API's own default is open)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ema",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "exchange": "$exchange",
+          "time_period": "$time_period",
+          "series_type": "$series_type"
+        }
+      }
+    },
+    {
+      "name": "twelve_data_get_bbands",
+      "description": "Bollinger Bands series for an instrument: upper band, middle band (moving average) and lower band per datetime, to judge volatility. 1 credit per symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, for example AAPL, EUR/USD or BTC/USD. Use twelve_data_search_symbols when unsure."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "45min",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "1day",
+              "1week",
+              "1month"
+            ],
+            "description": "Interval between two data points, for example 1day or 1h.",
+            "default": "1day"
+          },
+          "outputsize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 30,
+            "description": "Number of data points, 1 to 5000. Default 30 here; keep it small to save context."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Optional exchange name or MIC to pick the listing, for example NASDAQ or XETR."
+          },
+          "time_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 800,
+            "description": "Periods of the middle band, default 20."
+          },
+          "sd": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Standard deviations for the bands, default 2."
+          },
+          "ma_type": {
+            "type": "string",
+            "enum": [
+              "SMA",
+              "EMA",
+              "WMA",
+              "DEMA",
+              "TEMA",
+              "TRIMA",
+              "KAMA",
+              "MAMA",
+              "T3MA"
+            ],
+            "description": "Moving average type of the middle band, default SMA."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low",
+              "volume"
+            ],
+            "default": "close",
+            "description": "Price field the indicator is computed on. Default close here (the API's own default is open)."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bbands",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "outputsize": "$outputsize",
+          "exchange": "$exchange",
+          "time_period": "$time_period",
+          "sd": "$sd",
+          "ma_type": "$ma_type",
+          "series_type": "$series_type"
+        }
+      }
+    }
+  ]
+}

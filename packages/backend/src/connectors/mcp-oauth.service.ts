@@ -9,7 +9,7 @@ import {
   isPrivateKeyJwt,
   type ClientAssertionSettings,
 } from './engines/client-assertion.util';
-import { ssrfGuardedAxiosOptions } from '../common/guarded-http.util';
+import { outboundAxiosOptions } from '../common/outbound-http';
 
 interface OAuthMetadata {
   issuer: string;
@@ -193,7 +193,7 @@ export class McpOAuthService {
     await assertSafeOutboundUrl(url);
     const response = await axios.get(url, {
       timeout: 10000,
-      ...ssrfGuardedAxiosOptions(),
+      ...outboundAxiosOptions(),
     });
     return response.data;
   }
@@ -255,7 +255,7 @@ export class McpOAuthService {
         response_types: ['code'],
         token_endpoint_auth_method: 'client_secret_post',
       },
-      { timeout: 10000, ...ssrfGuardedAxiosOptions() },
+      { timeout: 10000, ...outboundAxiosOptions() },
     );
 
     const clientId = response.data?.client_id;
@@ -367,7 +367,7 @@ export class McpOAuthService {
         {
           headers,
           timeout: 10000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions({ credentialsInBody: true }),
         },
       );
     } catch (err: any) {

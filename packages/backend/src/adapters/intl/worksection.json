@@ -1,0 +1,1172 @@
+{
+  "slug": "worksection",
+  "name": "Worksection",
+  "description": "Worksection project management: projects, tasks and subtasks, comments, time and money costs, timers, files, tags, users and contacts, plus creating and updating tasks, comments and time entries. OAuth 2.0 as the connected user.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "worksection",
+  "docsUrl": "https://worksection.com/en/faq/api.html",
+  "prerequisites": "An OAuth 2.0 application in your Worksection account (avatar → Account settings → API) with the redirect URI shown below. After saving, click **Authorize with Provider** and sign in.",
+  "instructions": "**Authentication: OAuth 2.0 (user token).** Worksection has two ways into its API. The administrative key signs every request with an MD5 hash of the query string plus the key, which this connector cannot compute, so it uses OAuth 2.0 instead: each call is made as the user who authorized the connector, with that user's role and the scopes granted.\n\n**Setup**\n1. In Worksection click your avatar → **Account settings → API** and create an OAuth 2.0 application. Set the redirect URI to `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n2. Put its client id and client secret into `WORKSECTION_CLIENT_ID` and `WORKSECTION_CLIENT_SECRET`, and your account address (`https://youraccount.worksection.com`) into `WORKSECTION_URL`.\n3. On the connector page click **Authorize with Provider** and sign in. The connector asks for the read and write scopes of projects, tasks, comments, costs and tags, plus read access to files, users and contacts. Access tokens last 24 hours and are renewed automatically; the refresh token lasts one month, so a connector unused for longer than that needs to be authorized again.\n\n**Rate limit**: 1 request per second per account, and at most 10,000 records per answer (\"Too many tasks (10000 max)\"). Prefer `worksection_list_tasks` per project or `worksection_search_tasks` over `worksection_list_all_tasks`. GET requests are limited to 8 kB of URL.\n\n**Responses** are `{\"status\": \"ok\", \"data\": ...}`. An error comes back as `{\"status\": \"error\", \"message\": ...}`, often with HTTP 200, so read `status`.\n\n**Ids and formats**: project ids from `worksection_list_projects`, task ids from `worksection_list_tasks` or `worksection_search_tasks`. Users are addressed by e-mail (`email_user_to`), from `worksection_list_users`. Dates are `DD.MM.YYYY`. Time is `1.5`, `1,5` or `1:30`.\n\n**Which tool to start with**: `worksection_get_me`, then `worksection_list_projects` → `worksection_list_tasks` (add `filter=active` for open tasks) → `worksection_get_task` or `worksection_list_comments`. Time reports: `worksection_get_costs_total` with a date range and `extra=projects`.\n\n**Write tools** act as the connected user: create and update tasks, complete or reopen them, change tags, post comments (subscribers are notified), log time and run the user's timer. `worksection_update_task` cannot change a task's description, and its `tags` replace all current tags.",
+  "requiredEnvVars": [
+    "WORKSECTION_URL",
+    "WORKSECTION_CLIENT_ID",
+    "WORKSECTION_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "WORKSECTION_URL": {
+      "label": "Account address",
+      "kind": "address",
+      "help": "The address you open Worksection at, up to the host, e.g. https://youraccount.worksection.com.",
+      "example": "https://youraccount.worksection.com",
+      "link": "https://worksection.com/en/faq/api/api-start/1911.html",
+      "pattern": "^https://[a-z0-9-]+\\.worksection\\.com/?$",
+      "patternMessage": "Your account address, e.g. https://youraccount.worksection.com, with nothing after the host."
+    },
+    "WORKSECTION_CLIENT_ID": {
+      "label": "OAuth client id",
+      "kind": "credential",
+      "help": "Worksection → avatar → Account settings → API → your OAuth 2.0 application → client_id.",
+      "link": "https://worksection.com/en/faq/api/oauth/1812.html"
+    },
+    "WORKSECTION_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client_secret of the same OAuth 2.0 application.",
+      "link": "https://worksection.com/en/faq/api/oauth/1812.html"
+    }
+  },
+  "verifyHints": {
+    "401": "Worksection refused the access token. Click Authorize with Provider again; a refresh token expires after one month without use.",
+    "not_found": "No Worksection API at this address. Use your account address, https://youraccount.worksection.com.",
+    "rate_limited": "Worksection allows one request per second. Wait a moment and try again."
+  },
+  "connector": {
+    "name": "Worksection API (OAuth 2.0)",
+    "type": "REST",
+    "baseUrl": "{{WORKSECTION_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{WORKSECTION_CLIENT_ID}}",
+      "clientSecret": "{{WORKSECTION_CLIENT_SECRET}}",
+      "authorizationUrl": "https://worksection.com/oauth2/authorize",
+      "tokenUrl": "https://worksection.com/oauth2/token",
+      "scopes": "projects_read projects_write tasks_read tasks_write comments_read comments_write costs_read costs_write tags_read tags_write files_read users_read contacts_read"
+    }
+  },
+  "probe": {
+    "tool": "worksection_get_me"
+  },
+  "tools": [
+    {
+      "name": "worksection_get_me",
+      "description": "Return the Worksection user the access token belongs to: id, name, e-mail and role. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "me"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_projects",
+      "description": "List the account's projects with id, name, status, folder, author, manager, dates and estimates. Start here to get project ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending",
+              "archived"
+            ],
+            "description": "Only projects in this state: active, pending or archived."
+          },
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html (description), options (restrictions), users (team members)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_projects",
+          "filter": "$filter",
+          "extra": "$extra"
+        }
+      }
+    },
+    {
+      "name": "worksection_get_project",
+      "description": "Return one project by id with name, status, folder, author, manager, dates, estimates and tags; add extra=text,users for description and team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html, options, users."
+          }
+        },
+        "required": [
+          "id_project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_project",
+          "id_project": "$id_project",
+          "extra": "$extra"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_project_folders",
+      "description": "List the project folders of the account (user folders and team folders) with id, name and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_project_groups"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_tasks",
+      "description": "List the tasks of one project, open and closed, with name, status, priority, author, assignee, dates, estimates and tags. Add extra=subtasks for subtasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html (description), files, todos, comments (last five), relations, subtasks, subscribers."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active"
+            ],
+            "description": "active to return only incomplete tasks. Completed tasks cannot be filtered on their own."
+          }
+        },
+        "required": [
+          "id_project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_tasks",
+          "id_project": "$id_project",
+          "extra": "$extra",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_all_tasks",
+      "description": "List the tasks of all projects in the account. Large accounts can exceed the API's 10,000-record limit; prefer worksection_search_tasks or worksection_list_tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html, files, todos, comments, relations, subtasks, archive (include archived projects)."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active"
+            ],
+            "description": "active to return only incomplete tasks. Completed tasks cannot be filtered on their own."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_all_tasks",
+          "extra": "$extra",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "worksection_get_task",
+      "description": "Return one task or subtask by id with status, priority, author, assignee, dates, estimates, tags and, with extra, description, files, comments and subtasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html (description), files, todos, comments (last five), relations, subtasks, subscribers."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active"
+            ],
+            "description": "With extra=subtasks: active to return only incomplete subtasks."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_task",
+          "id_task": "$id_task",
+          "extra": "$extra",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "worksection_search_tasks",
+      "description": "Search tasks with a query on name and dates, by project, author or assignee. Give at least one of id_project, id_task, email_user_from, email_user_to or query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "id_task": {
+            "type": "integer",
+            "description": "Return the subtasks of this task."
+          },
+          "email_user_from": {
+            "type": "string",
+            "description": "Only tasks created by this user's e-mail."
+          },
+          "email_user_to": {
+            "type": "string",
+            "description": "Only tasks assigned to this user's e-mail."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search expression, e.g. (name has 'Report' or name has 'Approval') and dateend<'31.10.2026'. Fields: id, project, parent, name (=, has), dateadd, datestart, dateend, dateclose (DD.MM.YYYY with >, <, >=, <=, !=, =). Combine with and / or in lowercase."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "done"
+            ],
+            "description": "active for open tasks, done for completed ones."
+          },
+          "extra": {
+            "type": "string",
+            "description": "Extra data, comma-separated: text or html, files, todos."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "search_tasks",
+          "id_project": "$id_project",
+          "id_task": "$id_task",
+          "email_user_from": "$email_user_from",
+          "email_user_to": "$email_user_to",
+          "filter": "$query",
+          "status": "$status",
+          "extra": "$extra"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_comments",
+      "description": "List the comments of one task with text, author name and e-mail and date; add extra=files for attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "extra": {
+            "type": "string",
+            "enum": [
+              "files"
+            ],
+            "description": "files to include attachment info."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_comments",
+          "id_task": "$id_task",
+          "extra": "$extra"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_users",
+      "description": "List the account's users with id, name, e-mail, position, team, role and status. Use the e-mail to assign tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_users"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_user_teams",
+      "description": "List the user teams of the account (your company teams and external client teams).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_user_groups"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_contacts",
+      "description": "List the account's contacts (people without a login) with name, e-mail, phone numbers, position and folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_contacts"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_contact_folders",
+      "description": "List the contact folders of the account with id and name, used to group contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_contact_groups"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_costs",
+      "description": "List individual time and money entries (cost lines) for the account, one project or one task, with user, date, time, money and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "datestart": {
+            "type": "string",
+            "description": "Start of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateend": {
+            "type": "string",
+            "description": "End of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "is_timer": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for time from the timer only, 0 for manually entered time only."
+          },
+          "query": {
+            "type": "string",
+            "description": "Extra filter, e.g. project in (2456, 2470) and comment has 'review'. Fields: id, project, comment, dateadd."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_costs",
+          "id_project": "$id_project",
+          "id_task": "$id_task",
+          "datestart": "$datestart",
+          "dateend": "$dateend",
+          "is_timer": "$is_timer",
+          "filter": "$query"
+        }
+      }
+    },
+    {
+      "name": "worksection_get_costs_total",
+      "description": "Return total time and money spent for all projects, selected projects or one task in a date range; with extra=projects also per project and month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "datestart": {
+            "type": "string",
+            "description": "Start of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateend": {
+            "type": "string",
+            "description": "End of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "is_timer": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for time from the timer only, 0 for manually entered time only."
+          },
+          "query": {
+            "type": "string",
+            "description": "Project filter, e.g. project in (1234, 1240)."
+          },
+          "extra": {
+            "type": "string",
+            "description": "projects for totals per project and month; add tasks or tasks_top_level for totals per task."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_costs_total",
+          "id_project": "$id_project",
+          "id_task": "$id_task",
+          "datestart": "$datestart",
+          "dateend": "$dateend",
+          "is_timer": "$is_timer",
+          "filter": "$query",
+          "extra": "$extra"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_timers",
+      "description": "List the timers running right now in the account, with task, user, start time and current value.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_timers"
+        }
+      }
+    },
+    {
+      "name": "worksection_get_my_timer",
+      "description": "Return the running timer of the connected user, if any, with its task and current value.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_my_timer"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_files",
+      "description": "List the files of one project or task: attachments of descriptions and comments and the project's Files section, with id, name and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id. Required unless id_task is given."
+          },
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, for the files of one task."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_files",
+          "id_project": "$id_project",
+          "id_task": "$id_task"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_events",
+      "description": "Return the change history of all or one project for a recent period: who created, updated, closed or reopened which project, task or comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Period back from now: 1m to 360m minutes, 1h to 72h hours, or 1d to 30d days, e.g. 3d."
+          },
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          }
+        },
+        "required": [
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_events",
+          "period": "$period",
+          "id_project": "$id_project"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_task_tags",
+      "description": "List the task tags (statuses and labels) of all or one group, with id, name and group. Use the names or ids when tagging tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "status",
+              "label"
+            ],
+            "description": "status or label groups only."
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (visible to client teams too) or private groups only."
+          },
+          "group": {
+            "type": "string",
+            "description": "Tag group name or id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_task_tags",
+          "group": "$group",
+          "type": "$type",
+          "access": "$access"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_task_tag_groups",
+      "description": "List the task tag groups (sets of statuses or labels) with id, name, type and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "status",
+              "label"
+            ],
+            "description": "status or label groups only."
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (visible to client teams too) or private groups only."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_task_tag_groups",
+          "type": "$type",
+          "access": "$access"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_project_tags",
+      "description": "List the project tags of all or one group, with id, name and group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "status",
+              "label"
+            ],
+            "description": "status or label groups only."
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (visible to client teams too) or private groups only."
+          },
+          "group": {
+            "type": "string",
+            "description": "Tag group name or id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_project_tags",
+          "group": "$group",
+          "type": "$type",
+          "access": "$access"
+        }
+      }
+    },
+    {
+      "name": "worksection_list_project_tag_groups",
+      "description": "List the project tag groups with id, name, type and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "status",
+              "label"
+            ],
+            "description": "status or label groups only."
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "public (visible to client teams too) or private groups only."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_project_tag_groups",
+          "type": "$type",
+          "access": "$access"
+        }
+      }
+    },
+    {
+      "name": "worksection_get_users_schedule",
+      "description": "Return users' vacations, sick leave, unpaid leave and weekend work days in a date range, from each user's Schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "string",
+            "description": "Comma-separated user e-mails or ids; all users when empty."
+          },
+          "datestart": {
+            "type": "string",
+            "description": "Start of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateend": {
+            "type": "string",
+            "description": "End of the range (inclusive) in DD.MM.YYYY format, e.g. 31.10.2026."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "get_users_schedule",
+          "users": "$users",
+          "datestart": "$datestart",
+          "dateend": "$dateend"
+        }
+      }
+    },
+    {
+      "name": "worksection_create_task",
+      "description": "Create a task or subtask in a project, with assignee, priority, description, dates, estimates, tags and subscribers. The author is the connected user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_project": {
+            "type": "integer",
+            "description": "Project id, from worksection_list_projects."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task name."
+          },
+          "id_parent": {
+            "type": "integer",
+            "description": "Parent task id, to create a subtask."
+          },
+          "email_user_to": {
+            "type": "string",
+            "description": "Assignee e-mail, or ANY for anyone, NOONE for unassigned."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority 0 to 10."
+          },
+          "text": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "datestart": {
+            "type": "string",
+            "description": "Start date in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateend": {
+            "type": "string",
+            "description": "Due date in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "subscribe": {
+            "type": "string",
+            "description": "Comma-separated e-mails of users to subscribe."
+          },
+          "mention": {
+            "type": "string",
+            "description": "Comma-separated e-mails of users to mention at the end of the description."
+          },
+          "max_time": {
+            "type": "number",
+            "description": "Time estimate in hours."
+          },
+          "max_money": {
+            "type": "number",
+            "description": "Money estimate in the account currency."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tag names or ids; only tags from sets added to the project."
+          }
+        },
+        "required": [
+          "id_project",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "post_task"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_project": "$id_project",
+          "title": "$title",
+          "id_parent": "$id_parent",
+          "email_user_to": "$email_user_to",
+          "priority": "$priority",
+          "text": "$text",
+          "datestart": "$datestart",
+          "dateend": "$dateend",
+          "subscribe": "$subscribe",
+          "mention": "$mention",
+          "max_time": "$max_time",
+          "max_money": "$max_money",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "worksection_update_task",
+      "description": "Change a task's name, assignee, priority, dates, estimates or tags. Tags given here replace the current ones; the description cannot be changed through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "title": {
+            "type": "string",
+            "description": "New task name."
+          },
+          "email_user_to": {
+            "type": "string",
+            "description": "New assignee e-mail, or ANY, or NOONE."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority 0 to 10."
+          },
+          "datestart": {
+            "type": "string",
+            "description": "Start date in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateend": {
+            "type": "string",
+            "description": "Due date in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "dateclosed": {
+            "type": "string",
+            "description": "Closing date in DD.MM.YYYY format, e.g. 31.10.2026."
+          },
+          "max_time": {
+            "type": "number",
+            "description": "Time estimate in hours."
+          },
+          "max_money": {
+            "type": "number",
+            "description": "Money estimate."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tag names or ids; replaces all current tags. Use worksection_update_task_tags to add or remove single tags."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "update_task"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task",
+          "title": "$title",
+          "email_user_to": "$email_user_to",
+          "priority": "$priority",
+          "datestart": "$datestart",
+          "dateend": "$dateend",
+          "dateclosed": "$dateclosed",
+          "max_time": "$max_time",
+          "max_money": "$max_money",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "worksection_complete_task",
+      "description": "Mark a task or subtask as done. Reopen it with worksection_reopen_task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "complete_task"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task"
+        }
+      }
+    },
+    {
+      "name": "worksection_reopen_task",
+      "description": "Reopen a completed task or subtask so it shows as active again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "reopen_task"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task"
+        }
+      }
+    },
+    {
+      "name": "worksection_update_task_tags",
+      "description": "Add and remove single tags on a task without touching the others. Tags are given by exact name or id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "plus": {
+            "type": "string",
+            "description": "Comma-separated tags to add."
+          },
+          "minus": {
+            "type": "string",
+            "description": "Comma-separated tags to remove."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "update_task_tags"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task",
+          "plus": "$plus",
+          "minus": "$minus"
+        }
+      }
+    },
+    {
+      "name": "worksection_create_comment",
+      "description": "Post a comment on a task as the connected user. Subscribers of the task are notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "mention": {
+            "type": "string",
+            "description": "Comma-separated e-mails of users to mention."
+          },
+          "hidden": {
+            "type": "string",
+            "description": "Comma-separated e-mails of the only users who may see this comment."
+          }
+        },
+        "required": [
+          "id_task",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "post_comment"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task",
+          "text": "$text",
+          "mention": "$mention",
+          "hidden": "$hidden"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "worksection_add_costs",
+      "description": "Log time or money on a task for the connected user, e.g. 1:30 hours with a comment and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          },
+          "time": {
+            "type": "string",
+            "description": "Time spent: 1.5, 1,5 or 1:30."
+          },
+          "money": {
+            "type": "number",
+            "description": "Money spent in the account currency, when not derived from an hourly rate."
+          },
+          "is_rate": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "1 to calculate money from the user's hourly rate (money is then ignored)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment for the entry."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date of the entry in DD.MM.YYYY format, e.g. 31.10.2026."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "add_costs"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task",
+          "time": "$time",
+          "money": "$money",
+          "is_rate": "$is_rate",
+          "comment": "$comment",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "worksection_start_my_timer",
+      "description": "Start the connected user's timer on a task. Stop it with worksection_stop_my_timer to save the time as a cost entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_task": {
+            "type": "integer",
+            "description": "Task id, from worksection_list_tasks or worksection_search_tasks."
+          }
+        },
+        "required": [
+          "id_task"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "start_my_timer"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id_task": "$id_task"
+        }
+      }
+    },
+    {
+      "name": "worksection_stop_my_timer",
+      "description": "Stop the connected user's running timer and save the time as a cost entry, with an optional comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "string",
+            "description": "Comment saved with the time entry."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oauth2",
+        "queryParams": {
+          "action": "stop_my_timer"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      }
+    }
+  ]
+}

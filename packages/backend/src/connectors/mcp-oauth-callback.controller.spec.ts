@@ -13,6 +13,7 @@ function makeController(overrides: {
   flow?: Record<string, unknown>;
   noFlow?: boolean;
   returnTo?: string;
+  exchangeThrows?: Error;
 } = {}) {
   const reloadConnectorTools = jest.fn().mockResolvedValue(undefined);
   const updateAuthConfigMerge = jest.fn().mockResolvedValue(undefined);
@@ -32,11 +33,13 @@ function makeController(overrides: {
   const mcpOAuthService: any = {
     getPendingFlow: jest.fn().mockResolvedValue(record),
     takePendingFlow: jest.fn().mockResolvedValue(record),
-    exchangeCodeForTokens: jest.fn().mockResolvedValue({
-      accessToken: 'AT',
-      refreshToken: 'RT',
-      expiresIn: 3600,
-    }),
+    exchangeCodeForTokens: overrides.exchangeThrows
+      ? jest.fn().mockRejectedValue(overrides.exchangeThrows)
+      : jest.fn().mockResolvedValue({
+          accessToken: 'AT',
+          refreshToken: 'RT',
+          expiresIn: 3600,
+        }),
   };
   const connectorsService: any = {
     updateAuthConfigMerge,
@@ -51,7 +54,13 @@ function makeController(overrides: {
       ? jest.fn().mockRejectedValue(new Error('not an MCP server'))
       : jest.fn().mockResolvedValue(overrides.remoteTools ?? []),
   };
-  const prisma: any = { mcpTool: { create: jest.fn().mockResolvedValue({}) } };
+  const prisma: any = {
+    mcpTool: { create: jest.fn().mockResolvedValue({}) },
+    connector: {
+      findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1', config: { adapterSlug: 'etsy' } }),
+    },
+  };
+  const productEvents: any = { log: jest.fn().mockResolvedValue(undefined) };
   const mcpServer: any = { reloadConnectorTools };
   const configService: any = { get: jest.fn().mockReturnValue('https://cloud.example.com') };
 
@@ -62,9 +71,11 @@ function makeController(overrides: {
     prisma,
     mcpServer,
     configService,
+    productEvents,
   );
   return {
     controller,
+    productEvents,
     reloadConnectorTools,
     updateAuthConfigMerge,
     mcpOAuthService,
@@ -240,5 +251,33 @@ describe('McpOAuthCallbackController — completion by the dashboard', () => {
       accessToken: 'AT',
       refreshToken: 'RT',
     });
+  });
+});
+
+describe('McpOAuthCallbackController — failed sign-ins are recorded', () => {
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('records a refusal at the provider with its error code', async () => {
+    const { controller, productEvents } = makeController();
+    await controller.oauthCallback('', 'the-state', 'access_denied', 'User said no', makeRes());
+    await flush();
+    expect(productEvents.log).toHaveBeenCalledWith({
+      event: 'oauth_failed',
+      userId: 'user-1',
+      organizationId: 'org-1',
+      metadata: { connectorId: 'conn-1', kind: 'provider_refused', adapterSlug: 'etsy', error: 'access_denied' },
+    });
+  });
+
+  it('records a failed code exchange without the secret it was sent with', async () => {
+    const { controller, productEvents } = makeController({
+      exchangeThrows: new Error('invalid_client: client secret sec-123456 rejected by https://api.etsy.com/token?client_id=abc'),
+      flow: { clientSecret: 'sec-123456' },
+    });
+    await expect(controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' })).rejects.toThrow();
+    await flush();
+    const { metadata } = productEvents.log.mock.calls[0][0];
+    expect(metadata.kind).toBe('token_exchange');
+    expect(metadata.error).toBe('invalid_client: client secret *** rejected by https://api.etsy.com/token');
   });
 });

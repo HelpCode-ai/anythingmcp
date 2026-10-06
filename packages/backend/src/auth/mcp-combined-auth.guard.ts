@@ -4,6 +4,7 @@ import { AuthService, isTokenRevoked } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
+import { presentedMcpApiKey } from './mcp-api-key.util';
 
 /**
  * Combined auth guard for per-server MCP endpoints (/mcp/:serverId).
@@ -12,7 +13,8 @@ import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
  * so we don't depend on middleware configuration in AppModule.
  *
  * Auth methods (checked in order):
- *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY
+ *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY;
+ *      a per-user key is also accepted as `Authorization: Bearer mcp_...`
  *   2. Bearer token → JWT (OAuth) or static MCP_BEARER_TOKEN
  *   3. If auth mode is 'none' → allow all
  */
@@ -61,9 +63,11 @@ export class McpCombinedAuthGuard implements CanActivate {
     const apiKey = req.headers['x-api-key'] as string | undefined;
     const authHeader = req.headers['authorization'] as string | undefined;
 
-    // 1. Check per-user MCP API key (mcp_... prefix)
-    if (apiKey?.startsWith('mcp_')) {
-      const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
+    // 1. Check per-user MCP API key (mcp_... prefix), from X-API-Key or, for
+    // clients that can only send a bearer token, Authorization: Bearer.
+    const presentedKey = presentedMcpApiKey(req.headers, mcpBearerToken);
+    if (presentedKey) {
+      const user = await this.mcpApiKeysService.resolveUserByKey(presentedKey);
       if (user) {
         req.user = {
           sub: user.id,

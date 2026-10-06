@@ -458,6 +458,61 @@ describe('OpenApiParser', () => {
     const params = tools[0].parameters as any;
     expect(params.properties['X-Request-ID']).toBeDefined();
     expect(params.required).toContain('X-Request-ID');
+    // What the model is told it must send has to be sent (#868).
+    expect(tools[0].endpointMapping.headers).toEqual({ 'X-Request-ID': '$X-Request-ID' });
+  });
+
+  it('sends a header parameter next to a JSON body (#868)', async () => {
+    const spec = {
+      ...minimalSpec,
+      paths: {
+        '/orders': {
+          post: {
+            operationId: 'createOrder',
+            parameters: [{ name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string' } }],
+            requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { sku: { type: 'string' } } } } } },
+            responses: { '201': { description: 'Created' } },
+          },
+        },
+      },
+    };
+    const [tool] = await parser.parse(spec);
+    expect(tool.endpointMapping).toMatchObject({
+      method: 'POST',
+      path: '/orders',
+      bodyMapping: { sku: '$sku' },
+      headers: { 'Idempotency-Key': '$Idempotency-Key' },
+    });
+  });
+
+  it('applies parameters declared on the path item to every operation (#868)', async () => {
+    const spec = {
+      ...minimalSpec,
+      paths: {
+        '/users/{userId}': {
+          parameters: [
+            { name: 'userId', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'fields', in: 'query', schema: { type: 'string' }, description: 'from the path item' },
+          ],
+          get: {
+            operationId: 'getUser',
+            parameters: [{ name: 'fields', in: 'query', schema: { type: 'string' }, description: 'from the operation' }],
+            responses: { '200': { description: 'OK' } },
+          },
+          delete: { operationId: 'deleteUser', responses: { '204': { description: 'Deleted' } } },
+        },
+      },
+    };
+    const tools = await parser.parse(spec);
+    for (const tool of tools) {
+      const params = tool.parameters as any;
+      expect(params.properties.userId).toBeDefined();
+      expect(params.required).toContain('userId');
+    }
+    const get = tools.find((t) => t.operationId === 'getUser')!;
+    // The operation's own entry wins over the path item's on the same name + in.
+    expect((get.parameters as any).properties.fields.description).toBe('from the operation');
+    expect(get.endpointMapping.queryParams).toEqual({ fields: '$fields' });
   });
 
   it('should skip authorization and content-type header parameters', async () => {

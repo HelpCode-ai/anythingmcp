@@ -1,0 +1,683 @@
+{
+  "slug": "seamless-ai",
+  "name": "Seamless.AI",
+  "description": "Find and enrich B2B contacts and companies with Seamless.AI: search people by title, seniority, company, industry and location, search companies, research records for verified emails and phone numbers, poll the results and read contacts and companies already in your org.",
+  "instructions": "## Seamless.AI (Public API v1)\nThis connector calls the Seamless.AI Public API at `https://api.seamless.ai/api/client/v1` with an API key in the `Token` header: search the B2B database for contacts and companies, research (enrich) them to get verified emails and phone numbers, poll the results, and read records already in your org.\n\n**Setup.** Sign in at login.seamless.ai, open Settings, Public API, tab API Key, click Create New Connection and copy the key at once (it is shown one time). The Public API menu appears only when the account has Public API access; otherwise ask your Seamless administrator or support.\n\n**Credits.** Search and research spend the same credit balance. Search costs 1 credit for every started block of 10 results returned (1 to 10 results: 1 credit; a page with no rows is free); if the balance cannot pay for `limit`, the page is shortened. Research costs 1 credit per record submitted. Polling, reading org records, location lookup and `seamless_ai_get_me` are free. The remaining balance is in the `X-PublicAPI-Credits` response header and in the app under Settings, Billing. Keep `limit` small (default here 10) and do not run the same search twice: store the `searchResultId` values.\n\n**Workflow.** 1) `seamless_ai_lookup_locations` for exact location spellings (a misspelt location silently returns nothing). 2) `seamless_ai_search_contacts` or `seamless_ai_search_companies`; results carry `searchResultId` but no emails or phones. 3) `seamless_ai_research_contacts` / `seamless_ai_research_companies` with those ids (or by identity: name plus company or domain, email, LinkedIn URL) returns `requestIds`. 4) Poll with `seamless_ai_poll_contact_research` / `seamless_ai_poll_company_research` every 2 to 5 seconds until each status is `done`. Status `duplicate` or `contact-already-researched` means it is already in your org: read it with the org tools instead of researching again. `error` usually means no credits or no licence for that record type.\n\n**Pagination.** Searches return `supplementalData.nextToken`; pass it as `next_token` for the next page. Org lists page with `page` and `limit` (max 500) and need a `start_date` and `end_date`.\n\n**Filters.** Arrays combine with OR inside one filter and AND across filters. Use the exact enum values for seniority, department, company size and revenue. Filters not exposed as parameters (job changes, past company, news, funding, last modified dates) go into `extra_filters` with the API's own field names.\n\n**Limits.** 60 requests per minute per endpoint, shared by the whole Seamless org; a 429 means wait until `X-RateLimit-Reset`.\n\n**Errors.** 401: wrong or revoked API key. 422 `insufficientCredits`: no credits left; 422 for a licence problem: the plan does not allow that record type. 429: rate limit.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "seamless-ai",
+  "docsUrl": "https://docs.seamless.ai/",
+  "requiredEnvVars": [
+    "SEAMLESS_AI_API_KEY"
+  ],
+  "envVarMeta": {
+    "SEAMLESS_AI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "login.seamless.ai → Settings → Public API → tab API Key → Create New Connection. The key is shown once; copy it then.",
+      "link": "https://login.seamless.ai/settings/public-api"
+    }
+  },
+  "prerequisites": "A Seamless.AI account with **Public API** access (Settings → Public API is visible). Search and research spend the account's credits.",
+  "verifyHints": {
+    "401": "Seamless.AI refused the API key. Create a new key under Settings → Public API → API Key and paste it again.",
+    "403": "The key has no permission for this call. Check that the account has Public API access.",
+    "422": "Seamless.AI answered 422: either no credits are left or the plan's licence does not cover this record type. Check Settings → Billing.",
+    "rate_limited": "Seamless.AI allows 60 requests per minute per endpoint for the whole org. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "seamless_ai_get_me"
+  },
+  "connector": {
+    "name": "Seamless.AI Public API",
+    "type": "REST",
+    "baseUrl": "https://api.seamless.ai/api/client/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Token",
+      "apiKey": "{{SEAMLESS_AI_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "seamless_ai_get_me",
+      "description": "Return the Seamless.AI user the API key belongs to (email, first and last name). Use it to check that the connector works; it costs no credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oauth/me"
+      }
+    },
+    {
+      "name": "seamless_ai_lookup_locations",
+      "description": "Look up the exact location spelling Seamless.AI matches for contact and company location filters (cities, states, countries, postcodes), ordered by contact volume. Use it before filtering by location: a misspelt value silently returns nothing. Costs no credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Partial place name, matched at the start of any word, e.g. munich or bavaria. One place per call."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results to return, 1 to 100 (default 10)."
+          },
+          "types": {
+            "type": "string",
+            "description": "Optional comma-separated tiers: city-state-country, state-country, city-country, country, postcode."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/locations",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "types": "$types"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_search_contacts",
+      "description": "Search Seamless.AI's B2B database for people by job title, seniority, department, company, domain, industry, size, revenue, location, technologies or keywords. Returns name, title, company, location and a searchResultId per contact (no email or phone: research those). Costs 1 credit per 10 results returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_title": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Job titles, matched by relevance, up to 10, e.g. [\"Head of Procurement\"]."
+          },
+          "seniority": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "C-Level",
+                "VP",
+                "Director",
+                "Manager",
+                "Senior",
+                "Entry Level",
+                "Mid-Level",
+                "Other"
+              ]
+            },
+            "description": "Seniority levels, up to 5."
+          },
+          "department": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Sales",
+                "Marketing",
+                "Engineering",
+                "Human Resources",
+                "Finance",
+                "IT",
+                "Operations",
+                "Support",
+                "Legal",
+                "Project Management",
+                "Other"
+              ]
+            },
+            "description": "Departments, up to 5."
+          },
+          "company_name": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Company names, up to 100."
+          },
+          "company_name_search_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "related",
+              "exact"
+            ],
+            "description": "How company_name matches: default relevance, related (also aliases and related names) or exact."
+          },
+          "company_domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Company website domains, up to 100, e.g. [\"example.com\"]."
+          },
+          "contact_country": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Countries, spelled as seamless_ai_lookup_locations returns them."
+          },
+          "contact_state": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "States or regions, spelled as seamless_ai_lookup_locations returns them."
+          },
+          "contact_zip_code": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Postal codes."
+          },
+          "location_type": {
+            "type": "string",
+            "enum": [
+              "contact",
+              "company",
+              "bothOR",
+              "bothAND"
+            ],
+            "description": "Whether location filters apply to the contact's own location, the company's, either (bothOR) or both (bothAND)."
+          },
+          "industry": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Industries, up to 5, from Seamless' fixed list, either a parent category (e.g. \"Software & Information Technology\") or a sub-industry (e.g. \"Computer Software\")."
+          },
+          "company_size": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "0 - 1 (Self-employed)",
+                "2 - 10",
+                "11 - 50",
+                "51 - 200",
+                "201 - 500",
+                "501 - 1,000",
+                "1,001 - 5,000",
+                "5,001 - 10,000",
+                "10,001+"
+              ]
+            },
+            "description": "Employee count bands."
+          },
+          "company_revenue": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "$0 - $100K",
+                "$100K - $1M",
+                "$1M - $5M",
+                "$5M - $20M",
+                "$20M - $50M",
+                "$50M - $100M",
+                "$100M - $500M",
+                "$500M - $1B",
+                "$1B+"
+              ]
+            },
+            "description": "Estimated annual revenue bands."
+          },
+          "contact_keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords matched against the contact profile (skills, bio, specialties), up to 10."
+          },
+          "full_name": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Full names of specific people, up to 10."
+          },
+          "technologies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Technologies used by the company, e.g. [\"Salesforce\", \"HubSpot\"], up to 10."
+          },
+          "technologies_is_or": {
+            "type": "boolean",
+            "description": "true (default) matches companies using any of the technologies, false only those using all."
+          },
+          "company_type": {
+            "type": "string",
+            "enum": [
+              "Public",
+              "Private"
+            ],
+            "description": "Public (listed) or private companies."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 50, max 500). Each started block of 10 results costs 1 credit, so ask only for what you need.",
+            "default": 10
+          },
+          "next_token": {
+            "type": "string",
+            "description": "supplementalData.nextToken from the previous answer, to read the next page."
+          },
+          "extra_filters": {
+            "type": "object",
+            "description": "Optional further filters passed as they are, using the API's own field names, e.g. {\"newsTypes\": [\"Funding\"], \"newsTypeDates\": [\"90\"]} or {\"jobChanges\": {\"changeType\": \"New Hire\"}}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/contacts",
+        "bodyMapping": {
+          "jobTitle": "$job_title",
+          "seniority": "$seniority",
+          "department": "$department",
+          "companyName": "$company_name",
+          "companyNameSearchType": "$company_name_search_type",
+          "companyDomain": "$company_domain",
+          "contactCountry": "$contact_country",
+          "contactState": "$contact_state",
+          "contactZipCode": "$contact_zip_code",
+          "locationType": "$location_type",
+          "industry": "$industry",
+          "companySize": "$company_size",
+          "companyRevenue": "$company_revenue",
+          "contactKeyword": "$contact_keyword",
+          "fullName": "$full_name",
+          "technologies": "$technologies",
+          "technologiesIsOr": "$technologies_is_or",
+          "companyType": "$company_type",
+          "limit": "$limit",
+          "nextToken": "$next_token",
+          "__merge": "$extra_filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "seamless_ai_search_companies",
+      "description": "Search Seamless.AI's database for companies by name, domain, location, industry, keywords, size, revenue, technologies, founding date or funding. Returns company name, domain, industry, size, location and a searchResultId per company. Costs 1 credit per 10 results returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_name": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Company names or name fragments."
+          },
+          "company_name_search_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "related",
+              "exact"
+            ],
+            "description": "How company_name matches: default relevance, related (also aliases and related names) or exact."
+          },
+          "company_domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Website domains, e.g. [\"example.com\"]."
+          },
+          "company_country": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Countries, spelled as seamless_ai_lookup_locations returns them."
+          },
+          "company_state": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "States or regions."
+          },
+          "company_zip_code": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Postal codes."
+          },
+          "industry": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Industries, up to 5, from Seamless' fixed list, either a parent category (e.g. \"Software & Information Technology\") or a sub-industry (e.g. \"Computer Software\")."
+          },
+          "company_keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-text keywords matched against the company profile."
+          },
+          "company_size": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "0 - 1 (Self-employed)",
+                "2 - 10",
+                "11 - 50",
+                "51 - 200",
+                "201 - 500",
+                "501 - 1,000",
+                "1,001 - 5,000",
+                "5,001 - 10,000",
+                "10,001+"
+              ]
+            },
+            "description": "Employee count bands."
+          },
+          "company_revenue": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "$0 - $100K",
+                "$100K - $1M",
+                "$1M - $5M",
+                "$5M - $20M",
+                "$20M - $50M",
+                "$50M - $100M",
+                "$100M - $500M",
+                "$500M - $1B",
+                "$1B+"
+              ]
+            },
+            "description": "Estimated annual revenue bands."
+          },
+          "technologies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Technologies used by the company, e.g. [\"Salesforce\", \"HubSpot\"], up to 10."
+          },
+          "technologies_is_or": {
+            "type": "boolean",
+            "description": "true matches companies using any of the technologies, false only those using all."
+          },
+          "company_type": {
+            "type": "string",
+            "enum": [
+              "Public",
+              "Private"
+            ],
+            "description": "Public (listed) or private companies."
+          },
+          "founded_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Company age buckets based on the founding date, as listed in the Seamless.AI docs."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 50, max 500). Each started block of 10 results costs 1 credit, so ask only for what you need.",
+            "default": 10
+          },
+          "next_token": {
+            "type": "string",
+            "description": "supplementalData.nextToken from the previous answer, to read the next page."
+          },
+          "extra_filters": {
+            "type": "object",
+            "description": "Optional further filters passed as they are, using the API's own field names, e.g. {\"newsTypes\": [\"Funding\"], \"newsTypeDates\": [\"90\"]} or {\"jobChanges\": {\"changeType\": \"New Hire\"}}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/companies",
+        "bodyMapping": {
+          "companyName": "$company_name",
+          "companyNameSearchType": "$company_name_search_type",
+          "companyDomain": "$company_domain",
+          "companyCountry": "$company_country",
+          "companyState": "$company_state",
+          "companyZipCode": "$company_zip_code",
+          "industry": "$industry",
+          "companyKeyword": "$company_keyword",
+          "companySize": "$company_size",
+          "companyRevenue": "$company_revenue",
+          "technologies": "$technologies",
+          "technologiesIsOr": "$technologies_is_or",
+          "companyType": "$company_type",
+          "foundedOn": "$founded_on",
+          "limit": "$limit",
+          "nextToken": "$next_token",
+          "__merge": "$extra_filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "seamless_ai_research_contacts",
+      "description": "Start enrichment (research) of contacts to get verified emails, phone numbers and full profiles, either from searchResultIds of seamless_ai_search_contacts or by identity (name plus company or domain, email, or LinkedIn URL). Returns requestIds to poll. Costs 1 credit per contact and saves the contacts to your Seamless.AI org.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_result_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "searchResultId values from seamless_ai_search_contacts, up to 500."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Contacts to research by identity, each with one of: contactName + companyName, contactName + domain, email, liProfileUrl, liSalesNavUrl or liRecruiterUrl. Example: [{\"contactName\": \"Jane Doe\", \"domain\": \"example.com\"}]."
+          },
+          "is_job_change": {
+            "type": "boolean",
+            "description": "true to research job changes of the given contacts (only with contacts, not search_result_ids)."
+          },
+          "skip_deduplication_check": {
+            "type": "boolean",
+            "description": "true researches again even if the record was researched recently, which spends credits again. Leave unset normally."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/research",
+        "bodyMapping": {
+          "searchResultIds": "$search_result_ids",
+          "contacts": "$contacts",
+          "isJobChange": "$is_job_change",
+          "skipDeduplicationCheck": "$skip_deduplication_check"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_research_companies",
+      "description": "Start enrichment (research) of companies to get their full profile, either from searchResultIds of seamless_ai_search_companies or directly by domain or company name. Returns requestIds to poll. Costs 1 credit per company and saves the companies to your Seamless.AI org.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_result_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "searchResultId values from seamless_ai_search_companies, up to 500."
+          },
+          "companies": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Companies by identity, each with domain and/or companyName, e.g. [{\"domain\": \"example.com\"}]."
+          },
+          "skip_deduplication_check": {
+            "type": "boolean",
+            "description": "true researches again even if the company was researched recently, which spends credits again. Leave unset normally."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/research",
+        "bodyMapping": {
+          "searchResultIds": "$search_result_ids",
+          "companies": "$companies",
+          "skipDeduplicationCheck": "$skip_deduplication_check"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_poll_contact_research",
+      "description": "Get the status and results of contact research requests. Each item has a status (queued, researching, done, error, missing, duplicate, not found...) and, when done, the full contact with emails, phones and company. Costs no credits; poll every few seconds until done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_ids": {
+            "type": "string",
+            "description": "Comma-separated requestIds returned by seamless_ai_research_contacts."
+          }
+        },
+        "required": [
+          "request_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/research/poll",
+        "queryParams": {
+          "requestIds": "$request_ids"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_poll_company_research",
+      "description": "Get the status and results of company research requests. Each item has a status (queued, researching, done, error...) and, when done, the full company profile. Costs no credits; poll every few seconds until done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_ids": {
+            "type": "string",
+            "description": "Comma-separated requestIds returned by seamless_ai_research_companies."
+          }
+        },
+        "required": [
+          "request_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/research/poll",
+        "queryParams": {
+          "requestIds": "$request_ids"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_list_org_contacts",
+      "description": "List contacts already researched into your Seamless.AI org within a date range, with their enriched data. Use it to export or sync records you have already paid for; it costs no credits. Page with page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "seamless_ai_list_org_companies",
+      "description": "List companies already researched into your Seamless.AI org within a date range, with their enriched data. Use it to export or sync records you have already paid for; it costs no credits. Page with page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

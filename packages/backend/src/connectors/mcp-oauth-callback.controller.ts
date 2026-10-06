@@ -6,6 +6,7 @@ import {
   GoneException,
   HttpCode,
   Logger,
+  Optional,
   Post,
   Query,
   Req,
@@ -21,6 +22,7 @@ import { ConnectorsService } from './connectors.service';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
 
 /**
  * Connector OAuth: where the provider sends the browser back, and where the
@@ -46,6 +48,7 @@ export class McpOAuthCallbackController {
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
+    @Optional() private readonly productEvents?: ProductEventService,
   ) {}
 
   private frontendUrl(): string {
@@ -82,6 +85,7 @@ export class McpOAuthCallbackController {
       // The user declined, or the provider refused the request. The attempt
       // is spent either way.
       const record = state ? await this.mcpOAuthService.takePendingFlow(state) : undefined;
+      if (record) void this.recordFailure(record.flow, 'provider_refused', providerError.slice(0, 80));
       return res.redirect(
         this.completePage({
           error: describeProviderError(providerError, providerErrorDescription),
@@ -137,8 +141,48 @@ export class McpOAuthCallbackController {
       throw new GoneException('The provider came back without an authorization code. Start the authorization again.');
     }
 
-    const toolsImported = await this.exchangeAndStore(flow, String(body.code));
+    let toolsImported: number;
+    try {
+      toolsImported = await this.exchangeAndStore(flow, String(body.code));
+    } catch (err: any) {
+      void this.recordFailure(flow, 'token_exchange', err?.message, [flow.clientSecret, String(body.code)]);
+      throw err;
+    }
     return { connectorId: flow.connectorId, toolsImported, ...(returnTo ? { returnTo } : {}) };
+  }
+
+  /**
+   * A sign-in that did not complete, as a product event: which connector and
+   * adapter, and why. Best-effort; never stands in the way of the redirect.
+   */
+  private async recordFailure(
+    flow: PendingOAuthFlow,
+    kind: 'provider_refused' | 'token_exchange',
+    error: unknown,
+    secrets: unknown[] = [],
+  ): Promise<void> {
+    if (!this.productEvents) return;
+    try {
+      const connector = await this.prisma.connector.findUnique({
+        where: { id: flow.connectorId },
+        select: { organizationId: true, config: true },
+      });
+      await this.productEvents.log({
+        event: ProductEvents.OAUTH_FAILED,
+        userId: flow.userId,
+        organizationId: connector?.organizationId ?? null,
+        metadata: {
+          connectorId: flow.connectorId,
+          kind,
+          ...((connector?.config as { adapterSlug?: string } | null)?.adapterSlug
+            ? { adapterSlug: (connector!.config as { adapterSlug: string }).adapterSlug }
+            : {}),
+          error: scrubProviderMessage(error, secrets),
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`oauth_failed not recorded: ${err?.message ?? err}`);
+    }
   }
 
   /** Exchange the code, store the tokens, reload the tools. Throws on failure. */

@@ -377,4 +377,73 @@ describe('McpCombinedAuthGuard', () => {
       expect(header(ctx)).toContain('error="invalid_token"');
     });
   });
+
+  describe('per-user MCP API key as Authorization: Bearer', () => {
+    const keyUser = {
+      id: 'u1',
+      email: 'a@b.com',
+      role: 'EDITOR',
+      organizationId: 'org-A',
+      mcpRoleId: null,
+      mcpServerId: 'srv-1',
+      apiKeyName: 'agent',
+    };
+
+    it('authenticates a valid mcp_ key sent as a bearer token, exactly like X-API-Key', async () => {
+      mockConfig.get.mockImplementation((k: string) => (k === 'MCP_AUTH_MODE' ? 'oauth2' : undefined));
+      mockApiKeys.resolveUserByKey.mockResolvedValue(keyUser);
+
+      const viaBearer = mockContext({ authorization: 'Bearer mcp_valid' });
+      const viaHeader = mockContext({ 'x-api-key': 'mcp_valid' });
+      expect(await guard.canActivate(viaBearer)).toBe(true);
+      expect(await guard.canActivate(viaHeader)).toBe(true);
+
+      expect(mockApiKeys.resolveUserByKey).toHaveBeenCalledWith('mcp_valid');
+      const a = viaBearer.switchToHttp().getRequest().user;
+      const b = viaHeader.switchToHttp().getRequest().user;
+      expect(a).toEqual(b);
+      expect(a).toMatchObject({ authMethod: 'mcp_api_key', organizationId: 'org-A', mcpServerId: 'srv-1' });
+      expect(mockAuth.verifyToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown or revoked mcp_ key sent as a bearer token', async () => {
+      mockConfig.get.mockImplementation((k: string) => (k === 'MCP_AUTH_MODE' ? 'oauth2' : undefined));
+      mockApiKeys.resolveUserByKey.mockResolvedValue(null);
+      mockAuth.verifyToken.mockImplementation(() => {
+        throw new Error('not a JWT');
+      });
+
+      const ctx = mockContext({ authorization: 'Bearer mcp_revoked' });
+      expect(await guard.canActivate(ctx)).toBe(false);
+      expect(ctx.switchToHttp().getResponse().status).toHaveBeenCalledWith(401);
+    });
+
+    it('still treats a JWT bearer token as OAuth and never as an API key', async () => {
+      mockConfig.get.mockImplementation((k: string) => (k === 'MCP_AUTH_MODE' ? 'oauth2' : undefined));
+      mockAuth.verifyToken.mockReturnValue({ sub: 'u1', organizationId: 'org-A' });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        organizationId: 'org-A',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        sessionsValidFrom: null,
+      });
+
+      const ctx = mockContext({ authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.e30.sig' });
+      expect(await guard.canActivate(ctx)).toBe(true);
+      expect(mockApiKeys.resolveUserByKey).not.toHaveBeenCalled();
+      expect(ctx.switchToHttp().getRequest().user.authMethod).toBe('jwt');
+    });
+
+    it("keeps a static MCP_BEARER_TOKEN that starts with mcp_ on the static path", async () => {
+      mockConfig.get.mockImplementation((k: string) =>
+        k === 'MCP_AUTH_MODE' ? 'legacy' : k === 'MCP_BEARER_TOKEN' ? 'mcp_static_operator' : undefined,
+      );
+
+      const ctx = mockContext({ authorization: 'Bearer mcp_static_operator' });
+      expect(await guard.canActivate(ctx)).toBe(true);
+      expect(mockApiKeys.resolveUserByKey).not.toHaveBeenCalled();
+      expect(ctx.switchToHttp().getRequest().user).toEqual({ authMethod: 'static_bearer' });
+    });
+  });
 });

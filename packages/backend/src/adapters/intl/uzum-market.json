@@ -1,0 +1,748 @@
+{
+  "slug": "uzum-market",
+  "name": "Uzum Market",
+  "description": "Manage an Uzum Market (Uzbekistan) seller account from an AI agent: shops, products and SKUs, FBS and DBS orders, stock, prices, sales and seller expenses, supply and return invoices. 16 tools on the official seller OpenAPI, one API token.",
+  "instructions": "This connector uses the Uzum Market seller OpenAPI (`https://api-seller.uzum.uz/api/seller-openapi`).\n\n**Setup**:\n1. Sign in to the Uzum Market seller cabinet (https://seller.uzum.uz) with the account that owns the shops.\n2. Open the settings and create an API token in the API section.\n3. Copy the token into `UZUM_API_TOKEN`.\n\n**Authentication**: the token goes into the `Authorization` header as is, without a `Bearer` prefix (Uzum documents it this way). A 401 or 403 means the token is wrong, revoked, or belongs to another seller.\n\n**Where to start**: `uzum_market_list_shops` returns the shops the token can see. Almost every other tool needs a `shop_id` (or `shop_ids`) from it. Then:\n- products and SKUs with their stock and statuses: `uzum_market_list_products`;\n- new orders to process: `uzum_market_list_orders` with status `CREATED` (default), then `uzum_market_confirm_order` or `uzum_market_cancel_order`;\n- stock for FBS and DBS: `uzum_market_list_stocks`, then `uzum_market_update_stocks`;\n- money: `uzum_market_list_sales` (sold items with commission and seller profit) and `uzum_market_list_expenses` (fees and services charged).\n\n**Dates** in filters (`date_from`, `date_to`) are Unix timestamps in milliseconds, for example 1727427283895. Dates in answers are ISO strings or millisecond timestamps.\n\n**Pagination**: page numbers start at 0. Orders and returns allow at most 50 per page, FBS invoices 20, stock 100. `uzum_market_list_stocks` also has a cursor mode: pass `sku_id_from` = 0, then the skuId of the last item, until the list is empty; it is the stable way to read a whole catalogue.\n\n**Order statuses**: CREATED (new, to confirm), PACKING, PENDING_DELIVERY, DELIVERING, DELIVERED, ACCEPTED_AT_DP, DELIVERED_TO_CUSTOMER_DELIVERY_POINT, COMPLETED, CANCELED, PENDING_CANCELLATION, RETURNED. Orders have to be confirmed before their acceptUntil time, otherwise Uzum cancels them.\n\n**Personal data**: DBS orders carry the buyer's name, phone and address in `deliveryInfo`. Only pass them on where the task needs them.\n\n**Rate limits**: Uzum enforces a per-second and a per-day request budget per token and reports it in the response headers `X-RateLimit-Remaining`, `X-RateLimit-Burst-Capacity`, `X-RateLimit-Limit-Per-Day` and `X-RateLimit-Remaining-Per-Day`. Read pages one at a time and back off on HTTP 429.\n\n**Writes**: `uzum_market_update_stocks` sets absolute FBS/DBS stock per SKU (identified by its barcode), `uzum_market_update_prices` changes full and sale prices of a product's SKUs, `uzum_market_confirm_order` and `uzum_market_cancel_order` change an order. All act on the live shop.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "uzum-market",
+  "docsUrl": "https://api-seller.uzum.uz/api/seller-openapi/swagger/swagger-ui/",
+  "requiredEnvVars": [
+    "UZUM_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "UZUM_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "help": "Seller cabinet (seller.uzum.uz) > Settings > API: create a token and copy it. Paste it without the word Bearer.",
+      "link": "https://seller.uzum.uz",
+      "pattern": "^(?!Bearer\\s)\\S+$",
+      "patternMessage": "Paste the token alone, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Uzum Market refused the token. Check that it was copied whole, without Bearer in front, and that it was not revoked in the seller cabinet.",
+    "403": "Uzum Market refused the token for this request. Check that the token belongs to the seller who owns the shop.",
+    "rate_limited": "Uzum Market limits requests per second and per day for each token. Wait a moment and try again."
+  },
+  "connector": {
+    "name": "Uzum Market Seller OpenAPI",
+    "type": "REST",
+    "baseUrl": "https://api-seller.uzum.uz/api/seller-openapi",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{UZUM_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "uzum_market_list_shops"
+  },
+  "tools": [
+    {
+      "name": "uzum_market_list_shops",
+      "description": "List the seller's own shops (id and name). Call this first: the shop id is needed by the product, order, price, sales and invoice tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shops"
+      }
+    },
+    {
+      "name": "uzum_market_list_products",
+      "description": "List the products of one shop with their SKUs: product id, category, status, moderation, commission, and per SKU the skuId, barcode, price and stock quantities (active, FBS, sold, returned). Paginated by page and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop id from uzum_market_list_shops."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Products per page, for example 20.",
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "search_query": {
+            "type": "string",
+            "description": "Search text matched against product title and description."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "ACTIVE",
+              "INACTIVE",
+              "WARNING",
+              "WITH_SKU",
+              "ARCHIVE",
+              "DEFECTED",
+              "WITHOUT_REQUIRED_FILTERS"
+            ],
+            "description": "Product filter. Default ALL."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "ORDERS",
+              "PRICE",
+              "ID",
+              "ROI",
+              "CONVERSION",
+              "LEFTOVERS",
+              "CREATED_AND_TITLE"
+            ],
+            "description": "Sort criterion. Default DEFAULT."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction. Default ASC."
+          },
+          "product_rank": {
+            "type": "string",
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "N",
+              "D"
+            ],
+            "description": "Optional ABC rank of products to show."
+          }
+        },
+        "required": [
+          "shop_id",
+          "size",
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/product/shop/{shop_id}",
+        "queryParams": {
+          "size": "$size",
+          "page": "$page",
+          "searchQuery": "$search_query",
+          "filter": "$filter",
+          "sortBy": "$sort_by",
+          "order": "$order",
+          "productRank": "$product_rank"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_list_orders",
+      "description": "List FBS and DBS orders of one or more shops in one status (default CREATED, the new orders to confirm): id, status, dates, acceptUntil and deliverUntil deadlines, price, items, drop-off point and delivery info. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Shop ids from uzum_market_list_shops, for example [12345]."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "PACKING",
+              "PENDING_DELIVERY",
+              "DELIVERING",
+              "DELIVERED",
+              "ACCEPTED_AT_DP",
+              "DELIVERED_TO_CUSTOMER_DELIVERY_POINT",
+              "COMPLETED",
+              "CANCELED",
+              "PENDING_CANCELLATION",
+              "RETURNED"
+            ],
+            "description": "Order status to list. Default CREATED."
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "FBS",
+              "DBS"
+            ],
+            "description": "Fulfilment scheme. Omit for both FBS and DBS."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Only orders from this moment, Unix time in milliseconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Only orders up to this moment, Unix time in milliseconds."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Orders per page, at most 50. Default 20.",
+            "maximum": 50
+          }
+        },
+        "required": [
+          "shop_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/fbs/orders",
+        "queryParams": {
+          "shopIds": "$shop_ids",
+          "status": "$status",
+          "scheme": "$scheme",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_count_orders",
+      "description": "Count FBS orders by status (default CREATED), shop and date range. A cheap way to see how many new orders wait for confirmation before listing them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional shop ids from uzum_market_list_shops. Omit for all shops."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "PACKING",
+              "PENDING_DELIVERY",
+              "DELIVERING",
+              "DELIVERED",
+              "ACCEPTED_AT_DP",
+              "DELIVERED_TO_CUSTOMER_DELIVERY_POINT",
+              "COMPLETED",
+              "CANCELED",
+              "PENDING_CANCELLATION",
+              "RETURNED"
+            ],
+            "description": "Order status to count. Default CREATED."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Only orders from this moment, Unix time in milliseconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Only orders up to this moment, Unix time in milliseconds."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/fbs/orders/count",
+        "queryParams": {
+          "shopIds": "$shop_ids",
+          "status": "$status",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_get_order",
+      "description": "Get one FBS or DBS order by id: status and all status dates, deadlines, price, items, invoice number, time slot, drop-off point and, for DBS, delivery info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id from uzum_market_list_orders."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fbs/order/{order_id}"
+      }
+    },
+    {
+      "name": "uzum_market_confirm_order",
+      "description": "Confirm a new (CREATED) FBS or DBS order so it moves to packing. Must happen before the order's acceptUntil time. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Id of the order to confirm, from uzum_market_list_orders."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/fbs/order/{order_id}/confirm"
+      }
+    },
+    {
+      "name": "uzum_market_cancel_order",
+      "description": "Cancel an FBS or DBS order with a reason (for example OUT_OF_STOCK). Cannot be undone, and cancellations affect the seller's rating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Id of the order to cancel."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "OUT_OF_STOCK",
+              "OUT_OF_PACKAGE",
+              "OUT_OF_TIME",
+              "OTHER",
+              "ACCEPTANCE_TIME_EXPIRED",
+              "DELIVERY_TIME_EXPIRED",
+              "RETURNED_BY_CUSTOMER",
+              "CANCELED_BY_CUSTOMER",
+              "MARKET_REASON"
+            ],
+            "description": "Cancellation reason. See uzum_market_list_cancel_reasons."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional free-text comment."
+          }
+        },
+        "required": [
+          "order_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/fbs/order/{order_id}/cancel",
+        "bodyMapping": {
+          "reason": "$reason",
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "uzum_market_list_cancel_reasons",
+      "description": "List the reason codes Uzum accepts when an order is cancelled or returned (OUT_OF_STOCK, OUT_OF_TIME, OTHER, ...). Reference data for uzum_market_cancel_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fbs/order/return-reasons"
+      }
+    },
+    {
+      "name": "uzum_market_list_stocks",
+      "description": "List FBS and DBS stock per SKU across the seller's shops: skuId, titles, barcode, amount, and whether FBS or DBS is allowed and linked. Page mode (newest skuId first) or cursor mode with sku_id_from (ascending, recommended for a full read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number starting at 0. Do not combine with sku_id_from.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "SKUs per page, 1 to 100. Default 50.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sku_id_from": {
+            "type": "integer",
+            "description": "Cursor: return SKUs with skuId greater than this, ascending. 0 for the first page, then the skuId of the last item. Do not combine with page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fbs/sku/stocks",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size",
+          "skuIdFrom": "$sku_id_from"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_update_stocks",
+      "description": "Set the FBS and DBS stock of one or more SKUs. Each entry overwrites the amount of the SKU identified by its Uzum barcode. Changes what buyers can order; read back with uzum_market_list_stocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "SKU stock entries, for example [{\"barcode\": \"2000000123456\", \"amount\": 10}]. barcode and amount are required; skuId may be added.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode of the SKU on Uzum, from uzum_market_list_stocks."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "New stock amount."
+                },
+                "skuId": {
+                  "type": "integer",
+                  "description": "Optional SKU id."
+                }
+              },
+              "required": [
+                "barcode",
+                "amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/fbs/sku/stocks",
+        "bodyMapping": {
+          "skuAmountList": "$items"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "uzum_market_update_prices",
+      "description": "Change the full price and sale price of the SKUs of one product in a shop. Prices are in Uzbek som. Changes live prices; check them afterwards with uzum_market_list_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop id from uzum_market_list_shops."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Product id from uzum_market_list_products."
+          },
+          "skus": {
+            "type": "array",
+            "description": "SKUs of that product with their new prices, for example [{\"skuId\": 111, \"fullPrice\": 150000, \"sellPrice\": 120000}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skuId": {
+                  "type": "integer",
+                  "description": "SKU id."
+                },
+                "fullPrice": {
+                  "type": "integer",
+                  "description": "Full (crossed-out) price, 1 to 999999000."
+                },
+                "sellPrice": {
+                  "type": "integer",
+                  "description": "Sale price, 1 to 999999000."
+                }
+              },
+              "required": [
+                "skuId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shop_id",
+          "product_id",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/{shop_id}/sendPriceData",
+        "bodyMapping": {
+          "productId": "$product_id",
+          "skuList": "$skus"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "uzum_market_list_sales",
+      "description": "List sold order items of one or more shops from the finance section: order and item, price, quantity, commission, seller profit, status (TO_WITHDRAW, PROCESSING, CANCELED, PARTIALLY_CANCELLED) and dates. Use for revenue and payout questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Shop ids from uzum_market_list_shops."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "From this moment, Unix time in milliseconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Up to this moment, Unix time in milliseconds."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "TO_WITHDRAW",
+                "PROCESSING",
+                "CANCELED",
+                "PARTIALLY_CANCELLED"
+              ]
+            },
+            "description": "Optional status filter."
+          },
+          "group": {
+            "type": "boolean",
+            "description": "true groups items by product; false (default) returns one row per order item."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Rows per page. Default 20."
+          }
+        },
+        "required": [
+          "shop_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/finance/orders",
+        "queryParams": {
+          "shopIds": "$shop_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "statuses": "$statuses",
+          "group": "$group",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_list_expenses",
+      "description": "List the seller's expenses charged by Uzum (logistics, storage, services and other payments): name, source, shop, amount, price, status and dates, as OUTCOME or INCOME. Filter by shop, period and source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional shop ids from uzum_market_list_shops."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "From this moment, Unix time in milliseconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Up to this moment, Unix time in milliseconds."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional expense sources to filter by, as returned in the source field."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Rows per page. Default 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/finance/expenses",
+        "queryParams": {
+          "shopIds": "$shop_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "sources": "$sources",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_list_supply_invoices",
+      "description": "List FBO supply invoices (deliveries of goods to Uzum warehouses) of one shop: invoice number, status, dates, quantities sent and accepted, and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop id from uzum_market_list_shops."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Invoices per page, for example 20."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shop/{shop_id}/invoice",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_list_fbs_invoices",
+      "description": "List FBS invoices (hand-over documents that group FBS orders for a drop-off point) by status: number, status, order counts, prices, drop-off point and time slot. Up to 20 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CREATED",
+                "ACCEPTANCE_IN_PROGRESS",
+                "CANCELLED",
+                "ACCEPTED"
+              ]
+            },
+            "description": "Invoice statuses to list, for example [\"CREATED\"]."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Invoices per page, at most 20.",
+            "maximum": 20
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "uz"
+            ],
+            "description": "Language of status texts: uz (default) or ru."
+          }
+        },
+        "required": [
+          "statuses"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fbs/invoice",
+        "queryParams": {
+          "statuses": "$statuses",
+          "page": "$page",
+          "size": "$size"
+        },
+        "headers": {
+          "Accept-Language": "$language"
+        }
+      }
+    },
+    {
+      "name": "uzum_market_list_returns",
+      "description": "List the seller's return invoices (goods coming back from Uzum warehouses: defects, returns, FBS): id, type, status, dates and returned SKUs with amounts. One return via return_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "integer",
+            "description": "Optional return id; omit to list all returns."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Returns per page, at most 50.",
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/return",
+        "queryParams": {
+          "returnId": "$return_id",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    }
+  ]
+}

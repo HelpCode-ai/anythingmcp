@@ -868,8 +868,9 @@ export function ToolEditor({
         )}
       </div>
 
-      {/* Body Mode — only for REST/WEBHOOK write methods */}
-      {(type === 'REST' || type === 'ODATA' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH'].includes(method) && (
+      {/* Body Mode — only for REST/WEBHOOK write methods. DELETE included:
+          the REST engine sends a mapped body on DELETE (bulk deletes). */}
+      {(type === 'REST' || type === 'ODATA' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && (
         <div className="border border-[var(--border)] rounded-md p-3 space-y-2">
           <div className="flex items-center gap-4">
             <label className="text-xs font-semibold">Request Body</label>

@@ -11,7 +11,7 @@ import {
   clientAssertionSettingsFrom,
   isPrivateKeyJwt,
 } from './client-assertion.util';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
@@ -286,7 +286,7 @@ export class OAuth2TokenService {
         {
           headers,
           timeout: 10000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions({ credentialsInBody: true }),
         },
       );
 

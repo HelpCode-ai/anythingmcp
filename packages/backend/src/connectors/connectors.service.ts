@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
@@ -10,6 +10,7 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
+import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
 import {
   interpolateConnectorConfig,
   interpolateDeep,
@@ -112,6 +113,7 @@ export class ConnectorsService {
       instructions?: string;
     },
   ): Promise<Connector> {
+    assertValidHeaderNames(data.headers, data.authConfig);
     const encryptedAuth = data.authConfig
       ? encrypt(JSON.stringify(data.authConfig), this.encryptionKey)
       : null;
@@ -151,6 +153,7 @@ export class ConnectorsService {
     }>,
   ): Promise<Connector> {
     const existing = await this.findById(id);
+    assertValidHeaderNames(data.headers, data.authConfig);
 
     const updateData: any = { ...data };
     if (data.authConfig) {
@@ -1109,4 +1112,12 @@ export interface DiscoveredMcpTool {
   endpointMapping: { method: string; path: string };
   outputSchema: Record<string, unknown> | null;
   annotations: Record<string, unknown> | null;
+}
+
+function assertValidHeaderNames(
+  headers?: Record<string, unknown> | null,
+  authConfig?: Record<string, unknown> | null,
+): void {
+  const invalid = invalidConnectorHeaderNames(headers, authConfig);
+  if (invalid.length > 0) throw new BadRequestException(describeInvalidHeaderNames(invalid));
 }

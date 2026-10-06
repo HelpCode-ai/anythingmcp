@@ -249,7 +249,7 @@ export function validateAdapter(adapter, file, region) {
     const meta = adapter.envVarMeta;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
     const KINDS = new Set(['address', 'credential', 'setting']);
-    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'link', 'advanced']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced']);
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
     } else {
@@ -276,6 +276,22 @@ export function validateAdapter(adapter, file, region) {
         for (const old of previous) {
           if (declared.includes(old)) errors.push(error('env-alias-current', `envVarAliases.${envVar}`, `"${old}" is a current variable and cannot also be a previous name`, 'List only names the adapter no longer uses.', 'adapter-fields'));
         }
+      }
+    }
+  }
+
+  if (adapter.prerequisites !== undefined && (typeof adapter.prerequisites !== 'string' || !adapter.prerequisites.trim())) {
+    errors.push(error('prerequisites', 'prerequisites', 'prerequisites must be a non-empty string', 'Say in a sentence or two what the user needs before starting, or remove the field.', 'adapter-fields'));
+  }
+  if (adapter.verifyHints !== undefined) {
+    const hints = adapter.verifyHints;
+    if (!hints || typeof hints !== 'object' || Array.isArray(hints)) {
+      errors.push(error('verify-hints-shape', 'verifyHints', 'verifyHints must map a status or failure kind to a hint', 'Use { "404": "…" } or { "404": { "hint": "…", "suggest": "other-adapter" } }.', 'adapter-fields'));
+    } else {
+      for (const [key, h] of Object.entries(hints)) {
+        const ok = typeof h === 'string' ? h.trim() : h && typeof h === 'object' && typeof h.hint === 'string' && h.hint.trim() && (h.suggest === undefined || typeof h.suggest === 'string');
+        if (!ok) errors.push(error('verify-hints-shape', `verifyHints.${key}`, 'each hint is a string or { hint, suggest? }', 'Write the hint as text; suggest is another adapter slug.', 'adapter-fields'));
+        if (!/^(\d{3}|[a-z_]+)$/.test(key)) errors.push(error('verify-hints-key', `verifyHints.${key}`, `"${key}" is neither an HTTP status nor a failure kind`, 'Key by "401", "404", … or by a kind such as "auth_failed".', 'adapter-fields'));
       }
     }
   }

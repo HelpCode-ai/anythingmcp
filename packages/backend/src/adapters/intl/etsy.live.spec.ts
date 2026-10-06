@@ -59,8 +59,9 @@ describe('etsy adapter — static spec conformance', () => {
   it('can be authorized in the browser, and still accepts a pasted refresh token', () => {
     const auth = a.connector.authConfig;
     expect(auth.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
-    // Space-separated, as Etsy documents; read-only, like every tool here.
-    expect(auth.scopes).toBe('email_r shops_r listings_r transactions_r');
+    // Space-separated, as Etsy documents. Write scopes for the listing and
+    // tracking tools; no listings_d, because no tool here deletes anything.
+    expect(auth.scopes).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
     // Etsy takes the client in the body (client_id, and the shared secret it
     // checks). Basic would change the refresh request of every Etsy row.
     expect(auth.tokenAuthMethod).toBeUndefined();

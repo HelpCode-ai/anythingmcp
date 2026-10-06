@@ -7,7 +7,7 @@ import axios from 'axios';
 const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 
 export interface ParsedTool {
   name: string;
@@ -192,7 +192,7 @@ export class OpenApiParser {
     this.logger.debug(`Fetching OpenAPI spec from: ${url}`);
 
     await assertSafeOutboundUrl(url);
-    const response = await axios.get(url, { timeout: 15000, ...ssrfGuardedAxiosOptions() });
+    const response = await axios.get(url, { timeout: 15000, ...outboundAxiosOptions() });
 
     // If the response is already a valid spec object, parse directly
     if (typeof response.data === 'object' && response.data !== null) {
@@ -244,7 +244,7 @@ export class OpenApiParser {
         await assertSafeOutboundUrl(specUrl);
         const specResp = await axios.get(specUrl, {
           timeout: 15000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions(),
         });
         return specResp.data;
       } catch {
@@ -258,7 +258,7 @@ export class OpenApiParser {
       await assertSafeOutboundUrl(initJsUrl);
       const initResp = await axios.get(initJsUrl, {
         timeout: 15000,
-        ...ssrfGuardedAxiosOptions(),
+        ...outboundAxiosOptions(),
       });
       const initJs = typeof initResp.data === 'string' ? initResp.data : '';
       // The spec is embedded as: let defined = { ... "swaggerDoc": { <the spec> }, ... }
@@ -299,7 +299,7 @@ export class OpenApiParser {
         await assertSafeOutboundUrl(candidate);
         const resp = await axios.get(candidate, {
           timeout: 5000,
-          ...ssrfGuardedAxiosOptions(),
+          ...outboundAxiosOptions(),
         });
         if (
           typeof resp.data === 'object' &&
@@ -331,7 +331,7 @@ export class OpenApiParser {
         const operation = (pathItem as any)[method];
         if (!operation) continue;
 
-        const tool = this.operationToTool(method, path, operation, api);
+        const tool = this.operationToTool(method, path, operation, api, (pathItem as any).parameters);
         if (tool) tools.push(tool);
       }
     }
@@ -345,6 +345,7 @@ export class OpenApiParser {
     path: string,
     operation: any,
     api: any,
+    pathItemParameters?: any[],
   ): ParsedTool | null {
     const name = this.generateToolName(method, path, operation);
     const description = this.generateDescription(operation);
@@ -353,9 +354,15 @@ export class OpenApiParser {
     const required: string[] = [];
     const queryParams: Record<string, string> = {};
     const bodyMapping: Record<string, string> = {};
+    const headerMapping: Record<string, string> = {};
+
+    // Parameters declared on the path item apply to every operation under it
+    // (swagger-parser does not copy them down); the operation's own entry
+    // wins on the same name + location.
+    const allParams = mergeParameters(pathItemParameters, operation.parameters);
 
     // Path parameters
-    const pathParams = (operation.parameters || []).filter(
+    const pathParams = allParams.filter(
       (p: any) => p.in === 'path',
     );
     for (const param of pathParams) {
@@ -364,7 +371,7 @@ export class OpenApiParser {
     }
 
     // Query parameters
-    const queryParamsDef = (operation.parameters || []).filter(
+    const queryParamsDef = allParams.filter(
       (p: any) => p.in === 'query',
     );
     for (const param of queryParamsDef) {
@@ -374,7 +381,7 @@ export class OpenApiParser {
     }
 
     // Header parameters (non-auth)
-    const headerParams = (operation.parameters || []).filter(
+    const headerParams = allParams.filter(
       (p: any) =>
         p.in === 'header' &&
         !['authorization', 'content-type'].includes(p.name.toLowerCase()),
@@ -382,6 +389,9 @@ export class OpenApiParser {
     for (const param of headerParams) {
       properties[param.name] = this.paramToJsonSchema(param);
       if (param.required) required.push(param.name);
+      // Sent as a header: the engine resolves `$name` from the call's
+      // arguments and leaves the header out when the value is not given.
+      headerMapping[param.name] = `$${param.name}`;
     }
 
     // Request body
@@ -421,6 +431,9 @@ export class OpenApiParser {
     }
     if (Object.keys(bodyMapping).length > 0) {
       endpointMapping.bodyMapping = bodyMapping;
+    }
+    if (Object.keys(headerMapping).length > 0) {
+      endpointMapping.headers = headerMapping;
     }
 
     const result: ParsedTool = { name, description, parameters, endpointMapping };
@@ -619,3 +632,12 @@ export class OpenApiParser {
     return result;
   }
 }
+
+/** Path-item parameters plus the operation's, the operation's entry winning on name + `in`. */
+function mergeParameters(pathItemParameters: unknown, operationParameters: unknown): any[] {
+  const list = (v: unknown): any[] => (Array.isArray(v) ? v.filter((p) => p && typeof p === 'object') : []);
+  const own = list(operationParameters);
+  const ownKeys = new Set(own.map((p) => `${p.in}:${p.name}`));
+  return [...list(pathItemParameters).filter((p) => !ownKeys.has(`${p.in}:${p.name}`)), ...own];
+}
+

@@ -1,0 +1,1129 @@
+{
+  "slug": "hetzner-cloud",
+  "name": "Hetzner Cloud",
+  "description": "Hetzner Cloud: servers with metrics and actions, images and snapshots, volumes, networks, firewalls, load balancers, IPs, SSH keys, certificates, DNS zones, server types and pricing. Power tools are installed disabled. Hetzner Cloud API v1 with a project token.",
+  "instructions": "## Hetzner Cloud\nThis connector uses the Hetzner Cloud API (`https://api.hetzner.cloud/v1`): servers, images and snapshots, volumes, private networks, firewalls, load balancers, IPs, SSH keys, certificates, DNS zones, pricing and actions. It does not cover Hetzner Robot (dedicated servers) or Storage Boxes.\n\n## Setup\nIn the Hetzner Console open your project, then **Security > API tokens > Generate API token**. Choose **Read** for a read-only connector, or **Read & Write** if you plan to enable the power tools. Copy the token into `HETZNER_CLOUD_API_TOKEN`; it is shown only once. A token belongs to one project: create one connector per project. It is sent as `Authorization: Bearer <token>`.\n\n## Start here\n`hetzner_cloud_list_servers` for what is running, `hetzner_cloud_get_server` for one server, `hetzner_cloud_get_server_metrics` for its load, `hetzner_cloud_get_pricing` and `hetzner_cloud_list_server_types` for costs. Ids are integers; most list tools also filter by exact `name` and by `label_selector` (`env=prod`, `env in (prod,staging)`, `!temporary`).\n\n## Pagination and limits\nLists return `meta.pagination` with `page`, `per_page`, `next_page` and `total_entries`. Use `page` and `per_page` (at most 50) and stop when `next_page` is null. The API allows 3600 requests per hour per project; the bucket refills one request per second. A 429 means wait.\n\n## Metrics\n`start` and `end` are RFC 3339 times. Keep the window reasonable (hours or days); `step` sets the resolution in seconds.\n\n## Power tools (disabled by default)\n`hetzner_cloud_power_on_server`, `hetzner_cloud_power_off_server`, `hetzner_cloud_shutdown_server`, `hetzner_cloud_reboot_server` and `hetzner_cloud_reset_server` are installed switched off. Enable them deliberately, with a Read & Write token. Power off and reset cut the server like pulling the plug; prefer shutdown or reboot, which ask the OS. Every power tool returns an action: poll `hetzner_cloud_get_action` until its status is success or error. A server that is off is still billed. This connector has no tool that deletes, creates or rebuilds anything.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "hetzner-cloud",
+  "docsUrl": "https://docs.hetzner.cloud/",
+  "requiredEnvVars": [
+    "HETZNER_CLOUD_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "HETZNER_CLOUD_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "help": "Hetzner Console → your project → Security → API tokens → Generate API token. Read is enough unless you enable the power tools (Read & Write). Shown only once.",
+      "link": "https://console.hetzner.com/projects",
+      "pattern": "^[A-Za-z0-9]{64}$",
+      "patternMessage": "A Hetzner Cloud token is 64 letters and digits."
+    }
+  },
+  "verifyHints": {
+    "401": "Hetzner refused the token. It may have been deleted or belong to another project; generate a new one under Security → API tokens.",
+    "403": "The token is read-only. Power tools need a Read & Write token.",
+    "rate_limited": "Hetzner allows 3600 requests per hour per project. Wait a little and try again."
+  },
+  "probe": {
+    "tool": "hetzner_cloud_list_servers",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Hetzner Cloud",
+    "type": "REST",
+    "baseUrl": "https://api.hetzner.cloud/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HETZNER_CLOUD_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "hetzner_cloud_list_servers",
+      "description": "List the servers of the project with status, server type, location, public and private IPs, image, labels, protection and traffic. Filter by name, label or status. Start here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only servers in this status.",
+            "enum": [
+              "running",
+              "initializing",
+              "starting",
+              "stopping",
+              "off",
+              "deleting",
+              "migrating",
+              "rebuilding",
+              "unknown"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "status": "$status",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_server",
+      "description": "Get one server with status, type (cores, memory, disk), datacenter, public IPv4/IPv6, private networks, attached volumes, image, backup window, labels and traffic usage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_server_metrics",
+      "description": "Get time series for one server: cpu usage, disk IOPS and bandwidth, or network packets and bandwidth, between two RFC 3339 times. Use it to check load before resizing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id."
+          },
+          "type": {
+            "type": "string",
+            "description": "Metric family: cpu, disk or network. Several can be joined with a comma."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start time, RFC 3339, for example 2026-10-05T00:00:00Z."
+          },
+          "end": {
+            "type": "string",
+            "description": "End time, RFC 3339."
+          },
+          "step": {
+            "type": "string",
+            "description": "Resolution in seconds, for example 300. Default chosen by the API to return about 200 points."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers/{id}/metrics",
+        "queryParams": {
+          "type": "$type",
+          "start": "$start",
+          "end": "$end",
+          "step": "$step"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_server_actions",
+      "description": "List the actions run on one server (power, rebuild, backup, attach, ...) with command, status, progress, start and finish times and errors. Use it to see what changed on a server.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only actions in this status.",
+            "enum": [
+              "running",
+              "success",
+              "error"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: id, command, status, started or finished, with :asc or :desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers/{id}/actions",
+        "queryParams": {
+          "status": "$status",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_action",
+      "description": "Get one action by id: command, status (running, success, error), progress in percent, affected resources and the error if it failed. Poll it after a power action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Action id from a write tool's answer or an action list."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/actions/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_images",
+      "description": "List images: system images (OS), app images, snapshots and backups, with type, OS flavor and version, architecture, size and the server it was created from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only images of this type.",
+            "enum": [
+              "system",
+              "app",
+              "snapshot",
+              "backup"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only images in this status.",
+            "enum": [
+              "available",
+              "creating",
+              "unavailable"
+            ]
+          },
+          "architecture": {
+            "type": "string",
+            "description": "Only images for this CPU architecture.",
+            "enum": [
+              "x86",
+              "arm"
+            ]
+          },
+          "include_deprecated": {
+            "type": "boolean",
+            "description": "Include deprecated system images."
+          },
+          "bound_to": {
+            "type": "integer",
+            "description": "Only backups of this server id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/images",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "type": "$type",
+          "status": "$status",
+          "architecture": "$architecture",
+          "include_deprecated": "$include_deprecated",
+          "bound_to": "$bound_to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_image",
+      "description": "Get one image: type, status, description, OS flavor and version, architecture, disk size, creation source, protection, labels and deprecation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Image id from hetzner_cloud_list_images."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/images/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_volumes",
+      "description": "List block storage volumes with size in GB, location, the server they are attached to, Linux device path, format, protection and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only volumes in this status.",
+            "enum": [
+              "available",
+              "creating"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/volumes",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "status": "$status",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_volume",
+      "description": "Get one volume: size, location, attached server, Linux device path, filesystem format, protection, labels and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Volume id from hetzner_cloud_list_volumes."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/volumes/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_networks",
+      "description": "List private networks with IP range, subnets, routes, attached servers and load balancers, and protection. Use it to understand how servers talk to each other.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/networks",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_network",
+      "description": "Get one private network with its IP range, subnets (zone, type, gateway), routes, attached servers and load balancers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Network id from hetzner_cloud_list_networks."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/networks/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_firewalls",
+      "description": "List firewalls with their inbound and outbound rules (protocol, port, source and destination IPs) and the servers or label selectors they apply to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/firewalls",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_firewall",
+      "description": "Get one firewall with every rule and the resources it is applied to. Use it to answer why a port is or is not reachable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Firewall id from hetzner_cloud_list_firewalls."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/firewalls/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_load_balancers",
+      "description": "List load balancers with type, location, public and private IPs, algorithm, services (ports, protocol, health check) and targets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/load_balancers",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_load_balancer",
+      "description": "Get one load balancer with services, health checks, targets and their health status, algorithm, network attachments and included traffic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Load balancer id from hetzner_cloud_list_load_balancers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/load_balancers/{id}"
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_load_balancer_metrics",
+      "description": "Get time series for one load balancer: open connections, connections per second, requests per second or bandwidth, between two RFC 3339 times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Load balancer id."
+          },
+          "type": {
+            "type": "string",
+            "description": "Metric: open_connections, connections_per_second, requests_per_second or bandwidth. Several can be joined with a comma."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start time, RFC 3339."
+          },
+          "end": {
+            "type": "string",
+            "description": "End time, RFC 3339."
+          },
+          "step": {
+            "type": "string",
+            "description": "Resolution in seconds."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/load_balancers/{id}/metrics",
+        "queryParams": {
+          "type": "$type",
+          "start": "$start",
+          "end": "$end",
+          "step": "$step"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_primary_ips",
+      "description": "List primary IPs (the main public IPv4/IPv6 of servers) with address, type, datacenter, assignee, auto-delete flag and reverse DNS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "ip": {
+            "type": "string",
+            "description": "Return only the primary IP with this address."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/primary_ips",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "ip": "$ip",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_floating_ips",
+      "description": "List floating IPs with address, type, home location, the server they point to, reverse DNS entries and protection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/floating_ips",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_ssh_keys",
+      "description": "List the SSH public keys stored in the project with name, fingerprint and labels. They are injected into servers at creation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "Return only the key with this MD5 fingerprint."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ssh_keys",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "fingerprint": "$fingerprint",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_certificates",
+      "description": "List TLS certificates for load balancers (uploaded or managed by Let's Encrypt) with domains, validity dates and managed status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only certificates of this type.",
+            "enum": [
+              "uploaded",
+              "managed"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/certificates",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "type": "$type",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_server_types",
+      "description": "List server types (for example cx22, cpx31, cax21) with cores, CPU type, architecture, memory, disk, included traffic and prices per location. Use it before resizing or pricing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/server_types",
+        "queryParams": {
+          "name": "$name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_locations",
+      "description": "List the locations (fsn1, nbg1, hel1, ash, hil, sin) with city, country, network zone and coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations",
+        "queryParams": {
+          "name": "$name",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_datacenters",
+      "description": "List datacenters with their location and which server types are supported and currently available there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datacenters",
+        "queryParams": {
+          "name": "$name",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_get_pricing",
+      "description": "Get the full price list of the project: per server type and location (hourly and monthly, net and gross), volumes per GB, primary and floating IPs, load balancers, traffic and backups.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pricing"
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_zones",
+      "description": "List DNS zones hosted in Hetzner DNS (Cloud API) with name, mode (primary or secondary), TTL, record count, nameservers and protection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Return only the resource with exactly this name."
+          },
+          "label_selector": {
+            "type": "string",
+            "description": "Label selector, for example env=prod or env in (prod,staging) or !temporary."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: id, name or created, with :asc or :desc, for example created:desc."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Only zones in this mode.",
+            "enum": [
+              "primary",
+              "secondary"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones",
+        "queryParams": {
+          "name": "$name",
+          "label_selector": "$label_selector",
+          "sort": "$sort",
+          "mode": "$mode",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_list_zone_rrsets",
+      "description": "List the DNS record sets of one zone (A, AAAA, CNAME, MX, TXT, ...) with name, type, TTL and values. Filter by name or type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "description": "Zone id or name, for example example.com."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only record sets with this name, for example www or @."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only record sets of this type, for example A, MX or TXT."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page, default 25, at most 50."
+          }
+        },
+        "required": [
+          "zone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone}/rrsets",
+        "queryParams": {
+          "name": "$name",
+          "type": "$type",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "hetzner_cloud_power_on_server",
+      "description": "Start a server that is off. Returns an action to follow with hetzner_cloud_get_action. Billing continues whether the server is on or off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servers/{id}/actions/poweron"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "hetzner_cloud_power_off_server",
+      "description": "Cut the power of a server immediately, like pulling the plug. Unsaved data in the guest can be lost; prefer hetzner_cloud_shutdown_server. Returns an action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servers/{id}/actions/poweroff"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "hetzner_cloud_shutdown_server",
+      "description": "Ask the guest operating system to shut down gracefully (ACPI). The server may stay on if the OS ignores the request. Returns an action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servers/{id}/actions/shutdown"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "hetzner_cloud_reboot_server",
+      "description": "Ask the guest operating system to reboot gracefully (ACPI soft reboot). Running services are interrupted while it restarts. Returns an action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servers/{id}/actions/reboot"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "hetzner_cloud_reset_server",
+      "description": "Hard-reset a server, like pressing the reset button. Unsaved data in the guest can be lost and services stop at once. Returns an action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Server id from hetzner_cloud_list_servers."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servers/{id}/actions/reset"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
