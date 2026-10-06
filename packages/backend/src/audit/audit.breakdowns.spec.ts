@@ -20,13 +20,14 @@ describe('AuditService.getBreakdowns', () => {
       .mockResolvedValueOnce([{ userId: 'u1', _count: { _all: 10 } }])
       // byUserErr
       .mockResolvedValueOnce([]);
-    const count = jest
+    // Calls are summed over repeat_count, so totals come from aggregate().
+    const aggregate = jest
       .fn()
-      .mockResolvedValueOnce(10) // total
-      .mockResolvedValueOnce(3) // errors
-      .mockResolvedValueOnce(4); // proxyCalls
+      .mockResolvedValueOnce({ _sum: { repeatCount: 10 } }) // total
+      .mockResolvedValueOnce({ _sum: { repeatCount: 3 } }) // errors
+      .mockResolvedValueOnce({ _sum: { repeatCount: 4 } }); // proxyCalls
     return {
-      toolInvocation: { groupBy, count },
+      toolInvocation: { groupBy, aggregate },
       connector: { findMany: jest.fn().mockResolvedValue([{ id: 'c1', name: 'Koch ERP' }]) },
       mcpServerConfig: { findMany: jest.fn().mockResolvedValue([{ id: 's1', name: 'KOCH Superpowers' }]) },
       user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1', email: 'a@b.c', name: 'Alice' }]) },

@@ -59,12 +59,14 @@ export class McpServersService {
       by: ['mcpServerId'],
       where: { mcpServerId: { in: serverIds }, createdAt: { gte: since } },
       _count: { _all: true },
+      _sum: { repeatCount: true },
       _max: { createdAt: true },
     });
     for (const row of rows) {
       if (!row.mcpServerId) continue;
       usage.set(row.mcpServerId, {
-        calls30d: row._count._all,
+        // A row can stand for repeats of the same failure (repeat_count).
+        calls30d: row._sum?.repeatCount ?? row._count._all,
         lastCallAt: row._max.createdAt ?? null,
       });
     }
