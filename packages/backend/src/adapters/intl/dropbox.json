@@ -2,12 +2,21 @@
   "slug": "dropbox",
   "name": "Dropbox",
   "description": "Manage Dropbox (file storage: list, download, upload, move, copy, delete, search, share, metadata) from any AI agent. 10 tools, OAuth2 token.",
-  "instructions": "This connector wraps the Dropbox API v2 (api.dropboxapi.com).\n\n**Setup — OAuth2**:\n1. Register at https://www.dropbox.com/developers/apps → **Create app** → 'Scoped access' → 'App folder' or 'Full Dropbox' depending on need.\n2. Add the scopes you need (files.metadata.read, files.content.read, files.content.write, sharing.write, ...).\n3. Generate a **Refresh token** via OAuth flow with `token_access_type=offline`.\n4. Set `DROPBOX_CLIENT_ID`, `DROPBOX_CLIENT_SECRET`, `DROPBOX_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Two API hosts**: most endpoints live at `api.dropboxapi.com/2`. Content endpoints (upload/download) use `content.dropboxapi.com/2` — out of scope here for upload (multipart streaming). Use the link-based pattern: have content already accessible via URL → use `dropbox_save_url` to ingest, or use external upload then create_shared_link to share.\n\n**Path format**: paths use `/Folder/Subfolder/File.txt` (case-insensitive, no leading drive). Root is empty string or `/`. For App-folder apps, paths are relative to the app folder.\n\n**Pagination**: most list endpoints use a `cursor` returned in the response. Pass back as `cursor` to continue.\n\n**Rate limits**: per-endpoint quotas, generally 100-1000 req/min. 429 with `Retry-After`.\n\n**Out of scope here**: direct file upload (multipart, separate API), Paper docs, team admin, the legacy v1 API.",
+  "instructions": "This connector wraps the Dropbox API v2 (api.dropboxapi.com). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Register at https://www.dropbox.com/developers/apps → **Create app** → 'Scoped access' → 'App folder' or 'Full Dropbox' depending on need.\n2. In the app's **Permissions** tab, tick `account_info.read`, `files.metadata.read`, `files.content.write` and `sharing.write`, and submit.\n3. In the **Settings** tab, add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n4. Enter the app's **App key** as `DROPBOX_CLIENT_ID` and its **App secret** as `DROPBOX_CLIENT_SECRET`, leave `DROPBOX_REFRESH_TOKEN` empty, and install.\n5. Open the connector and click **Authorize with Provider**. Sign in to Dropbox, allow access, and you land back on the connector page with the tools ready.\n\n**Scopes**: `account_info.read files.metadata.read files.content.write sharing.write`, which covers every tool here. The authorization URL carries `token_access_type=offline`, which is what makes Dropbox issue a refresh token.\n\n**Already have a refresh token?** You can paste it into `DROPBOX_REFRESH_TOKEN` instead of step 5, if you obtained it yourself for the same app with `token_access_type=offline`. Connectors set up that way keep working as they are.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Two API hosts**: most endpoints live at `api.dropboxapi.com/2`. Content endpoints (upload/download) use `content.dropboxapi.com/2` — out of scope here for upload (multipart streaming). Use the link-based pattern: have content already accessible via URL → use `dropbox_save_url` to ingest, or use external upload then create_shared_link to share.\n\n**Path format**: paths use `/Folder/Subfolder/File.txt` (case-insensitive, no leading drive). Root is empty string or `/`. For App-folder apps, paths are relative to the app folder.\n\n**Pagination**: most list endpoints use a `cursor` returned in the response. Pass back as `cursor` to continue.\n\n**Rate limits**: per-endpoint quotas, generally 100-1000 req/min. 429 with `Retry-After`.\n\n**Out of scope here**: direct file upload (multipart, separate API), Paper docs, team admin, the legacy v1 API.",
   "region": "intl",
   "category": "storage",
   "icon": "dropbox",
   "docsUrl": "https://www.dropbox.com/developers/documentation/http/documentation",
-  "requiredEnvVars": ["DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN"],
+  "requiredEnvVars": ["DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET"],
+  "optionalEnvVars": ["DROPBOX_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "DROPBOX_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Dropbox API v2",
     "type": "REST",
@@ -17,7 +26,9 @@
       "clientId": "{{DROPBOX_CLIENT_ID}}",
       "clientSecret": "{{DROPBOX_CLIENT_SECRET}}",
       "refreshToken": "{{DROPBOX_REFRESH_TOKEN}}",
-      "tokenUrl": "https://api.dropboxapi.com/oauth2/token"
+      "authorizationUrl": "https://www.dropbox.com/oauth2/authorize?token_access_type=offline",
+      "tokenUrl": "https://api.dropboxapi.com/oauth2/token",
+      "scopes": "account_info.read files.metadata.read files.content.write sharing.write"
     }
   },
   "tools": [

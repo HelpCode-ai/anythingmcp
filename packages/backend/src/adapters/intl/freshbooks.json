@@ -2,12 +2,21 @@
   "slug": "freshbooks",
   "name": "FreshBooks",
   "description": "Manage FreshBooks (invoices, clients, expenses, time entries, payments) from any AI agent. 9 tools, OAuth2 auth.",
-  "instructions": "This connector wraps the FreshBooks New API (api.freshbooks.com/accounting).\n\n**Setup — OAuth2 refresh flow**:\n1. Go to https://my.freshbooks.com/#/developer → **Create an App**. Set redirect URI to your callback.\n2. Run the auth flow: `https://my.freshbooks.com/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=user:profile:read user:clients:read user:invoices:read user:invoices:write user:expenses:read user:time_entries:read user:payments:read user:payments:write`.\n3. Exchange the code at `https://api.freshbooks.com/auth/oauth/token` for access + refresh tokens.\n4. **Account ID**: the FreshBooks API requires an Account ID (`bzz...`) on most endpoints — find it via `GET /auth/api/v1/users/me` (the `accountid` of your first business). Set `FRESHBOOKS_ACCOUNT_ID`.\n5. Set `FRESHBOOKS_CLIENT_ID`, `FRESHBOOKS_CLIENT_SECRET`, `FRESHBOOKS_REFRESH_TOKEN`, `FRESHBOOKS_ACCOUNT_ID`.\n\n**Authentication**: OAuth2 with the engine's refresh handling. Access token sent as `Bearer`. Account ID goes in the URL path on most endpoints — substituted via runtime envVar.\n\n**Two-account-types**: classic 'accounting' (US) and 'projects' (international, the new product). This adapter covers the accounting endpoints.\n\n**Response shape**: FreshBooks wraps everything in `{response: {result: {<entity_plural>: [...]}}}`. The adapter does not unwrap automatically — handle in the caller.\n\n**Pagination**: `page` (1-based) + `per_page` (max 100). Cursor on some newer endpoints.\n\n**Rate limits**: 30 req/min per token, 3600/hr. 429 → exponential.\n\n**Out of scope here**: reports, journal entries, project tracking (separate `/projects` API).",
+  "instructions": "This connector wraps the FreshBooks New API (api.freshbooks.com/accounting). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Go to https://my.freshbooks.com/#/developer → **Create an App**. Add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and select the scopes listed below.\n2. Enter the app's **Client ID** as `FRESHBOOKS_CLIENT_ID` and its **Client Secret** as `FRESHBOOKS_CLIENT_SECRET`, set `FRESHBOOKS_ACCOUNT_ID` (step 4), leave `FRESHBOOKS_REFRESH_TOKEN` empty, and install.\n3. Open the connector and click **Authorize with Provider**. Sign in to FreshBooks, allow access, and you land back on the connector page with the tools ready.\n4. **Account ID**: the FreshBooks API requires an Account ID (`bzz...`) on most endpoints. If you do not know it, install with any placeholder, authorize, run `freshbooks_me` (the `accountid` of your business) and set the real value in `FRESHBOOKS_ACCOUNT_ID`.\n\n**Scopes**: `user:profile:read user:clients:read user:clients:write user:invoices:read user:invoices:write user:expenses:read user:payments:read user:payments:write`, which covers every tool here. The app must have the same scopes selected.\n\n**Already have a refresh token?** You can paste it into `FRESHBOOKS_REFRESH_TOKEN` instead of step 3, if you obtained it yourself for the same app. FreshBooks refresh tokens work only once and only the newest one is valid, so a token you already exchanged, for example while testing it, is spent and the connector fails with `invalid_grant`. Authorizing from the connector page avoids this.\n\n**Authentication**: OAuth2 with the engine's refresh handling. Access token sent as `Bearer`. Account ID goes in the URL path on most endpoints — substituted via runtime envVar.\n\n**Two-account-types**: classic 'accounting' (US) and 'projects' (international, the new product). This adapter covers the accounting endpoints.\n\n**Response shape**: FreshBooks wraps everything in `{response: {result: {<entity_plural>: [...]}}}`. The adapter does not unwrap automatically — handle in the caller.\n\n**Pagination**: `page` (1-based) + `per_page` (max 100). Cursor on some newer endpoints.\n\n**Rate limits**: 30 req/min per token, 3600/hr. 429 → exponential.\n\n**Out of scope here**: reports, journal entries, project tracking (separate `/projects` API).",
   "region": "intl",
   "category": "accounting",
   "icon": "freshbooks",
   "docsUrl": "https://www.freshbooks.com/api/start",
-  "requiredEnvVars": ["FRESHBOOKS_CLIENT_ID", "FRESHBOOKS_CLIENT_SECRET", "FRESHBOOKS_REFRESH_TOKEN", "FRESHBOOKS_ACCOUNT_ID"],
+  "requiredEnvVars": ["FRESHBOOKS_CLIENT_ID", "FRESHBOOKS_CLIENT_SECRET", "FRESHBOOKS_ACCOUNT_ID"],
+  "optionalEnvVars": ["FRESHBOOKS_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "FRESHBOOKS_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already obtained a refresh token for the same app yourself. FreshBooks replaces the refresh token on every renewal, so a token that was already used once (to test it, say) no longer works.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "FreshBooks New API",
     "type": "REST",
@@ -17,7 +26,9 @@
       "clientId": "{{FRESHBOOKS_CLIENT_ID}}",
       "clientSecret": "{{FRESHBOOKS_CLIENT_SECRET}}",
       "refreshToken": "{{FRESHBOOKS_REFRESH_TOKEN}}",
-      "tokenUrl": "https://api.freshbooks.com/auth/oauth/token"
+      "authorizationUrl": "https://auth.freshbooks.com/oauth/authorize",
+      "tokenUrl": "https://api.freshbooks.com/auth/oauth/token",
+      "scopes": "user:profile:read user:clients:read user:clients:write user:invoices:read user:invoices:write user:expenses:read user:payments:read user:payments:write"
     }
   },
   "tools": [
