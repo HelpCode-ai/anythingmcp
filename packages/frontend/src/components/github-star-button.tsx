@@ -21,10 +21,6 @@ export function GithubStarButton() {
 
   if (!mounted || !edition || dismissed) return null;
 
-  if (process.env.NEXT_PUBLIC_HIDE_GITHUB_STAR === 'true') {
-    return null;
-  }
-
   const handleDismiss = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
