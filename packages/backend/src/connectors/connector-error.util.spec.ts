@@ -53,4 +53,8 @@ describe('classifyToolExecutionError', () => {
     expect(out.hint).not.toMatch(/no credentials configured/);
     expect(classifyToolExecutionError({ message: 'odoo.exceptions.AccessDenied' }).kind).toBe('auth_failed');
   });
+
+  it('reads a 405 like a 404: the address answers, but not as this API', () => {
+    expect(classifyToolExecutionError({ status: 405 }).kind).toBe('not_found');
+  });
 });

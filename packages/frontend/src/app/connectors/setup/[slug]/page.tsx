@@ -425,19 +425,21 @@ function SetupContent() {
                   : `${info.name} answered with an error.`}
             </p>
             <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
-            {verifyFailed.suggest && (
-              <Link
-                href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
-                className="mt-2 inline-block text-xs font-medium underline"
-              >
-                Set up {verifyFailed.suggestName ?? 'the other connector'} instead
-              </Link>
-            )}
-            {verifyFailed.kind !== 'invalid_input' && (
-              <button type="button" onClick={() => saveAnyway(false)} className="mt-2 text-xs underline">
-                Save anyway
-              </button>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {verifyFailed.suggest && (
+                <Link
+                  href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
+                  className="text-xs font-medium underline"
+                >
+                  Set up {verifyFailed.suggestName ?? 'the other connector'} instead
+                </Link>
+              )}
+              {verifyFailed.kind !== 'invalid_input' && (
+                <button type="button" onClick={() => saveAnyway(false)} className="text-xs underline">
+                  Save anyway
+                </button>
+              )}
+            </div>
           </div>
         )}
         {error && (

@@ -44,7 +44,7 @@
   },
   "verifyHints": {
     "auth_failed": "Odoo answered Access Denied: the user ID, database name and API key must belong together. The key is for the user whose ID you entered.",
-    "404": "There is no Odoo at this address, or not at its root. Check the address, without /odoo or /web."
+    "not_found": "There is no Odoo at this address, or not at its root. Check the address, without /odoo or /web."
   },
   "connector": {
     "name": "Odoo JSON-RPC",

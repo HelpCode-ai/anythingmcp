@@ -32,7 +32,7 @@
   },
   "prerequisites": "Odoo **19 or newer**: your version is at the bottom of Settings. For Odoo 14 to 18 use [Odoo 14-18 (JSON-RPC)](/connectors/setup/odoo-jsonrpc) instead. The API key needs a user on a plan with API access (Odoo Online: Custom plan).",
   "verifyHints": {
-    "404": {
+    "not_found": {
       "hint": "This Odoo has no JSON-2 API: it is older than 19, or the database name is wrong.",
       "suggest": "odoo-jsonrpc"
     },

@@ -48,7 +48,9 @@ export function classifyToolExecutionError(input: {
       hint: 'The request was rejected as invalid. Check the required parameters and their formats (the response body usually names the offending field).',
     };
   }
-  if (status === 404) {
+  // 405: something answers at this address, but not this API (a website in
+  // front, or an older version without the route). Same fix as a 404.
+  if (status === 404 || status === 405) {
     return {
       kind: 'not_found',
       hint: 'The endpoint was not found. Verify the tool path and the connector base URL.',
