@@ -188,3 +188,30 @@ describe('AdaptersController — starter pack', () => {
     expect(productEvents.log).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /api/adapters/:slug/verify — failures are recorded with the provider message', () => {
+  it('logs the kind, status and a scrubbed message, never the entered key', async () => {
+    const { controller, adaptersService, productEvents } = buildController();
+    (adaptersService as any).verifyCredentials = jest.fn().mockResolvedValue({
+      ok: false,
+      kind: 'auth_failed',
+      status: 401,
+      toolName: 'acme_ping',
+      message: 'Key k-secret-999 was refused',
+    });
+    await controller.verify(req('ADMIN'), 'acme', { credentials: { ACME_KEY: 'k-secret-999' } });
+    expect(productEvents.log).toHaveBeenCalledWith({
+      event: 'setup_verify_failed',
+      userId: 'u1',
+      organizationId: 'org1',
+      metadata: { adapterSlug: 'acme', kind: 'auth_failed', status: 401, toolName: 'acme_ping', error: 'Key *** was refused' },
+    });
+  });
+
+  it('logs nothing when the check passed', async () => {
+    const { controller, adaptersService, productEvents } = buildController();
+    (adaptersService as any).verifyCredentials = jest.fn().mockResolvedValue({ ok: true, toolName: 't', durationMs: 1, sample: '' });
+    await controller.verify(req('ADMIN'), 'acme', { credentials: {} });
+    expect(productEvents.log).not.toHaveBeenCalled();
+  });
+});

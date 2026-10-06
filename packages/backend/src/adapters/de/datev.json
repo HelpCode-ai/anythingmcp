@@ -23,6 +23,7 @@
       "link": "https://developer.datev.de"
     }
   },
+  "prerequisites": "An app in the DATEV developer portal **approved for production**. Until DATEV approves it, only the sandbox works: use [DATEV (sandbox)](/connectors/setup/datev-sandbox) to try it with test data.",
   "connector": {
     "name": "DATEV Online APIs",
     "type": "REST",

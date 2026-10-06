@@ -19,6 +19,23 @@
       "IS24_CLIENT_SECRET"
     ]
   },
+  "prerequisites": "An ImmobilienScout24 API key pair for production. Sandbox keys do not work here. Searching listings also needs ImmobilienScout24's content-partner permission; without it the API answers 403.",
+  "envVarMeta": {
+    "IS24_CONSUMER_KEY": {
+      "label": "Consumer key",
+      "kind": "credential",
+      "help": "From the ImmobilienScout24 API access you were granted (api.immobilienscout24.de).",
+      "link": "https://api.immobilienscout24.de/"
+    },
+    "IS24_CONSUMER_SECRET": {
+      "label": "Consumer secret",
+      "kind": "credential",
+      "help": "The secret of the same key pair."
+    }
+  },
+  "verifyHints": {
+    "403": "ImmobilienScout24 refused the call: the key pair has no production access for this API, or no content-partner permission for search."
+  },
   "connector": {
     "name": "ImmobilienScout24",
     "type": "REST",

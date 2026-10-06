@@ -225,7 +225,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       event: ProductEvents.SETUP_COMPLETED,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
-      metadata: { adapterSlug: slug, via: 'mcp' },
+      // A chat install checks nothing but the import probe; `verified` keeps
+      // these apart from setups that made a successful call.
+      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);

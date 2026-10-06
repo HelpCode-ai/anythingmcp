@@ -1,0 +1,405 @@
+{
+  "slug": "instagram",
+  "name": "Instagram",
+  "description": "Read an Instagram professional (business or creator) account through Meta's Instagram API with Facebook Login: profile, posts, reels and stories, account and post insights, comments and replies, hashtag search and public business profiles. Content publishing is included but installed switched off.",
+  "instructions": "## Instagram (Instagram API with Facebook Login)\nThis connector calls the Graph API at `https://graph.facebook.com/v25.0` for one Instagram professional account (business or creator) that is linked to a Facebook Page. Personal Instagram accounts have no API access.\n\n**Authentication.** Meta's Facebook Login issues no refresh tokens: a token from the login dialog lasts one to two hours, a long-lived user token about 60 days. The connector therefore takes a ready token. The recommended one is a **System User token** (Meta Business settings, Users, System users, Generate token), which does not expire. Grant it `instagram_basic`, `instagram_manage_insights`, `instagram_manage_comments`, `pages_show_list`, `pages_read_engagement` and `business_management`; add `instagram_content_publish` only if you want to publish. Assign the Facebook Page and the Instagram account to the system user as assets. A long-lived user token from the Graph API Explorer also works, but must be replaced every 60 days.\n\n**Which tool first.** `instagram_list_linked_accounts` lists the Facebook Pages the token can see with the Instagram account linked to each; the `instagram_business_account.id` there (a number starting with 1784) is the value for `INSTAGRAM_ACCOUNT_ID`. Then `instagram_get_account` checks the setup and returns follower and media counts. Tools that act on the account take its id from the connector, so you never pass it.\n\n**Ids.** Media ids come from `instagram_list_media`, `instagram_list_stories` or `instagram_list_tagged_media`; comment ids from `instagram_list_comments`; hashtag ids from `instagram_search_hashtag`. Ids are strings of digits; pass them unchanged.\n\n**Fields.** The Graph API returns only the fields you ask for. Every read tool has a `fields` parameter with a sensible default; add fields with a comma, nested fields with braces, e.g. `children{media_url}`.\n\n**Pagination.** List answers carry `paging.cursors.after` and `paging.next`. Call the tool again with `after` set to that cursor; when `paging.next` is missing you have the last page. `since` and `until` take Unix timestamps.\n\n**Insights.** Account insights need `metric` and `period=day`; most metrics also need `metric_type=total_value`. Use `views` instead of `impressions` (removed in v22.0). Demographic metrics (`follower_demographics`, `engaged_audience_demographics`) need `period=lifetime`, `metric_type=total_value`, a `timeframe` and a `breakdown` (age, city, country, gender). Data can lag up to 48 hours, accounts below 100 followers return no demographics, and a metric that does not apply returns an error rather than zero. Media insights: `reach,likes,comments,saved,shares,total_interactions,views` for posts and reels, `reach,replies,navigation,views` for stories (stories expire after 24 hours).\n\n**Hashtags.** `instagram_search_hashtag` turns a name into an id; an account can query at most 30 distinct hashtags in a rolling 7 days. Top and recent media return public posts only, without usernames. Hashtag search needs the Instagram Public Content Access feature on the app.\n\n**Publishing** (switched off at install): create a container with `instagram_create_media_container`, check `instagram_get_container_status` until `status_code` is `FINISHED` (videos take a while), then `instagram_publish_media`. Media must be at a public HTTPS URL. API publishing is limited to 50 posts per 24 hours; `instagram_get_publishing_limit` shows the usage.\n\n**Rate limits.** Business Use Case limits: about 4800 calls per 24 hours times the account's impressions. A 400 with error code 4, 17, 32 or 613 means throttled: wait and retry. Error 190 means the token expired or was revoked; error 10 or 200 means a permission is missing.",
+  "region": "intl",
+  "category": "social",
+  "icon": "instagram",
+  "docsUrl": "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login",
+  "requiredEnvVars": ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_ACCOUNT_ID"],
+  "envVarMeta": {
+    "INSTAGRAM_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "help": "Meta Business settings → Users → System users → your system user → Generate token: pick your Meta app, set expiry to Never and grant instagram_basic, instagram_manage_insights, instagram_manage_comments, pages_show_list, pages_read_engagement and business_management (plus instagram_content_publish to publish). The system user must have the Facebook Page and the Instagram account assigned.",
+      "link": "https://business.facebook.com/settings/system-users"
+    },
+    "INSTAGRAM_ACCOUNT_ID": {
+      "label": "Instagram account ID",
+      "kind": "setting",
+      "help": "The Instagram professional account id, a number starting with 1784. Meta Business settings → Accounts → Instagram accounts shows it; the instagram_list_linked_accounts tool returns it as instagram_business_account.id.",
+      "link": "https://business.facebook.com/settings/instagram-account-v2s",
+      "example": "17841400000000000",
+      "pattern": "^[0-9]{10,20}$",
+      "patternMessage": "The account id is a number of 10 to 20 digits, usually starting with 1784. It is not the Instagram username."
+    }
+  },
+  "prerequisites": "An Instagram **business or creator** account linked to a Facebook Page, a Meta app with the Instagram product, and a **System User** token from Meta Business settings. Personal Instagram accounts have no API access.",
+  "verifyHints": {
+    "400": "Meta refused the request. Error 190 means the token is invalid or expired: generate a System User token with expiry Never. If the message says the object does not exist, use the 1784... account id (not the username or the Page id) and assign the Instagram account to the system user.",
+    "401": "Meta refused the token, or it has expired (error 190). Generate a System User token with expiry Never.",
+    "403": "The token lacks a permission (error 10 or 200). Generate it again with instagram_basic, instagram_manage_insights, pages_show_list and pages_read_engagement.",
+    "rate_limited": "Meta is throttling this account or app (error 4, 17, 32 or 613). Wait a few minutes and try again."
+  },
+  "probe": { "tool": "instagram_get_account" },
+  "connector": {
+    "name": "Instagram API with Facebook Login",
+    "type": "REST",
+    "baseUrl": "https://graph.facebook.com/v25.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INSTAGRAM_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "instagram_list_linked_accounts",
+      "description": "List the Facebook Pages the token can access, each with the Instagram professional account linked to it (instagram_business_account with id and username). Use it once during setup to find the Instagram account id, or to check which accounts the token reaches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Fields per Page. Default: id,name,instagram_business_account{id,username,name}.", "default": "id,name,instagram_business_account{id,username,name}" },
+          "limit": { "type": "integer", "description": "Pages per page of results (default 25, max 100)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer, to read the next page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/accounts",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_get_account",
+      "description": "Get the configured Instagram account's profile: username, name, biography, website, followers_count, follows_count, media_count and profile picture URL. Start here to confirm the setup works and to get the headline numbers of the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url.", "default": "id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "instagram_list_media",
+      "description": "List the account's posts and reels, newest first, with caption, media_type (IMAGE, VIDEO, CAROUSEL_ALBUM), media_product_type (FEED, REELS), permalink, timestamp, like_count and comments_count. Stories are not included; use instagram_list_stories. Page with `after`; filter by date with since/until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated media fields. Default: id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url.", "default": "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url" },
+          "limit": { "type": "integer", "description": "Items per page (default 25, max 100)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." },
+          "before": { "type": "string", "description": "Cursor from paging.cursors.before, to go back one page." },
+          "since": { "type": "integer", "description": "Only media published at or after this Unix timestamp (seconds)." },
+          "until": { "type": "integer", "description": "Only media published before this Unix timestamp (seconds)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/media",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after", "before": "$before", "since": "$since", "until": "$until" }
+      }
+    },
+    {
+      "name": "instagram_get_media",
+      "description": "Get one post, reel or story by media id: caption, type, permalink, timestamp, like and comment counts, media URL and, for carousels, the child items. Use it after a list tool when you need the details or the current counts of a single item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": { "type": "string", "description": "Media id from instagram_list_media, instagram_list_stories or instagram_list_tagged_media." },
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url,children{id,media_type,media_url}.", "default": "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url,children{id,media_type,media_url}" }
+        },
+        "required": ["media_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "instagram_list_stories",
+      "description": "List the account's stories that are live now (stories disappear from the API 24 hours after posting). Returns id, media_type, media_url, permalink and timestamp. Read story insights with instagram_get_media_insights before they expire.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,media_type,media_url,thumbnail_url,permalink,timestamp.", "default": "id,media_type,media_url,thumbnail_url,permalink,timestamp" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/stories",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "instagram_list_tagged_media",
+      "description": "List public posts by other accounts in which the configured account has been tagged, with caption, permalink, username of the author and timestamp. Use it to monitor user-generated content and mentions by photo tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,caption,media_type,permalink,timestamp,username,like_count,comments_count.", "default": "id,caption,media_type,permalink,timestamp,username,like_count,comments_count" },
+          "limit": { "type": "integer", "description": "Items per page (default 25)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/tags",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_get_account_insights",
+      "description": "Get account-level insights for the configured account: reach, views, accounts_engaged, total_interactions, likes, comments, shares, saves, follows_and_unfollows, profile_links_taps, or follower and engaged-audience demographics. Returns one entry per metric with values per day (time_series) or a total for the range (total_value).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": { "type": "string", "description": "Comma-separated metrics, e.g. reach,views,accounts_engaged,total_interactions. Demographics: follower_demographics or engaged_audience_demographics (one per call)." },
+          "period": { "type": "string", "enum": ["day", "lifetime"], "description": "day for interaction metrics, lifetime for demographic metrics.", "default": "day" },
+          "metric_type": { "type": "string", "enum": ["total_value", "time_series"], "description": "total_value returns one total for the range (needed for most metrics and all breakdowns); time_series returns daily values (reach only)." },
+          "breakdown": { "type": "string", "description": "Optional split: media_product_type, follow_type or contact_button_type for interactions; age, city, country or gender for demographics." },
+          "since": { "type": "integer", "description": "Start of the range as a Unix timestamp. The range may cover at most 30 days." },
+          "until": { "type": "integer", "description": "End of the range as a Unix timestamp." },
+          "timeframe": { "type": "string", "enum": ["this_week", "this_month", "prev_month", "last_14_days", "last_30_days", "last_90_days"], "description": "Required for demographic metrics instead of since/until." }
+        },
+        "required": ["metric"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/insights",
+        "queryParams": { "metric": "$metric", "period": "$period", "metric_type": "$metric_type", "breakdown": "$breakdown", "since": "$since", "until": "$until", "timeframe": "$timeframe" }
+      }
+    },
+    {
+      "name": "instagram_get_media_insights",
+      "description": "Get lifetime insights for one post, reel or story: reach, views, likes, comments, saved, shares, total_interactions, profile_visits, follows, or for stories replies and navigation. Returns one entry per metric. Use it to compare how individual posts performed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": { "type": "string", "description": "Media id from instagram_list_media or instagram_list_stories." },
+          "metric": { "type": "string", "description": "Comma-separated metrics. Posts and reels: reach,views,likes,comments,saved,shares,total_interactions. Stories: reach,views,replies,navigation,shares.", "default": "reach,views,likes,comments,saved,shares,total_interactions" },
+          "breakdown": { "type": "string", "description": "Optional split, e.g. action_type for the navigation metric of a story." }
+        },
+        "required": ["media_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/insights",
+        "queryParams": { "metric": "$metric", "breakdown": "$breakdown" }
+      }
+    },
+    {
+      "name": "instagram_list_comments",
+      "description": "List the top-level comments on one post or reel, newest first, with text, username, timestamp, like_count, hidden flag and the replies under each comment. Use it to read the conversation on a post or to find a comment id before replying.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": { "type": "string", "description": "Media id from instagram_list_media." },
+          "fields": { "type": "string", "description": "Comma-separated comment fields. Default: id,text,username,timestamp,like_count,hidden,replies{id,text,username,timestamp}.", "default": "id,text,username,timestamp,like_count,hidden,replies{id,text,username,timestamp}" },
+          "limit": { "type": "integer", "description": "Comments per page (default 25, max 50)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["media_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/comments",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_list_comment_replies",
+      "description": "List the replies to one comment, with text, username, timestamp and like_count. Use it when a comment has more replies than instagram_list_comments returned inline, or to follow a single thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Comment id from instagram_list_comments." },
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,text,username,timestamp,like_count.", "default": "id,text,username,timestamp,like_count" },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["comment_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{comment_id}/replies",
+        "queryParams": { "fields": "$fields", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_reply_to_comment",
+      "description": "Post a public reply, as the configured account, under a comment on one of its own posts. Returns the id of the new reply. Needs the instagram_manage_comments permission. The reply is visible to everyone at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment to answer, from instagram_list_comments." },
+          "message": { "type": "string", "description": "Text of the reply. Up to 2200 characters; @mentions and hashtags are allowed." }
+        },
+        "required": ["comment_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{comment_id}/replies",
+        "queryParams": { "message": "$message" }
+      },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "instagram_hide_comment",
+      "description": "Hide or unhide a comment on one of the account's own posts. A hidden comment stays visible to its author but not to anyone else. Returns success true. Needs the instagram_manage_comments permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment, from instagram_list_comments." },
+          "hide": { "type": "boolean", "description": "true to hide the comment, false to show it again." }
+        },
+        "required": ["comment_id", "hide"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{comment_id}",
+        "queryParams": { "hide": "$hide" }
+      }
+    },
+    {
+      "name": "instagram_search_hashtag",
+      "description": "Look up a hashtag by name and return its id, which instagram_get_hashtag_top_media and instagram_get_hashtag_recent_media need. An account may query at most 30 different hashtags in a rolling 7 days, so reuse ids within a session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Hashtag name without the #, e.g. coffee." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ig_hashtag_search",
+        "queryParams": { "user_id": "{{INSTAGRAM_ACCOUNT_ID}}", "q": "$q" }
+      }
+    },
+    {
+      "name": "instagram_get_hashtag_top_media",
+      "description": "Get the most popular public posts for a hashtag, with caption, media type, permalink, like and comment counts and timestamp (no usernames). Use it to see what performs well under a hashtag; get the id from instagram_search_hashtag first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hashtag_id": { "type": "string", "description": "Hashtag id from instagram_search_hashtag." },
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,caption,media_type,permalink,like_count,comments_count,timestamp.", "default": "id,caption,media_type,permalink,like_count,comments_count,timestamp" },
+          "limit": { "type": "integer", "description": "Items per page (default 25, max 50)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["hashtag_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{hashtag_id}/top_media",
+        "queryParams": { "user_id": "{{INSTAGRAM_ACCOUNT_ID}}", "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_get_hashtag_recent_media",
+      "description": "Get public posts tagged with a hashtag in the last 24 hours, newest first, with caption, media type, permalink, counts and timestamp. Use it to monitor a campaign or branded hashtag; get the id from instagram_search_hashtag first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hashtag_id": { "type": "string", "description": "Hashtag id from instagram_search_hashtag." },
+          "fields": { "type": "string", "description": "Comma-separated fields. Default: id,caption,media_type,permalink,like_count,comments_count,timestamp.", "default": "id,caption,media_type,permalink,like_count,comments_count,timestamp" },
+          "limit": { "type": "integer", "description": "Items per page (default 25, max 50)." },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["hashtag_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{hashtag_id}/recent_media",
+        "queryParams": { "user_id": "{{INSTAGRAM_ACCOUNT_ID}}", "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "instagram_get_business_profile",
+      "description": "Look up another Instagram business or creator account by username (business discovery): followers_count, media_count, biography, website and its recent posts with like and comment counts. Use it for competitor or partner research. Personal accounts are not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Instagram username of the other professional account, without the @." }
+        },
+        "required": ["username"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}",
+        "queryParams": { "fields": "business_discovery.username(${username}){username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url,media.limit(12){id,caption,media_type,permalink,timestamp,like_count,comments_count}}" }
+      }
+    },
+    {
+      "name": "instagram_get_publishing_limit",
+      "description": "Show how many posts the account has published through the API in the current rolling 24 hours (quota_usage) and the limit (config.quota_total, normally 50). Check it before publishing several items in a row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Fields to return. Default: quota_usage,config.", "default": "quota_usage,config" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/content_publishing_limit",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "instagram_create_media_container",
+      "description": "Step 1 of publishing: create a media container for an image, a video, a reel, a story or a carousel item from a public HTTPS URL. Returns the container id. Nothing is visible until instagram_publish_media is called with that id. Containers expire after 24 hours. Needs instagram_content_publish.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": { "type": "string", "format": "uri", "description": "Public HTTPS URL of a JPEG image. Use for single images, image stories and image carousel items." },
+          "video_url": { "type": "string", "format": "uri", "description": "Public HTTPS URL of an MP4 or MOV video. Use with media_type REELS or STORIES, or for a video carousel item." },
+          "media_type": { "type": "string", "enum": ["REELS", "STORIES", "CAROUSEL", "VIDEO"], "description": "Leave empty for a single image post. REELS for videos, STORIES for stories, CAROUSEL for the parent of a carousel (with children), VIDEO for a video carousel item." },
+          "caption": { "type": "string", "description": "Caption, up to 2200 characters, 30 hashtags and 20 @mentions. Not used for stories or carousel items." },
+          "is_carousel_item": { "type": "boolean", "description": "true when this container is one item of a carousel that will be created afterwards." },
+          "children": { "type": "string", "description": "For media_type CAROUSEL: comma-separated container ids of 2 to 10 carousel items." },
+          "cover_url": { "type": "string", "format": "uri", "description": "Reels only: public URL of a cover image." },
+          "share_to_feed": { "type": "boolean", "description": "Reels only: also show the reel in the main feed (default true)." },
+          "alt_text": { "type": "string", "description": "Image posts only: alternative text for screen readers, up to 1000 characters." },
+          "location_id": { "type": "string", "description": "Optional Facebook Page id of a place to tag as location." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/media",
+        "queryParams": { "image_url": "$image_url", "video_url": "$video_url", "media_type": "$media_type", "caption": "$caption", "is_carousel_item": "$is_carousel_item", "children": "$children", "cover_url": "$cover_url", "share_to_feed": "$share_to_feed", "alt_text": "$alt_text", "location_id": "$location_id" }
+      }
+    },
+    {
+      "name": "instagram_get_container_status",
+      "description": "Check whether a media container is ready to publish. status_code is IN_PROGRESS while Instagram processes a video, FINISHED when ready, PUBLISHED after publishing, or ERROR / EXPIRED with a reason in status. Poll it about once a minute for videos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": { "type": "string", "description": "Container id returned by instagram_create_media_container." },
+          "fields": { "type": "string", "description": "Fields to return. Default: id,status_code,status.", "default": "id,status_code,status" }
+        },
+        "required": ["container_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{container_id}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "instagram_publish_media",
+      "description": "Step 2 of publishing: publish a container (status FINISHED) to the account, making the post, reel, story or carousel public at once. Returns the new media id. Counts against the limit of 50 API posts per 24 hours. Cannot be undone through the API.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creation_id": { "type": "string", "description": "Container id from instagram_create_media_container (for a carousel, the id of the CAROUSEL parent container)." }
+        },
+        "required": ["creation_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{INSTAGRAM_ACCOUNT_ID}}/media_publish",
+        "queryParams": { "creation_id": "$creation_id" }
+      },
+      "annotations": { "destructiveHint": true }
+    }
+  ]
+}

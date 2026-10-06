@@ -483,11 +483,13 @@ export interface AdapterSetupInfo {
   connector: { name: string; type: string; baseUrl: string; authType: string };
   envVars: EnvVarDescriptor[];
   setupKind: SetupKind;
+  /** What is needed before starting (Markdown), shown above the form. */
+  prerequisites?: string;
 }
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null }
+  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';

@@ -1,5 +1,5 @@
 import { ProductEventController } from './product-event.controller';
-import { ProductEventService, sanitizeSearchQuery } from './product-event.service';
+import { ProductEventService, sanitizeSearchQuery, scrubProviderMessage } from './product-event.service';
 
 function build() {
   const create = jest.fn().mockResolvedValue({});
@@ -51,5 +51,15 @@ describe('POST /api/product-events — catalog searches', () => {
     const { controller, req, stored } = build();
     await controller.record(req, { event: 'catalog_search', metadata: { query: 'me@corp.de', results: 0, via: 'welcome' } });
     expect(stored()[0].metadata).toEqual({ via: 'welcome', results: 0 });
+  });
+});
+
+describe('scrubProviderMessage', () => {
+  it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
+    expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
+    expect(scrubProviderMessage('bad key s3cr3t-value', ['s3cr3t-value'])).toBe('bad key ***');
+    expect(scrubProviderMessage(`token ${'a1'.repeat(20)} expired`)).toBe('token *** expired');
+    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(60))!.length).toBe(160);
+    expect(scrubProviderMessage('   ')).toBeNull();
   });
 });

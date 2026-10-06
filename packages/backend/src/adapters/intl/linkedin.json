@@ -8,6 +8,15 @@
   "icon": "linkedin",
   "docsUrl": "https://learn.microsoft.com/en-us/linkedin/",
   "requiredEnvVars": ["LINKEDIN_ACCESS_TOKEN"],
+  "prerequisites": "A LinkedIn developer app and an access token for it. Most organization and posting endpoints need LinkedIn's approval of the app for the relevant product (Community Management API or Marketing Developer Platform).",
+  "envVarMeta": {
+    "LINKEDIN_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "help": "LinkedIn developer portal → your app → Auth → OAuth 2.0 tools: generate a token with the scopes the app was granted. Tokens last 60 days.",
+      "link": "https://www.linkedin.com/developers/tools/oauth"
+    }
+  },
   "connector": {
     "name": "LinkedIn v2",
     "type": "REST",

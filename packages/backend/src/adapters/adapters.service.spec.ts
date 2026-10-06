@@ -410,6 +410,84 @@ describe('AdaptersService.verifyCredentials', () => {
   });
 });
 
+describe('AdaptersService.exerciseReadTools', () => {
+  const adapter: any = {
+    slug: 'acme',
+    name: 'Acme',
+    requiredEnvVars: ['ACME_KEY'],
+    connector: {
+      name: 'Acme API',
+      type: 'REST',
+      baseUrl: 'https://api.acme.example',
+      authType: 'BEARER_TOKEN',
+      authConfig: { token: '{{ACME_KEY}}' },
+    },
+    tools: [
+      { name: 'acme_list_orders', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'GET', path: '/orders' } },
+      {
+        name: 'acme_get_order',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        endpointMapping: { method: 'GET', path: '/orders/{id}' },
+      },
+      {
+        name: 'acme_search',
+        annotations: { readOnlyHint: true },
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: { method: 'POST', path: '/search' },
+      },
+      { name: 'acme_create_order', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'POST', path: '/orders' } },
+      { name: 'acme_delete_order', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'DELETE', path: '/orders/1' } },
+    ],
+  };
+
+  function build(execute: jest.Mock) {
+    const prisma = { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('runs only read-only tools, in memory, and reports shapes but no data', async () => {
+    const execute = jest.fn(async (_c: any, em: any) =>
+      em.path === '/orders' ? [{ id: 'o1', total: 99, customer: 'Jane' }] : { hits: [], total: 0 },
+    );
+    const { service, prisma } = build(execute);
+    const out = await service.exerciseReadTools(adapter, 'org1', { ACME_KEY: 'k' }, { params: { acme_get_order: { id: 'o1' } } });
+
+    expect(out.map((r) => [r.tool, r.outcome])).toEqual([
+      ['acme_list_orders', 'ok'],
+      ['acme_get_order', 'ok'],
+      ['acme_search', 'ok'],
+      ['acme_create_order', 'skipped'],
+      ['acme_delete_order', 'skipped'],
+    ]);
+    expect(execute.mock.calls.map(([, em]) => `${em.method} ${em.path}`)).toEqual([
+      'GET /orders',
+      'GET /orders/{id}',
+      'POST /search',
+    ]);
+    expect(execute.mock.calls[0][0].id).toBe('');
+    expect(out[0]).toMatchObject({ shape: 'array(1) of {id,total,customer}' });
+    expect(JSON.stringify(out)).not.toContain('Jane');
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('skips a tool whose required argument was not given, and reports errors with their status', async () => {
+    const err: any = new Error('403 Forbidden');
+    err.status = 403;
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out = await service.exerciseReadTools(adapter, 'org1', { ACME_KEY: 'k' }, { only: ['acme_list_orders', 'acme_get_order'] });
+    expect(out).toEqual([
+      expect.objectContaining({ tool: 'acme_list_orders', outcome: 'error', status: 403 }),
+      { tool: 'acme_get_order', outcome: 'skipped', reason: 'needs id' },
+    ]);
+  });
+});
+
 describe('AdaptersService.verifyCredentials on an existing connector', () => {
   it('fills a field left empty from what the connector stores, only within the organization', async () => {
     const execute = jest.fn().mockResolvedValue({ ok: 1 });

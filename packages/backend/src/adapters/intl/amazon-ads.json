@@ -1,0 +1,704 @@
+{
+  "slug": "amazon-ads",
+  "name": "Amazon Ads",
+  "description": "Read Amazon Ads (Sponsored Products) accounts: advertising profiles, campaigns, ad groups, product ads, keywords, negative keywords and targets, and request Reporting v3 performance reports for Sponsored Products, Brands and Display. For sellers, vendors and agencies, in the NA, EU and FE regions.",
+  "instructions": "## Amazon Ads (Amazon Advertising API)\nThis connector reads Sponsored Products campaigns and requests performance reports through the Amazon Ads API. It works for sellers, vendors and agencies.\n\n**Setup.** You need access to the Amazon Ads API: an approved API application and a Login with Amazon (LWA) security profile linked to it (Amazon Ads, Partner Network or advertising.amazon.com/API, apply for API access). In the LWA console (developer.amazon.com, Login with Amazon) open the security profile, Web Settings, and add the redirect URI shown on the connector page as an Allowed Return URL. Copy its client ID and client secret here, choose the three region values, save, then click **Authorize with Provider** and sign in with the Amazon account that has access to the advertising accounts. The scope is `advertising::campaign_management`.\n\n**Regions.** The API, sign-in page and token endpoint are regional. North America (US, CA, MX, BR): `https://advertising-api.amazon.com`, `https://www.amazon.com/ap/oa`, `https://api.amazon.com/auth/o2/token`. Europe (UK, DE, FR, IT, ES, NL, SE, PL, TR, AE, SA, EG, IN): `https://advertising-api-eu.amazon.com`, `https://eu.account.amazon.com/ap/oa`, `https://api.amazon.co.uk/auth/o2/token`. Far East (JP, AU, SG): `https://advertising-api-fe.amazon.com`, `https://apac.account.amazon.com/ap/oa`, `https://api.amazon.co.jp/auth/o2/token`. A connector sees only the profiles of its region; install it once per region if you advertise in several.\n\n**Profiles.** Start with `amazon_ads_list_profiles`. A profile is one advertiser in one marketplace; its `profileId` goes into every other tool as `profile_id` (sent as the `Amazon-Advertising-API-Scope` header). The client ID is sent automatically as `Amazon-Advertising-API-ClientId`. An empty list means the account has no advertising account in this region or never created a campaign.\n\n**Listing.** The Sponsored Products list tools use POST because Amazon takes the filters in the body, but they only read. `state_filter` defaults to ENABLED and PAUSED; add ARCHIVED to see old items. Narrow with `filters`, e.g. `{\"campaignIdFilter\": {\"include\": [\"123\"]}}`. Answers carry `nextToken`; pass it as `next_token` until it is missing. Ids are long numbers: treat them as strings.\n\n**Reports.** Performance figures (impressions, clicks, cost, sales, ACOS, ROAS) come only from reports. `amazon_ads_create_report` starts a job, `amazon_ads_get_report` returns its status; reports usually finish within minutes but can take up to an hour at busy times, so poll about once a minute. Most report types look back 95 days, a DAILY report covers at most 31 days, and duplicate requests return HTTP 425 with the id of the existing report. When COMPLETED, the answer holds a pre-signed `url` to a gzip-compressed JSON file, valid for about an hour. The connector cannot unpack that file: hand the link to the user or to a tool that can download and decompress it. Column names: attribution windows are part of the name (`purchases7d`, `sales14d`), cost is in the profile's currency.\n\n**Limits.** Amazon throttles per account and endpoint and answers 429 with Retry-After; wait and retry. Access tokens last one hour and are renewed automatically from the refresh token.\n\n**Not included.** Creating or changing campaigns, bids and budgets. Sponsored Brands and Sponsored Display campaign lists are not covered yet, but their performance is available through reports (`sbCampaigns`, `sdCampaigns`).",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "amazon-ads",
+  "docsUrl": "https://advertising.amazon.com/API/docs/en-us",
+  "requiredEnvVars": [
+    "AMAZON_ADS_CLIENT_ID",
+    "AMAZON_ADS_CLIENT_SECRET",
+    "AMAZON_ADS_API_URL",
+    "AMAZON_ADS_AUTHORIZATION_URL",
+    "AMAZON_ADS_TOKEN_URL"
+  ],
+  "optionalEnvVars": [
+    "AMAZON_ADS_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "AMAZON_ADS_CLIENT_ID": {
+      "label": "LWA client ID",
+      "kind": "credential",
+      "help": "developer.amazon.com → Login with Amazon → your security profile (the one linked to your Amazon Ads API application) → Web Settings → Client ID.",
+      "link": "https://developer.amazon.com/loginwithamazon/console/site/lwa/overview.html",
+      "pattern": "^amzn1\\.application-oa2-client\\.[a-f0-9]+$",
+      "patternMessage": "An LWA client ID starts with amzn1.application-oa2-client."
+    },
+    "AMAZON_ADS_CLIENT_SECRET": {
+      "label": "LWA client secret",
+      "kind": "credential",
+      "help": "Same Web Settings page → Client Secret (Show Secret).",
+      "link": "https://developer.amazon.com/loginwithamazon/console/site/lwa/overview.html"
+    },
+    "AMAZON_ADS_API_URL": {
+      "label": "API endpoint",
+      "kind": "address",
+      "help": "North America: https://advertising-api.amazon.com. Europe and India: https://advertising-api-eu.amazon.com. Far East (JP, AU, SG): https://advertising-api-fe.amazon.com.",
+      "example": "https://advertising-api-eu.amazon.com",
+      "link": "https://advertising.amazon.com/API/docs/en-us/reference/api-overview",
+      "pattern": "^https://advertising-api(-eu|-fe)?\\.amazon\\.com$",
+      "patternMessage": "One of https://advertising-api.amazon.com, https://advertising-api-eu.amazon.com or https://advertising-api-fe.amazon.com, without a trailing slash."
+    },
+    "AMAZON_ADS_AUTHORIZATION_URL": {
+      "label": "Sign-in URL",
+      "kind": "setting",
+      "help": "The Amazon sign-in page of the same region. North America: https://www.amazon.com/ap/oa. Europe: https://eu.account.amazon.com/ap/oa. Far East: https://apac.account.amazon.com/ap/oa.",
+      "example": "https://eu.account.amazon.com/ap/oa",
+      "pattern": "^https://(www\\.amazon\\.com|eu\\.account\\.amazon\\.com|apac\\.account\\.amazon\\.com)/ap/oa$",
+      "patternMessage": "One of https://www.amazon.com/ap/oa, https://eu.account.amazon.com/ap/oa or https://apac.account.amazon.com/ap/oa."
+    },
+    "AMAZON_ADS_TOKEN_URL": {
+      "label": "Token URL",
+      "kind": "setting",
+      "help": "The LWA token endpoint of the same region. North America: https://api.amazon.com/auth/o2/token. Europe: https://api.amazon.co.uk/auth/o2/token. Far East: https://api.amazon.co.jp/auth/o2/token.",
+      "example": "https://api.amazon.co.uk/auth/o2/token",
+      "pattern": "^https://api\\.amazon\\.(com|co\\.uk|co\\.jp)/auth/o2/token$",
+      "patternMessage": "One of https://api.amazon.com/auth/o2/token, https://api.amazon.co.uk/auth/o2/token or https://api.amazon.co.jp/auth/o2/token."
+    },
+    "AMAZON_ADS_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in. Paste one only if you already authorized this security profile for the Amazon Ads API elsewhere (it starts with Atzr|).",
+      "advanced": true
+    }
+  },
+  "prerequisites": "Amazon Ads API access (an approved API application) and the Login with Amazon security profile linked to it, with the redirect URI below added under Web Settings → Allowed Return URLs. Without API approval the sign-in works but every call is refused.",
+  "verifyHints": {
+    "401": "Amazon refused the access token. Click Authorize with Provider again, and check that client ID, sign-in URL and token URL belong to the same region as the API endpoint.",
+    "403": "The Amazon account has no access to this profile, or the security profile is not approved for the Amazon Ads API. Check the profile_id with amazon_ads_list_profiles.",
+    "not_found": "Wrong API endpoint. Use https://advertising-api.amazon.com, https://advertising-api-eu.amazon.com or https://advertising-api-fe.amazon.com.",
+    "rate_limited": "Amazon is throttling this account. Wait for the time in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "amazon_ads_list_profiles"
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "Amazon Ads API",
+    "type": "REST",
+    "baseUrl": "{{AMAZON_ADS_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{AMAZON_ADS_CLIENT_ID}}",
+      "clientSecret": "{{AMAZON_ADS_CLIENT_SECRET}}",
+      "refreshToken": "{{AMAZON_ADS_REFRESH_TOKEN}}",
+      "authorizationUrl": "{{AMAZON_ADS_AUTHORIZATION_URL}}",
+      "tokenUrl": "{{AMAZON_ADS_TOKEN_URL}}",
+      "scopes": "advertising::campaign_management"
+    },
+    "headers": {
+      "Amazon-Advertising-API-ClientId": "{{AMAZON_ADS_CLIENT_ID}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "amazon_ads_list_profiles",
+      "description": "List the advertising profiles the authorized Amazon account can reach in this region: profileId, countryCode, currencyCode, timezone, dailyBudget and accountInfo (seller or vendor or agency, marketplace, name). Start here: every other tool needs a profile_id from this list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_type_filter": {
+            "type": "string",
+            "description": "Only profiles of these types, comma-separated: seller, vendor, agency."
+          },
+          "access_level": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "view"
+            ],
+            "description": "Only profiles where the account has this access level for the campaign API (Amazon's default is edit)."
+          },
+          "api_program": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "report",
+              "billing",
+              "store",
+              "account",
+              "paymentMethod",
+              "posts"
+            ],
+            "description": "Only profiles with permission for this API program (Amazon's default is campaign)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/profiles",
+        "queryParams": {
+          "profileTypeFilter": "$profile_type_filter",
+          "accessLevel": "$access_level",
+          "apiProgram": "$api_program"
+        }
+      }
+    },
+    {
+      "name": "amazon_ads_get_profile",
+      "description": "Get one advertising profile by id: marketplace (countryCode), currency, timezone, daily budget and the account it belongs to. Use it to read the currency and timezone before interpreting report figures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Profile id from amazon_ads_list_profiles."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/profiles/{profile_id}"
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_campaigns",
+      "description": "List Sponsored Products campaigns of a profile: campaignId, name, state, targetingType (MANUAL or AUTO), budget, bidding strategy and placement adjustments, startDate, endDate and portfolioId. Read-only (Amazon uses POST for list calls). Page with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only campaigns in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, portfolioIdFilter, nameFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/campaigns/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spCampaign.v3+json",
+          "Accept": "application/vnd.spCampaign.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_ad_groups",
+      "description": "List Sponsored Products ad groups of a profile with adGroupId, campaignId, name, state and default bid. Filter by campaign with filters.campaignIdFilter. Read-only (Amazon uses POST for list calls). Page with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only ad groups in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, nameFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/adGroups/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spAdGroup.v3+json",
+          "Accept": "application/vnd.spAdGroup.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_product_ads",
+      "description": "List Sponsored Products product ads (the advertised ASINs or SKUs) with adId, adGroupId, campaignId, asin, sku and state. Use it to see which products are advertised in which ad group. Read-only (POST list call). Page with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only product ads in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, adIdFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/productAds/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spProductAd.v3+json",
+          "Accept": "application/vnd.spProductAd.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_keywords",
+      "description": "List Sponsored Products keywords with keywordId, adGroupId, campaignId, keywordText, matchType (EXACT, PHRASE, BROAD), bid and state. Use it to review bids and match types in manual campaigns. Read-only (POST list call). Page with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only keywords in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, keywordIdFilter, keywordTextFilter, matchTypeFilter (an array such as [\"EXACT\",\"PHRASE\"]). Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/keywords/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spKeyword.v3+json",
+          "Accept": "application/vnd.spKeyword.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_negative_keywords",
+      "description": "List Sponsored Products ad-group negative keywords with keywordId, adGroupId, campaignId, keywordText, matchType (NEGATIVE_EXACT, NEGATIVE_PHRASE) and state. Use it before suggesting new negatives, to avoid duplicates. Read-only (POST list call).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only negative keywords in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, negativeKeywordIdFilter, negativeKeywordTextFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/negativeKeywords/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spNegativeKeyword.v3+json",
+          "Accept": "application/vnd.spNegativeKeyword.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_list_sp_targets",
+      "description": "List Sponsored Products targeting clauses (product, category and auto targets) with targetId, adGroupId, campaignId, expression, resolvedExpression, expressionType, bid and state. Use it for ASIN or category targeting reviews. Read-only (POST list call). Page with next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Advertising profile id from amazon_ads_list_profiles (one per advertiser and marketplace). Sent as the Amazon-Advertising-API-Scope header."
+          },
+          "state_filter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ENABLED",
+                "PAUSED",
+                "ARCHIVED"
+              ]
+            },
+            "description": "Only targeting clauses in these states. Default ENABLED and PAUSED.",
+            "default": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, targetIdFilter, asinFilter, expressionTypeFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Items per page. Amazon uses its maximum page size when omitted."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "nextToken from the previous answer, to read the next page."
+          },
+          "include_extended_data_fields": {
+            "type": "boolean",
+            "description": "true adds servingStatus, creationDateTime and lastUpdateDateTime to each item."
+          }
+        },
+        "required": [
+          "profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sp/targets/list",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.spTargetingClause.v3+json",
+          "Accept": "application/vnd.spTargetingClause.v3+json"
+        },
+        "bodyMapping": {
+          "stateFilter": {
+            "include": "$state_filter"
+          },
+          "maxResults": "$max_results",
+          "nextToken": "$next_token",
+          "includeExtendedDataFields": "$include_extended_data_fields",
+          "__merge": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_ads_create_report",
+      "description": "Request an asynchronous performance report (Reporting v3) and get back its reportId with status PENDING. This creates a report job on Amazon's side but changes no campaign. Then poll amazon_ads_get_report until status is COMPLETED. Typical: reportTypeId spCampaigns, groupBy [\"campaign\"], timeUnit DAILY.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "Profile id from amazon_ads_list_profiles."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional name for the report, shown in its status."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. Most report types look back at most 95 days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD. At most 31 days after start_date for DAILY reports."
+          },
+          "ad_product": {
+            "type": "string",
+            "enum": [
+              "SPONSORED_PRODUCTS",
+              "SPONSORED_BRANDS",
+              "SPONSORED_DISPLAY",
+              "SPONSORED_TELEVISION",
+              "DEMAND_SIDE_PLATFORM",
+              "ALL"
+            ],
+            "description": "Advertising product the report covers.",
+            "default": "SPONSORED_PRODUCTS"
+          },
+          "report_type_id": {
+            "type": "string",
+            "description": "Report type, e.g. spCampaigns, spTargeting, spSearchTerm, spAdvertisedProduct, spPurchasedProduct, sbCampaigns, sbSearchTerm, sdCampaigns, sdTargeting.",
+            "default": "spCampaigns"
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Aggregation level allowed for the report type, e.g. [\"campaign\"], [\"adGroup\"], [\"campaign\",\"adGroup\"], [\"searchTerm\"], [\"targeting\"], [\"advertiser\"]."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns to return. Example for spCampaigns: [\"date\",\"campaignId\",\"campaignName\",\"campaignStatus\",\"impressions\",\"clicks\",\"cost\",\"purchases7d\",\"sales7d\",\"acosClicks7d\",\"roasClicks7d\"]. Use date only with timeUnit DAILY."
+          },
+          "time_unit": {
+            "type": "string",
+            "enum": [
+              "DAILY",
+              "SUMMARY"
+            ],
+            "description": "DAILY for one row per day (include the date column), SUMMARY for totals over the range (startDate and endDate columns available).",
+            "default": "DAILY"
+          },
+          "report_filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional filters as a list of {\"field\": \"...\", \"values\": [\"...\"]}, e.g. [{\"field\": \"campaignStatus\", \"values\": [\"ENABLED\"]}]. Allowed fields depend on the report type."
+          }
+        },
+        "required": [
+          "profile_id",
+          "start_date",
+          "end_date",
+          "group_by",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reporting/reports",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id",
+          "Content-Type": "application/vnd.createasyncreportrequest.v3+json"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "configuration": {
+            "adProduct": "$ad_product",
+            "reportTypeId": "$report_type_id",
+            "groupBy": "$group_by",
+            "columns": "$columns",
+            "timeUnit": "$time_unit",
+            "filters": "$report_filters",
+            "format": "GZIP_JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "amazon_ads_get_report",
+      "description": "Get the status of a report requested with amazon_ads_create_report: PENDING, PROCESSING, COMPLETED or FAILED (with failureReason). When COMPLETED, url is a pre-signed download link to the gzip-compressed JSON file, valid until urlExpiresAt (about one hour), plus fileSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "description": "The profile id the report was requested for."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "reportId returned by amazon_ads_create_report."
+          }
+        },
+        "required": [
+          "profile_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reporting/reports/{report_id}",
+        "headers": {
+          "Amazon-Advertising-API-Scope": "$profile_id"
+        }
+      }
+    }
+  ]
+}

@@ -82,7 +82,7 @@ describe('ConnectorSetupService — find', () => {
   it('records what the chat searched for and how well the catalog answered', async () => {
     const { service, ctx, productEvents } = build();
     await service.find(ctx, { query: 'etsy' });
-    await service.find(ctx, { query: 'printify shop' });
+    await service.find(ctx, { query: 'quarzwerk shop' });
     await service.find(ctx, { query: 'zzqx' });
     await service.find(ctx, {});
     const logged = productEvents.log.mock.calls.map(([e]: any) => e);
@@ -97,8 +97,8 @@ describe('ConnectorSetupService — find', () => {
     );
     expect(logged[0].metadata.adapterSlug.split(',')[0]).toBe('etsy');
     expect(logged[0].metadata.missing).toBeUndefined();
-    // "shop" returns shop connectors, but Printify itself is missing.
-    expect(logged[1].metadata).toEqual(expect.objectContaining({ query: 'printify shop', missing: 'printify' }));
+    // "shop" returns shop connectors, but the app itself is missing.
+    expect(logged[1].metadata).toEqual(expect.objectContaining({ query: 'quarzwerk shop', missing: 'quarzwerk' }));
     expect(logged[1].metadata.results).toBeGreaterThan(0);
     expect(logged[2].metadata).toEqual({ query: 'zzqx', results: 0, missing: 'zzqx', via: 'mcp' });
   });

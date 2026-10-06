@@ -1,0 +1,1102 @@
+{
+  "slug": "phorest",
+  "name": "Phorest",
+  "description": "Phorest salon and spa software: branches, staff and timetables, services and categories, clients with service and product history, appointments, free appointment slots, products and stock, gift vouchers and reviews. Phorest Third Party API with Basic auth; bookings and client creation are included but installed switched off.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "phorest",
+  "docsUrl": "https://developer.phorest.com/",
+  "prerequisites": "API credentials from Phorest: request API access through Phorest support from an e-mail address registered on your business, with your Phorest account number. You receive a username (with a global/ prefix), a password and your business id.",
+  "instructions": "## Phorest\nPhorest is salon and spa software (appointments, clients, staff, retail, vouchers). This connector uses the Phorest Third Party API. Every call is scoped to one business (`PHOREST_BUSINESS_ID`), and most to a branch (`branch_id`).\n\n## Setup\n1. API access is granted by Phorest: request it through Phorest support (https://support.phorest.com, \"API access\" ticket) from an e-mail address registered on your business, with your Phorest account number.\n2. Phorest sends a username and password. The username has a `global/` prefix, for example `global/name@example.com`; keep the prefix. Put them into `PHOREST_USERNAME` and `PHOREST_PASSWORD` (HTTP Basic auth).\n3. `PHOREST_BUSINESS_ID` is the business id that comes with the credentials (ask api-requests@phorest.com if it is missing).\n4. `PHOREST_API_URL`: `https://api-gateway-eu.phorest.com` for Europe, `https://api-gateway-us.phorest.com` for the United States, Canada and Australia. A US account on the EU host answers 401.\n\n## Start here\n- `phorest_list_branches` returns the `branchId` of each salon; pass it as `branch_id`.\n- Diary: `phorest_list_appointments` with `from_date`/`to_date` (yyyy-MM-dd, at most one month apart).\n- Client lookup: `phorest_list_clients` by `email`, `phone` or name (`~Jo%` for a prefix), then `phorest_get_client` and the history tools.\n- Free slots: `phorest_check_availability` with `service_selections` (service ids from `phorest_list_services`).\n\n## Pagination\n`page` starts at 0, `size` up to 200 (1000 for staff timetables). Answers carry `page.totalElements` and `page.totalPages`.\n\n## Data and limits\nThe API is live: it reads and changes the real salon data. Phorest does not offer card payments or Phorest Pay through the API, and no webhooks; poll with `updated_from` / `updatedAfter` filters. Date ranges on appointments, breaks and timetables are limited to one month.\n\n## Writes\nCreating clients and bookings and cancelling appointments are included but installed switched off.",
+  "requiredEnvVars": [
+    "PHOREST_API_URL",
+    "PHOREST_BUSINESS_ID",
+    "PHOREST_USERNAME",
+    "PHOREST_PASSWORD"
+  ],
+  "envVarMeta": {
+    "PHOREST_API_URL": {
+      "label": "API server (region)",
+      "kind": "address",
+      "help": "https://api-gateway-eu.phorest.com for Europe, https://api-gateway-us.phorest.com for the United States, Canada and Australia.",
+      "example": "https://api-gateway-eu.phorest.com",
+      "link": "https://developer.phorest.com/docs/getting-started",
+      "pattern": "^https://(api-gateway-(eu|us)|platform(-us)?)\\.phorest\\.com$",
+      "patternMessage": "Use https://api-gateway-eu.phorest.com or https://api-gateway-us.phorest.com, without a path or trailing slash."
+    },
+    "PHOREST_BUSINESS_ID": {
+      "label": "Business id",
+      "kind": "setting",
+      "help": "The business id Phorest sends with the API credentials. Ask api-requests@phorest.com if you do not have it.",
+      "link": "https://developer.phorest.com/docs/getting-started",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "patternMessage": "The business id only, without slashes or the URL."
+    },
+    "PHOREST_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "The API username Phorest issued, including the global/ prefix, e.g. global/name@example.com.",
+      "link": "https://developer.phorest.com/docs/getting-started",
+      "pattern": "^global/\\S+$",
+      "patternMessage": "The username starts with global/ followed by the e-mail address."
+    },
+    "PHOREST_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "help": "The password Phorest issued with the API username.",
+      "link": "https://developer.phorest.com/docs/getting-started"
+    }
+  },
+  "verifyHints": {
+    "401": "Phorest refused the login. Check the username includes the global/ prefix, the password, and that the server matches your region (EU or US/Canada/Australia).",
+    "403": "The API user has no access to this business or branch. Check the business id.",
+    "404": "Phorest did not find the business or branch. Check the business id, and use a branch_id from phorest_list_branches."
+  },
+  "probe": {
+    "tool": "phorest_list_branches",
+    "params": {
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "Phorest Third Party API",
+    "type": "REST",
+    "baseUrl": "{{PHOREST_API_URL}}/third-party-api-server/api/business/{{PHOREST_BUSINESS_ID}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{PHOREST_USERNAME}}",
+      "password": "{{PHOREST_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/branch"
+  },
+  "tools": [
+    {
+      "name": "phorest_list_branches",
+      "description": "List the branches (salons) of the Phorest business with branch id, name, address and time zone. Call it first: almost every other tool needs a branch_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_staff",
+      "description": "List the staff members of a branch with staff id, name, category, work schedule flags and archived state. Use the ids to filter appointments and timetables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only staff changed after this time, e.g. 2026-10-01T00:00:00.00Z."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only staff changed before this time."
+          },
+          "fetch_archived": {
+            "type": "boolean",
+            "description": "true to include archived staff."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/staff",
+        "queryParams": {
+          "updatedAfter": "$updated_after",
+          "updatedBefore": "$updated_before",
+          "fetch_archived": "$fetch_archived",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_staff",
+      "description": "Get one staff member of a branch by id with name, contact data, staff category, gender, online booking flags and archived state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "staff_id": {
+            "type": "string",
+            "description": "Staff id."
+          }
+        },
+        "required": [
+          "branch_id",
+          "staff_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/staff/{staff_id}"
+      }
+    },
+    {
+      "name": "phorest_list_staff_timetables",
+      "description": "List staff working hours (timetables) of a branch between two dates, at most one month apart, with each staff member's shifts and activity type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day, yyyy-MM-dd."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day (inclusive), yyyy-MM-dd, at most one month after from_date."
+          },
+          "activity_type": {
+            "type": "string",
+            "description": "Only this type of work activity."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 1000."
+          }
+        },
+        "required": [
+          "branch_id",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/staff/worktimetable",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "activity_type": "$activity_type",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_services",
+      "description": "List the services offered by a branch (cuts, colours, treatments) with service id, name, category, duration and price. Use the service ids for availability and bookings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Only services of this service category."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived services."
+          },
+          "fetch_online_category": {
+            "type": "boolean",
+            "description": "true to add the online booking categories."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/service",
+        "queryParams": {
+          "category_id": "$category_id",
+          "includeArchived": "$include_archived",
+          "fetch_online_category": "$fetch_online_category",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_service",
+      "description": "Get one branch service by id with name, category, duration, price, tax and online booking settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id."
+          },
+          "fetch_online_category": {
+            "type": "boolean",
+            "description": "true to add the online booking categories."
+          }
+        },
+        "required": [
+          "branch_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/service/{service_id}",
+        "queryParams": {
+          "fetch_online_category": "$fetch_online_category"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_service_categories",
+      "description": "List the service categories of a branch with id and name. Use the id to filter phorest_list_services.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/service-category",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_clients",
+      "description": "Search the clients of the business by e-mail, mobile, first or last name (~Jo% for prefix search), external id or change time. Returns client id, name, contact data, consents, loyalty and last visit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name; exact (John) or prefix with ~ and % (~Jo%)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name; exact (Doe) or prefix with ~ and % (~Do%)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Id the client has in another system."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only clients changed after this time, e.g. 2026-10-01T00:00:00.00Z."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only clients changed before this time."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived clients."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted clients."
+          },
+          "include_linked_clients": {
+            "type": "boolean",
+            "description": "With phone: also return clients linked to the matches."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "externalId": "$external_id",
+          "updatedAfter": "$updated_after",
+          "updatedBefore": "$updated_before",
+          "includeArchived": "$include_archived",
+          "includeDeleted": "$include_deleted",
+          "includeLinkedClients": "$include_linked_clients",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_client",
+      "description": "Get one client by id with contact data, address, birth date, notes, marketing and reminder consents, credit account, loyalty card, preferred staff and first and last visit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id from phorest_list_clients."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client/{client_id}"
+      }
+    },
+    {
+      "name": "phorest_get_client_service_history",
+      "description": "List the services a client has had: date, branch, service, staff member and price. Use it to see a client's visit history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client/{client_id}/service-history",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_client_product_history",
+      "description": "List the retail products a client has bought: date, branch, product, quantity and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client/{client_id}/product-history",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_appointments",
+      "description": "List appointments of a branch in a date range of at most one month, with client, service, staff, room, start and end time, price and state. Filter by staff, room, client or change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day, yyyy-MM-dd."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day (inclusive), yyyy-MM-dd, at most one month after from_date."
+          },
+          "staff_id": {
+            "type": "string",
+            "description": "Only this staff member."
+          },
+          "room_id": {
+            "type": "string",
+            "description": "Only this room."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Only this client."
+          },
+          "group_booking_id": {
+            "type": "string",
+            "description": "Only this group booking."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only appointments changed at or after this time (ISO 8601)."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Only appointments changed at or before this time."
+          },
+          "fetch_canceled": {
+            "type": "boolean",
+            "description": "true to include canceled appointments."
+          },
+          "fetch_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted appointments."
+          },
+          "fetch_notes": {
+            "type": "boolean",
+            "description": "true to include appointment notes."
+          },
+          "sort": {
+            "type": "string",
+            "description": "property,direction with appointmentDate or creationDate, e.g. appointmentDate,asc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/appointment",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "staff_id": "$staff_id",
+          "room_id": "$room_id",
+          "client_id": "$client_id",
+          "group_booking_id": "$group_booking_id",
+          "updated_from": "$updated_from",
+          "updated_to": "$updated_to",
+          "fetch_canceled": "$fetch_canceled",
+          "fetch_deleted": "$fetch_deleted",
+          "fetch_notes": "$fetch_notes",
+          "sort": "$sort",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_appointment",
+      "description": "Get one appointment by id with client, service, staff, room, times, price, deposit, state and booking id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "appointment_id": {
+            "type": "string",
+            "description": "Appointment id."
+          }
+        },
+        "required": [
+          "branch_id",
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/appointment/{appointment_id}"
+      }
+    },
+    {
+      "name": "phorest_check_availability",
+      "description": "Find free appointment slots in a branch for one client's chosen services between two times. Returns start times with the staff, room and service schedule of each slot. Nothing is booked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Earliest start to consider, ISO 8601, e.g. 2026-10-08T09:00:00Z."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Latest time to consider, ISO 8601."
+          },
+          "service_selections": {
+            "type": "array",
+            "description": "Services to book: [{\"serviceId\": \"...\", \"staffId\": \"optional preferred staff\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Client id, when the client is known."
+          },
+          "online_only": {
+            "type": "boolean",
+            "description": "true to consider only staff bookable online."
+          }
+        },
+        "required": [
+          "branch_id",
+          "start_time",
+          "end_time",
+          "service_selections"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/branch/{branch_id}/appointments/availability",
+        "bodyMapping": {
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "clientId": "$client_id",
+          "isOnlineAvailability": "$online_only",
+          "clientServiceSelections": [
+            {
+              "clientId": "$client_id",
+              "serviceSelections": "$service_selections"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "phorest_list_products",
+      "description": "List retail and professional products of a branch with name, barcode, type, price, cost and stock levels. Search by name or barcode, or list only out-of-stock or low-stock items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "search": {
+            "type": "string",
+            "description": "Product name or barcode."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "Only this product type, e.g. RETAIL or PROFESSIONAL."
+          },
+          "out_of_stock": {
+            "type": "boolean",
+            "description": "true for out-of-stock products only."
+          },
+          "low_stock": {
+            "type": "boolean",
+            "description": "true for low-stock products only."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived products."
+          },
+          "archived_only": {
+            "type": "boolean",
+            "description": "true for archived products only."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Changed at or after this time (ISO 8601)."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Changed at or before this time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/product",
+        "queryParams": {
+          "searchQuery": "$search",
+          "productType": "$product_type",
+          "outOfStock": "$out_of_stock",
+          "lowStock": "$low_stock",
+          "includeArchived": "$include_archived",
+          "archivedOnly": "$archived_only",
+          "updated_from": "$updated_from",
+          "updated_to": "$updated_to",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_vouchers",
+      "description": "List gift vouchers of the business with serial number, client, original and remaining balance, issue and expiry dates. Filter by client or serial number; used vouchers are left out unless asked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Only vouchers of this client."
+          },
+          "serial_number": {
+            "type": "string",
+            "description": "Voucher serial number."
+          },
+          "include_used": {
+            "type": "boolean",
+            "description": "true to include fully used vouchers."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Changed at or after this time (ISO 8601)."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Changed at or before this time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/voucher",
+        "queryParams": {
+          "clientId": "$client_id",
+          "serialNumber": "$serial_number",
+          "includeUsed": "$include_used",
+          "updated_from": "$updated_from",
+          "updated_to": "$updated_to",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_get_voucher",
+      "description": "Get one gift voucher by id with serial number, client, original and remaining balance, issue and expiry dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucher_id": {
+            "type": "string",
+            "description": "Voucher id."
+          }
+        },
+        "required": [
+          "voucher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/voucher/{voucher_id}"
+      }
+    },
+    {
+      "name": "phorest_list_reviews",
+      "description": "List client reviews of a branch with rating, text, client, staff and date. Filter by client, client or staff name, or review date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Only reviews by this client."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Client first name or surname."
+          },
+          "staff_name": {
+            "type": "string",
+            "description": "Staff first name or surname."
+          },
+          "review_date": {
+            "type": "string",
+            "description": "Date of review, yyyy-MM-dd."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/review",
+        "queryParams": {
+          "clientId": "$client_id",
+          "clientName": "$client_name",
+          "staffName": "$staff_name",
+          "reviewDate": "$review_date",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_rooms",
+      "description": "List the rooms of a branch (treatment rooms, stations) with id and name. Use the id to filter appointments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived rooms."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        },
+        "required": [
+          "branch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branch/{branch_id}/room",
+        "queryParams": {
+          "include_archived": "$include_archived",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_list_payment_types",
+      "description": "List the extra payment types configured for the business (beyond cash and card) with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, up to 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/paymenttype",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "phorest_create_client",
+      "description": "Create a client in the Phorest business with name, mobile, e-mail and consents. Returns the new client with its id. Check with phorest_list_clients first to avoid duplicates.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number with country code."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Client notes."
+          },
+          "birth_date": {
+            "type": "string",
+            "description": "Birth date, yyyy-MM-dd."
+          },
+          "gender": {
+            "type": "string",
+            "description": "FEMALE, MALE or OTHER."
+          },
+          "sms_marketing_consent": {
+            "type": "boolean",
+            "description": "Client agreed to marketing SMS."
+          },
+          "email_marketing_consent": {
+            "type": "boolean",
+            "description": "Client agreed to marketing e-mails."
+          },
+          "sms_reminder_consent": {
+            "type": "boolean",
+            "description": "Client agreed to SMS reminders."
+          },
+          "email_reminder_consent": {
+            "type": "boolean",
+            "description": "Client agreed to e-mail reminders."
+          },
+          "creating_branch_id": {
+            "type": "string",
+            "description": "Branch the client belongs to."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Id in another system."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/client",
+        "bodyMapping": {
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "mobile": "$mobile",
+          "email": "$email",
+          "notes": "$notes",
+          "birthDate": "$birth_date",
+          "gender": "$gender",
+          "smsMarketingConsent": "$sms_marketing_consent",
+          "emailMarketingConsent": "$email_marketing_consent",
+          "smsReminderConsent": "$sms_reminder_consent",
+          "emailReminderConsent": "$email_reminder_consent",
+          "creatingBranchId": "$creating_branch_id",
+          "externalId": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "phorest_create_booking",
+      "description": "Book appointments for a client in a branch: one schedule per service with staff and start time, usually taken from phorest_check_availability. Returns the booking with its appointments.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "service_schedules": {
+            "type": "array",
+            "description": "[{\"serviceId\": \"...\", \"staffId\": \"...\", \"startTime\": \"2026-10-08T10:00:00Z\"}] per service.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "Note added to the booking."
+          },
+          "force_selected_time": {
+            "type": "boolean",
+            "description": "true to book at the given time even if Phorest would not offer it."
+          }
+        },
+        "required": [
+          "branch_id",
+          "client_id",
+          "service_schedules"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/branch/{branch_id}/booking",
+        "queryParams": {
+          "force_selected_time": "$force_selected_time"
+        },
+        "bodyMapping": {
+          "clientId": "$client_id",
+          "note": "$note",
+          "clientAppointmentSchedules": [
+            {
+              "clientId": "$client_id",
+              "serviceSchedules": "$service_schedules"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "phorest_cancel_appointments",
+      "description": "Cancel one or more appointments of a branch by id. The appointments are marked canceled in the Phorest appointment book; the client may be notified by Phorest.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "description": "Branch id from phorest_list_branches."
+          },
+          "appointment_ids": {
+            "type": "array",
+            "description": "Appointment ids to cancel.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "branch_id",
+          "appointment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/branch/{branch_id}/appointment/cancel",
+        "queryParams": {
+          "appointment_id": "$appointment_ids"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

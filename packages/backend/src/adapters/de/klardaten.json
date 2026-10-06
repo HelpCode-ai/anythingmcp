@@ -1,0 +1,1655 @@
+{
+  "slug": "klardaten",
+  "name": "Klardaten (DATEV)",
+  "description": "Klardaten API over a tax advisory firm's DATEV system: client master data, income, corporate and trade tax returns, bookkeeping (postings, SuSa, bank transactions), LODAS payroll, practice management analytics and a read-only DATEVconnect passthrough.",
+  "region": "de",
+  "category": "accounting",
+  "icon": "klardaten",
+  "docsUrl": "https://api.klardaten.com/docs",
+  "prerequisites": "The Klardaten connector installed on the firm's DATEV server and a DATEV instance in the Klardaten dashboard. Tax and payroll data of the firm's clients: put this connector only on servers whose users may see all of it.",
+  "instructions": "**Sensitive data: read this first.** This connector reads a tax advisory firm's DATEV data through Klardaten: the master data, tax returns, bookkeeping and payroll of the firm's clients, including salaries, tax numbers, birth dates and bank transactions of private persons and companies. That data is covered by professional secrecy (§ 203 StGB, § 57 StBerG) and the GDPR. Add this connector only to servers whose users are allowed to see all of it, for example the partners or the staff who already have that access in DATEV. Do not add it to a shared or company-wide server. The API key acts with the DATEV profile behind it, so a model sees whatever that profile can read.\n\n**Setup**\n1. Sign in at https://dashboard.klardaten.com and create an API key for your user. It starts with `uk-` and goes into `KLARDATEN_API_KEY`; it is sent as `Authorization: Bearer`.\n2. Copy the id of the DATEV instance (a UUID, created with your consultant number when the Klardaten connector was installed on the DATEV server) into `KLARDATEN_INSTANCE_ID`. Every DATEV request carries it in the `x-client-instance-id` header. `klardaten_list_instances` lists the instances the key can reach.\n3. The Klardaten connector on the DATEV server must be running. When it is offline, DATEV calls fail while `klardaten_get_me` still works; `klardaten_get_datevconnect_health` shows the service status.\n\n**Which tool to start with**: `klardaten_get_me` to check access, then `klardaten_list_clients` (master data), `klardaten_list_accounting_clients` (bookkeeping), `klardaten_list_payroll_clients` (LODAS payroll) or `klardaten_list_firm_clients` (the firm's own practice management analytics).\n\n**Ids differ per area.** Master data uses UUIDs (`client_id`, `addressee_id`). Accounting uses a numeric `client_id` from `klardaten_list_accounting_clients`, and fiscal years are keyed by their start date as `YYYYMMDD` (e.g. `20250101`). Payroll and firm analytics use the `client_number`. Tax returns have their own `id`. Passing an id from another area is the usual cause of a 400 or 404.\n\n**Paging, fields and filters**: list tools take `page` (from 1) and `page_size` (default 100), `order_by` (`field:asc|desc`, comma-separated), `fields` (comma-separated, keeps answers small) and `filter`. A filter is `field operator value` with `eq`, `like`, `gt`, `gte`, `lt`, `lte`, `in`, `notin`, `is`, `isnot`, combined with `AND`/`OR`, e.g. `client_id eq 101 AND fiscal_year eq 20250101`. Only the fields of that endpoint are accepted; an unknown field or a wrongly formatted value returns 400. Always filter `klardaten_list_postings` by `client_id` and `fiscal_year`: across all clients of a firm the query takes about a minute and can time out.\n\n**DATEVconnect passthrough**: `klardaten_datevconnect_get` reads any DATEVconnect GET path (e.g. `master-data/v1/clients`) for data the other tools do not cover. It is read-only.\n\n**Licensing**: the Enterprise endpoints (accounting, payroll, tax, analytics) depend on the Klardaten plan; an endpoint outside the plan answers 403. `klardaten_search_documents` needs the document search add-on, which Klardaten enables per instance on request; it is installed switched off, turn it on once the add-on is active.",
+  "requiredEnvVars": [
+    "KLARDATEN_API_KEY",
+    "KLARDATEN_INSTANCE_ID"
+  ],
+  "envVarMeta": {
+    "KLARDATEN_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Klardaten dashboard → your user → API keys → create key. It starts with uk-. The key reads DATEV with your user's default profile.",
+      "link": "https://dashboard.klardaten.com",
+      "pattern": "^uk-\\S+$",
+      "patternMessage": "A Klardaten API key starts with uk-."
+    },
+    "KLARDATEN_INSTANCE_ID": {
+      "label": "DATEV instance id",
+      "kind": "setting",
+      "help": "The id of your DATEV instance in the Klardaten dashboard (a UUID). It is also returned by the instance list of the Klardaten API.",
+      "link": "https://dashboard.klardaten.com",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The instance id is a UUID, e.g. 48fa2446-c731-4a74-9ea7-b4bd6d66fe5f."
+    }
+  },
+  "verifyHints": {
+    "401": "Klardaten refused the API key. Create a new key in the Klardaten dashboard and paste it whole, starting with uk-.",
+    "403": "The key works but may not read this DATEV instance or this data area. Check that your user is assigned to the instance and that the plan includes the Enterprise API.",
+    "bad_request": "Klardaten rejected the request. Check that the instance id is the UUID of your DATEV instance.",
+    "unreachable": "The DATEV server did not answer through Klardaten. Check that the Klardaten connector and DATEVconnect are running on the DATEV server."
+  },
+  "connector": {
+    "name": "Klardaten API",
+    "type": "REST",
+    "baseUrl": "https://api.klardaten.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KLARDATEN_API_KEY}}"
+    },
+    "headers": {
+      "x-client-instance-id": "{{KLARDATEN_INSTANCE_ID}}"
+    },
+    "healthcheckPath": "/api/users/me"
+  },
+  "probe": {
+    "tool": "klardaten_list_clients",
+    "params": {
+      "page_size": 1,
+      "fields": "client_id"
+    }
+  },
+  "tools": [
+    {
+      "name": "klardaten_get_me",
+      "description": "Return the user the API key belongs to and the effective access for the configured DATEV instance. Use it first to check that the key and instance id work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/me"
+      }
+    },
+    {
+      "name": "klardaten_list_instances",
+      "description": "List the DATEV instances (client instances) the account can reach, with id, name and consultant number. Use it to find the instance id for KLARDATEN_INSTANCE_ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unassigned": {
+            "type": "boolean",
+            "description": "Include instances not assigned to the current user. Defaults to false.",
+            "default": false
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "Include deleted instances. Defaults to false.",
+            "default": false
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client-instances",
+        "queryParams": {
+          "unassigned": "$unassigned",
+          "include_deleted": "$include_deleted"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_clients",
+      "description": "List the advisory firm's DATEV clients (Mandanten) from master data: client_id, client_number, name, type, status, addresses, tax numbers and assignments. Start here to get a client_id or client_number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, client_name, client_status, client_type, updated_at."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/clients",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_client",
+      "description": "Return one DATEV client's full master data record by client_id: names, legal form, addresses, tax numbers, responsibilities and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "DATEV client id (UUID, field client_id) from klardaten_list_clients."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/clients/{client_id}"
+      }
+    },
+    {
+      "name": "klardaten_list_client_services",
+      "description": "Return the services (Leistungen) booked for one client, as recorded in DATEV master data. Use it to see which work the firm does for that client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "DATEV client id (UUID, field client_id) from klardaten_list_clients."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/clients/{client_id}/services"
+      }
+    },
+    {
+      "name": "klardaten_list_client_relationships",
+      "description": "List the relationships of one client to other addressees: shareholders, managing directors, spouses, legal representatives, with validity dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "DATEV client id (UUID, field client_id) from klardaten_list_clients."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/clients/{client_id}/relationships",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_addressees",
+      "description": "List addressees (Adressaten): people and companies in DATEV master data, with names, contact data, tax numbers and role flags such as is_client or is_employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: full_name, addressee_type, is_client, main_email, updated_at."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/addressees",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_addressee",
+      "description": "Return one addressee's full master data record by addressee_id: name, birth or foundation date, addresses, tax numbers and role flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "addressee_id": {
+            "type": "string",
+            "description": "Addressee id (UUID, field addressee_id) from klardaten_list_addressees."
+          }
+        },
+        "required": [
+          "addressee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/addressees/{addressee_id}"
+      }
+    },
+    {
+      "name": "klardaten_list_addressee_communications",
+      "description": "List the communication entries of one addressee: phone numbers, e-mail addresses, fax and web, with flags for main and invoice contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "addressee_id": {
+            "type": "string",
+            "description": "Addressee id (UUID, field addressee_id) from klardaten_list_addressees."
+          }
+        },
+        "required": [
+          "addressee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/addressees/{addressee_id}/communications"
+      }
+    },
+    {
+      "name": "klardaten_list_relationships",
+      "description": "List all relationships between addressees across the firm's master data (shareholdings, representation, family links), with source, target and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: relationship_type, source_addressee_id, target_addressee_id, updated_at."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/relationships",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_relationship",
+      "description": "Return one relationship by relationship_id, with source and target addressee, type, validity dates and share details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "relationship_id": {
+            "type": "string",
+            "description": "Relationship id from klardaten_list_relationships or klardaten_list_client_relationships."
+          }
+        },
+        "required": [
+          "relationship_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/relationships/{relationship_id}"
+      }
+    },
+    {
+      "name": "klardaten_list_filing_standards",
+      "description": "List the firm's filing standards (Ablage-Knigge): document classes with their standard folder and register, used to file documents in DATEV DMS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: document_class, name, standard_folder."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/documents/filing-standards",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_documents",
+      "description": "List documents in DATEV DMS (metadata only, no file content): document number, client, folder, register, year, month, extension, creator and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: object_id, year, month, folder, register, extension, created_at."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/master-data/documents",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_income_tax_filings",
+      "description": "List income tax (Einkommensteuer) returns in DATEV: id, client_number, year, status, ELSTER transmission status and dates, and notice status. Use the id with the get tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, year, status, transmission_status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/income-tax",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_income_tax_filing",
+      "description": "Return one income tax return by id: year, status, ELSTER transmission and tax office arrival dates, objection status and client number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_income_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/income-tax/{id}"
+      }
+    },
+    {
+      "name": "klardaten_get_income_tax_data",
+      "description": "Return the form data of one income tax return by id, as name and content pairs. Use it to read the values entered in the return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_income_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/income-tax/{id}/data"
+      }
+    },
+    {
+      "name": "klardaten_list_corp_tax_filings",
+      "description": "List corporate tax (Körperschaftsteuer) returns in DATEV: id, client_number, year, status, ELSTER transmission status and dates, and notice status. Use the id with the get tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, year, status, transmission_status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/corp-tax",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_corp_tax_filing",
+      "description": "Return one corporate tax return by id: year, status, ELSTER transmission and tax office arrival dates, objection status and client number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_corp_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/corp-tax/{id}"
+      }
+    },
+    {
+      "name": "klardaten_get_corp_tax_data",
+      "description": "Return the form data of one corporate tax return by id, as name and content pairs. Use it to read the values entered in the return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_corp_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/corp-tax/{id}/data"
+      }
+    },
+    {
+      "name": "klardaten_list_trade_tax_filings",
+      "description": "List trade tax (Gewerbesteuer) returns in DATEV: id, client_number, year, status, ELSTER transmission status and dates, and notice status. Use the id with the get tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, year, status, transmission_status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/trade-tax",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_trade_tax_filing",
+      "description": "Return one trade tax return by id: year, status, ELSTER transmission and tax office arrival dates, objection status and client number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_trade_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/trade-tax/{id}"
+      }
+    },
+    {
+      "name": "klardaten_get_trade_tax_data",
+      "description": "Return the form data of one trade tax return by id, as name and content pairs. Use it to read the values entered in the return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id (field id) from klardaten_list_trade_tax_filings."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/trade-tax/{id}/data"
+      }
+    },
+    {
+      "name": "klardaten_list_tax_calculations",
+      "description": "List the tax calculations DATEV holds for one client and tax application, with tax years and calculation ids. Use it before klardaten_get_tax_calculation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application": {
+            "type": "string",
+            "enum": [
+              "income-tax",
+              "corp-tax",
+              "trade-tax",
+              "vat-return"
+            ],
+            "description": "DATEV tax application: income-tax, corp-tax, trade-tax or vat-return."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "DATEV client id (UUID, MandantenId) from klardaten_list_clients."
+          }
+        },
+        "required": [
+          "application",
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/{application}/clients/{client_id}/calculations"
+      }
+    },
+    {
+      "name": "klardaten_get_tax_calculation",
+      "description": "Return the calculated tax values of one client, tax application and tax year from DATEV, e.g. assessed tax and prepayments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application": {
+            "type": "string",
+            "enum": [
+              "income-tax",
+              "corp-tax",
+              "trade-tax",
+              "vat-return"
+            ],
+            "description": "DATEV tax application: income-tax, corp-tax, trade-tax or vat-return."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "DATEV client id (UUID, MandantenId) from klardaten_list_clients."
+          },
+          "tax_year": {
+            "type": "integer",
+            "description": "Tax year, four digits, e.g. 2025."
+          },
+          "calculation_id": {
+            "type": "string",
+            "description": "Calculation id from klardaten_list_tax_calculations. Needed only when the year has more than one calculation."
+          }
+        },
+        "required": [
+          "application",
+          "client_id",
+          "tax_year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tax/{application}/clients/{client_id}/tax-years/{tax_year}/calculation",
+        "queryParams": {
+          "calculation_id": "$calculation_id"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_payroll_clients",
+      "description": "List the payroll clients in DATEV LODAS: client_number, consultant number, short company name and billing status. Start here for payroll; the client_number is used by the other payroll tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, company_name_short, billing_status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hr-lodas/clients",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_payroll_employees",
+      "description": "List the employees of one LODAS payroll client: personnel number, name, address, entry and exit dates, tax and social security data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_number": {
+            "type": "string",
+            "description": "LODAS client number (field client_number) from klardaten_list_payroll_clients."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller."
+          }
+        },
+        "required": [
+          "client_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hr-lodas/clients/{client_number}/employees",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_payroll_employee",
+      "description": "Return one employee's payroll master record from LODAS by client number and personnel number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_number": {
+            "type": "string",
+            "description": "LODAS client number (field client_number) from klardaten_list_payroll_clients."
+          },
+          "employee_number": {
+            "type": "string",
+            "description": "Personnel number of the employee from klardaten_list_payroll_employees."
+          }
+        },
+        "required": [
+          "client_number",
+          "employee_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hr-lodas/clients/{client_number}/employees/{employee_number}"
+      }
+    },
+    {
+      "name": "klardaten_list_payroll_salaries",
+      "description": "List the fixed salary components of a LODAS payroll client: employee number, wage type, amount, interval and validity. Contains pay data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_number": {
+            "type": "string",
+            "description": "LODAS client number (field client_number) from klardaten_list_payroll_clients."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller."
+          }
+        },
+        "required": [
+          "client_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hr-lodas/clients/{client_number}/salaries",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_payroll_transaction_data",
+      "description": "List the standard transaction data (Bewegungsdaten) of a LODAS payroll client: billing period, employee, wage type, value, cost center.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_number": {
+            "type": "string",
+            "description": "LODAS client number (field client_number) from klardaten_list_payroll_clients."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller."
+          }
+        },
+        "required": [
+          "client_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/hr-lodas/clients/{client_number}/transaction-data/standard",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_accounting_clients",
+      "description": "List the clients that have DATEV accounting (Rechnungswesen) data: accounting client_id (numeric), client_number, name and the master data id. Start here for bookkeeping.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounting/clients"
+      }
+    },
+    {
+      "name": "klardaten_list_fiscal_years",
+      "description": "List the fiscal years of one accounting client: fiscal_year key (start date as YYYYMMDD), start and end, chart of accounts (SKR), currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Numeric accounting client id (field client_id) from klardaten_list_accounting_clients. Not the master data UUID."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounting/clients/{client_id}/fiscal-years"
+      }
+    },
+    {
+      "name": "klardaten_list_bank_transactions",
+      "description": "List the bank transactions of one accounting client and fiscal year: value and booking date, amount, statement number, counterparty and whether it is processed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Numeric accounting client id (field client_id) from klardaten_list_accounting_clients. Not the master data UUID."
+          },
+          "fiscal_year": {
+            "type": "string",
+            "description": "Fiscal year key from klardaten_list_fiscal_years: the start date as YYYYMMDD, e.g. 20250101."
+          }
+        },
+        "required": [
+          "client_id",
+          "fiscal_year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounting/clients/{client_id}/fiscal-years/{fiscal_year}/bank-transactions"
+      }
+    },
+    {
+      "name": "klardaten_list_postings",
+      "description": "List bookkeeping postings (Buchungen): date, account, contra account, amount, tax, posting text and document fields. Always filter by client_id and fiscal_year, e.g. client_id eq 101 AND fiscal_year eq 20250101; across all clients a query takes a minute or times out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_id, fiscal_year, date, account_number, contra_account_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounting/postings",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_susa",
+      "description": "Return the monthly trial balance (Summen- und Saldenliste, SuSa) of one accounting client: per account the debit and credit totals and the balance up to the given month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Numeric accounting client id (field client_id) from klardaten_list_accounting_clients. Not the master data UUID."
+          },
+          "year": {
+            "type": "integer",
+            "description": "Calendar year of the fiscal year, e.g. 2025."
+          },
+          "month": {
+            "type": "integer",
+            "description": "Month 1 to 12; totals and balances include all months up to this one."
+          }
+        },
+        "required": [
+          "client_id",
+          "year",
+          "month"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounting/susa/monthly/{client_id}/{year}/{month}"
+      }
+    },
+    {
+      "name": "klardaten_list_firm_clients",
+      "description": "Firm analytics: list clients as seen by the firm's own DATEV practice management, with client group, branch, subject area, responsible persons and mandate dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, client_name, client_group_code, branch_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/clients",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_employees",
+      "description": "Firm analytics: list the firm's own staff from DATEV practice management, with number, name, group, branch and employment dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: employee_number, employee_last_name, branch_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/employees",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_orders",
+      "description": "Firm analytics: list orders (Aufträge) with order number, description, assessment year, client, responsible person, cost center and status. Use for workload and billing questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, creation_year, assessment_year, application_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/applications",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_order_values",
+      "description": "Firm analytics: list order values per order: total fees, expenses, advances, outstanding fees and time costs. Use to compare effort and revenue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: order_number, creation_year."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/order-values",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_expenses",
+      "description": "Firm analytics: list recorded efforts and expenses per order and sub-order, with employee, billing month, quantity and value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: order_number, employee_number, billing_month_start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/expenses",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_processing_status",
+      "description": "Firm analytics: list the processing status steps of orders, with planned and actual date and employee per step. Use to see what is overdue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: order_number, planned_date, actual_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/processing-status",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_fees",
+      "description": "Firm analytics: list fee positions per order and sub-order under the StBVV, with fee number, legal basis and amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: order_number, creation_year, fee_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/fees",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_partial_orders",
+      "description": "Firm analytics: list partial orders (Teilaufträge) with work period, invoicing milestones, revenue, fees, expenses and advance payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: order_number, invoiced_date, billing_month_start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/partial-orders",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_invoices",
+      "description": "Firm analytics: list the firm's outgoing invoices: invoice number and date, client, net, VAT and gross amount, credit and cancellation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: client_number, invoice_year, invoice_date, invoice_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/invoices",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_list_firm_capacity_planning",
+      "description": "Firm analytics: list monthly capacity per employee: total, planned, free, overtime and non-plannable capacity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Defaults to 100."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order as field:direction pairs, comma-separated, e.g. updated_at:desc,client_number:asc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return, e.g. client_id,client_number,client_name. Leave empty for all fields; narrowing keeps answers small."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression 'field operator value'. Operators: eq, like, gt, gte, lt, lte, in, notin, is, isnot. Combine with AND / OR and parentheses, e.g. client_status eq 1 AND client_name like Müller. Useful fields: calendar_year, calendar_month, employee_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/capacity-planning/employees/monthly",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "order_by": "$order_by",
+          "fields": "$fields",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_firm_order_categories",
+      "description": "Firm analytics: return revenue, costs and contribution margins by order group for one client, for the latest fully invoiced year of each group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_number": {
+            "type": "string",
+            "description": "Client number (field client_number) from klardaten_list_firm_clients."
+          },
+          "apply_ja_exception": {
+            "type": "boolean",
+            "description": "Apply the annual financial statement (JA) exception to the named order group and type."
+          },
+          "order_group_name": {
+            "type": "string",
+            "description": "Order group the JA exception applies to."
+          },
+          "order_type_name": {
+            "type": "string",
+            "description": "Order type the JA exception applies to."
+          }
+        },
+        "required": [
+          "client_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/analytics/tax-advisory/order-categories-details/{client_number}",
+        "queryParams": {
+          "apply_ja_exception": "$apply_ja_exception",
+          "order_group_name": "$order_group_name",
+          "order_type_name": "$order_type_name"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_datevconnect_health",
+      "description": "Return the latest service status changes of DATEVconnect on the configured instance (up to 100, last 30 days). Use it when DATEV calls fail or time out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z. Data is kept for 30 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/datev-connect-health",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "klardaten_get_usage_stats",
+      "description": "Return API usage of the configured instance in time bins: request count and average response time per status class.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z. Data is kept for 30 days."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "granularity_minutes": {
+            "type": "integer",
+            "description": "Bin size in minutes, at least 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/monitoring/instance/{{KLARDATEN_INSTANCE_ID}}/usage-stats",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "granularity_minutes": "$granularity_minutes"
+        }
+      }
+    },
+    {
+      "name": "klardaten_datevconnect_get",
+      "description": "Read any DATEVconnect endpoint through the Klardaten gateway (GET only), for data the other tools do not cover, e.g. master-data/v1/clients or accounting/v1/clients. Returns DATEV's own JSON.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "DATEVconnect path without a leading slash, e.g. master-data/v1/clients or hr/v1/clients. See DATEV's DATEVconnect API documentation for the paths."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional query string without the leading ?, e.g. top=50&skip=0. Passed through to DATEVconnect unchanged."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datevconnect/{path}",
+        "queryParams": {
+          "__rawquery": "$query"
+        }
+      }
+    },
+    {
+      "name": "klardaten_search_documents",
+      "description": "Search the indexed DATEV DMS documents with a natural-language query in German or English and return the best matches with snippets. Needs Klardaten's document search add-on; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for, e.g. Rechnung 471102 Lieferant GmbH."
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Number of documents to return, 1 to 20. Defaults to 5."
+          },
+          "include_chunks": {
+            "type": "boolean",
+            "description": "Include the matched text passages. Defaults to false."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional metadata filters, e.g. {\"client_id\": \"...\"}. Keys: client_id, dms_document_number, folder_id, register_id, extension, filename."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/document-search",
+        "bodyMapping": {
+          "query": "$query",
+          "top_k": "$top_k",
+          "include_chunks": "$include_chunks",
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

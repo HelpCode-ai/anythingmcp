@@ -1,0 +1,1122 @@
+{
+  "slug": "superchat",
+  "name": "Superchat",
+  "description": "Superchat shared inbox for WhatsApp, Instagram, Facebook, SMS, Telegram, live chat and e-mail: conversations and their messages, contacts, templates, files, labels and users, plus sending messages and WhatsApp templates.",
+  "region": "de",
+  "category": "messaging",
+  "icon": "superchat",
+  "docsUrl": "https://developers.superchat.com/reference/welcome",
+  "instructions": "**Getting the API key**: in Superchat open **Settings → Integrations → API** (https://app.superchat.de/settings/integrations). Only workspace administrators see the key. Put it in `SUPERCHAT_API_KEY`; it is sent in the `X-API-KEY` header. The key has full read and write access to the workspace, so every user of this server can read all conversations and, with the send tools switched on, write to customers.\n\n**Rate limit**: 2500 requests per 5 minutes per workspace, shared by all keys of that workspace. Above that Superchat answers 429 until the window resets.\n\n**Pagination**: list tools return `{url, results, pagination}`. Pass `pagination.next_cursor` as `after` to get the next page and `pagination.previous_cursor` as `before` to go back. `limit` is 1 to 100 (default 20 for messages, 50 for templates).\n\n**Ids**: every object has a string id with a type prefix. A channel id (from `superchat_list_channels`) is the sender of every message. Conversations come from `superchat_list_conversations` or, for one person, from `superchat_search_contacts` followed by `superchat_list_contact_conversations`.\n\n**Which tool to start with**: `superchat_get_me` checks the key. To read a customer's thread: `superchat_search_contacts` (by e-mail, phone in E.164 format, or Instagram username) → `superchat_list_contact_conversations` → `superchat_list_conversation_messages`.\n\n**Sending rules** (enforced by Meta, not by Superchat):\n- WhatsApp: free text is delivered only within 24 hours of the contact's last inbound message. To write first, or later, send an approved WhatsApp template with `superchat_send_template`; `superchat_get_conversation` shows whether the time window is open. Templates are billed by Meta.\n- Instagram and Facebook: replies only, within 7 days of the contact's last message. You cannot start a conversation.\n- SMS and e-mail: no time window; you need the contact's consent.\nSending to a new phone number or e-mail address creates a contact automatically.\n\n**Write tools**: `superchat_send_message`, `superchat_send_template` and `superchat_send_email` reach customers and cannot be undone; they install switched off. `superchat_create_contact`, `superchat_update_contact`, `superchat_update_conversation` and `superchat_create_note` change the workspace. `superchat_update_contact` writes name and gender every time: read the contact first and pass the current values. Notes are internal and never sent.",
+  "requiredEnvVars": [
+    "SUPERCHAT_API_KEY"
+  ],
+  "envVarMeta": {
+    "SUPERCHAT_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Superchat → Settings → Integrations → API. Only administrators of the workspace can see it.",
+      "link": "https://app.superchat.de/settings/integrations"
+    }
+  },
+  "verifyHints": {
+    "401": "Superchat refused the API key. Copy it again from Settings → Integrations → API, as an administrator of the workspace.",
+    "rate_limited": "The workspace used its 2500 requests for this 5-minute window. Try again in a few minutes."
+  },
+  "connector": {
+    "name": "Superchat API",
+    "type": "REST",
+    "baseUrl": "https://api.superchat.com/v1.0",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{SUPERCHAT_API_KEY}}"
+    },
+    "healthcheckPath": "/me"
+  },
+  "probe": {
+    "tool": "superchat_get_me"
+  },
+  "tools": [
+    {
+      "name": "superchat_get_me",
+      "description": "Return the Superchat user the API key belongs to and the workspace name. No parameters; use it to check that the key works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "superchat_list_channels",
+      "description": "List the workspace's message channels (WhatsApp numbers, Instagram and Facebook pages, e-mail, SMS, Telegram, live chat) with id, type and name. The channel id is the sender for every message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_channel",
+      "description": "Return one message channel by id: type, name and configuration. Use it to confirm which number or address a channel sends from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id, from superchat_list_channels."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}"
+      }
+    },
+    {
+      "name": "superchat_list_inboxes",
+      "description": "List the inboxes of the workspace (teams or queues conversations are routed to), with id and name. Use the id to assign a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inboxes",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_users",
+      "description": "List the users of the workspace with id, name, e-mail, phone and role. Use the id to assign a conversation to someone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_labels",
+      "description": "List the conversation labels of the workspace with id and name. Use the id to label a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_conversations",
+      "description": "List conversations with status (open, done, snoozed, archived, spam), channel, inbox, labels, assigned users, contacts and the messaging time window. Newest first, paged with cursors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_conversation",
+      "description": "Return one conversation by id: status, channel, inbox, labels, assigned users, contacts and whether the WhatsApp or Instagram time window is still open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id, from superchat_list_conversations or superchat_list_contact_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}"
+      }
+    },
+    {
+      "name": "superchat_list_conversation_messages",
+      "description": "List the messages of one conversation, inbound and outbound, with content, sender, status and time. Filter by direction or time to read only the recent part of a thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id, from superchat_list_conversations."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "INBOUND",
+              "OUTBOUND"
+            ],
+            "description": "Only messages received (INBOUND) or sent (OUTBOUND)."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only messages created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only messages created before this ISO 8601 time."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}/messages",
+        "queryParams": {
+          "direction": "$direction",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_message",
+      "description": "Return one message by id with its content, channel, sender, recipient and delivery status. Use it to check whether a sent message was delivered or failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id, from superchat_list_conversation_messages or the answer of a send tool."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{message_id}"
+      }
+    },
+    {
+      "name": "superchat_list_conversation_notes",
+      "description": "List the internal notes on one conversation (visible to the team only, never sent to the contact), with author and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id, from superchat_list_conversations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}/notes",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_contacts",
+      "description": "List contacts with name, gender, handles (phone numbers, e-mail addresses, Instagram) and custom attributes. Paged with cursors; to find one person use superchat_search_contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_contact",
+      "description": "Return one contact by id with name, gender, all handles and custom attribute values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, from superchat_list_contacts or superchat_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "superchat_search_contacts",
+      "description": "Find contacts by e-mail address, phone number or Instagram username (exact match). Returns the matching contacts with their ids. Use it before sending to or updating a known person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "mail",
+              "phone",
+              "instagram"
+            ],
+            "description": "Which handle to match: mail, phone or instagram."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value to match exactly: an e-mail address, a phone number in E.164 format (+491701234567) or an Instagram username."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        },
+        "required": [
+          "field",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/search",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        },
+        "bodyTemplate": "{\"query\":{\"value\":[{\"field\":\"${field}\",\"operator\":\"=\",\"value\":\"${value}\"}]}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "superchat_list_contact_conversations",
+      "description": "List all conversations of one contact across channels, with status and channel. Use it to find the conversation to read or reply in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, from superchat_search_contacts."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/conversations",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_custom_attributes",
+      "description": "List the custom contact attributes defined in the workspace, with id, name and type. Needed to set custom attributes when creating or updating a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom-attributes",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_contact_lists",
+      "description": "List the contact lists of the workspace (segments used for campaigns), with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact-lists",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_list_templates",
+      "description": "List message templates: WhatsApp templates (pre-approved by Meta, needed outside the 24-hour window) and generic templates, with id, name, status, content and variables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Only templates usable on this channel id."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only templates in this template folder."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "whats_app_template",
+              "generic_template"
+            ],
+            "description": "Only WhatsApp templates or only generic templates."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "channel_id": "$channel_id",
+          "folder_id": "$folder_id",
+          "type": "$type",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_template",
+      "description": "Return one template by id with its content, approval status and the positions of its variables. Read it before sending a template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id, from superchat_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}"
+      }
+    },
+    {
+      "name": "superchat_list_files",
+      "description": "List files uploaded to the workspace (attachments and media) with id, name and MIME type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return, 1 to 100."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pagination.next_cursor from the previous answer."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page: pagination.previous_cursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "superchat_get_file",
+      "description": "Return one file by id with name, MIME type and a temporary download link (link.url, valid until link.valid_until).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File id, from superchat_list_files or a message's content."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}"
+      }
+    },
+    {
+      "name": "superchat_send_message",
+      "description": "Send a text message to a contact from one channel (WhatsApp, SMS, Instagram, Facebook, Telegram, live chat). WhatsApp only delivers free text within 24 hours of the contact's last message; otherwise use superchat_send_template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel to send from, from superchat_list_channels. Its type decides the medium (WhatsApp, SMS, e-mail, Instagram...)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient: a phone number in E.164 format (+491701234567), an e-mail address, or an existing contact id. A new number or address creates a contact."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Display name of the sender, where the channel shows one. Optional."
+          },
+          "in_reply_to": {
+            "type": "string",
+            "description": "Id of the message this one answers. Optional."
+          },
+          "body": {
+            "type": "string",
+            "description": "The message text."
+          }
+        },
+        "required": [
+          "channel_id",
+          "to",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyTemplate": "{\"to\":[{\"identifier\":\"${to}\"}],\"from\":{\"channel_id\":\"${channel_id}\",\"name\":${sender_name}},\"in_reply_to\":${in_reply_to},\"content\":{\"type\":\"text\",\"body\":\"${body}\"}}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "superchat_send_template",
+      "description": "Send an approved WhatsApp template to a contact. This is the only way to start a WhatsApp conversation or write after the 24-hour window has closed. Meta charges per template sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel to send from, from superchat_list_channels. Its type decides the medium (WhatsApp, SMS, e-mail, Instagram...)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient: a phone number in E.164 format (+491701234567), an e-mail address, or an existing contact id. A new number or address creates a contact."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Display name of the sender, where the channel shows one. Optional."
+          },
+          "in_reply_to": {
+            "type": "string",
+            "description": "Id of the message this one answers. Optional."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "WhatsApp template id from superchat_list_templates; the template must be approved."
+          },
+          "variables": {
+            "type": "array",
+            "description": "Values for the template placeholders, e.g. [{\"position\":1,\"value\":\"Anna\"}]. Positions start at 1.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer",
+                  "description": "Placeholder position, starting at 1."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Text for that placeholder."
+                }
+              },
+              "required": [
+                "position",
+                "value"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "channel_id",
+          "to",
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyTemplate": "{\"to\":[{\"identifier\":\"${to}\"}],\"from\":{\"channel_id\":\"${channel_id}\",\"name\":${sender_name}},\"in_reply_to\":${in_reply_to},\"content\":{\"type\":\"whats_app_template\",\"template_id\":\"${template_id}\",\"variables\":${variables}}}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "superchat_send_email",
+      "description": "Send a plain-text e-mail to a contact from one of the workspace's e-mail channels, with subject, body and optional attachments by file id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel to send from, from superchat_list_channels. Its type decides the medium (WhatsApp, SMS, e-mail, Instagram...)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient e-mail address or an existing contact id."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Display name of the sender, where the channel shows one. Optional."
+          },
+          "in_reply_to": {
+            "type": "string",
+            "description": "Id of the message this one answers. Optional."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain text body of the e-mail."
+          },
+          "attachments": {
+            "type": "array",
+            "default": [],
+            "description": "Files to attach, as [{\"id\":\"<file id>\"}] with ids from superchat_list_files. Optional.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "File id."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "channel_id",
+          "to",
+          "subject",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyTemplate": "{\"to\":[{\"identifier\":\"${to}\"}],\"from\":{\"channel_id\":\"${channel_id}\",\"name\":${sender_name}},\"in_reply_to\":${in_reply_to},\"content\":{\"type\":\"email\",\"subject\":\"${subject}\",\"text\":\"${text}\",\"files\":${attachments}}}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "superchat_create_contact",
+      "description": "Create a contact with name, gender and at least one phone number or e-mail address, plus optional custom attributes. Search first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "male",
+              "female",
+              "diverse",
+              "unknown"
+            ],
+            "description": "Gender: male, female, diverse or unknown."
+          },
+          "handles": {
+            "type": "array",
+            "description": "Phone numbers and e-mail addresses, e.g. [{\"id\":null,\"type\":\"phone\",\"value\":\"+491701234567\"}]. Use id null for a new handle, the existing handle id to keep one.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Existing handle id, or null for a new one."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "phone",
+                    "mail"
+                  ],
+                  "description": "phone or mail."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Phone number in E.164 format or e-mail address."
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            }
+          },
+          "custom_attributes": {
+            "type": "array",
+            "description": "Custom attribute values, e.g. [{\"id\":\"<attribute id>\",\"value\":\"Premium\"}]. Attribute ids come from superchat_list_custom_attributes.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Custom attribute id."
+                },
+                "value": {
+                  "description": "Value matching the attribute type: text, number, date, or a list of options."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "gender",
+          "handles"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyTemplate": "{\"first_name\":\"${first_name}\",\"last_name\":\"${last_name}\",\"gender\":\"${gender}\",\"handles\":${handles},\"custom_attributes\":${custom_attributes}}"
+      }
+    },
+    {
+      "name": "superchat_update_contact",
+      "description": "Update a contact's name, gender, handles or custom attributes. Name and gender are always written, so read the contact first and pass the current values for fields you do not change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, from superchat_search_contacts."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "male",
+              "female",
+              "diverse",
+              "unknown"
+            ],
+            "description": "Gender: male, female, diverse or unknown."
+          },
+          "handles": {
+            "type": "array",
+            "description": "The full list of handles the contact keeps; handles left out are removed. Omit to leave handles unchanged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Existing handle id, or null for a new one."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "phone",
+                    "mail"
+                  ],
+                  "description": "phone or mail."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Phone number in E.164 format or e-mail address."
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            }
+          },
+          "custom_attributes": {
+            "type": "array",
+            "description": "The full list of custom attribute values the contact keeps. Omit to leave them unchanged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Custom attribute id."
+                },
+                "value": {
+                  "description": "Value matching the attribute type: text, number, date, or a list of options."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "first_name",
+          "last_name",
+          "gender"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/contacts/{contact_id}",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "gender": "$gender",
+          "handles": "$handles",
+          "custom_attributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "superchat_update_conversation",
+      "description": "Change a conversation: set its status (open, done, snoozed, archived, spam), move it to an inbox, assign users, set labels or snooze it until a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id, from superchat_list_conversations."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "done",
+              "snoozed",
+              "archived",
+              "spam"
+            ],
+            "description": "New status."
+          },
+          "inbox_id": {
+            "type": "string",
+            "description": "Inbox to move the conversation to, from superchat_list_inboxes."
+          },
+          "assigned_users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "User ids to assign, from superchat_list_users. Replaces the current assignment."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids to set, from superchat_list_labels. Replaces the current labels."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "description": "ISO 8601 time until which the conversation is snoozed, with status snoozed."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/conversations/{conversation_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "inbox_id": "$inbox_id",
+          "assigned_users": "$assigned_users",
+          "labels": "$labels",
+          "snoozed_until": "$snoozed_until"
+        }
+      }
+    },
+    {
+      "name": "superchat_create_note",
+      "description": "Add an internal note to a conversation. Notes are visible to the team only and are never sent to the contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id, from superchat_list_conversations."
+          },
+          "content": {
+            "type": "string",
+            "description": "Text of the note."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/notes",
+        "bodyMapping": {
+          "content": "$content"
+        }
+      }
+    }
+  ]
+}
