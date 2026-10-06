@@ -106,7 +106,13 @@ RUN --mount=type=secret,id=sentry_auth_token \
 
 # ── Stage 4: Production ─────────────────────────────────────────────────────
 FROM node:${NODE_VERSION} AS runner
-RUN apk add --no-cache wget
+# npm, npx and corepack come with the Node image but nothing runs them at
+# runtime (start.sh calls the Prisma CLI through node). Removing them takes
+# npm's own bundled dependencies, and the CVEs scanners report against them,
+# out of the image.
+RUN apk add --no-cache wget && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 
 ENV NODE_ENV=production
