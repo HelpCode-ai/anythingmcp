@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -18,6 +19,27 @@ import { connectorPageUrl } from '../../common/url.util';
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 /**
+ * How long before expiry a token is renewed. Five minutes, or half the
+ * token's lifetime when that is shorter: Sage issues 5-minute access tokens,
+ * so a flat 5-minute window made every call a refresh, and Sage rotates the
+ * refresh token on each one.
+ */
+function refreshWindowMs(lifetimeMs: number | undefined): number {
+  return lifetimeMs && lifetimeMs > 0
+    ? Math.min(PROACTIVE_REFRESH_BUFFER_MS, lifetimeMs / 2)
+    : PROACTIVE_REFRESH_BUFFER_MS;
+}
+
+interface CachedToken {
+  accessToken: string;
+  expiresAt: number;
+  /** The lifetime the provider gave the token, for refreshWindowMs. */
+  lifetimeMs: number;
+  /** When the token was obtained, so a caller holding an older one can tell. */
+  obtainedAt: number;
+}
+
+/**
  * Shared OAuth2 token management: in-memory cache, proactive refresh, and DB persistence.
  * Used by RestEngine, GraphqlEngine, and McpClientEngine to handle OAuth2 token lifecycle.
  *
@@ -29,11 +51,8 @@ export class OAuth2TokenService {
   private readonly logger = new Logger(OAuth2TokenService.name);
   private readonly encryptionKey: string;
 
-  // In-memory cache for refreshed tokens (keyed by connectorId or tokenUrl)
-  private tokenCache = new Map<
-    string,
-    { accessToken: string; expiresAt: number }
-  >();
+  // In-memory cache for refreshed tokens (see keyFor)
+  private tokenCache = new Map<string, CachedToken>();
 
   // Per-key mutex to prevent concurrent refresh storms
   private refreshInFlight = new Map<string, Promise<string | null>>();
@@ -63,13 +82,13 @@ export class OAuth2TokenService {
     authConfig: Record<string, unknown>,
     connectorId?: string,
   ): Promise<string> {
-    const cacheKey = connectorId || String(authConfig.tokenUrl || '');
+    const cacheKey = keyFor(authConfig, connectorId);
     const grant = String(authConfig.grant || 'refresh_token');
 
     // 1. Check cache — return immediately if well within validity
     if (cacheKey) {
       const cached = this.tokenCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now() + PROACTIVE_REFRESH_BUFFER_MS) {
+      if (cached && cached.expiresAt > Date.now() + refreshWindowMs(cached.lifetimeMs)) {
         return cached.accessToken;
       }
     }
@@ -167,6 +186,7 @@ export class OAuth2TokenService {
     authConfig: Record<string, unknown>,
     connectorId?: string,
   ): Promise<string | null> {
+    const cacheKey = keyFor(authConfig, connectorId);
     // Rolling refresh tokens (e.g. DATEV rotates the refresh token on every
     // use) invalidate the previous one. The in-memory registry caches an
     // authConfig snapshot that is NOT updated after a refresh — only the DB is
@@ -290,7 +310,6 @@ export class OAuth2TokenService {
         },
       );
 
-      const cacheKey = connectorId || tokenUrl;
       const { access_token, expires_in, refresh_token: newRefreshToken } =
         response.data;
       if (!access_token) {
@@ -304,6 +323,8 @@ export class OAuth2TokenService {
       this.tokenCache.set(cacheKey, {
         accessToken: access_token,
         expiresAt: Date.now() + expiresInMs,
+        lifetimeMs: expiresInMs,
+        obtainedAt: Date.now(),
       });
 
       // Persist to DB if connectorId is available. For client_credentials
@@ -315,19 +336,73 @@ export class OAuth2TokenService {
           access_token,
           newRefreshToken || refreshToken || '',
           Date.now() + expiresInMs,
+          expires_in,
         );
       }
 
       this.logger.debug(`OAuth2 (${grant}): token refreshed successfully`);
       return access_token;
     } catch (err: any) {
-      this.logger.warn(`OAuth2 (${grant}) token refresh failed: ${err.message}`);
-      this.lastRefreshError.set(
-        connectorId || tokenUrl,
-        describeTokenError(err),
+      const reason = describeTokenError(err);
+      this.logger.warn(
+        `OAuth2 (${grant}) token refresh failed` +
+          (connectorId ? ` for connector ${connectorId}` : '') +
+          `: ${reason}`,
       );
+      this.lastRefreshError.set(cacheKey, reason);
       return null;
     }
+  }
+
+  /**
+   * A new token after the API answered 401 to a request sent at `sentAt`.
+   *
+   * Goes through the same mutex as the proactive refresh, and first takes a
+   * token another call obtained after `sentAt`. A burst of calls that all hit
+   * 401 used to refresh once each with the same refresh token: a provider
+   * that rotates it (JTL, Sage, DATEV) accepts the first and refuses or
+   * revokes the rest.
+   */
+  async renewAfterRejection(
+    authConfig: Record<string, unknown>,
+    connectorId: string | undefined,
+    sentAt: number,
+  ): Promise<string | null> {
+    const cached = this.tokenCache.get(keyFor(authConfig, connectorId));
+    if (cached && cached.obtainedAt >= sentAt && cached.expiresAt > Date.now()) {
+      return cached.accessToken;
+    }
+    return this.refreshTokenWithMutex(authConfig, connectorId);
+  }
+
+  /**
+   * The error to give the caller when the API refused the token and the
+   * renewal failed too: the API's bare 401 says nothing about why, while the
+   * token endpoint usually does ("The refresh token is invalid. Token has
+   * been revoked"). Undefined when no renewal failed.
+   */
+  renewalFailedError(
+    authConfig: Record<string, unknown>,
+    connectorId?: string,
+  ): (Error & { status?: number }) | undefined {
+    const reason = this.lastRefreshError.get(keyFor(authConfig, connectorId));
+    if (!reason) return undefined;
+    return unauthorized(
+      `OAuth2: the API refused the access token (401) and it could not be renewed at ` +
+        `${hostOf(authConfig.tokenUrl)} (${reason}). If the refresh token was refused, ` +
+        'authorize the connector again (Authorize with Provider on its page in AnythingMCP) ' +
+        'or replace its refresh token.',
+    );
+  }
+
+  /**
+   * Drop what is held in memory for a connector whose credentials were just
+   * replaced (a new authorization, new client settings), so the next call
+   * uses the stored ones instead of a token or an error from before.
+   */
+  forget(connectorId: string): void {
+    this.tokenCache.delete(connectorId);
+    this.lastRefreshError.delete(connectorId);
   }
 
   /**
@@ -337,7 +412,7 @@ export class OAuth2TokenService {
     authConfig: Record<string, unknown>,
     connectorId?: string,
   ): Promise<string | null> {
-    const cacheKey = connectorId || String(authConfig.tokenUrl || '');
+    const cacheKey = keyFor(authConfig, connectorId);
 
     // If a refresh is already in-flight for this key, wait for it
     const inFlight = this.refreshInFlight.get(cacheKey);
@@ -366,14 +441,17 @@ export class OAuth2TokenService {
     if (cacheKey) {
       const cached = this.tokenCache.get(cacheKey);
       if (cached) {
-        return cached.expiresAt <= now + PROACTIVE_REFRESH_BUFFER_MS;
+        return cached.expiresAt <= now + refreshWindowMs(cached.lifetimeMs);
       }
     }
 
     // Check expiresAt from authConfig (set during initial OAuth grant or previous refresh)
     if (authConfig.expiresAt) {
       const expiresAt = Number(authConfig.expiresAt);
-      return expiresAt <= now + PROACTIVE_REFRESH_BUFFER_MS;
+      const expiresIn = Number(authConfig.expiresIn);
+      return (
+        expiresAt <= now + refreshWindowMs(expiresIn > 0 ? expiresIn * 1000 : undefined)
+      );
     }
 
     // No expiry info — assume token may be stale, try proactive refresh
@@ -422,6 +500,7 @@ export class OAuth2TokenService {
     newAccessToken: string,
     newRefreshToken: string,
     expiresAt: number,
+    expiresIn?: number,
   ): Promise<void> {
     try {
       const connector = await this.prisma.connector.findUnique({
@@ -437,6 +516,7 @@ export class OAuth2TokenService {
       authConfig.accessToken = newAccessToken;
       authConfig.refreshToken = newRefreshToken;
       authConfig.expiresAt = expiresAt;
+      if (typeof expiresIn === 'number' && expiresIn > 0) authConfig.expiresIn = expiresIn;
       authConfig.lastRefreshedAt = new Date().toISOString();
 
       await this.prisma.connector.update({
@@ -458,6 +538,24 @@ export class OAuth2TokenService {
       );
     }
   }
+}
+
+/**
+ * What the cache, the mutex and the last error are keyed on. A saved
+ * connector is keyed on its id. A config without one (tried before it is
+ * saved) is keyed on its own credentials: the token URL alone, the old key,
+ * is the same for every workspace that uses the provider, so one workspace's
+ * token could be served to another's call.
+ */
+function keyFor(authConfig: Record<string, unknown>, connectorId?: string): string {
+  if (connectorId) return connectorId;
+  const parts = [
+    authConfig.tokenUrl,
+    authConfig.clientId,
+    authConfig.clientSecret,
+    authConfig.refreshToken,
+  ].map((v) => String(v ?? ''));
+  return `unsaved:${createHash('sha256').update(parts.join('\n')).digest('hex')}`;
 }
 
 /** An error the install-form probe and the tool path classify as rejected credentials. */

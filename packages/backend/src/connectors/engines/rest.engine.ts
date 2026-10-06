@@ -440,6 +440,7 @@ export class RestEngine {
       this.logger.debug(`REST call: ${axiosConfig.method} ${url}`);
     }
 
+    const sentAt = Date.now();
     try {
       const response = await this.requestWithRetry(axiosConfig, outbound);
       return withMeta(response);
@@ -453,9 +454,10 @@ export class RestEngine {
         config.authConfig?.tokenUrl
       ) {
         this.logger.debug('OAuth2: access token expired, attempting refresh...');
-        const newToken = await this.oauth2TokenService.refreshToken(
+        const newToken = await this.oauth2TokenService.renewAfterRejection(
           config.authConfig,
           config.connectorId,
+          sentAt,
         );
         if (newToken) {
           axiosConfig.headers = {
@@ -466,6 +468,11 @@ export class RestEngine {
           const retryResponse = await outboundRequest(axiosConfig, outbound);
           return withMeta(retryResponse);
         }
+        const renewalFailed = this.oauth2TokenService.renewalFailedError(
+          config.authConfig,
+          config.connectorId,
+        );
+        if (renewalFailed) throw renewalFailed;
       }
       // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
       if (

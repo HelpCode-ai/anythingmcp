@@ -9,7 +9,6 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { ODataEngine } from './engines/odata.engine';
-import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { LoginTokenService } from './engines/login-token.service';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
@@ -35,6 +34,10 @@ const ENGINES = [
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];
 
+// OAuth2TokenService comes from McpServerModule: one instance for the whole
+// app. A second one here had its own token cache and refresh mutex, so a
+// Test connection and a tool call could refresh with the same refresh token
+// at once, and a provider that rotates it revoked the connector's token.
 @Module({
   imports: [McpServerModule, McpServersModule, LicenseModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
@@ -43,7 +46,6 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     McpOAuthService,
     CatalogResyncService,
     CatalogReconciler,
-    OAuth2TokenService,
     LoginTokenService,
     GraphqlSchemaService,
     ...ENGINES,
@@ -53,7 +55,6 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     ConnectorsService,
     McpOAuthService,
     CatalogResyncService,
-    OAuth2TokenService,
     LoginTokenService,
     GraphqlSchemaService,
     ...ENGINES,

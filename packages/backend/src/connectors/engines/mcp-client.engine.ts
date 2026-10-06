@@ -54,6 +54,7 @@ export class McpClientEngine {
       version: '1.0.0',
     });
 
+    const sentAt = Date.now();
     try {
       await client.connect(transport);
 
@@ -72,9 +73,10 @@ export class McpClientEngine {
         error?.message?.includes?.('401')
       ) {
         this.logger.debug('MCP OAuth2: 401 despite proactive refresh, retrying...');
-        const newToken = await this.oauth2TokenService.refreshToken(
+        const newToken = await this.oauth2TokenService.renewAfterRejection(
           config.authConfig,
           config.connectorId,
+          sentAt,
         );
         if (newToken) {
           const retryHeaders: Record<string, string> = { ...config.headers };
