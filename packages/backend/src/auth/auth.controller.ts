@@ -41,6 +41,7 @@ import { Roles, RolesGuard } from './roles.guard';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import { EditionService } from '../ee/licensing/edition.service';
 import { SignupAttributionDto } from './signup-attribution.dto';
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.util';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -532,6 +533,13 @@ export class AuthController {
    * which works only for the account it has just created.
    */
   private async registerCloud(req: any, dto: RegisterDto) {
+    // A throwaway inbox buys a fresh trial every week (the licence site grants
+    // one per address). Refused on the domain alone, before the address is
+    // looked up, so the answer says nothing about existing accounts.
+    if (isDisposableEmail(dto.email)) {
+      throw new BadRequestException(DISPOSABLE_EMAIL_MESSAGE);
+    }
+
     const startedAt = Date.now();
     const existing = await this.usersService.findByEmail(dto.email);
 
