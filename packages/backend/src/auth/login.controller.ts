@@ -910,13 +910,31 @@ export class LoginController {
     // lands back here, still inside the pending authorization (its cookie
     // outlives the detour), and approves with one click instead of starting
     // over from their AI client.
+    //
+    // Most people who reach this page from an AI client have no account yet,
+    // so the sign-up is a full-width button at the top of the card, above the
+    // consent box: as a text link under the form it sat below the fold on a
+    // phone. After a failed sign-in (that person has an account and is fixing a
+    // typo) it shrinks back to the small link under the form.
+    const signupHref = '/login?mode=register&amp;redirect=%2Fauth%2Flogin';
+    const offerSignup = !sessionUser && this.deployment.isCloud();
+    const signupHtml =
+      offerSignup && !error
+        ? `
+    <div class="signup">
+      <p class="signup-lead"><strong>New to ${this.escapeHtml(serverName)}?</strong> Create your account first.
+        You come straight back here to finish connecting${consent ? ` ${this.escapeHtml(consent.clientName)}` : ''}.</p>
+      <a class="signup-btn" href="${signupHref}">Create an account</a>
+    </div>
+    <div class="divider"><span>Already have an account? Sign in</span></div>`
+        : '';
     const preAuthLinks = sessionUser
       ? ''
       : `
       <p class="switch"><a href="/forgot-password">Forgot your password?</a></p>` +
-        (this.deployment.isCloud()
+        (offerSignup && error
           ? `
-      <p class="switch">New to AnythingMCP? <a href="/login?mode=register&amp;redirect=%2Fauth%2Flogin">Create an account</a></p>`
+      <p class="switch">New to ${this.escapeHtml(serverName)}? <a href="${signupHref}">Create an account</a></p>`
           : '');
 
     // Signed in to the dashboard already: approve as that account, or switch.
@@ -1082,12 +1100,45 @@ export class LoginController {
       height: 1px;
       background: #e2e8f0;
     }
+    .signup {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 6px;
+    }
+    .signup-lead { font-size: 0.875rem; color: #334155; margin-bottom: 10px; line-height: 1.45; }
+    .signup-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 12px;
+      background: #fff;
+      color: #1d4ed8;
+      border: 1.5px solid #2563eb;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    .signup-btn:hover { background: #dbeafe; }
+    .signup + .divider { margin: 16px 0 16px; }
+    button { min-height: 46px; }
+    @media (max-width: 480px) {
+      body { padding: 12px; align-items: flex-start; }
+      .card { padding: 24px 18px; border-radius: 10px; }
+      h1 { font-size: 1.3rem; }
+      .subtitle { margin-bottom: 16px; }
+      .consent { padding: 12px; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>${sessionUser ? 'Authorize' : 'Sign In'}</h1>
-    <p class="subtitle">Authorize access to ${this.escapeHtml(serverName)} MCP Server</p>
+    <p class="subtitle">Authorize access to ${this.escapeHtml(serverName)} MCP Server</p>${signupHtml}
     ${errorHtml}
     ${consentHtml}
     <form method="POST" action="/auth/login">
