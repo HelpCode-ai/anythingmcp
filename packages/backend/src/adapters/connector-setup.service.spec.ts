@@ -58,7 +58,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any } =
   const productEvents: any = { log: jest.fn() };
   const service = new ConnectorSetupService(prisma, adapters as unknown as AdaptersService, licenseGuard, { register: jest.fn() } as any, securityEvents, productEvents);
   const ctx = { userId: 'u1', organizationId: 'org-1', serverIds: ['srv-granted'], dashboardBase: 'https://cloud.example.com' };
-  return { service, prisma, adapters, licenseGuard, securityEvents, links, serverConnectors, ctx };
+  return { service, prisma, adapters, licenseGuard, securityEvents, productEvents, links, serverConnectors, ctx };
 }
 
 describe('ConnectorSetupService — who may', () => {
@@ -77,6 +77,30 @@ describe('ConnectorSetupService — find', () => {
     expect(etsy.settingsYouMayPass.map((s: any) => s.name)).toEqual(['ETSY_CLIENT_ID']);
     expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared secret');
     expect(out.connectorsLeftOnThisPlan).toBe(4);
+  });
+
+  it('records what the chat searched for and how well the catalog answered', async () => {
+    const { service, ctx, productEvents } = build();
+    await service.find(ctx, { query: 'etsy' });
+    await service.find(ctx, { query: 'printify shop' });
+    await service.find(ctx, { query: 'zzqx' });
+    await service.find(ctx, {});
+    const logged = productEvents.log.mock.calls.map(([e]: any) => e);
+    expect(logged).toHaveLength(3);
+    expect(logged[0]).toEqual(
+      expect.objectContaining({
+        event: 'catalog_search',
+        userId: 'u1',
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({ query: 'etsy', via: 'mcp' }),
+      }),
+    );
+    expect(logged[0].metadata.adapterSlug.split(',')[0]).toBe('etsy');
+    expect(logged[0].metadata.missing).toBeUndefined();
+    // "shop" returns shop connectors, but Printify itself is missing.
+    expect(logged[1].metadata).toEqual(expect.objectContaining({ query: 'printify shop', missing: 'printify' }));
+    expect(logged[1].metadata.results).toBeGreaterThan(0);
+    expect(logged[2].metadata).toEqual({ query: 'zzqx', results: 0, missing: 'zzqx', via: 'mcp' });
   });
 
   it('never offers payment, banking or trading connectors', async () => {

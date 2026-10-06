@@ -45,6 +45,38 @@ export function parseRetryAfterMs(value: unknown, now = Date.now()): number | nu
   return Math.max(0, at - now);
 }
 
+/**
+ * Methods whose `bodyMapping` / `bodyTemplate` the engine turns into a
+ * request body. DELETE is one of them: plenty of APIs take the ids of a bulk
+ * delete in the body (Coda's `rowIds`, Klaviyo's JSON:API `data`), and a
+ * DELETE used to drop its mapping silently, so the call went out without the
+ * ids and the vendor answered with an error naming a field the model had in
+ * fact supplied. GET stays out: a GET body is not something servers agree to
+ * read. The catalog spec checks adapters against this same list.
+ */
+export const REQUEST_BODY_METHODS: ReadonlySet<string> = new Set([
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+]);
+
+/**
+ * A body with nothing in it. A DELETE whose mapped fields are all optional and
+ * all unset goes out without a body rather than with `{}`: some servers refuse
+ * a DELETE that carries one, and an empty one says nothing.
+ */
+function isEmptyBody(data: unknown): boolean {
+  if (data === undefined || data === null || data === '') return true;
+  return (
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    !(data instanceof FormData) &&
+    Object.getPrototypeOf(data) === Object.prototype &&
+    Object.keys(data).length === 0
+  );
+}
+
 @Injectable()
 export class RestEngine {
   private readonly logger = new Logger(RestEngine.name);
@@ -250,7 +282,8 @@ export class RestEngine {
     }
 
     // Request body
-    if (['POST', 'PUT', 'PATCH'].includes(endpointMapping.method.toUpperCase())) {
+    const httpMethod = endpointMapping.method.toUpperCase();
+    if (REQUEST_BODY_METHODS.has(httpMethod)) {
       if (endpointMapping.bodyTemplate) {
         const rendered = renderBodyTemplate(
           endpointMapping.bodyTemplate,
@@ -367,6 +400,9 @@ export class RestEngine {
             axiosConfig.data = mapped;
           }
         }
+      }
+      if (httpMethod === 'DELETE' && isEmptyBody(axiosConfig.data)) {
+        delete axiosConfig.data;
       }
     }
 

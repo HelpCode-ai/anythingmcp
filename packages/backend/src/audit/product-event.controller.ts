@@ -1,7 +1,10 @@
 import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { ProductEventService } from './product-event.service';
+import { ProductEvents, ProductEventService } from './product-event.service';
+
+/** Pages of the dashboard that report a catalog search. */
+const CLIENT_SEARCH_SURFACES = new Set(['store', 'welcome']);
 
 /**
  * POST /api/product-events — the UI reports a funnel step.
@@ -25,6 +28,13 @@ export class ProductEventController {
     @Body() body: { event?: unknown; metadata?: Record<string, unknown> },
   ): Promise<void> {
     if (!this.events.isKnown(body?.event)) return;
+    // Searches from a chat are recorded by the server; a page reports only its own.
+    if (
+      (body.event === ProductEvents.CATALOG_SEARCH || body.event === ProductEvents.CATALOG_SEARCH_PICKED) &&
+      !CLIENT_SEARCH_SURFACES.has(body.metadata?.via as string)
+    ) {
+      return;
+    }
     await this.events.log({
       event: body.event,
       userId: req.user?.sub ?? null,

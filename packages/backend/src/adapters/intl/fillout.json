@@ -89,19 +89,18 @@
     },
     {
       "name": "fillout_delete_submissions",
-      "description": "Delete one or more submissions by ID.",
+      "description": "Delete one submission by ID. Fillout has no bulk delete: call once per submission.",
       "parameters": {
         "type": "object",
         "properties": {
           "formId": { "type": "string", "description": "Form ID." },
-          "submissionIds": { "type": "array", "description": "Array of submission IDs." }
+          "submissionId": { "type": "string", "description": "Submission ID." }
         },
-        "required": ["formId", "submissionIds"]
+        "required": ["formId", "submissionId"]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/forms/{formId}/submissions",
-        "bodyMapping": { "submissionIds": "$submissionIds" }
+        "path": "/forms/{formId}/submissions/{submissionId}"
       }
     },
     {
