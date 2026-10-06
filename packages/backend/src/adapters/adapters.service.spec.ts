@@ -325,7 +325,9 @@ describe('AdaptersService starter pack', () => {
       expect({ slug: entry.slug, selfHostOnly: !!a.selfHostOnly }).toEqual({ slug: entry.slug, selfHostOnly: false });
       expect(entry.pitch.length).toBeLessThanOrEqual(110);
     }
-    expect(STARTER_PACK.filter((e: any) => e.preselected).length).toBeGreaterThanOrEqual(2);
+    // Preselected demos took the trial's connector slots from the app the
+    // user came for; the pack is opt-in now.
+    expect(STARTER_PACK.filter((e: any) => e.preselected)).toEqual([]);
   });
 
   it('leaves out Deutsche Bahn unless the operator provides MOTIS', async () => {
@@ -341,7 +343,7 @@ describe('AdaptersService starter pack', () => {
   it('marks what the workspace already has and carries the card fields', async () => {
     const items = await service({ installed: ['hackernews'] }).starterPack('org1');
     const hn = items.find((i) => i.slug === 'hackernews')!;
-    expect(hn).toMatchObject({ installed: true, name: 'Hacker News', icon: 'hackernews', preselected: true });
+    expect(hn).toMatchObject({ installed: true, name: 'Hacker News', icon: 'hackernews', preselected: false });
     expect(hn.toolCount).toBeGreaterThan(0);
     expect(items.find((i) => i.slug === 'nominatim')!.installed).toBe(false);
     // Order follows the pack definition.
@@ -408,6 +410,84 @@ describe('AdaptersService.verifyCredentials', () => {
   });
 });
 
+describe('AdaptersService.exerciseReadTools', () => {
+  const adapter: any = {
+    slug: 'acme',
+    name: 'Acme',
+    requiredEnvVars: ['ACME_KEY'],
+    connector: {
+      name: 'Acme API',
+      type: 'REST',
+      baseUrl: 'https://api.acme.example',
+      authType: 'BEARER_TOKEN',
+      authConfig: { token: '{{ACME_KEY}}' },
+    },
+    tools: [
+      { name: 'acme_list_orders', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'GET', path: '/orders' } },
+      {
+        name: 'acme_get_order',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        endpointMapping: { method: 'GET', path: '/orders/{id}' },
+      },
+      {
+        name: 'acme_search',
+        annotations: { readOnlyHint: true },
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: { method: 'POST', path: '/search' },
+      },
+      { name: 'acme_create_order', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'POST', path: '/orders' } },
+      { name: 'acme_delete_order', parameters: { type: 'object', properties: {} }, endpointMapping: { method: 'DELETE', path: '/orders/1' } },
+    ],
+  };
+
+  function build(execute: jest.Mock) {
+    const prisma = { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('runs only read-only tools, in memory, and reports shapes but no data', async () => {
+    const execute = jest.fn(async (_c: any, em: any) =>
+      em.path === '/orders' ? [{ id: 'o1', total: 99, customer: 'Jane' }] : { hits: [], total: 0 },
+    );
+    const { service, prisma } = build(execute);
+    const out = await service.exerciseReadTools(adapter, 'org1', { ACME_KEY: 'k' }, { params: { acme_get_order: { id: 'o1' } } });
+
+    expect(out.map((r) => [r.tool, r.outcome])).toEqual([
+      ['acme_list_orders', 'ok'],
+      ['acme_get_order', 'ok'],
+      ['acme_search', 'ok'],
+      ['acme_create_order', 'skipped'],
+      ['acme_delete_order', 'skipped'],
+    ]);
+    expect(execute.mock.calls.map(([, em]) => `${em.method} ${em.path}`)).toEqual([
+      'GET /orders',
+      'GET /orders/{id}',
+      'POST /search',
+    ]);
+    expect(execute.mock.calls[0][0].id).toBe('');
+    expect(out[0]).toMatchObject({ shape: 'array(1) of {id,total,customer}' });
+    expect(JSON.stringify(out)).not.toContain('Jane');
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('skips a tool whose required argument was not given, and reports errors with their status', async () => {
+    const err: any = new Error('403 Forbidden');
+    err.status = 403;
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out = await service.exerciseReadTools(adapter, 'org1', { ACME_KEY: 'k' }, { only: ['acme_list_orders', 'acme_get_order'] });
+    expect(out).toEqual([
+      expect.objectContaining({ tool: 'acme_list_orders', outcome: 'error', status: 403 }),
+      { tool: 'acme_get_order', outcome: 'skipped', reason: 'needs id' },
+    ]);
+  });
+});
+
 describe('AdaptersService.verifyCredentials on an existing connector', () => {
   it('fills a field left empty from what the connector stores, only within the organization', async () => {
     const execute = jest.fn().mockResolvedValue({ ok: 1 });
@@ -449,5 +529,70 @@ describe('AdaptersService unlisted adapters', () => {
 
   it('stay resolvable by slug, so connectors installed earlier keep their icon and re-sync', () => {
     for (const slug of unlisted) expect(getAdapter(slug)?.unlisted).toBe(true);
+  });
+});
+
+describe('AdaptersService popular connectors', () => {
+  function service(opts: { rows?: Array<{ slug: string; workspaces: bigint }>; fail?: boolean; installed?: string[] } = {}) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).logger = { warn: jest.fn() };
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined) };
+    const queryRaw = opts.fail
+      ? jest.fn().mockRejectedValue(new Error('db down'))
+      : jest.fn().mockResolvedValue(opts.rows ?? []);
+    (svc as any).prisma = {
+      $queryRaw: queryRaw,
+      connector: {
+        findMany: jest.fn().mockResolvedValue((opts.installed ?? []).map((slug) => ({ config: { adapterSlug: slug } }))),
+      },
+    };
+    return { svc, queryRaw };
+  }
+
+  it('leads with what works for the most workspaces, then fills from the fallback', async () => {
+    const { svc } = service({
+      rows: [
+        { slug: 'odoo', workspaces: 17n },
+        { slug: 'telegram-bot', workspaces: 133n },
+      ].sort((a, b) => Number(b.workspaces - a.workspaces)),
+    });
+    const items = await svc.popularConnectors('org1');
+    expect(items.map((i) => i.slug).slice(0, 2)).toEqual(['telegram-bot', 'odoo']);
+    expect(items).toHaveLength(8);
+    expect(new Set(items.map((i) => i.slug)).size).toBe(8);
+  });
+
+  it('leaves keyless adapters to the starter pack', async () => {
+    const { svc } = service({ rows: [{ slug: 'hackernews', workspaces: 50n }, { slug: 'etsy', workspaces: 40n }] });
+    const items = await svc.popularConnectors('org1');
+    expect(items.map((i) => i.slug)).not.toContain('hackernews');
+    expect(items[0].slug).toBe('etsy');
+  });
+
+  it('says what each setup asks for, without the token a sign-in fills in', async () => {
+    const { svc } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
+    const etsy = (await svc.popularConnectors('org1')).find((i) => i.slug === 'etsy')!;
+    expect(etsy.setupKind).toBe('oauth_browser');
+    expect(etsy.needs).toEqual(['Keystring', 'Shared secret']);
+  });
+
+  it('marks what the workspace already has', async () => {
+    const { svc } = service({ rows: [{ slug: 'telegram-bot', workspaces: 9n }], installed: ['telegram-bot'] });
+    const items = await svc.popularConnectors('org1');
+    expect(items.find((i) => i.slug === 'telegram-bot')!.installed).toBe(true);
+  });
+
+  it('ranks once an hour, not on every page view', async () => {
+    const { svc, queryRaw } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
+    await svc.popularConnectors('org1');
+    await svc.popularConnectors('org2');
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the fallback list when the ranking query fails', async () => {
+    const { svc } = service({ fail: true });
+    const items = await svc.popularConnectors('org1');
+    expect(items[0].slug).toBe('telegram-bot');
+    expect(items.length).toBeGreaterThanOrEqual(4);
   });
 });

@@ -1,0 +1,753 @@
+{
+  "slug": "korea-law",
+  "name": "Korea Law (National Law Information Center)",
+  "description": "Official Open API of Korea's National Law Information Center (법제처 국가법령정보센터): statutes and articles, court precedents, Constitutional Court decisions, statutory interpretations, administrative rules, local ordinances, legal terms and English translations.",
+  "region": "intl",
+  "category": "government",
+  "icon": "korea-law",
+  "docsUrl": "https://open.law.go.kr/LSO/openApi/guideList.do",
+  "instructions": "## Korea Law (National Law Information Center)\nThis connector reads the official Open API of the Korean National Law Information Center (국가법령정보센터), run by the Ministry of Government Legislation (법제처): current statutes and their articles, court precedents, Constitutional Court decisions, statutory interpretations, administrative rules, local ordinances, legal term definitions and the official English translations.\n\n## Setup (free, approval takes 1 to 2 days)\n1. Create an account at https://open.law.go.kr and apply for the OPEN API (OPEN API > OPEN API 신청). Tick every API you want to use: laws (법령), precedents (판례), interpretations (법령해석례), administrative rules (행정규칙), local laws (자치법규), Constitutional Court decisions (헌재결정례), legal terms (법령용어) and English laws (영문법령). Calls to an API that was not ticked are refused.\n2. In the application, register the public IP address and domain of the server that calls the API. The API checks them on every call. On a self-hosted AnythingMCP that is your server's public IP; on AnythingMCP Cloud, contact support for the outbound address to register.\n3. After approval, put your OC value in `KOREA_LAW_OC`: the ID part of the e-mail address you registered (for `g4c@korea.kr` it is `g4c`). It is sent as the `OC` query parameter.\n\n## Errors arrive with HTTP 200\nThe API answers errors in the body, not with a status code:\n- `사용자 정보 검증에 실패하였습니다` (user verification failed): the OC is wrong, the application is not approved yet, or the calling server's IP or domain is not registered.\n- `필수입력요소 검증에 실패하였습니다` (required input missing): a required value (OC, or the ID of a get tool) is missing.\nRead `result` and `msg` in the answer before treating it as data.\n\n## Ids\n- Statutes have a stable **law ID** (법령ID, 6 digits with leading zeros, e.g. `001706` Civil Act) and a **serial number** (법령일련번호 / MST) per version. `korea_law_get_law` takes either; `law_id` returns the current version.\n- Precedents, interpretations, Constitutional Court decisions and administrative rules use their own serial numbers (`판례일련번호`, `법령해석례일련번호`, `헌재결정례일련번호`, `행정규칙일련번호`) from the matching search tool.\n- Articles are 6 digits: article number (4) + branch (2). Article 3 is `000300`, Article 10-2 is `001002`.\n\n## Tips\n- Search words are Korean. The English laws search also accepts English words.\n- `search` = 2 searches the full text instead of names; useful for concepts that are not in any title.\n- Full statutes are large (the Civil Act is over 700 KB): read the articles you need with `article`.\n- Dates are YYYYMMDD; ranges are `YYYYMMDD~YYYYMMDD`.\n- The Korean text is the binding one; English translations are for reference and can be outdated.\n- The source must be credited as 법제처 국가법령정보센터 when the content is published.\n\n## Where to start\n`korea_law_search_laws` with a law name, then `korea_law_get_law` with its law ID and an article. For case law, `korea_law_search_precedents` then `korea_law_get_precedent`.",
+  "prerequisites": "Apply for the free OPEN API at [open.law.go.kr](https://open.law.go.kr) (approval takes 1 to 2 days), tick the APIs you need, and register the public IP address and domain of the server that runs AnythingMCP: the API refuses calls from other addresses.",
+  "requiredEnvVars": [
+    "KOREA_LAW_OC"
+  ],
+  "envVarMeta": {
+    "KOREA_LAW_OC": {
+      "label": "OC (API user ID)",
+      "kind": "credential",
+      "help": "The ID part of the e-mail address registered at open.law.go.kr: for g4c@korea.kr enter g4c. Usable once the OPEN API application is approved.",
+      "link": "https://open.law.go.kr/LSO/openApi/guideList.do",
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "patternMessage": "Only the part before the @ of your registered e-mail address."
+    }
+  },
+  "verifyHints": {
+    "unreachable": "www.law.go.kr could not be reached. It is a public government site; try again later."
+  },
+  "probe": {
+    "tool": "korea_law_search_laws",
+    "params": {
+      "query": "민법",
+      "display": 1
+    }
+  },
+  "connector": {
+    "name": "Korea National Law Information Center Open API",
+    "type": "REST",
+    "baseUrl": "https://www.law.go.kr/DRF",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "OC": "{{KOREA_LAW_OC}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "korea_law_search_laws",
+      "description": "Search current Korean statutes (Acts, Enforcement Decrees and Rules) by name or full text. Returns law name, law ID (법령ID), serial number (법령일련번호, the MST), type, ministry, promulgation and effective dates. Start here to find a law's ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the law name, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the law name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "lasc",
+              "ldes",
+              "dasc",
+              "ddes",
+              "nasc",
+              "ndes",
+              "efasc",
+              "efdes"
+            ],
+            "description": "lasc/ldes law name, dasc/ddes promulgation date, nasc/ndes promulgation number, efasc/efdes effective date (asc/desc). Default lasc."
+          },
+          "effective_date_range": {
+            "type": "string",
+            "description": "Effective date (시행일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          },
+          "promulgation_date_range": {
+            "type": "string",
+            "description": "Promulgation date (공포일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "law",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "sort": "$sort",
+          "efYd": "$effective_date_range",
+          "ancYd": "$promulgation_date_range"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_law",
+      "description": "Get the text of a current Korean statute: basic information, articles (조문), addenda and amendment reasons. A whole code can exceed 500 KB, so pass article to read one article. Give law_id or mst from korea_law_search_laws.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "law_id": {
+            "type": "string",
+            "description": "Law ID (법령ID), 6 digits with leading zeros, e.g. 001706 for the Civil Act (민법)."
+          },
+          "mst": {
+            "type": "string",
+            "description": "Law serial number (법령일련번호 / MST) of one specific version. Use instead of law_id."
+          },
+          "article": {
+            "type": "string",
+            "description": "One article only, as 6 digits: article number (4) + branch number (2). 000300 is Article 3, 001002 is Article 10-2. Omit for the whole law."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "KO",
+              "ORI"
+            ],
+            "description": "KO (default) for the Hangul text, ORI for the original text with Hanja."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "law",
+          "type": "JSON",
+          "ID": "$law_id",
+          "MST": "$mst",
+          "JO": "$article",
+          "LANG": "$language"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_precedents",
+      "description": "Search Korean court precedents (Supreme Court and lower courts) by case name or full text, court, referenced statute, decision date or case number. Returns case name and number, court, decision date and the precedent serial number for korea_law_get_precedent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the case name, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the case name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "court_type": {
+            "type": "string",
+            "enum": [
+              "400201",
+              "400202"
+            ],
+            "description": "400201 Supreme Court (대법원), 400202 lower courts."
+          },
+          "court": {
+            "type": "string",
+            "description": "Court name in Korean, e.g. 대법원, 서울고등법원, 인천지방법원."
+          },
+          "referenced_law": {
+            "type": "string",
+            "description": "Name of a statute the decision refers to, e.g. 형법 or 민법."
+          },
+          "decision_date_range": {
+            "type": "string",
+            "description": "Decision date (선고일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          },
+          "case_number": {
+            "type": "string",
+            "description": "Case number(s), comma separated, e.g. 2021도3451."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "lasc",
+              "ldes",
+              "dasc",
+              "ddes",
+              "nasc",
+              "ndes"
+            ],
+            "description": "lasc/ldes case name, dasc/ddes decision date (ddes is the default), nasc/ndes court name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "prec",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "org": "$court_type",
+          "curt": "$court",
+          "JO": "$referenced_law",
+          "prncYd": "$decision_date_range",
+          "nb": "$case_number",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_precedent",
+      "description": "Get one court precedent in full: holdings (판시사항), summary (판결요지), referenced articles and precedents, and the full judgment text. Precedents from the National Tax Service source are only available as HTML on law.go.kr.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "precedent_id": {
+            "type": "string",
+            "description": "Precedent serial number (판례일련번호) from korea_law_search_precedents, e.g. 228541."
+          }
+        },
+        "required": [
+          "precedent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "prec",
+          "type": "JSON",
+          "ID": "$precedent_id"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_interpretations",
+      "description": "Search official statutory interpretations (법령해석례) issued by the Ministry of Government Legislation and other bodies, by title or full text. Returns title, case number, requesting and answering agency, reply date and the serial number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the interpretation title, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the title only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "interpretation_date_range": {
+            "type": "string",
+            "description": "Interpretation date (해석일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          },
+          "item_number": {
+            "type": "string",
+            "description": "Case number without the dash, e.g. 130217 for 13-0217."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "lasc",
+              "ldes",
+              "dasc",
+              "ddes",
+              "nasc",
+              "ndes"
+            ],
+            "description": "lasc/ldes title, dasc/ddes interpretation date, nasc/ndes case number. Default lasc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "expc",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "explYd": "$interpretation_date_range",
+          "itmno": "$item_number",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_interpretation",
+      "description": "Get one statutory interpretation in full: question (질의요지), answer (회답), reasoning (이유), agencies and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "interpretation_id": {
+            "type": "string",
+            "description": "Interpretation serial number (법령해석례일련번호) from korea_law_search_interpretations."
+          }
+        },
+        "required": [
+          "interpretation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "expc",
+          "type": "JSON",
+          "ID": "$interpretation_id"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_admin_rules",
+      "description": "Search administrative rules (행정규칙: directives, established rules, public notices, guidelines) by name or full text, kind, ministry or issue date. Returns name, kind, ministry, dates and the serial number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the rule name, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the rule name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6"
+            ],
+            "description": "1 directive (훈령), 2 established rule (예규), 3 public notice (고시), 4 announcement (공고), 5 guideline (지침), 6 other."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2"
+            ],
+            "description": "1 current rules (default), 2 historical versions."
+          },
+          "issue_date_range": {
+            "type": "string",
+            "description": "Issue date (발령일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          },
+          "ministry_code": {
+            "type": "string",
+            "description": "Code of the responsible ministry (소관부처코드), e.g. 1741000; codes appear in search results."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "lasc",
+              "ldes",
+              "dasc",
+              "ddes",
+              "nasc",
+              "ndes",
+              "efasc",
+              "efdes"
+            ],
+            "description": "lasc/ldes name, dasc/ddes issue date, nasc/ndes issue number, efasc/efdes effective date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "admrul",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "knd": "$kind",
+          "nw": "$status",
+          "prmlYd": "$issue_date_range",
+          "org": "$ministry_code",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_admin_rule",
+      "description": "Get one administrative rule in full: basic information, articles, addenda, tables and attachment links. Give rule_serial (행정규칙일련번호) or rule_id (행정규칙ID).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule_serial": {
+            "type": "string",
+            "description": "Rule serial number (행정규칙일련번호) of one version, from korea_law_search_admin_rules."
+          },
+          "rule_id": {
+            "type": "string",
+            "description": "Rule ID (행정규칙ID), the same across versions. Use instead of rule_serial."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "admrul",
+          "type": "JSON",
+          "ID": "$rule_serial",
+          "LID": "$rule_id"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_english_laws",
+      "description": "Search the official English translations of Korean statutes by Korean or English name, e.g. insurance. Returns Korean and English names, law ID, serial number and dates. Not every law has a translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words in English or Korean, e.g. insurance or 보험."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the law name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "elaw",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_english_law",
+      "description": "Get the English translation of a Korean statute: articles (JoSection), addenda and basic information. Give law_id or mst from korea_law_search_english_laws. The translation can lag behind the Korean text, which is the binding one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "law_id": {
+            "type": "string",
+            "description": "Law ID (법령ID), e.g. 000744."
+          },
+          "mst": {
+            "type": "string",
+            "description": "Law serial number (MST) of the translated version, e.g. 127280. Use instead of law_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "elaw",
+          "type": "JSON",
+          "ID": "$law_id",
+          "MST": "$mst"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_legal_terms",
+      "description": "Search the dictionary of legal terms (법령용어) defined in Korean statutes. Returns term name, ID and source type; use korea_law_get_legal_term for the definitions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Term to look for, in Korean, e.g. 선박."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "lstrm",
+          "type": "JSON",
+          "query": "$query",
+          "display": "$display",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_legal_term",
+      "description": "Get the statutory definitions of one legal term: each definition with the law and article it comes from. A common term can have dozens of definitions across laws.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Exact term in Korean, e.g. 선박."
+          }
+        },
+        "required": [
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "lstrm",
+          "type": "JSON",
+          "query": "$term"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_constitutional_decisions",
+      "description": "Search decisions of the Constitutional Court (헌재결정례) by case name or full text, decision date or case number. Returns case name and number, decision date and serial number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the case name, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the case name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "decision_date_range": {
+            "type": "string",
+            "description": "Final decision date (종국일자) range as YYYYMMDD~YYYYMMDD, e.g. 20240101~20241231."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "lasc",
+              "ldes",
+              "dasc",
+              "ddes",
+              "nasc",
+              "ndes",
+              "efasc",
+              "efdes"
+            ],
+            "description": "lasc/ldes case name, dasc/ddes decision date, nasc/ndes case number, efasc/efdes final date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "detc",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "edYd": "$decision_date_range",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_constitutional_decision",
+      "description": "Get one Constitutional Court decision in full: provisions under review, holdings, summary, referenced articles and precedents, and the full text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "description": "Decision serial number (헌재결정례일련번호) from korea_law_search_constitutional_decisions."
+          }
+        },
+        "required": [
+          "decision_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "detc",
+          "type": "JSON",
+          "ID": "$decision_id"
+        }
+      }
+    },
+    {
+      "name": "korea_law_search_ordinances",
+      "description": "Search local laws (자치법규: ordinances and rules of provinces, cities and districts) by name or full text, local government or kind. Returns name, local government, kind, dates and IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words for the ordinance name, in Korean, e.g. 자동차. Omit to list everything."
+          },
+          "search": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 (default) searches the ordinance name only, 2 searches the full text."
+          },
+          "display": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "region_code": {
+            "type": "string",
+            "description": "Code of the province or metropolitan city, e.g. 6110000 for Seoul."
+          },
+          "kind": {
+            "type": "string",
+            "description": "30001 ordinance (조례), 30002 rule (규칙), 30003 directive (훈령), 30004 established rule (예규), 30010 notice (고시), 30011 council rule (의회규칙), 30006 other."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawSearch.do",
+        "queryParams": {
+          "target": "ordin",
+          "type": "JSON",
+          "query": "$query",
+          "search": "$search",
+          "display": "$display",
+          "page": "$page",
+          "org": "$region_code",
+          "knd": "$kind"
+        }
+      }
+    },
+    {
+      "name": "korea_law_get_ordinance",
+      "description": "Get one local law in full: basic information, articles, addenda and reasons. Give ordinance_id (자치법규ID) or mst (자치법규일련번호) from korea_law_search_ordinances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ordinance_id": {
+            "type": "string",
+            "description": "Ordinance ID (자치법규ID), e.g. 2251458."
+          },
+          "mst": {
+            "type": "string",
+            "description": "Ordinance serial number (자치법규일련번호). Use instead of ordinance_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lawService.do",
+        "queryParams": {
+          "target": "ordin",
+          "type": "JSON",
+          "ID": "$ordinance_id",
+          "MST": "$mst"
+        }
+      }
+    }
+  ]
+}

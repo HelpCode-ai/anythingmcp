@@ -1,0 +1,524 @@
+{
+  "slug": "claap",
+  "name": "Claap",
+  "description": "Read a Claap workspace: meeting and call recordings with participants, AI notes and full transcripts, folders, views and AI fields, plus the deals, companies and contacts Claap links to those meetings, and the workspace's users and teams.",
+  "instructions": "## Claap (REST API v1)\nThis connector reads a Claap workspace through the REST API at `https://api.claap.io`: meeting recordings and their transcripts, folders, recording views and AI fields, and the revenue data Claap builds from meetings and the CRM (deals, companies, contacts), plus users and teams. It changes nothing.\n\n**Setup.** A workspace admin creates an API key in Claap under Settings, API & Webhooks; it starts with `cla_`. The key is sent in the `X-Claap-Key` header. It acts for the whole workspace, not as one user.\n\n**What the key can see.** The API does not impersonate users. A recording is returned only if it, or its folder, is accessible to workspace members and visible in global search. Private recordings are visible only to a key created with Full access. If a recording a user can open in Claap is missing here, this is the reason.\n\n**Which tool first.** `claap_get_workspace` checks the key. For meetings: `claap_list_recordings` (filter by `created_after`, `recorder_email`, `sources` or a `view_id`), then `claap_get_recording` and `claap_get_recording_transcript` (format `text` is the easiest to read and summarise). For sales: `claap_list_deals` or `claap_list_companies`, then the get tools; deal stages and owners come from the connected CRM (HubSpot only) and answer 400 when no HubSpot CRM is connected.\n\n**Pagination.** List answers are wrapped in `result` and carry `pagination.nextCursor` and `totalCount`; pass `cursor` = `nextCursor` until it is missing. `limit` goes up to 100 (default 20).\n\n**Dates.** Send ISO 8601 (`2026-09-01`, `2026-09-01T13:00:00Z`); answers are UTC.\n\n**Limits.** 3 calls per second per endpoint (short bursts allowed) and 3000 calls per day for the whole workspace, shared by all keys. A 429 means slow down; `X-RateLimit-Daily-Remaining` shows the day's budget, so prefer filtered lists over fetching every recording.\n\n**Errors.** 401: missing or wrong key. 404 `not_found`: wrong id, or the recording is not visible to the API (see above). 400 `validation_error`: the `path` field names the bad parameter.\n\nClaap also runs an official MCP server at `https://api.claap.io/mcp` (OAuth or the same key as a Bearer token) with more tools, including writes.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "claap",
+  "docsUrl": "https://docs.claap.io/api-reference/authentication",
+  "requiredEnvVars": [
+    "CLAAP_API_KEY"
+  ],
+  "envVarMeta": {
+    "CLAAP_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Claap → Settings → API & Webhooks (workspace admins only) → create an API key. Choose Full access if private recordings must be readable.",
+      "link": "https://docs.claap.io/api-reference/authentication",
+      "pattern": "^cla_\\S+$",
+      "patternMessage": "A Claap API key starts with cla_."
+    }
+  },
+  "prerequisites": "A Claap workspace admin to create the API key (Settings → API & Webhooks).",
+  "verifyHints": {
+    "401": "Claap refused the API key. Create a new key under Settings → API & Webhooks and paste it again (it starts with cla_).",
+    "rate_limited": "Claap allows 3 calls per second per endpoint and 3000 a day per workspace. Wait and try again; if the daily budget is used up, try tomorrow."
+  },
+  "probe": {
+    "tool": "claap_get_workspace"
+  },
+  "connector": {
+    "name": "Claap API",
+    "type": "REST",
+    "baseUrl": "https://api.claap.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Claap-Key",
+      "apiKey": "{{CLAAP_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "claap_get_workspace",
+      "description": "Get the Claap workspace the API key belongs to: id, name, creation date, number of members and number of recordings. Use it to check the connection; every other tool reads this workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/workspaces/mine"
+      }
+    },
+    {
+      "name": "claap_list_recordings",
+      "description": "List the workspace's recordings (meetings, calls, uploads), newest first, with id, title, URL, duration, recorder, meeting participants and times, folder, labels, source platform and available transcript languages. Filter by date, folder, recorder, source or view; page with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Only recordings created at or after this date/time (ISO 8601, e.g. 2026-09-01)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only recordings created before this date/time (ISO 8601)."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only recordings in this folder (channel) id."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; only with folder_id."
+          },
+          "recorder_email": {
+            "type": "string",
+            "description": "Only recordings made by this user's email."
+          },
+          "recorder_id": {
+            "type": "string",
+            "description": "Only recordings made by this Claap user id (from claap_list_users)."
+          },
+          "sources": {
+            "type": "string",
+            "description": "Comma-separated sources: Zoom, GoogleMeet, MsTeams, Aircall, Allo, Ringover, LemlistVoip, Call, Loom, MobileApp, Uploaded, Api."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created_desc",
+              "created_asc",
+              "duration_desc",
+              "duration_asc",
+              "title_asc",
+              "title_desc"
+            ],
+            "description": "Sort order (default created_desc, or the view's sort)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "Optional view id from claap_list_recording_views: its filters and sort apply."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/recordings",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "channelId": "$folder_id",
+          "labels": "$labels",
+          "recorderEmail": "$recorder_email",
+          "recorderId": "$recorder_id",
+          "sources": "$sources",
+          "sort": "$sort",
+          "viewId": "$view_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "claap_get_recording",
+      "description": "Get one recording by id: title, URL, duration, recorder, meeting participants, folder, labels, linked deal and companies, AI notes (key takeaways, action items, outline), AI field values and available transcript languages. Use it after claap_list_recordings for one meeting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "Recording id from claap_list_recordings."
+          }
+        },
+        "required": [
+          "recording_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/recordings/{recording_id}"
+      }
+    },
+    {
+      "name": "claap_get_recording_transcript",
+      "description": "Get the transcript of a recording, as JSON segments with speaker and timestamps or as readable text. Use format text to summarise a meeting or search what was said; set lang for a translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "Recording id from claap_list_recordings."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "text",
+              "json"
+            ],
+            "description": "text for a readable transcript, json for segments with speakers and timestamps.",
+            "default": "text"
+          },
+          "lang": {
+            "type": "string",
+            "description": "Optional 2-letter language code for a specific transcript or translation (e.g. en, de); default the original language."
+          }
+        },
+        "required": [
+          "recording_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/recordings/{recording_id}/transcript",
+        "queryParams": {
+          "format": "$format",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "claap_list_recording_views",
+      "description": "List the public recording views of the workspace (saved filters such as 'Discovery calls this week'), including the built-in default views flagged isDefault. Pass a view id to claap_list_recordings to apply it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/recordings/views"
+      }
+    },
+    {
+      "name": "claap_list_recording_ai_fields",
+      "description": "List the recording AI fields of the workspace (questions the AI answers for every recording, e.g. budget, next steps), sorted by title, with id, title, type and prompt. Values appear on recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/recordings/fields",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "claap_get_folder",
+      "description": "Get one folder (channel) by id: title, description, whether it is searchable, and member and public permissions. Folder ids appear on recordings as channel.id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder (channel) id, from the channel of a recording."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/folders/{folder_id}"
+      }
+    },
+    {
+      "name": "claap_list_deals",
+      "description": "List the deals Claap tracks from the connected CRM, most recently opened first, with id, name, stage, amount, owner, company and activity. Filter with a deal view; page with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": {
+            "type": "string",
+            "description": "Optional view id from claap_list_deal_views: its filters and sort apply."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals",
+        "queryParams": {
+          "viewId": "$view_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "claap_get_deal",
+      "description": "Get one deal by id: title, status, stage and pipeline, amount, opened and closed dates, owner, company and contact ids, AI summary and, optionally, the AI field values computed from its calls and emails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "string",
+            "description": "Deal id from claap_list_deals."
+          },
+          "return_ai_fields": {
+            "type": "boolean",
+            "description": "true to include the deal's AI field values."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals/{deal_id}",
+        "queryParams": {
+          "returnAiFields": "$return_ai_fields"
+        }
+      }
+    },
+    {
+      "name": "claap_list_deal_stages",
+      "description": "List the deal stages of the CRM connected to the workspace (HubSpot only), with the pipeline each stage belongs to. Use it to read stage names on deals. Answers 400 when the workspace has no HubSpot CRM connected.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals/stages"
+      }
+    },
+    {
+      "name": "claap_list_deal_owners",
+      "description": "List the deal owners of the CRM connected to the workspace (HubSpot only), with name and email. Answers 400 when the workspace has no HubSpot CRM connected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Optional: only the owner with this email."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals/owners",
+        "queryParams": {
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "claap_list_deal_views",
+      "description": "List the public deal views of the workspace, including the built-in defaults flagged isDefault. Pass a view id to claap_list_deals to apply its filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals/views"
+      }
+    },
+    {
+      "name": "claap_list_companies",
+      "description": "List companies Claap knows from meetings and the CRM, newest first by default, with id, name, domain and last interaction. Sort by name or last interaction; page with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created_desc",
+              "created_asc",
+              "last_interaction_desc",
+              "last_interaction_asc",
+              "name_asc",
+              "name_desc"
+            ],
+            "description": "Sort order."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "Optional view id from claap_list_company_views: its filters and sort apply."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies",
+        "queryParams": {
+          "sort": "$sort",
+          "viewId": "$view_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "claap_get_company",
+      "description": "Get one company by id with name, domains, deal ids, contact ids, last interaction, source and CRM link. If it was merged into another company, the surviving one is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id from claap_list_companies or a deal."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_id}"
+      }
+    },
+    {
+      "name": "claap_list_contacts",
+      "description": "List contacts (external meeting participants and CRM contacts), by name by default, with id, name, email, company and last interaction. Page with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "enum": [
+              "name_asc",
+              "name_desc",
+              "email_asc",
+              "email_desc",
+              "last_interaction_desc",
+              "last_interaction_asc"
+            ],
+            "description": "Sort order."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "Optional view id from claap_list_contact_views: its filters and sort apply."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts",
+        "queryParams": {
+          "sort": "$sort",
+          "viewId": "$view_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "claap_get_contact",
+      "description": "Get one contact by id with name, email, company id, whether they are external, CRM link and an AI summary. Use it to prepare a meeting with that person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from claap_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "claap_list_users",
+      "description": "List the users of the workspace in any state (active, invited, suspended) with id, name, email and role. Use it to find a recorder id or email for claap_list_recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Optional: only the user with this email."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users",
+        "queryParams": {
+          "email": "$email",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "claap_list_user_groups",
+      "description": "List the user groups (teams) of the workspace with their members. Use it to see who belongs to which team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.nextCursor from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user-groups",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    }
+  ]
+}

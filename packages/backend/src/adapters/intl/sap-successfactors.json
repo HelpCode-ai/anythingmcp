@@ -1,0 +1,584 @@
+{
+  "slug": "sap-successfactors",
+  "name": "SAP SuccessFactors",
+  "description": "Read SAP SuccessFactors Employee Central through its OData API: employees, job information, persons, companies, departments, positions and time off, plus generic OData tools for any other entity. OAuth 2.0 SAML bearer, read-only.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "sap-successfactors",
+  "docsUrl": "https://help.sap.com/docs/SAP_SUCCESSFACTORS_PLATFORM/d599f15995d348a1b45ba5603e2aba9b/03e1fc3791684367a6a76a614a2916de.html",
+  "prerequisites": "A SuccessFactors administrator has to register an OAuth client (Admin Center > Manage OAuth2 Client Applications) and generate a SAML assertion for an API user with SAP's offline SAML assertion generator. HTTP Basic authentication for SuccessFactors APIs is retired by SAP on 20 November 2026 and is not offered here.",
+  "instructions": "**What this connects to**: the OData V2 API of SAP SuccessFactors (Employee Central and the platform), `https://<api-server>/odata/v2`. Every call runs as the API user the SAML assertion names, so SuccessFactors role-based permissions decide what is visible.\n\n**Start with `sap_successfactors_guide`** (free), then the ready tools: `sap_successfactors_list_users` to find people and their userId, `sap_successfactors_list_employee_jobs` for company, department, position and manager, `sap_successfactors_list_time_off` for absences. For any other entity, `sap_successfactors_get_entity_metadata` lists its fields and `sap_successfactors_query` reads it.\n\n**Authentication (OAuth 2.0 SAML bearer)**\n1. Admin Center > Manage OAuth2 Client Applications > Register Client Application. Generate an X.509 certificate there (or upload your own), download the private key, and copy the API Key.\n2. Create a SAML assertion for the API user with SAP's offline SAML assertion generator (SAP Note 3031657): token URL `<api-server>/oauth/token`, the API key as client id, the API user, the private key, and `expireInMinutes` set to how long the assertion should stay usable.\n3. Fill in `SF_API_URL` (API server of your data center), `SF_COMPANY_ID`, `SF_CLIENT_ID` (the API key) and `SF_SAML_ASSERTION`.\nThe connector exchanges the assertion at `/oauth/token` for an access token valid 24 hours and renews it automatically while the assertion is valid. When the assertion expires, generate a new one and paste it in. SAP retires HTTP Basic authentication for these APIs on 20 November 2026, so it is not offered.\n\n**Permissions**: the API user needs Employee Central API permissions (Role-Based Permissions > Employee Central API: OData API access) and read permission on the entities and fields the agent should see.\n\n**Effective dating**: EmpJob, PerPersonal, foundation objects and Position return the record valid today. Pass `as_of_date`, or `from_date` and `to_date` for history.\n\n**Paging and limits**: a page holds at most 1000 rows; pass `skip` for the next page and narrow with `filter` and `select`. SAP throttles heavy API use per tenant; avoid scanning all users repeatedly, filter by `lastModifiedDateTime` instead.\n\n**Pitfalls**: field names are case-sensitive; inactive users are excluded from User unless the filter names a status; picklist fields return codes (expand the `...Nav` navigation for labels); `sap_successfactors_describe_service` loads the complete tenant metadata, which is large and slow the first time.",
+  "requiredEnvVars": [
+    "SF_API_URL",
+    "SF_COMPANY_ID",
+    "SF_CLIENT_ID",
+    "SF_SAML_ASSERTION"
+  ],
+  "envVarMeta": {
+    "SF_API_URL": {
+      "label": "API server",
+      "kind": "address",
+      "help": "The OData API server of your data center, without /odata/v2, e.g. https://api4.successfactors.com or https://api012.successfactors.eu. It is listed in SAP's 'List of SAP SuccessFactors API Servers' and matches the host of your login URL.",
+      "example": "https://api4.successfactors.com",
+      "pattern": "^https://[a-z0-9.-]+\\.[a-z]{2,}$",
+      "patternMessage": "The https:// address of the API server, without a path or trailing slash.",
+      "link": "https://help.sap.com/docs/SAP_SUCCESSFACTORS_PLATFORM/93f8b4f6ad7d4f8c96e4e2e6e8ad6c3d/af2b8d5437494b12be88fe374eba75b6.html"
+    },
+    "SF_COMPANY_ID": {
+      "label": "Company ID",
+      "kind": "setting",
+      "help": "Your SuccessFactors company id: shown under your name (top right) > Show version information, and in the login URL as company=.",
+      "example": "ACMECORPT1"
+    },
+    "SF_CLIENT_ID": {
+      "label": "OAuth API key",
+      "kind": "credential",
+      "help": "Admin Center > Manage OAuth2 Client Applications > Register Client Application. The API Key shown after registering is the client id.",
+      "link": "https://help.sap.com/docs/SAP_SUCCESSFACTORS_PLATFORM/d599f15995d348a1b45ba5603e2aba9b/6b3c741483de47b290d075d798163bc1.html"
+    },
+    "SF_SAML_ASSERTION": {
+      "label": "SAML assertion",
+      "kind": "credential",
+      "help": "A base64 SAML assertion for the API user, signed with the private key of the registered client. Generate it with SAP's offline SAML assertion generator (SAP Note 3031657) and set expireInMinutes to the validity you want; renew it here before it expires.",
+      "link": "https://userapps.support.sap.com/sap/support/knowledge/en/3031657"
+    }
+  },
+  "verifyHints": {
+    "401": "SuccessFactors refused the token request or the token. Check that the company id and API key belong to the same tenant, that the SAML assertion was signed with that client's private key and has not expired, and that the API server is the one of your data center.",
+    "403": "The API user has no permission for this entity. Grant it in Role-Based Permissions (Employee Central API, User Search, and the entity's read permission).",
+    "not_found": "No SuccessFactors OData API at this address. Use the API server of your data center (e.g. https://api4.successfactors.com), not the login or UI host."
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "SAP SuccessFactors",
+    "type": "ODATA",
+    "baseUrl": "{{SF_API_URL}}/odata/v2",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{SF_API_URL}}/oauth/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "client_id": "${username}",
+        "company_id": "{{SF_COMPANY_ID}}",
+        "grant_type": "urn:ietf:params:oauth:grant-type:saml2-bearer",
+        "assertion": "${password}"
+      },
+      "username": "{{SF_CLIENT_ID}}",
+      "password": "{{SF_SAML_ASSERTION}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 82800,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "config": {
+      "odata": {
+        "version": "v2",
+        "toolPrefix": "sap_successfactors",
+        "maxRows": 1000
+      }
+    }
+  },
+  "probe": {
+    "tool": "sap_successfactors_list_users",
+    "params": {
+      "top": 1,
+      "select": "userId"
+    }
+  },
+  "tools": [
+    {
+      "name": "sap_successfactors_guide",
+      "description": "How to read SAP SuccessFactors through its OData API: the workflow, filter syntax, effective dating (asOfDate, fromDate, toDate), the common entities and pitfalls. Static text, costs no API call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "filters",
+              "effective_dating",
+              "entities",
+              "pitfalls"
+            ],
+            "description": "Chapter to read. Omit for the overview."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "SAP SuccessFactors OData API: how to work.\n\n1. Start with a ready tool: sap_successfactors_list_users (people), sap_successfactors_list_employee_jobs (job assignments: company, department, position, manager), sap_successfactors_list_persons (person records), sap_successfactors_list_companies / sap_successfactors_list_departments (organization), sap_successfactors_list_positions, sap_successfactors_list_time_off.\n2. For anything else, sap_successfactors_get_entity_metadata with the entity name (e.g. EmpEmployment, PerPersonal, PerEmail, TimeAccount, FOLocation) lists its fields and navigation properties without loading the whole tenant model. Then sap_successfactors_query reads it with filter, select and top.\n3. sap_successfactors_describe_service loads the complete $metadata of the tenant. It is large (often several megabytes) and the first call can take a while; it is cached for 24 hours.\n\nIds: userId (User, EmpJob, EmployeeTime) is the employee's user id, personIdExternal (PerPerson) the person id; in most tenants they are the same value, but not always. Organization objects are keyed by externalCode.\n\nAlways select only the fields you need. Effective-dated entities return the record valid today unless you pass as_of_date, or from_date and to_date for history.",
+        "staticResponses": {
+          "filters": "OData V2 filter syntax in SuccessFactors\n\n- Comparison: eq, ne, gt, ge, lt, le; logic: and, or; parentheses for grouping.\n- Strings in single quotes: department eq 'SALES'. A quote inside a value is doubled.\n- Several values: userId in 'u1','u2','u3' (SuccessFactors extension), or (userId eq 'u1' or userId eq 'u2').\n- Text: substringof('Smith',lastName) eq true, startswith(lastName,'Sm') eq true. like is supported on some fields: lastName like '%mith'.\n- Dates: lastModifiedDateTime ge datetime'2026-01-01T00:00:00'. Dates come back as /Date(ms)/ and are converted to ISO strings.\n- Navigation fields can be filtered with a slash: empInfo/jobInfoNav/department eq 'SALES' (only on navigations that allow it).\n- Field names are case-sensitive.",
+          "effective_dating": "Effective-dated entities (EmpJob, PerPersonal, FOCompany, FODepartment, Position, EmpCompensation and most MDF objects)\n\n- Without dates the API returns the record valid today.\n- asOfDate=YYYY-MM-DD returns the record valid on that day (tool parameter as_of_date).\n- fromDate and toDate return every record valid at some point in the period, i.e. the history (from_date, to_date).\n- startDate and endDate on each row say when the record is valid; endDate 9999-12-31 means open-ended.\n- EmpJob rows carry seqNumber when several changes happen on the same day: the highest is the latest.",
+          "entities": "Common entities\n\n- User: the employee profile (userId, username, firstName, lastName, email, department, division, location, title, status, manager/userId through the manager navigation).\n- EmpEmployment: one row per employment (userId, personIdExternal, startDate, endDate for terminations).\n- EmpJob: job information, effective-dated (userId, startDate, company, businessUnit, division, department, location, position, jobCode, managerId, emplStatus, eventReason, standardHours, FTE).\n- PerPerson / PerPersonal / PerEmail / PerPhone: person data; PerPersonal is effective-dated (firstName, lastName, gender, nationality).\n- FOCompany, FOBusinessUnit, FODivision, FODepartment, FOLocation, FOJobCode, FOCostCenter: foundation objects keyed by externalCode.\n- Position: position management (code, externalName_defaultValue, company, department, jobCode, vacant, parentPosition).\n- EmployeeTime: time off and absences (userId, timeType, startDate, endDate, quantityInDays, approvalStatus). TimeAccount and TimeAccountDetail hold balances.\n- PicklistOption / PickListValueV2: the labels behind picklist codes such as emplStatus.",
+          "pitfalls": "Pitfalls\n\n- 401: the token is not valid (expired SAML assertion, wrong company id, OAuth client deleted). 403: the API user lacks a role permission for this entity or field (Role-based permissions, Employee Central API permissions). Say so instead of guessing data.\n- Inactive users are hidden from User by default; add status in 'f','t','e','d' ... see the field's picklist, or filter status eq 'active' / 'inactive' explicitly.\n- Picklist fields (emplStatus, eventReason) return codes or ids; expand the picklist navigation (e.g. emplStatusNav) for labels.\n- A page holds at most 1000 rows; use skip for the next page, or narrow the filter.\n- Personal data (address, national id, salary) needs explicit permissions and should only be read when the user asks for it."
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_users",
+      "description": "Employee profiles from the User entity: userId, username, name, email, department, division, location, title and status. Filter by department, status or lastModifiedDateTime; expand manager or empInfo for related records. Use it to find a userId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/User",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_get_user",
+      "description": "One employee profile from the User entity by userId, with optional select and expand (e.g. manager, hr, empInfo/jobInfoNav). Use after list_users when you need one person's details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The userId, as returned by list_users or list_employee_jobs."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, e.g. manager,empInfo."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/User('{user_id}')",
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_employee_jobs",
+      "description": "Job information (EmpJob, effective-dated): userId, startDate, company, business unit, division, department, location, position, job code, managerId, employment status and event reason. Returns the record valid today unless as_of_date or from_date/to_date is given.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Effective date YYYY-MM-DD: return the record valid on that day. Default is today."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of a period YYYY-MM-DD: return every record valid at some point between from_date and to_date (history)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period YYYY-MM-DD, used with from_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EmpJob",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages",
+          "asOfDate": "$as_of_date",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_persons",
+      "description": "Person records (PerPerson): personIdExternal, date and place of birth, with navigations to personal info (personalInfoNav), emails (emailNav), phones (phoneNav) and employments (employmentNav). Use expand to pull them in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Effective date YYYY-MM-DD: return the record valid on that day. Default is today."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of a period YYYY-MM-DD: return every record valid at some point between from_date and to_date (history)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period YYYY-MM-DD, used with from_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/PerPerson",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages",
+          "asOfDate": "$as_of_date",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_companies",
+      "description": "Legal entities (FOCompany, effective-dated): externalCode, name, country, currency, status and default location. Use the externalCode to filter EmpJob by company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Effective date YYYY-MM-DD: return the record valid on that day. Default is today."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of a period YYYY-MM-DD: return every record valid at some point between from_date and to_date (history)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period YYYY-MM-DD, used with from_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FOCompany",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages",
+          "asOfDate": "$as_of_date",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_departments",
+      "description": "Departments (FODepartment, effective-dated): externalCode, name, description, parent department, head of unit and cost center. Use the externalCode to filter EmpJob or User by department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Effective date YYYY-MM-DD: return the record valid on that day. Default is today."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of a period YYYY-MM-DD: return every record valid at some point between from_date and to_date (history)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period YYYY-MM-DD, used with from_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FODepartment",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages",
+          "asOfDate": "$as_of_date",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_positions",
+      "description": "Positions from Position Management (Position, effective-dated): code, externalName_defaultValue, company, department, job code, vacant flag, FTE and parent position. Use it for org charts and open positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Effective date YYYY-MM-DD: return the record valid on that day. Default is today."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start of a period YYYY-MM-DD: return every record valid at some point between from_date and to_date (history)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the period YYYY-MM-DD, used with from_date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Position",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages",
+          "asOfDate": "$as_of_date",
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_list_time_off",
+      "description": "Time off and absence requests (EmployeeTime from Time Off): userId, timeType, startDate, endDate, quantityInDays or quantityInHours and approvalStatus. Filter by userId and a startDate range to see who is absent when.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter. Strings in single quotes, e.g. status eq 'active' or lastModifiedDateTime ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Keeps answers small; field names are case-sensitive."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. lastName asc."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to include, comma-separated (see describe_entity or get_entity_metadata for the names)."
+          },
+          "top": {
+            "type": "integer",
+            "default": 100,
+            "description": "Rows to return (default 100, SuccessFactors caps a page at 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EmployeeTime",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "sap_successfactors_get_entity_metadata",
+      "description": "The $metadata of one entity (e.g. EmpEmployment, PerPersonal, TimeAccount, FOLocation): its fields with types, labels and whether they are filterable, plus navigation properties. Much lighter than describe_service, which loads the whole tenant model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name, case-sensitive, e.g. EmpEmployment or PerPersonal."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity}/$metadata"
+      }
+    }
+  ]
+}

@@ -2,12 +2,36 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { EmailService } from '../../settings/email.service';
 import { LicenseService } from '../../license/license.service';
+import { LicenseReleaseService } from '../../license/license-release.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
-/** How long after connecting an AI client to an empty workspace we nudge. */
-const AI_CLIENT_NUDGE_AFTER = HOURS(2);
+/**
+ * How long after signing up a user with an empty workspace gets the first
+ * nudge: how to connect an app, from the chat or the dashboard. It used to be
+ * 24 hours (2 for someone who had connected an AI client), by when most of
+ * those sign-ups had left. The cron runs hourly.
+ */
+const FIRST_NUDGE_AFTER = HOURS(1);
 const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
+
+/**
+ * Win-back after a Cloud trial ends. Until 6 Oct 2026 the licence site sent
+ * every Cloud trial the same 50% code a week and a month after expiry (about
+ * 2,100 emails, one redemption): most of those people never connected an app.
+ * The site has no usage data; this cron does, so Cloud trials are won back from
+ * here and the site keeps the self-hosted ones.
+ *
+ * Someone who made a successful call gets 30% a week after expiry and 50% a
+ * month after; someone who never did gets one email on how to connect an app
+ * from the chat. Only trials that ended from WINBACK_FROM on: earlier ones were
+ * already sent the site's win-back.
+ */
+const WINBACK_FROM = new Date('2026-10-06T00:00:00Z');
+const WINBACK_STAGES = [
+  { stage: 'winback7', after: DAYS(7), until: DAYS(14), percentOff: 30, codeEnv: 'WINBACK_FIRST_PROMO_CODE', code: 'START30', endedAgo: 'week' },
+  { stage: 'winback30', after: DAYS(30), until: DAYS(37), percentOff: 50, codeEnv: 'WINBACK_FINAL_PROMO_CODE', code: 'WINBACK50', endedAgo: 'month' },
+] as const;
 
 /**
  * Onboarding drip — finds users who registered, verified their email,
@@ -38,6 +62,7 @@ export class OnboardingCronService {
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly license: LicenseService,
+    private readonly licenseRelease: LicenseReleaseService,
   ) {}
 
   async run(): Promise<{
@@ -52,6 +77,9 @@ export class OnboardingCronService {
     trialsRepaired: number;
     licensesReverified: number;
     licensesDeactivated: number;
+    licensesReleased: number;
+    winbackOffers: number;
+    winbackHelp: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -67,11 +95,14 @@ export class OnboardingCronService {
       trialsRepaired: 0,
       licensesReverified: 0,
       licensesDeactivated: 0,
+      licensesReleased: 0,
+      winbackOffers: 0,
+      winbackHelp: 0,
       skipped: 0,
     };
 
     // Candidate set: verified, ≤2 reminders, not opted out, registered
-    // between AI_CLIENT_NUDGE_AFTER and 14d ago. We bound at 14d so a user
+    // between FIRST_NUDGE_AFTER and 14d ago. We bound at 14d so a user
     // who signed up months ago doesn't suddenly get woken up if we ever
     // backfill columns.
     //
@@ -86,7 +117,7 @@ export class OnboardingCronService {
         emailMarketingOptOut: false,
         onboardingReminderCount: { lt: 2 },
         createdAt: {
-          lte: new Date(now - AI_CLIENT_NUDGE_AFTER),
+          lte: new Date(now - FIRST_NUDGE_AFTER),
           gte: new Date(now - HOURS(24 * 14)),
         },
       },
@@ -154,11 +185,11 @@ export class OnboardingCronService {
         ? now - u.onboardingLastReminderAt.getTime()
         : Infinity;
 
-      // First nudge: 24h after signup, or as soon as an AI client has been
-      // connected for AI_CLIENT_NUDGE_AFTER, whichever comes first. The
-      // second one names the client, because that is what the user just did.
+      // First nudge: an hour after signup (every candidate is at least that
+      // old). Someone who already connected an AI client is told to ask it
+      // for the app in the same chat, naming the client.
       const aiClient = aiClients.get(u.id);
-      if (u.onboardingReminderCount === 0 && (age >= HOURS(24) || aiClient)) {
+      if (u.onboardingReminderCount === 0) {
         const ok = await this.email.sendOnboardingReminderEmail(
           u.email,
           u.name || 'there',
@@ -211,6 +242,7 @@ export class OnboardingCronService {
 
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
+    await this.runWinbackPass(now, out);
     out.trialsMarkedExpired = await this.markExpiredTrials(now);
 
     // Before nudging anyone about their trial, make sure they actually got one.
@@ -225,12 +257,17 @@ export class OnboardingCronService {
     out.licensesReverified = reverified.checked;
     out.licensesDeactivated = reverified.deactivated;
 
+    // Licences of deleted workspaces the licence site has not confirmed
+    // ended yet: a release right after the deletion can fail.
+    out.licensesReleased = (await this.licenseRelease.releaseOrphanedLicenses()).released;
+
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
+        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} winbackHelp=${out.winbackHelp} ` +
         `skipped=${out.skipped}`,
     );
     return out;
@@ -322,6 +359,101 @@ export class OnboardingCronService {
   }
 
   /**
+   * Win-back pass (see WINBACK_STAGES). One email per stage and workspace,
+   * flagged in OrgSettings like the lifecycle emails; a stage is only sent
+   * inside its window, so a late run never mails a month-old trial its
+   * one-week offer. Skips workspaces that bought a plan since, and admins who
+   * opted out of marketing email.
+   */
+  private async runWinbackPass(
+    now: number,
+    out: { examined: number; winbackOffers: number; winbackHelp: number; skipped: number },
+  ): Promise<void> {
+    const trials = await this.prisma.license.findMany({
+      where: {
+        plan: 'trial',
+        status: { in: ['active', 'expired'] },
+        organizationId: { not: null },
+        expiresAt: { gte: WINBACK_FROM, lte: new Date(now - DAYS(7)) },
+      },
+      select: { organizationId: true, expiresAt: true },
+    });
+
+    for (const lic of trials) {
+      const organizationId = lic.organizationId!;
+      const endedFor = now - lic.expiresAt!.getTime();
+      const step = WINBACK_STAGES.find((s) => endedFor >= s.after && endedFor < s.until);
+      if (!step) continue;
+      out.examined++;
+      const flagKey = `trial_email_${step.stage}`;
+
+      const [already, paid] = await Promise.all([
+        this.prisma.orgSettings.findUnique({
+          where: { organizationId_key: { organizationId, key: flagKey } },
+          select: { id: true },
+        }),
+        this.prisma.license.count({
+          where: { organizationId, status: 'active', plan: { not: 'trial' } },
+        }),
+      ]);
+      if (already || paid > 0) {
+        out.skipped++;
+        continue;
+      }
+
+      const [admins, successfulCalls] = await Promise.all([
+        this.prisma.organizationMember.findMany({
+          where: { organizationId, role: 'ADMIN', deactivatedAt: null },
+          select: { user: { select: { email: true, name: true, emailMarketingOptOut: true } } },
+        }),
+        this.prisma.toolInvocation.count({ where: { organizationId, status: 'SUCCESS' } }),
+      ]);
+      const used = successfulCalls > 0;
+
+      // Someone who never made a call gets the how-to once, a week after.
+      if (!used && step.stage !== 'winback7') {
+        await this.flag(organizationId, flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut);
+      let sentAny = false;
+      for (const a of recipients) {
+        const ok = await this.email.sendTrialWinbackEmail(
+          a.user.email,
+          a.user.name || 'there',
+          used
+            ? {
+                kind: 'discount',
+                percentOff: step.percentOff,
+                promoCode: process.env[step.codeEnv] || step.code,
+                endedAgo: step.endedAgo,
+                successfulCalls,
+              }
+            : { kind: 'help' },
+        );
+        if (ok) sentAny = true;
+      }
+
+      // Nobody to mail (no admin, all opted out) ends the stage too; a failed
+      // send does not, so the next run retries inside the window.
+      if (sentAny || recipients.length === 0) await this.flag(organizationId, flagKey);
+      if (!sentAny) out.skipped++;
+      else if (used) out.winbackOffers++;
+      else out.winbackHelp++;
+    }
+  }
+
+  private async flag(organizationId: string, key: string): Promise<void> {
+    await this.prisma.orgSettings.upsert({
+      where: { organizationId_key: { organizationId, key } },
+      create: { organizationId, key, value: new Date().toISOString() },
+      update: { value: new Date().toISOString() },
+    });
+  }
+
+  /**
    * Flip trials past their `expiresAt` to `status = 'expired'`.
    *
    * Access was never the issue: the licence guard checks `expiresAt` at
@@ -354,8 +486,8 @@ export class OnboardingCronService {
    * caps it at one send.
    */
   /**
-   * Users among `userIds` with a live AI-client connection made at least
-   * AI_CLIENT_NUDGE_AFTER ago, mapped to the client's display name.
+   * Users among `userIds` with a live AI-client connection, mapped to the
+   * client's display name.
    */
   private async connectedAiClients(userIds: string[], now: number): Promise<Map<string, string>> {
     const out = new Map<string, string>();
@@ -364,7 +496,7 @@ export class OnboardingCronService {
       where: {
         userId: { in: userIds },
         revokedAt: null,
-        createdAt: { lte: new Date(now - AI_CLIENT_NUDGE_AFTER) },
+        createdAt: { lte: new Date(now) },
       },
       select: { userId: true, clientId: true },
     });

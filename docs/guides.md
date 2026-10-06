@@ -10,8 +10,9 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 
 | Client | Guide | Transport |
 |---|---|---|
-| **Claude Desktop / Claude Code** | [Setup →](integrations/claude.md) | Streamable HTTP |
+| **Claude (claude.ai, Desktop, Code)** | [Setup →](integrations/claude.md) · [Claude Directory](https://claude.ai/directory/anythingmcp) (Cloud) | Streamable HTTP |
 | **ChatGPT** | [Setup →](integrations/chatgpt.md) | Streamable HTTP |
+| **Meta Muse** | [Setup →](integrations/muse.md) | Streamable HTTP |
 | **Google Gemini** | [Setup →](integrations/gemini.md) | HTTP / SSE |
 | **GitHub Copilot** | [Setup →](integrations/copilot.md) | Streamable HTTP |
 | **Cursor** | [Setup →](integrations/claude.md#cursor) | Streamable HTTP |
@@ -52,7 +53,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 <details>
 <summary><strong>How do I create a custom connector for Claude?</strong></summary>
 
-Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](https://claude.ai/directory/anythingmcp) in one click. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
 </details>
 
 <details>

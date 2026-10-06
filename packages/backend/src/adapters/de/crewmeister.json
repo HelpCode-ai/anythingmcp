@@ -1,0 +1,1151 @@
+{
+  "slug": "crewmeister",
+  "name": "Crewmeister",
+  "description": "Crewmeister, German time tracking, absence planning and shift planning for small businesses: members, teams and roles, absences and leave balances, clock stamps, durations, overtime balances, working time models, shifts, templates and workplaces. API v3 with a login token.",
+  "region": "de",
+  "category": "time-tracking",
+  "icon": "crewmeister",
+  "docsUrl": "https://dev.crewmeister.com/",
+  "instructions": "**Credentials**: Crewmeister API v3 signs in with the e-mail address and password of a Crewmeister user. AnythingMCP posts them to `/api/v3/auth/user/`, receives a JWT and sends it as `Authorization: Bearer` on every call; it logs in again on its own when the token expires. Use a dedicated user (for example an admin account created for the integration) rather than a personal one: the API returns exactly what that user may see, so an ordinary member sees only their own data, while a crew owner or manager sees the whole crew or their teams. Single sign-on accounts without a Crewmeister password cannot log in here.\n\n**Where to start**: `crewmeister_list_members` gives every person's `userId` (the id all other tools filter on) and `crewmeister_list_crews` the `crewId`. Then `crewmeister_list_absence_types` maps absence type ids to names.\n\n**Mandatory filters**: five resources are computed per crew and date and answer 400 without them: `crewmeister_list_durations` and `crewmeister_list_calendar_days` need `crewId==<id>` plus a date or date range, `crewmeister_list_duration_balances` and `crewmeister_list_entitlement_balances` need `crewId==<id>;date==<day>`, and `crewmeister_list_absence_entitlements` needs `crewId==<id>`. Ranges such as `crewId=gt=0` are not accepted there.\n\n**Filtering (RSQL)**: every list tool takes `filter`, an RSQL expression. Use `==`, `!=`, `=lt=`, `=le=`, `=gt=`, `=ge=`, `=in=(1,2)`; join conditions with `;` (AND) or `,` (OR); `*` is a wildcard in string values. Examples: `userId==123;date=ge=2026-09-01;date=le=2026-09-30` for one person's month, `state==REQUESTED` for open absence requests. Dates are `yyyy-MM-dd`; timestamps are ISO 8601 with an offset. A filter on a field the resource does not support answers 400 INVALID_ARGUMENT.\n\n**Paging**: pages start at 0 and hold 20 items by default (`page_size` to change). The answer has `content`, `totalElements`, `totalPages` and `hasNextPage`; call again with `page` + 1 while `hasNextPage` is true. `sort` takes keys such as `+from` or `-timestamp`.\n\n**Which time data to use**: stamps are the raw clock-in and clock-out events, bookings are the processed time entries, durations the per-day totals by type (WORK, BREAK, OVERTIME), and duration balances the running overtime account. For \"hours worked last month\" use durations; for \"who is clocked in now\" use stamps of today.\n\n**Absences** move through DRAFT, REQUESTED, PRE_APPROVED, APPROVED, REJECTED and REVOKED. Remaining vacation is in `crewmeister_list_entitlement_balances` (filter userId and a date).\n\n**Secrets are left out**: the crew's join password and members' terminal PIN codes are removed from the answers.\n\n**Errors**: 401 means the login failed or the token was refused; 403 PERMISSION_DENIED and 404 NOT_FOUND also cover records the user may not see. Reading with a filter the user may not see returns an empty page rather than an error.\n\nThe v2 API was retired on 31 March 2026; this connector uses v3 only.",
+  "prerequisites": "A Crewmeister user with an e-mail address and password (not single sign-on). The connector sees what that user may see, so use a crew owner or manager account for company-wide data.",
+  "requiredEnvVars": [
+    "CREWMEISTER_EMAIL",
+    "CREWMEISTER_PASSWORD"
+  ],
+  "envVarMeta": {
+    "CREWMEISTER_EMAIL": {
+      "label": "Login e-mail",
+      "kind": "credential",
+      "help": "The e-mail address you sign in to app.crewmeister.com with. Use an account with manager or owner rights for the whole crew.",
+      "link": "https://app.crewmeister.com/",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "The e-mail address of the Crewmeister login."
+    },
+    "CREWMEISTER_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "The password of that Crewmeister login. Reset it at app.crewmeister.com if the account uses single sign-on only.",
+      "link": "https://app.crewmeister.com/"
+    }
+  },
+  "verifyHints": {
+    "400": "Crewmeister did not accept the login (it answers 400 \"User not found\" for an unknown e-mail or a wrong password). Check that you can sign in at app.crewmeister.com with the same e-mail and password.",
+    "401": "Crewmeister refused the token issued for this login. Check that you can sign in at app.crewmeister.com with them, and that the account is not single sign-on only.",
+    "403": "The login works but this user may not read this data. Use an account with manager or owner rights."
+  },
+  "connector": {
+    "name": "Crewmeister API v3",
+    "type": "REST",
+    "baseUrl": "https://api.crewmeister.com/api/v3",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.crewmeister.com/api/v3/auth/user/",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{CREWMEISTER_EMAIL}}",
+      "password": "{{CREWMEISTER_PASSWORD}}",
+      "tokenJsonPath": "token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "crewmeister_list_members",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "crewmeister_list_members",
+      "description": "List the members (employees) of the crew with id, userId, name, e-mail, employee id, first and last working day and disabled flag. The userId here is the id every other tool filters on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, name, email, username, employeeId, employeeType, disabled, firstWorkingDay, lastWorkingDay. Example: disabled==false;name==*Müller*"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+name\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/platform-app/members",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "content[*].pinCode"
+          ]
+        }
+      }
+    },
+    {
+      "name": "crewmeister_get_member",
+      "description": "Return one member by its member id with name, e-mail, userId, employee id, language, working-day range and disabled flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Member id (the id field from crewmeister_list_members, not the userId)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/platform-app/members/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "pinCode"
+          ]
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_teams",
+      "description": "List the teams of the crew with their name and the userIds that belong to each team. Use it to resolve a team name to its members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, name, crewId, userIds, legacyId. Example: name==Kitchen"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/platform-app/teams",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_member_roles",
+      "description": "List role assignments: which user is MANAGER, SETTING_MANAGER or MANAGER_READ_ONLY, for which product and team. Use it to find who approves absences for a team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, teamId, productId, roleType (MANAGER, SETTING_MANAGER, MANAGER_READ_ONLY). Example: roleType==MANAGER"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/platform-app/member-roles",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_crews",
+      "description": "List the crews (companies) the logged-in user can access, with id, name, creation date and owner. The crew id is the crewId used in filters and when creating records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, name, createdAt, ownerUserId. Example: name==*GmbH*"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/platform-app/crews",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "content[*].password"
+          ]
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_absences",
+      "description": "List absences (vacation, sickness and other leave) with user, absence type id, from and to dates, day parts and state (DRAFT, REQUESTED, PRE_APPROVED, APPROVED, REJECTED, REVOKED).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, absenceType, from, to, fromDayPart, toDayPart, state, stateChangeUserId, stateChangeDatetime, entered, zoneId. Example: userId==123;from=le=2026-10-31;to=ge=2026-10-01;state==APPROVED"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+from\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/absences",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_get_absence",
+      "description": "Return one absence by id with its dates, day parts, state, state changes and the working days it covers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Absence id from crewmeister_list_absences."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/absences/{id}"
+      }
+    },
+    {
+      "name": "crewmeister_list_absence_types",
+      "description": "List the absence type settings: name, absenceTypeId, linked entitlement, whether members can request or create it, validity period and working-time compensation. Maps an absenceType id to a name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, teamId, validFrom, validTo, name, absenceTypeId, enabled, entitlementId, memberCanRequest, memberCanCreate. Example: enabled==true"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/absence-type-settings",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_absence_entitlements",
+      "description": "List the entitlement categories (leave allowances such as annual leave) of a crew with id and name. The entitlementId links absence types and balances to them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: crewId==<crew id>. Crewmeister answers 400 without it. RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, name. Example: crewId==42"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/absence-entitlements",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_entitlement_balances",
+      "description": "Return remaining leave per user and entitlement as of one date (balance in days). The filter must name the crew and the date; add userId for one person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: crewId==<crew id> and date==<yyyy-MM-dd>. Crewmeister answers 400 without it. RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: crewId, userId, entitlementId, date, balance. Example: crewId==42;userId==123;date==2026-12-31"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/entitlement-balances",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_entitlement_adjustments",
+      "description": "List manual adjustments to leave entitlements (carry-over, extra days, corrections) per user, entitlement and date, with the adjustment value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, entitlementId, date, adjustment. Example: userId==123"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/entitlement-adjustments",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_absence_working_days",
+      "description": "List the working days an absence covers, with the date and the length counted (1 for a full day, 0.5 for half a day). Filter on absenceId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, absenceId, date, length. Example: absenceId==456"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absencemanager/working-days",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_stamps",
+      "description": "List raw clock events (START_WORK, START_BREAK, CLOCK_OUT) with timestamp, user, location, note, status and time categories. Use it to see when someone clocked in and out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, timestamp, creationTimestamp, stampType, location, note, chainStartStampId, stampStatus, allocationDate, timeCategoryOneId to timeCategoryFiveId. Example: userId==123;allocationDate=ge=2026-09-01;allocationDate=le=2026-09-30"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+timestamp\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/stamps",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_durations",
+      "description": "List aggregated durations per user, date and type (e.g. WORK, BREAK, OVERTIME), optionally by time category. Use it for hours worked per day or month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: crewId==<crew id> and a date condition (date==, or date=ge= with date=le=). Crewmeister answers 400 without it. RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: crewId, userId, date, type, timeCategoryOneId, timeCategoryTwoId. Example: crewId==42;userId==123;date=ge=2026-09-01;date=le=2026-09-30"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+date\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/durations",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_duration_balances",
+      "description": "Return running time account balances (e.g. overtime, can be negative) per user as of one date. The filter must name the crew and the date; add userId for one person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: crewId==<crew id> and date==<yyyy-MM-dd>. Crewmeister answers 400 without it. RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: crewId, userId, date. Example: crewId==42;userId==123;date==2026-09-30"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/duration-balances",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_bookings",
+      "description": "List processed time bookings per user and date with duration, time account type, origin (STAMPS, ABSENCES, SHIFTS, CORRECTIONS, PAYOUTS ...) and time categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, timeAccountType, allocationDate, from, type, origin, timeCategoryOneId, timeCategoryTwoId. Example: userId==123;allocationDate=ge=2026-09-01"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+allocationDate\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/bookings",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_time_accounts",
+      "description": "List the time account types of the crew (e.g. regular working time, overtime) with their type key and description. Explains the types used in bookings and balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: crewId, type, description. Example: type==OVERTIME"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/time-accounts",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_time_categories",
+      "description": "List time categories (projects, cost centres or tasks on levels 1 to 5) that stamps and bookings are tagged with, with id, level and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, level, name, legacyId. Example: level==1"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/time-categories",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_working_time_models",
+      "description": "List the working time models: target hours per weekday and automatic break rules that apply to users or teams. Use it to explain target hours and overtime.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: see the API reference. Example: userId==123"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/working-time-models",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_calendar_days",
+      "description": "List calendar day kinds (working day, weekend, public holiday, possibly split into morning and afternoon) for dates, as used in time and absence calculations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: crewId==<crew id> and a date range (date=ge= with date=le=). Crewmeister answers 400 without it. RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: crewId, userId, date. Example: crewId==42;date=ge=2026-12-20;date=le=2026-12-31"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetracking/day-kind-calendar-days",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_shifts",
+      "description": "List planned shifts with user, start and end, break, workplace, notes, publication type and shift-offer details. Filter on from/to for a week's roster.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, userId, from, to, type, publishedShiftId, workplaceId, shiftOffer. Example: from=ge=2026-10-05T00:00:00+02:00;to=le=2026-10-12T00:00:00+02:00"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"+from\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shiftplanner/shifts",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_get_shift",
+      "description": "Return one shift by id with user, times, break, workplace, notes and shift-offer settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Shift id from crewmeister_list_shifts."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shiftplanner/shifts/{id}"
+      }
+    },
+    {
+      "name": "crewmeister_list_shift_templates",
+      "description": "List the reusable week templates of the shift planner with id and name. Use the id to read their shifts with crewmeister_list_template_shifts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, name, legacyId. Example: name==*Sommer*"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shiftplanner/templates",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_template_shifts",
+      "description": "List the shifts inside shift templates with times, offsets, break, workplace and assigned user. Filter on templateId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, templateId, userId. Example: templateId==789"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shiftplanner/template-shifts",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_list_workplaces",
+      "description": "List the workplaces (locations or work areas) shifts are assigned to, with name, linked time category and disabled date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "RSQL filter. Operators: == != =lt= =le= =gt= =ge= =in=(a,b) =out=(a,b); join with ; for AND and , for OR. Dates are yyyy-MM-dd, timestamps ISO 8601 with offset. Fields: id, crewId, name, disabledAt, timeCategoryId, legacyId. Example: disabledAt=isnull=true"
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, each a field name with + (ascending) or - (descending) in front, e.g. [\"-id\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page. Default 20; ask for up to 100 at a time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shiftplanner/workplaces",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_create_stamp",
+      "description": "Record a clock event for a user: START_WORK to clock in, START_BREAK to start a break, CLOCK_OUT to clock out. Returns the write response with the created stamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crew_id": {
+            "type": "integer",
+            "description": "Crew id from crewmeister_list_crews."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "userId of the member from crewmeister_list_members."
+          },
+          "stamp_type": {
+            "type": "string",
+            "description": "START_WORK, START_BREAK or CLOCK_OUT.",
+            "enum": [
+              "START_WORK",
+              "START_BREAK",
+              "CLOCK_OUT"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "When the event happened, ISO 8601 with offset, e.g. 2026-10-06T08:00:00+02:00."
+          },
+          "location": {
+            "type": "string",
+            "description": "Optional location text."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional note."
+          },
+          "time_category_one_id": {
+            "type": "integer",
+            "description": "Optional level-1 time category id from crewmeister_list_time_categories."
+          }
+        },
+        "required": [
+          "crew_id",
+          "user_id",
+          "stamp_type",
+          "timestamp"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timetracking/stamps",
+        "bodyMapping": {
+          "crewId": "$crew_id",
+          "userId": "$user_id",
+          "stampType": "$stamp_type",
+          "timestamp": "$timestamp",
+          "location": "$location",
+          "note": "$note",
+          "timeCategoryOneId": "$time_category_one_id"
+        }
+      }
+    },
+    {
+      "name": "crewmeister_create_absence",
+      "description": "Create an absence for a user: a request (state REQUESTED) that a manager approves, or, for managers, an approved entry. Dates and type cannot be changed afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crew_id": {
+            "type": "integer",
+            "description": "Crew id from crewmeister_list_crews."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "userId of the member."
+          },
+          "absence_type": {
+            "type": "integer",
+            "description": "absenceTypeId from crewmeister_list_absence_types."
+          },
+          "from": {
+            "type": "string",
+            "description": "First day, yyyy-MM-dd."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day, yyyy-MM-dd."
+          },
+          "from_day_part": {
+            "type": "string",
+            "description": "MORNING for a full first day, AFTERNOON to start at midday.",
+            "enum": [
+              "MORNING",
+              "AFTERNOON"
+            ]
+          },
+          "to_day_part": {
+            "type": "string",
+            "description": "AFTERNOON for a full last day, MORNING to end at midday.",
+            "enum": [
+              "MORNING",
+              "AFTERNOON"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "REQUESTED (default) or APPROVED (managers only).",
+            "enum": [
+              "REQUESTED",
+              "APPROVED"
+            ],
+            "default": "REQUESTED"
+          },
+          "zone_id": {
+            "type": "string",
+            "description": "Time zone, e.g. Europe/Berlin.",
+            "default": "Europe/Berlin"
+          }
+        },
+        "required": [
+          "crew_id",
+          "user_id",
+          "absence_type",
+          "from",
+          "to",
+          "from_day_part",
+          "to_day_part"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/absencemanager/absences",
+        "bodyMapping": {
+          "crewId": "$crew_id",
+          "userId": "$user_id",
+          "absenceType": "$absence_type",
+          "from": "$from",
+          "to": "$to",
+          "fromDayPart": "$from_day_part",
+          "toDayPart": "$to_day_part",
+          "state": "$state",
+          "zoneId": "$zone_id"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1096 @@
+{
+  "slug": "autotask",
+  "name": "Autotask PSA",
+  "description": "Autotask PSA by Datto (Kaseya): query companies, contacts, tickets and notes, time entries, projects and tasks, resources, contracts and configuration items; create and update tickets, add notes and log time. Autotask REST API.",
+  "instructions": "## Autotask PSA\nThis connector uses the Autotask REST API (`/ATServicesRest/V1.0`) of Autotask PSA by Datto (Kaseya): companies, contacts, tickets, notes, time entries, projects, tasks, resources, contracts and configuration items.\n\n## Setup\n1. In Autotask create an API-only resource (Admin, Resources/Users, New API User) with the **API User (API-only)** security level. On its Security tab, under **API Tracking Identifier**, pick your integration vendor or let Autotask generate a custom (internal integration) identifier. The username (an email such as `abc123@example.com`), the generated secret and the tracking identifier are the three credentials.\n2. `AUTOTASK_USERNAME` = the API user's username, `AUTOTASK_SECRET` = its secret, `AUTOTASK_INTEGRATION_CODE` = the API tracking identifier.\n3. `AUTOTASK_ZONE_HOST`: every Autotask database lives in one zone with its own host. Open `https://webservices.autotask.net/atservicesrest/v1.0/zoneInformation?user=<API username>` in a browser; the `url` field shows the host, for example `webservices5.autotask.net`. Enter only the host.\n\nThe three values travel as the `ApiIntegrationCode`, `UserName` and `Secret` headers. A wrong zone answers 500 or 401 even with correct credentials.\n\n## Querying\nRead tools are `POST /<Entity>/query` searches (marked read-only). `filter` is an array of conditions, AND-combined: `{\"op\": \"eq\", \"field\": \"status\", \"value\": 1}`. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn; nest with `{\"op\": \"or\", \"items\": [...]}`; user-defined fields need `\"udf\": true`. A query must have at least one condition; the default `{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}` matches everything. Field names are camelCase as in the answers (`companyID`, `assignedResourceID`, `dateWorked`).\n\n## Picklists\nStatus, priority, queue, issue type, note type and similar fields are numeric ids that differ per database. Call `autotask_get_entity_fields` (for example entity `Tickets`) to read the allowed values and labels before filtering or writing them. Ticket status 5 is Complete in a default setup.\n\n## Paging and limits\nA query returns at most 500 records (`max_records`). To read more, sort by id: repeat the query with an extra condition `{\"op\": \"gt\", \"field\": \"id\", \"value\": <last id>}` until fewer records come back. `pageDetails` also carries `nextPageUrl`. Use `include_fields` to keep answers small. Autotask allows 10,000 requests per hour per database and slows responses above half of that; use `autotask_count_tickets` for counts instead of reading every ticket.\n\n## Start here\n`autotask_query_companies` to find a company id, then `autotask_query_tickets` with `companyID`, then `autotask_get_ticket` and `autotask_query_ticket_notes`. For time reports, `autotask_query_resources` gives the resource id for `autotask_query_time_entries`.\n\n## Writes\nCreating and updating tickets, adding ticket notes and logging time change data and can trigger customer notifications through workflow rules. Nothing is deleted by this connector.",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "autotask",
+  "docsUrl": "https://autotask.net/help/developerhelp/Content/APIs/REST/REST_API_Home.htm",
+  "prerequisites": "An Autotask **API user** (a resource with the API User security level) and its API tracking identifier. Only an Autotask administrator can create one.",
+  "requiredEnvVars": [
+    "AUTOTASK_ZONE_HOST",
+    "AUTOTASK_USERNAME",
+    "AUTOTASK_SECRET",
+    "AUTOTASK_INTEGRATION_CODE"
+  ],
+  "envVarMeta": {
+    "AUTOTASK_ZONE_HOST": {
+      "label": "Zone host",
+      "kind": "address",
+      "help": "Open https://webservices.autotask.net/atservicesrest/v1.0/zoneInformation?user=<API username> in a browser and copy the host from the url field, without https:// and without a path.",
+      "example": "webservices5.autotask.net",
+      "link": "https://autotask.net/help/developerhelp/Content/APIs/General/API_Zones.htm",
+      "pattern": "^webservices\\d*\\.autotask\\.net$",
+      "patternMessage": "Only the host, for example webservices5.autotask.net."
+    },
+    "AUTOTASK_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "The Username of the API-only resource (Admin → Resources/Users), an email-like value.",
+      "link": "https://autotask.net/help/developerhelp/Content/APIs/REST/General_Topics/REST_Security_Auth.htm"
+    },
+    "AUTOTASK_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "help": "The secret generated for the API user on the same page (Generate Secret). It is shown in full only when generated.",
+      "link": "https://autotask.net/help/developerhelp/Content/APIs/REST/General_Topics/REST_Security_Auth.htm"
+    },
+    "AUTOTASK_INTEGRATION_CODE": {
+      "label": "API tracking identifier",
+      "kind": "credential",
+      "help": "Security tab of the API-only resource, section API Tracking Identifier: the vendor identifier or the generated custom (internal integration) identifier.",
+      "link": "https://autotask.net/help/developerhelp/Content/APIs/REST/General_Topics/REST_Security_Auth.htm"
+    }
+  },
+  "verifyHints": {
+    "401": "Autotask refused the credentials. Check the username, secret and API tracking identifier of the API user, and that the zone host belongs to this database.",
+    "500": "Autotask could not resolve the request in this zone. Look up the zone host again with zoneInformation and check the username.",
+    "404": "No Autotask REST API at this host. Enter only the zone host, for example webservices5.autotask.net.",
+    "rate_limited": "Autotask allows 10,000 requests per hour per database. Wait and try again."
+  },
+  "probe": {
+    "tool": "autotask_query_companies",
+    "params": {
+      "filter": [
+        {
+          "op": "gte",
+          "field": "id",
+          "value": 0
+        }
+      ],
+      "max_records": 1,
+      "include_fields": [
+        "id",
+        "companyName"
+      ]
+    }
+  },
+  "connector": {
+    "name": "Autotask PSA",
+    "type": "REST",
+    "baseUrl": "https://{{AUTOTASK_ZONE_HOST}}/ATServicesRest/V1.0",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "ApiIntegrationCode",
+      "apiKey": "{{AUTOTASK_INTEGRATION_CODE}}",
+      "extraHeaders": {
+        "UserName": "{{AUTOTASK_USERNAME}}",
+        "Secret": "{{AUTOTASK_SECRET}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "autotask_query_companies",
+      "description": "Query companies (customers, prospects, vendors) with an Autotask filter: name, type, phone, address, owner resource and active flag. Up to 500 per call. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"contains\", \"field\": \"companyName\", \"value\": \"Acme\"}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Companies/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_company",
+      "description": "Get one company by id with all standard fields and user-defined fields. Use it after autotask_query_companies or when another record carries a companyID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Company id (companyID on tickets, contacts and projects)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Companies/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_contacts",
+      "description": "Query contacts (people at customer companies) with an Autotask filter: name, email, phone, company and active flag. Use it to find the contactID for a ticket. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"emailAddress\", \"value\": \"jane@example.com\"}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Contacts/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_contact",
+      "description": "Get one contact by id: name, company, email addresses, phones, title and active flag. Use it when a ticket or note carries a contactID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Contact id (contactID on tickets)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contacts/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_tickets",
+      "description": "Query service desk tickets with an Autotask filter: number, title, status, priority, queue, company, contact, assigned resource, due date and SLA fields. Up to 500 per call. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"companyID\", \"value\": 174}, {\"op\": \"notIn\", \"field\": \"status\", \"value\": [5]}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tickets/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_count_tickets",
+      "description": "Count the tickets matching an Autotask filter without returning them, for example open tickets per queue. Answers {queryCount}. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: ",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tickets/query/count",
+        "bodyMapping": {
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_ticket",
+      "description": "Get one ticket by id with all fields: title, description, status, priority, queue, issue and sub-issue type, company, contact, assigned resource, dates and user-defined fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Ticket id (not the ticket number T20261006.0001; query by ticketNumber to get the id)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Tickets/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_ticket_notes",
+      "description": "Query ticket notes with an Autotask filter, usually by ticketID: title, description, note type, publish (who can see it), creator and date. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"ticketID\", \"value\": 12345}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TicketNotes/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_query_time_entries",
+      "description": "Query time entries with an Autotask filter: resource, ticket or task, date worked, start and end time, hours worked and to bill, role, billing code and notes. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"resourceID\", \"value\": 29682885}, {\"op\": \"gte\", \"field\": \"dateWorked\", \"value\": \"2026-10-01\"}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TimeEntries/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_time_entry",
+      "description": "Get one time entry by id: resource, ticket or task, dates, hours worked, hours to bill, role, billing code, summary and internal notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Time entry id from autotask_query_time_entries."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/TimeEntries/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_projects",
+      "description": "Query projects with an Autotask filter: name, number, company, status, type, project lead, start and end dates, estimated and actual hours. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"companyID\", \"value\": 174}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Projects/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_project",
+      "description": "Get one project by id with status, type, company, lead resource, dates, hours, revenue fields and user-defined fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Project id from autotask_query_projects."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Projects/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_tasks",
+      "description": "Query project tasks with an Autotask filter, usually by projectID: title, status, assigned resource, phase, start and end dates, estimated and remaining hours. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"projectID\", \"value\": 2981}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tasks/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_query_resources",
+      "description": "Query resources (Autotask users: technicians, employees) with an Autotask filter: name, email, title, active flag and default service desk role. Use it to get the resourceID. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"isActive\", \"value\": true}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Resources/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_resource",
+      "description": "Get one resource (Autotask user) by id: name, email, title, active flag, location, license type and default role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Resource id (assignedResourceID on tickets, resourceID on time entries)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Resources/{id}"
+      }
+    },
+    {
+      "name": "autotask_query_contracts",
+      "description": "Query customer contracts with an Autotask filter: name, number, company, type (time and materials, fixed price, block hours, retainer, recurring service), status and dates. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"companyID\", \"value\": 174}, {\"op\": \"eq\", \"field\": \"status\", \"value\": 1}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Contracts/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_query_configuration_items",
+      "description": "Query configuration items (managed devices and assets) with an Autotask filter: reference title, serial number, company, product, install date and active flag. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"contains\", \"field\": \"referenceTitle\", \"value\": \"SRV\"}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ConfigurationItems/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_get_entity_fields",
+      "description": "Describe the fields of an entity: name, data type, whether it is required or read-only, and for picklists the allowed values with their numeric ids and labels. Call it before filtering or writing status, priority, queue or type fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in the REST URL, for example Tickets, Companies, Contacts, TimeEntries, Projects, Tasks, Resources, Contracts, ConfigurationItems, TicketNotes."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity}/entityInformation/fields"
+      }
+    },
+    {
+      "name": "autotask_query",
+      "description": "Query any Autotask entity that has no dedicated tool (for example Roles, BillingCodes, ServiceCalls, Opportunities, Invoices, Quotes) with an Autotask filter. Read-only POST search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in the REST URL, for example Roles, BillingCodes, ServiceCalls, Opportunities, Invoices."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Autotask filter array, combined with AND. Each item is {\"op\": \"<operator>\", \"field\": \"<field name>\", \"value\": <value>}. Operators: eq, noteq, gt, gte, lt, lte, beginsWith, endsWith, contains, exist, notExist, in, notIn (value is an array for in/notIn). Group with {\"op\": \"or\", \"items\": [...]}; user-defined fields need \"udf\": true. Default matches every record: [{\"op\": \"gte\", \"field\": \"id\", \"value\": 0}]. Example: [{\"op\": \"eq\", \"field\": \"isActive\", \"value\": true}]",
+            "items": {
+              "type": "object"
+            },
+            "default": [
+              {
+                "op": "gte",
+                "field": "id",
+                "value": 0
+              }
+            ]
+          },
+          "max_records": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500. Default 500.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "include_fields": {
+            "type": "array",
+            "description": "Return only these fields, for example [\"id\", \"title\", \"status\"]. Smaller answers; default all fields.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{entity}/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "maxRecords": "$max_records",
+          "includeFields": "$include_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "autotask_create_ticket",
+      "description": "Create a service desk ticket for a company. Status, priority, queue and type values are numeric picklist ids from autotask_get_entity_fields on Tickets. Returns the new ticket id as itemId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "companyID of the customer."
+          },
+          "title": {
+            "type": "string",
+            "description": "Ticket title, at most 255 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Ticket description."
+          },
+          "status": {
+            "type": "integer",
+            "description": "Status picklist id, for example 1 = New in a default setup."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority picklist id."
+          },
+          "queue_id": {
+            "type": "integer",
+            "description": "Queue picklist id. Autotask needs a queue or an assigned resource."
+          },
+          "due_date_time": {
+            "type": "string",
+            "description": "Due date and time in UTC, ISO 8601, for example 2026-10-08T16:00:00Z."
+          },
+          "contact_id": {
+            "type": "integer",
+            "description": "contactID of the person who reported it."
+          },
+          "assigned_resource_id": {
+            "type": "integer",
+            "description": "Resource to assign. Requires assigned_resource_role_id."
+          },
+          "assigned_resource_role_id": {
+            "type": "integer",
+            "description": "Role of the assigned resource (from autotask_query with entity Roles)."
+          },
+          "issue_type": {
+            "type": "integer",
+            "description": "Issue type picklist id."
+          },
+          "sub_issue_type": {
+            "type": "integer",
+            "description": "Sub-issue type picklist id."
+          },
+          "ticket_type": {
+            "type": "integer",
+            "description": "Ticket type picklist id (service request, incident, problem, change request, alert)."
+          },
+          "source": {
+            "type": "integer",
+            "description": "Source picklist id (phone, email, web portal, ...)."
+          },
+          "configuration_item_id": {
+            "type": "integer",
+            "description": "Configuration item the ticket is about."
+          },
+          "contract_id": {
+            "type": "integer",
+            "description": "Contract to bill the work against."
+          }
+        },
+        "required": [
+          "company_id",
+          "title",
+          "status",
+          "priority"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tickets",
+        "bodyMapping": {
+          "companyID": "$company_id",
+          "title": "$title",
+          "description": "$description",
+          "status": "$status",
+          "priority": "$priority",
+          "queueID": "$queue_id",
+          "dueDateTime": "$due_date_time",
+          "contactID": "$contact_id",
+          "assignedResourceID": "$assigned_resource_id",
+          "assignedResourceRoleID": "$assigned_resource_role_id",
+          "issueType": "$issue_type",
+          "subIssueType": "$sub_issue_type",
+          "ticketType": "$ticket_type",
+          "source": "$source",
+          "configurationItemID": "$configuration_item_id",
+          "contractID": "$contract_id"
+        }
+      }
+    },
+    {
+      "name": "autotask_update_ticket",
+      "description": "Change fields of an existing ticket: status, priority, queue, assigned resource, due date, title or description. Only the fields passed are changed (PATCH). Returns the ticket id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Ticket id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "status": {
+            "type": "integer",
+            "description": "New status picklist id, for example 5 = Complete in a default setup."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "New priority picklist id."
+          },
+          "queue_id": {
+            "type": "integer",
+            "description": "New queue picklist id."
+          },
+          "due_date_time": {
+            "type": "string",
+            "description": "New due date and time in UTC, ISO 8601."
+          },
+          "assigned_resource_id": {
+            "type": "integer",
+            "description": "Resource to assign. Requires assigned_resource_role_id."
+          },
+          "assigned_resource_role_id": {
+            "type": "integer",
+            "description": "Role of the assigned resource."
+          },
+          "resolution": {
+            "type": "string",
+            "description": "Resolution text, usually set when completing the ticket."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/Tickets",
+        "bodyMapping": {
+          "id": "$id",
+          "title": "$title",
+          "description": "$description",
+          "status": "$status",
+          "priority": "$priority",
+          "queueID": "$queue_id",
+          "dueDateTime": "$due_date_time",
+          "assignedResourceID": "$assigned_resource_id",
+          "assignedResourceRoleID": "$assigned_resource_role_id",
+          "resolution": "$resolution"
+        }
+      }
+    },
+    {
+      "name": "autotask_create_ticket_note",
+      "description": "Add a note to a ticket. publish 1 makes it visible to all Autotask users and the customer portal, 2 to internal users only. Customers may be notified by workflow rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "Ticket id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Note text, at most 32000 characters."
+          },
+          "note_type": {
+            "type": "integer",
+            "description": "Note type picklist id from autotask_get_entity_fields on TicketNotes, for example 1 = Task Detail."
+          },
+          "publish": {
+            "type": "integer",
+            "description": "Visibility picklist id: 1 = All Autotask Users, 2 = Internal Only (default setup)."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "title",
+          "description",
+          "note_type",
+          "publish"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tickets/{ticket_id}/Notes",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "noteType": "$note_type",
+          "publish": "$publish"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "autotask_create_time_entry",
+      "description": "Log time worked on a ticket or task for a resource: date, start and end time or hours, role, summary and internal notes. Returns the new time entry id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "integer",
+            "description": "Resource who did the work."
+          },
+          "ticket_id": {
+            "type": "integer",
+            "description": "Ticket worked on (give ticket_id or task_id)."
+          },
+          "task_id": {
+            "type": "integer",
+            "description": "Project task worked on."
+          },
+          "role_id": {
+            "type": "integer",
+            "description": "Role the work is billed as."
+          },
+          "date_worked": {
+            "type": "string",
+            "description": "Date worked, ISO 8601, for example 2026-10-06."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Start in UTC, ISO 8601."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End in UTC, ISO 8601."
+          },
+          "hours_worked": {
+            "type": "number",
+            "description": "Hours worked, when start and end are not given."
+          },
+          "summary_notes": {
+            "type": "string",
+            "description": "Summary shown on the ticket and invoice."
+          },
+          "internal_notes": {
+            "type": "string",
+            "description": "Internal notes, not shown to the customer."
+          },
+          "billing_code_id": {
+            "type": "integer",
+            "description": "Work type (billing code) id."
+          },
+          "is_non_billable": {
+            "type": "boolean",
+            "description": "true to mark the time as non-billable."
+          }
+        },
+        "required": [
+          "resource_id",
+          "role_id",
+          "date_worked",
+          "summary_notes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TimeEntries",
+        "bodyMapping": {
+          "resourceID": "$resource_id",
+          "ticketID": "$ticket_id",
+          "taskID": "$task_id",
+          "roleID": "$role_id",
+          "dateWorked": "$date_worked",
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time",
+          "hoursWorked": "$hours_worked",
+          "summaryNotes": "$summary_notes",
+          "internalNotes": "$internal_notes",
+          "billingCodeID": "$billing_code_id",
+          "isNonBillable": "$is_non_billable"
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,8 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ConnectionCheck } from '@/components/connection-check';
+import { copyText } from '@/lib/clipboard';
+import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -19,7 +21,8 @@ const CLAUDE_ADD_CONNECTOR_URL =
 
 export default function McpServerDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, deploymentMode } = useAuth();
+  const isCloud = deploymentMode === 'cloud';
   const router = useRouter();
 
   const [server, setServer] = useState<any>(null);
@@ -208,29 +211,7 @@ export default function McpServerDetailPage() {
   };
 
   const handleCopy = async (text: string, label: string) => {
-    let ok = false;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      }
-    } catch {}
-    if (!ok) {
-      // Fallback for non-secure contexts (e.g. plain-HTTP LAN deployments)
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.top = '0';
-      ta.style.left = '0';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        ok = document.execCommand('copy');
-      } catch {}
-      document.body.removeChild(ta);
-    }
+    const ok = await copyText(text);
     if (ok) {
       setCopied(label);
       setTimeout(() => setCopied(''), 2000);
@@ -371,6 +352,7 @@ export default function McpServerDetailPage() {
     { id: 'claude-desktop', name: 'Claude Desktop', init: 'Cl', tone: 'warn' },
     { id: 'claude-code', name: 'Claude Code', init: 'Cl', tone: 'warn' },
     { id: 'chatgpt', name: 'ChatGPT', init: 'GP', tone: 'emerald' },
+    { id: 'muse', name: 'Meta Muse', init: 'Mu', tone: 'info' },
     { id: 'gemini', name: 'Gemini CLI', init: 'Ge', tone: 'pink' },
     { id: 'windsurf', name: 'Windsurf', init: 'Wi', tone: 'success' },
   ];
@@ -435,6 +417,24 @@ export default function McpServerDetailPage() {
     </a>
   );
 
+  // On Cloud only: AnythingMCP's listing in Claude's connector directory is a
+  // one-click alternative to the custom connector. It connects the shared
+  // /mcp endpoint, where the sign-in asks which servers to reach, so the
+  // steps for this one server stay below it.
+  const claudeDirectoryNote = () =>
+    isCloud ? (
+      <div className="space-y-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3" data-testid="claude-directory">
+        <p className="text-[13px] font-semibold text-[var(--text)]">
+          Fastest: add AnythingMCP from the Claude Directory
+        </p>
+        {linkAction(CLAUDE_DIRECTORY_URL, 'Open the Claude Directory', true)}
+        <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+          The directory connects your shared <code className="rounded bg-[var(--surface)] px-1 font-mono">/mcp</code> endpoint:
+          you choose which servers it reaches when you sign in. The steps below add this server only.
+        </p>
+      </div>
+    ) : null;
+
   const renderModalContent = (clientId: string) => {
     switch (clientId) {
       case 'cursor':
@@ -482,6 +482,7 @@ export default function McpServerDetailPage() {
       case 'claude-web':
         return (
           <div className="space-y-4">
+            {claudeDirectoryNote()}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
               1. Click the button below: Claude opens its <strong>Add custom connector</strong> dialog.<br />
               2. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.<br />
@@ -498,6 +499,7 @@ export default function McpServerDetailPage() {
       case 'claude-desktop':
         return (
           <div className="space-y-4">
+            {claudeDirectoryNote()}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
               <strong>Recommended:</strong> add this server from Claude Desktop&apos;s
               built-in connector settings — it runs the OAuth login for you, with
@@ -560,6 +562,34 @@ export default function McpServerDetailPage() {
             {endpointRow('modal-chatgpt-url')}
           </div>
         );
+      case 'muse': {
+        // Meta's own documented setup: ask Muse in a chat to create the
+        // connector. Works on web, iOS, Android and WhatsApp.
+        const musePrompt = `Create a Custom Connector for a new remote MCP server, then connect to it:
+Name: AnythingMCP
+Transport: remote streamable HTTP
+URL: ${endpointUrl}
+Auth: OAuth`;
+        return (
+          <div className="space-y-4">
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              1. In Meta Muse, open <strong>Settings → Connectors → Add custom connector</strong>.<br />
+              2. Paste the MCP endpoint URL below.<br />
+              3. Muse opens the AnythingMCP sign-in page: sign in and approve access.<br />
+              4. Ask Muse to use one of the tools.
+            </p>
+            {endpointRow('modal-muse-url')}
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              Or paste this into a Muse chat (web, iOS, Android or WhatsApp):
+            </p>
+            {codeBlock(musePrompt, 'muse-chat')}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              Meta does not review custom connectors; you can disconnect this one any time in
+              Muse under <strong>Settings → Connectors</strong>. Muse is currently available in the US and Canada only.
+            </p>
+          </div>
+        );
+      }
       case 'gemini': {
         const cmd = `gemini mcp add --transport http ${slug} ${endpointUrl}`;
         return (
@@ -881,7 +911,7 @@ export default function McpServerDetailPage() {
                     {generatedKey}
                   </code>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(generatedKey); setKeyMsg('Copied!'); }}
+                    onClick={async () => setKeyMsg((await copyText(generatedKey)) ? 'Copied!' : 'Error: copy blocked by the browser. Select the key and copy it manually.')}
                     className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
                   >
                     Copy

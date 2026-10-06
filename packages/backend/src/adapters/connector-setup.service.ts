@@ -85,6 +85,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .filter((s): s is string => !!s),
     );
 
+    // Query words no connector mentions anywhere: the app that is missing.
+    const unmatched = new Set(words);
     const scored = this.adapters
       .listAll()
       .filter((a) => !isExcludedAdapterSlug(a.slug))
@@ -96,12 +98,31 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           if (a.slug === w || name === w) score += 10;
           else if (a.slug.startsWith(w) || name.split(/\s+/).some((n) => n.startsWith(w))) score += 5;
           else if (text.includes(w)) score += 1;
+          if (text.includes(w)) unmatched.delete(w);
         }
         return { a, score: words.length ? score : (a.priority ?? 0) };
       })
       .filter((x) => !words.length || x.score > 0)
       .sort((x, y) => y.score - x.score || (y.a.priority ?? 0) - (x.a.priority ?? 0))
       .slice(0, limit);
+
+    if (words.length) {
+      // `results` alone overstates coverage: "printify shop" returns every
+      // connector whose description says "shop". `missing` keeps the words no
+      // connector mentions at all, here "printify".
+      void this.productEvents.log({
+        event: ProductEvents.CATALOG_SEARCH,
+        userId: ctx.userId,
+        organizationId: ctx.organizationId,
+        metadata: {
+          query: String(args.query),
+          results: scored.length,
+          via: 'mcp',
+          ...(unmatched.size ? { missing: [...unmatched].join(' ') } : {}),
+          ...(scored.length ? { adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
+        },
+      });
+    }
 
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
     return {
@@ -204,7 +225,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       event: ProductEvents.SETUP_COMPLETED,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
-      metadata: { adapterSlug: slug, via: 'mcp' },
+      // A chat install checks nothing but the import probe; `verified` keeps
+      // these apart from setups that made a successful call.
+      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);
@@ -285,12 +308,61 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
       });
     }
+    const trial = await this.trialAnswer(ctx);
     return {
       body: {
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
+        ...(trial ? { trial } : {}),
       },
     };
+  }
+
+  /**
+   * The workspace's free trial, as part of its status: days left and, for an
+   * admin, the page where a plan is chosen. Facts only, in this one answer:
+   * no other tool carries it, and nothing here tells the model what to say.
+   * The card trial while 48 hours remain (the same end date, nothing charged
+   * before it), the licence page after that. Members get no billing link.
+   */
+  private async trialAnswer(ctx: SetupContext): Promise<Record<string, unknown> | null> {
+    const state = await this.licenseGuard.getTrialState(ctx.organizationId).catch(() => null);
+    if (!state) return null;
+    const member = await this.prisma.organizationMember
+      .findFirst({
+        where: { userId: ctx.userId, organizationId: ctx.organizationId, deactivatedAt: null },
+        select: { role: true },
+      })
+      .catch(() => null);
+    const admin = member?.role === 'ADMIN';
+    const endsAt = state.endsAt.toISOString();
+
+    if (!state.active) {
+      return {
+        ended: true,
+        endedAt: endsAt,
+        ...(admin
+          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
+          : { afterTheTrial: 'The trial has ended. A workspace administrator can choose a plan.' }),
+      };
+    }
+    const daysLeft = Math.max(1, Math.ceil((state.endsAt.getTime() - Date.now()) / 86_400_000));
+    if (!admin) {
+      return { daysLeft, endsAt, afterTheTrial: 'A workspace administrator can choose a plan.' };
+    }
+    return state.cardTrialAvailable
+      ? {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/start-trial`,
+          afterTheTrial: 'Adding a card keeps the workspace running when the trial ends. Nothing is charged before then.',
+        }
+      : {
+          daysLeft,
+          endsAt,
+          choosePlanUrl: `${ctx.dashboardBase}/settings/license`,
+          afterTheTrial: 'Choosing a plan keeps the workspace running when the trial ends.',
+        };
   }
 
   // ── Links ─────────────────────────────────────────────────────────────

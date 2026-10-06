@@ -80,6 +80,22 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 | **API Key** | Generate an MCP API Key in AnythingMCP UI, provide in ChatGPT settings |
 | **OAuth2** | Configure OAuth2 in AnythingMCP, use ChatGPT's OAuth integration |
 
+### OpenAI Responses API
+
+An agent built on the Responses API can reach an MCP server with a per-user MCP API key (`mcp_…`, generated on the server's page). Send it as `authorization`, which arrives as `Authorization: Bearer mcp_…`, or as an `X-API-Key` header:
+
+```json
+"tools": [
+  {
+    "type": "mcp",
+    "server_label": "anythingmcp",
+    "server_url": "https://cloud.anythingmcp.com/mcp/<server-id>",
+    "authorization": "mcp_your_key",
+    "require_approval": "never"
+  }
+]
+```
+
 ---
 
 ## Troubleshooting

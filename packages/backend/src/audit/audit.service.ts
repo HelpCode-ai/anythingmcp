@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { boundPayload, boundText } from './bound-payload';
 
 /** Bytes of a call's input / output kept in tool_invocations, and error chars. */
@@ -9,14 +9,43 @@ const envInt = (name: string, fallback: number) => {
 const INVOCATION_LOG_INPUT_BYTES = envInt('INVOCATION_LOG_INPUT_BYTES', 8 * 1024);
 const INVOCATION_LOG_OUTPUT_BYTES = envInt('INVOCATION_LOG_OUTPUT_BYTES', 16 * 1024);
 const INVOCATION_LOG_ERROR_CHARS = envInt('INVOCATION_LOG_ERROR_CHARS', 4000);
+/**
+ * A failure that repeats with the same connector, tool and error inside this
+ * window is counted on the row already stored (repeat_count) instead of being
+ * stored again. 1885Data's own gateway answered 21,000 calls a day with the
+ * same 429; every one of them used to become a row.
+ */
+const INVOCATION_REPEAT_WINDOW_MS = envInt('INVOCATION_REPEAT_WINDOW_SECONDS', 60) * 1000;
+/**
+ * Calls an organisation may log per hour with their full input/output
+ * excerpts. Past it, rows keep status, timing and error but only a short
+ * excerpt: a backend calling at 80 a minute filled 1.8 GB of payloads that
+ * nobody reads, while counts and errors are what the dashboards use.
+ */
+const INVOCATION_FULL_PAYLOADS_PER_HOUR = envInt('INVOCATION_FULL_PAYLOADS_PER_HOUR', 1000);
+const INVOCATION_LOG_VOLUME_EXCERPT_BYTES = 512;
+const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
-import { InvocationStatus } from '../generated/prisma/client';
+import { InvocationStatus, Prisma } from '../generated/prisma/client';
 
 @Injectable()
-export class AuditService {
+export class AuditService implements OnModuleDestroy {
   private readonly logger = new Logger(AuditService.name);
+  /** Recent failures by signature: the row they were stored as, and how many repeats since. */
+  private readonly repeats = new Map<string, { rowId: string; since: number; extra: number }>();
+  /** Rows per organisation in the current hour, for the full-payload budget. */
+  private volume = { hour: -1, perOrg: new Map<string, number>() };
+  private readonly flushTimer: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    this.flushTimer = setInterval(() => void this.flushRepeats(false), 30_000);
+    this.flushTimer.unref?.();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    clearInterval(this.flushTimer);
+    await this.flushRepeats(true);
+  }
 
   async logInvocation(data: {
     toolId: string;
@@ -46,15 +75,24 @@ export class AuditService {
     error?: string;
     clientInfo?: string;
   }): Promise<void> {
+    const repeatKey = data.status === 'SUCCESS' ? null : repeatSignature(data);
+    if (repeatKey && this.countRepeat(repeatKey)) return;
+
     const resolvedUserId = await this.resolveUserId(data.userId, data.userEmail);
     // Store an excerpt, not the whole payload (see bound-payload.ts). The
     // caller already has the full response; this is only the log.
-    const input = boundPayload(data.input, { maxBytes: INVOCATION_LOG_INPUT_BYTES });
-    const output = boundPayload(data.output, { maxBytes: INVOCATION_LOG_OUTPUT_BYTES });
+    const overBudget = this.overPayloadBudget(data.organizationId);
+    const input = boundPayload(data.input, {
+      maxBytes: overBudget ? INVOCATION_LOG_VOLUME_EXCERPT_BYTES : INVOCATION_LOG_INPUT_BYTES,
+    });
+    const output = boundPayload(data.output, {
+      maxBytes: overBudget ? INVOCATION_LOG_VOLUME_EXCERPT_BYTES : INVOCATION_LOG_OUTPUT_BYTES,
+    });
     const error = boundText(data.error, INVOCATION_LOG_ERROR_CHARS);
 
     try {
-      await this.prisma.toolInvocation.create({
+      const row = await this.prisma.toolInvocation.create({
+        select: { id: true },
         data: {
           toolId: data.toolId,
           userId: resolvedUserId,
@@ -71,6 +109,7 @@ export class AuditService {
           clientInfo: data.clientInfo,
         },
       });
+      if (repeatKey && row?.id) await this.startRepeat(repeatKey, row.id);
       // Activation milestone: stamp the user's first successful call. The
       // conditional where makes this a no-op after the first success, so it
       // stays cheap on the hot path and never overwrites the original time.
@@ -113,6 +152,70 @@ export class AuditService {
     this.logger.debug(
       `Tool invocation: ${data.toolId} [${data.status}] ${data.durationMs ?? 0}ms`,
     );
+  }
+
+  /**
+   * True when this failure repeats one stored less than a window ago: it is
+   * then counted on that row and not stored again.
+   */
+  private countRepeat(key: string): boolean {
+    const seen = this.repeats.get(key);
+    if (!seen || Date.now() - seen.since >= INVOCATION_REPEAT_WINDOW_MS) return false;
+    seen.extra += 1;
+    return true;
+  }
+
+  /** Remember a stored failure as the row its repeats count on. */
+  private async startRepeat(key: string, rowId: string): Promise<void> {
+    const previous = this.repeats.get(key);
+    if (previous?.extra) await this.writeRepeatCount(previous.rowId, previous.extra);
+    this.repeats.delete(key);
+    this.repeats.set(key, { rowId, since: Date.now(), extra: 0 });
+    if (this.repeats.size > REPEAT_KEYS_MAX) await this.flushRepeats(false, true);
+  }
+
+  /**
+   * Write the counted repeats onto their rows. `all` flushes everything (on
+   * shutdown); `trim` also drops the oldest half when the map is full.
+   */
+  async flushRepeats(all: boolean, trim = false): Promise<void> {
+    const now = Date.now();
+    const entries = [...this.repeats.entries()];
+    const drop = trim ? new Set(entries.slice(0, Math.ceil(entries.length / 2)).map(([k]) => k)) : new Set<string>();
+    for (const [key, seen] of entries) {
+      const expired = now - seen.since >= INVOCATION_REPEAT_WINDOW_MS;
+      if (!all && !expired && !drop.has(key)) continue;
+      this.repeats.delete(key);
+      if (seen.extra) await this.writeRepeatCount(seen.rowId, seen.extra);
+    }
+  }
+
+  private async writeRepeatCount(rowId: string, extra: number): Promise<void> {
+    try {
+      await this.prisma.toolInvocation.update({
+        where: { id: rowId },
+        data: { repeatCount: { increment: extra } },
+      });
+    } catch (err: any) {
+      // The row may have been pruned meanwhile; a lost count is not worth more.
+      this.logger.debug(`Could not record ${extra} repeats on ${rowId}: ${err?.message ?? err}`);
+    }
+  }
+
+  /** Calls matching `where`, counting the repeats a row stands for. */
+  private async countCalls(where: Prisma.ToolInvocationWhereInput): Promise<number> {
+    const agg = await this.prisma.toolInvocation.aggregate({ where, _sum: { repeatCount: true } });
+    return agg._sum.repeatCount ?? 0;
+  }
+
+  /** Whether this organisation has used its hourly budget of full payloads. */
+  private overPayloadBudget(organizationId?: string): boolean {
+    if (!organizationId) return false;
+    const hour = Math.floor(Date.now() / 3_600_000);
+    if (this.volume.hour !== hour) this.volume = { hour, perOrg: new Map() };
+    const n = (this.volume.perOrg.get(organizationId) ?? 0) + 1;
+    this.volume.perOrg.set(organizationId, n);
+    return n > INVOCATION_FULL_PAYLOADS_PER_HOUR;
   }
 
   /**
@@ -231,16 +334,10 @@ export class AuditService {
     const scope = this.orgScope(organizationId);
 
     const [total24h, errors24h, total7d, totalAll] = await Promise.all([
-      this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last24h }, ...scope },
-      }),
-      this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last24h }, status: 'ERROR', ...scope },
-      }),
-      this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last7d }, ...scope },
-      }),
-      this.prisma.toolInvocation.count({ where: scope }),
+      this.countCalls({ createdAt: { gte: last24h }, ...scope }),
+      this.countCalls({ createdAt: { gte: last24h }, status: 'ERROR', ...scope }),
+      this.countCalls({ createdAt: { gte: last7d }, ...scope }),
+      this.countCalls(scope),
     ]);
 
     return {
@@ -268,6 +365,7 @@ export class AuditService {
         status: true,
         durationMs: true,
         createdAt: true,
+        repeatCount: true,
         tool: { select: { name: true } },
       },
       orderBy: { createdAt: 'asc' },
@@ -284,9 +382,11 @@ export class AuditService {
         dailyMap.set(dayKey, { success: 0, error: 0, timeout: 0, totalDuration: 0, count: 0 });
       }
       const day = dailyMap.get(dayKey)!;
-      if (inv.status === 'SUCCESS') day.success++;
-      else if (inv.status === 'ERROR') day.error++;
-      else if (inv.status === 'TIMEOUT') day.timeout++;
+      // A row can stand for repeats of the same failure (repeat_count).
+      const n = inv.repeatCount ?? 1;
+      if (inv.status === 'SUCCESS') day.success += n;
+      else if (inv.status === 'ERROR') day.error += n;
+      else if (inv.status === 'TIMEOUT') day.timeout += n;
       day.totalDuration += inv.durationMs || 0;
       day.count++;
 
@@ -296,8 +396,8 @@ export class AuditService {
         toolUsageMap.set(toolName, { count: 0, errors: 0, avgDuration: 0, totalDuration: 0 });
       }
       const toolStats = toolUsageMap.get(toolName)!;
-      toolStats.count++;
-      if (inv.status === 'ERROR') toolStats.errors++;
+      toolStats.count += n;
+      if (inv.status === 'ERROR') toolStats.errors += n;
       toolStats.totalDuration += inv.durationMs || 0;
     }
 
@@ -327,13 +427,15 @@ export class AuditService {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
+    const totalCalls = invocations.reduce((sum, i) => sum + (i.repeatCount ?? 1), 0);
+    const successCalls = invocations
+      .filter((i) => i.status === 'SUCCESS')
+      .reduce((sum, i) => sum + (i.repeatCount ?? 1), 0);
     return {
       daily,
       topTools,
-      totalInvocations: invocations.length,
-      successRate: invocations.length > 0
-        ? Math.round((invocations.filter(i => i.status === 'SUCCESS').length / invocations.length) * 100)
-        : 0,
+      totalInvocations: totalCalls,
+      successRate: totalCalls > 0 ? Math.round((successCalls / totalCalls) * 100) : 0,
       avgDuration: invocations.length > 0
         ? Math.round(invocations.reduce((sum, i) => sum + (i.durationMs || 0), 0) / invocations.length)
         : 0,
@@ -361,15 +463,15 @@ export class AuditService {
       byUser, byUserErr,
       total, errors, proxyCalls,
     ] = await Promise.all([
-      this.prisma.toolInvocation.groupBy({ by: ['connectorId'], where, _count: { _all: true } }),
-      this.prisma.toolInvocation.groupBy({ by: ['connectorId'], where: errWhere, _count: { _all: true } }),
-      this.prisma.toolInvocation.groupBy({ by: ['mcpServerId'], where, _count: { _all: true } }),
-      this.prisma.toolInvocation.groupBy({ by: ['mcpServerId'], where: errWhere, _count: { _all: true } }),
-      this.prisma.toolInvocation.groupBy({ by: ['userId'], where, _count: { _all: true } }),
-      this.prisma.toolInvocation.groupBy({ by: ['userId'], where: errWhere, _count: { _all: true } }),
-      this.prisma.toolInvocation.count({ where }),
-      this.prisma.toolInvocation.count({ where: errWhere }),
-      this.prisma.toolInvocation.count({ where: { ...where, usedProxy: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['connectorId'], where, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['connectorId'], where: errWhere, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['mcpServerId'], where, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['mcpServerId'], where: errWhere, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['userId'], where, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.prisma.toolInvocation.groupBy({ by: ['userId'], where: errWhere, _count: { _all: true }, _sum: { repeatCount: true } }),
+      this.countCalls(where),
+      this.countCalls(errWhere),
+      this.countCalls({ ...where, usedProxy: true }),
     ]);
 
     // Resolve display names for the grouped ids (one query per dimension).
@@ -392,19 +494,21 @@ export class AuditService {
     const userName = new Map(users.map((u) => [u.id, u.name || u.email]));
 
     const merge = (
-      rows: Array<{ _count: { _all: number } } & Record<string, any>>,
-      errRows: Array<{ _count: { _all: number } } & Record<string, any>>,
+      rows: Array<{ _count: { _all: number }; _sum?: { repeatCount: number | null } } & Record<string, any>>,
+      errRows: Array<{ _count: { _all: number }; _sum?: { repeatCount: number | null } } & Record<string, any>>,
       key: string,
       label: (id: string | null) => string,
     ) => {
-      const errById = new Map(errRows.map((r) => [r[key] ?? '__null__', r._count._all]));
+      const calls = (r: { _count: { _all: number }; _sum?: { repeatCount: number | null } }) =>
+        r._sum?.repeatCount ?? r._count._all;
+      const errById = new Map(errRows.map((r) => [r[key] ?? '__null__', calls(r)]));
       return rows
         .map((r) => {
           const id = r[key] as string | null;
           return {
             id,
             label: label(id),
-            count: r._count._all,
+            count: calls(r),
             errors: errById.get(id ?? '__null__') ?? 0,
           };
         })
@@ -433,4 +537,19 @@ export class AuditService {
       ),
     };
   }
+}
+
+/**
+ * What makes two failures "the same" for repeat counting: connector, tool,
+ * status and the error text with numbers blanked (ids, timestamps and counts
+ * differ between otherwise identical upstream errors).
+ */
+export function repeatSignature(data: {
+  connectorId?: string;
+  toolId: string;
+  status: string;
+  error?: string;
+}): string {
+  const text = (data.error ?? '').slice(0, 300).replace(/\d+/g, '#');
+  return `${data.connectorId ?? ''}|${data.toolId}|${data.status}|${text}`;
 }

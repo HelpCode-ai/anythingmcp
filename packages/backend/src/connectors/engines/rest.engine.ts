@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios, {
+import {
   AxiosRequestConfig,
   AxiosResponse,
   AxiosError,
@@ -17,9 +17,10 @@ import {
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
+import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -42,6 +43,38 @@ export function parseRetryAfterMs(value: unknown, now = Date.now()): number | nu
   const at = Date.parse(text);
   if (Number.isNaN(at)) return null;
   return Math.max(0, at - now);
+}
+
+/**
+ * Methods whose `bodyMapping` / `bodyTemplate` the engine turns into a
+ * request body. DELETE is one of them: plenty of APIs take the ids of a bulk
+ * delete in the body (Coda's `rowIds`, Klaviyo's JSON:API `data`), and a
+ * DELETE used to drop its mapping silently, so the call went out without the
+ * ids and the vendor answered with an error naming a field the model had in
+ * fact supplied. GET stays out: a GET body is not something servers agree to
+ * read. The catalog spec checks adapters against this same list.
+ */
+export const REQUEST_BODY_METHODS: ReadonlySet<string> = new Set([
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+]);
+
+/**
+ * A body with nothing in it. A DELETE whose mapped fields are all optional and
+ * all unset goes out without a body rather than with `{}`: some servers refuse
+ * a DELETE that carries one, and an empty one says nothing.
+ */
+function isEmptyBody(data: unknown): boolean {
+  if (data === undefined || data === null || data === '') return true;
+  return (
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    !(data instanceof FormData) &&
+    Object.getPrototypeOf(data) === Object.prototype &&
+    Object.keys(data).length === 0
+  );
 }
 
 @Injectable()
@@ -168,6 +201,8 @@ export class RestEngine {
 
     // Resolve dynamic headers from endpoint mapping ($param references)
     const resolvedEndpointHeaders: Record<string, string> = {};
+    // `${...}` templates usually carry a connector variable such as a key.
+    const templatedHeaders: string[] = [];
     if (endpointMapping.headers) {
       for (const [key, value] of Object.entries(endpointMapping.headers)) {
         if (typeof value === 'string' && value.includes('${')) {
@@ -178,6 +213,7 @@ export class RestEngine {
           const interpolated = this.resolveValue(value, params);
           if (interpolated !== undefined) {
             resolvedEndpointHeaders[key] = String(interpolated);
+            templatedHeaders.push(key);
           }
         } else if (typeof value === 'string' && value.startsWith('$')) {
           const paramVal = params[value.substring(1)];
@@ -199,11 +235,22 @@ export class RestEngine {
         ...resolvedEndpointHeaders,
       },
       timeout: 30000,
-      ...ssrfGuardedAxiosOptions(),
     };
+    // A form-data body is a one-shot stream: every send (a retry, a redirect
+    // that keeps the body) needs a fresh one, built by this.
+    let buildBody: (() => FormData) | undefined;
 
     // Inject authentication
+    const headersBeforeAuth = headerNames(axiosConfig.headers);
     await this.injectAuth(axiosConfig, config);
+    // Headers that carry the connector's credentials stay behind when a
+    // redirect leaves the origin: whatever auth added, plus the connector's
+    // own headers and templated ones, which often hold a key.
+    const credentialHeaders = new Set([
+      ...Object.keys(config.headers ?? {}),
+      ...templatedHeaders,
+      ...headerNames(axiosConfig.headers).filter((h) => !headersBeforeAuth.includes(h)),
+    ]);
 
     // Query parameters (merged on top of any params already set by auth injection)
     if (endpointMapping.queryParams) {
@@ -235,7 +282,8 @@ export class RestEngine {
     }
 
     // Request body
-    if (['POST', 'PUT', 'PATCH'].includes(endpointMapping.method.toUpperCase())) {
+    const httpMethod = endpointMapping.method.toUpperCase();
+    if (REQUEST_BODY_METHODS.has(httpMethod)) {
       if (endpointMapping.bodyTemplate) {
         const rendered = renderBodyTemplate(
           endpointMapping.bodyTemplate,
@@ -323,9 +371,10 @@ export class RestEngine {
             }
             // A FormData's underlying stream can only be read once. Rebuilding
             // it from these already-resolved entries — instead of reusing the
-            // same instance — is what lets a 401 retry (OAuth2 refresh,
-            // LOGIN_TOKEN relogin) resend a complete body instead of an empty
-            // one. See rebuildRetriableBody.
+            // same instance — is what lets a retry (transient failure, OAuth2
+            // refresh, LOGIN_TOKEN relogin) or a 307/308 redirect resend a
+            // complete body instead of an empty one. Files are fetched once,
+            // above, whatever the number of sends.
             const buildForm = (): FormData => {
               const form = new FormData();
               for (const [k, v] of plainEntries) {
@@ -346,17 +395,18 @@ export class RestEngine {
               ...axiosConfig.headers,
               ...form.getHeaders(),
             };
-            if (fileEntries.length > 0) {
-              (axiosConfig as AxiosConfigWithFormRebuild).__rebuildFormData =
-                buildForm;
-            }
+            buildBody = buildForm;
           } else {
             axiosConfig.data = mapped;
           }
         }
       }
+      if (httpMethod === 'DELETE' && isEmptyBody(axiosConfig.data)) {
+        delete axiosConfig.data;
+      }
     }
 
+    const headersBeforeSigning = headerNames(axiosConfig.headers);
     // OAuth 1.0a signing must happen here — AFTER query params and the body are
     // built, because the signature base string folds in the request's query and
     // form-urlencoded body params (unlike Bearer/API-key auth, which is set in
@@ -367,6 +417,13 @@ export class RestEngine {
     // of these APIs sign folds in the request body, which does not exist
     // until the block above has run.
     this.applyHmacSignature(axiosConfig, config);
+    for (const h of headerNames(axiosConfig.headers)) {
+      if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
+    }
+    const outbound: OutboundRequestOptions = {
+      data: buildBody,
+      credentialHeaders: [...credentialHeaders],
+    };
 
     // Route through the proxy / web-unblocker when the caller asked for it.
     // The unblocker agent disables upstream TLS verification (Zyte and friends
@@ -384,7 +441,7 @@ export class RestEngine {
     }
 
     try {
-      const response = await this.requestWithRetry(axiosConfig);
+      const response = await this.requestWithRetry(axiosConfig, outbound);
       return withMeta(response);
     } catch (error) {
       // OAuth2 auto-refresh: retry once on 401
@@ -405,8 +462,8 @@ export class RestEngine {
             ...axiosConfig.headers,
             ...buildOauth2TokenHeader(config.authConfig, newToken),
           };
-          this.rebuildRetriableBody(axiosConfig);
-          const retryResponse = await axios(axiosConfig);
+          rebuildBody(axiosConfig, buildBody);
+          const retryResponse = await outboundRequest(axiosConfig, outbound);
           return withMeta(retryResponse);
         }
       }
@@ -424,8 +481,8 @@ export class RestEngine {
           config.connectorId,
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
-        this.rebuildRetriableBody(axiosConfig);
-        const retryResponse = await axios(axiosConfig);
+        rebuildBody(axiosConfig, buildBody);
+        const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
       }
       throw restateProxyError(error);
@@ -536,14 +593,18 @@ export class RestEngine {
   /** Execute the request with a small bounded backoff on transient errors. */
   private async requestWithRetry(
     axiosConfig: AxiosRequestConfig,
+    outbound: OutboundRequestOptions,
   ): Promise<AxiosResponse> {
     // Three delays rather than two: origins that reject a handshake tend to do
     // so for a few seconds, and the old 1.2 s total often gave up just short of
     // recovery. 3.7 s worst case still sits well inside any MCP client timeout.
     const delaysMs = [300, 900, 2500];
+    const badHeaders = Object.keys(axiosConfig.headers ?? {}).filter((n) => !isValidHeaderName(n));
+    if (badHeaders.length > 0) throw new Error(describeInvalidHeaderNames(badHeaders));
     for (let attempt = 0; ; attempt++) {
       try {
-        return await axios(axiosConfig);
+        if (attempt > 0) rebuildBody(axiosConfig, outbound.data);
+        return await outboundRequest(axiosConfig, outbound);
       } catch (error) {
         const transient = this.isTransientError(error);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
@@ -567,23 +628,6 @@ export class RestEngine {
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
-  }
-
-  /**
-   * A form-data body built with a file part carries a Buffer-backed stream
-   * that is drained the first time it is sent. Without rebuilding it, the
-   * OAuth2/LOGIN_TOKEN 401 auto-retry would resend an empty body instead of
-   * the file. Only set when the body actually contains a `__file` part (see
-   * the form-data branch in executeWithMeta) — every other body keeps
-   * reusing axiosConfig.data exactly as before.
-   */
-  private rebuildRetriableBody(axiosConfig: AxiosRequestConfig): void {
-    const rebuild = (axiosConfig as AxiosConfigWithFormRebuild)
-      .__rebuildFormData;
-    if (!rebuild) return;
-    const form = rebuild();
-    axiosConfig.data = form;
-    axiosConfig.headers = { ...axiosConfig.headers, ...form.getHeaders() };
   }
 
   private async injectAuth(
@@ -1096,10 +1140,23 @@ interface FetchedFile {
   contentType: string;
 }
 
-/** Carries the retry-rebuild hook introduced for form-data file parts. */
-type AxiosConfigWithFormRebuild = AxiosRequestConfig & {
-  __rebuildFormData?: () => FormData;
-};
+/** Lower-cased names of the headers set on a request config. */
+function headerNames(headers: AxiosRequestConfig['headers']): string[] {
+  return Object.keys(headers ?? {}).map((h) => h.toLowerCase());
+}
+
+/**
+ * Put a fresh form-data body (and its boundary) on the config before it is
+ * sent again: the previous one was drained by the first send.
+ */
+function rebuildBody(axiosConfig: AxiosRequestConfig, build: (() => unknown) | undefined): void {
+  if (!build) return;
+  const body = build();
+  axiosConfig.data = body;
+  if (body instanceof FormData) {
+    axiosConfig.headers = { ...axiosConfig.headers, ...body.getHeaders() };
+  }
+}
 
 const DEFAULT_MAX_FILE_UPLOAD_BYTES = 10 * 1024 * 1024;
 

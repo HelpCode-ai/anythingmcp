@@ -26,6 +26,7 @@
       "advanced": true
     }
   },
+  "prerequisites": "A Pinterest app (developers.pinterest.com → My apps) with **Trial access** approved at least; until Pinterest approves it the sign-in is refused. Register the redirect URI below in the app.",
   "connector": {
     "name": "Pinterest Business API v5",
     "type": "REST",

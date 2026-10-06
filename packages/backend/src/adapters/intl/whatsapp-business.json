@@ -11,7 +11,7 @@
   "envVarMeta": {
     "WHATSAPP_ACCESS_TOKEN": {
       "label": "Access token",
-      "help": "Meta Business settings → System users: generate a permanent token with whatsapp_business_messaging and whatsapp_business_management. The 24-hour token from API Setup works for a first try.",
+      "help": "Meta Business settings → System users: generate a permanent token with whatsapp_business_messaging and whatsapp_business_management. Do not use the temporary token from API Setup: it stops working after 24 hours.",
       "link": "https://business.facebook.com/settings/system-users"
     },
     "WHATSAPP_BUSINESS_ACCOUNT_ID": {
@@ -19,6 +19,11 @@
       "help": "developers.facebook.com → your app → WhatsApp → API Setup: the WhatsApp Business Account ID (WABA ID).",
       "pattern": "^[0-9]+$"
     }
+  },
+  "prerequisites": "A Meta app with the WhatsApp product, a WhatsApp Business Account and a **System User** with a permanent token (Meta Business settings → Users → System users). Without them the setup cannot finish; creating them takes about 15 minutes.",
+  "verifyHints": {
+    "400": "Meta did not find this WhatsApp Business Account. Use the WABA ID from API Setup, not the Phone Number ID or the App ID.",
+    "401": "Meta refused the token, or it has expired. Generate a permanent token for a System User with whatsapp_business_messaging and whatsapp_business_management."
   },
   "connector": {
     "name": "WhatsApp Business Cloud API",

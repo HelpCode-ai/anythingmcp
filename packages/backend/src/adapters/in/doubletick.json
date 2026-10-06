@@ -1,0 +1,1043 @@
+{
+  "slug": "doubletick",
+  "name": "DoubleTick",
+  "description": "DoubleTick WhatsApp Business inbox: connected WhatsApp numbers, chats and message history, customers with tags and custom fields, templates, broadcast groups, team, notes, quick replies and wallet balance, plus sending text, media and template messages.",
+  "instructions": "## DoubleTick\nThis connector talks to the DoubleTick public API at `https://public.doubletick.io`. DoubleTick is a shared WhatsApp Business (WABA) inbox used mostly in India: several agents answer customers from one or more WhatsApp business numbers.\n\n## Setup\nIn the DoubleTick web app (web.doubletick.io) open **Settings → Developer Documentation** and click **Create new key**. Put the key in `DOUBLETICK_API_KEY`. It is sent as-is in the `Authorization` header, without `Bearer`.\n\n**The key acts as the user who created it.** It sees the WhatsApp numbers, chats and templates assigned to that user. If `doubletick_list_channels` returns an empty `channels` list, no WhatsApp number is assigned to that user. Chats may still be listed, but `all_waba_phone_numbers=true` then finds no templates: pass the number explicitly in `waba_phone_numbers`, or have an admin assign the number to the user.\n\n## Start here\n1. `doubletick_list_channels`: the connected WhatsApp numbers (`wabaNumber`). Almost every other call needs one of them.\n2. `doubletick_list_chats` for the inbox, then `doubletick_get_chat_messages` with the WABA number and the customer number for a conversation.\n3. `doubletick_get_customer` for a contact's name, tags, custom fields and assigned agent.\n\n## Phone numbers\nAlways with country code. DoubleTick accepts `+919876543210` or `919876543210` on most endpoints; query parameters are safest as digits only (`919876543210`). Group ids look like `grp_...` (WhatsApp groups) or `group_...` (broadcast groups).\n\n## Templates and the 24-hour window\nWhatsApp only allows free-form messages (`doubletick_send_text_message`, image, document) within 24 hours of the customer's last message. Check with `doubletick_get_chat_window_status`. Outside the window send an approved template with `doubletick_send_template_message`. `doubletick_list_templates` needs `waba_phone_numbers` (comma-separated, digits only) or `all_waba_phone_numbers=true`.\n\n## Errors\nDoubleTick uses **422 for 'nothing found' and business-rule refusals** (no templates for this filter, roles not found, agent not in the team), not only for invalid input. A 422 on `doubletick_list_templates` means no template matched: the numbers asked for are not assigned to the key's user, or the filters exclude everything. Pass `waba_phone_numbers` explicitly, use `status=ALL` and no language filter. `doubletick_get_customer` answers 404 for an unknown number; `doubletick_get_customer` and `doubletick_list_notes` answer 400 when called without a phone number (or group id for notes).\n\n## Pagination and limits\nChats use a cursor: pass `paginationOptions.nextChatId` and `nextChatTimestamp` from the previous answer. Broadcast groups page with `after_group_id` / `after_group_name` / `after_date_created`; notes with `last_note_id` / `last_note_date`. Rate limits are per organisation: chat messages 300 per minute, customer details 180 per minute, notes 60 per minute, message status 1 per second.\n\n## Sending\nSending costs WhatsApp conversation fees from the DoubleTick wallet (`doubletick_get_wallet_balance`). The send tools return a `messageId`; follow delivery with `doubletick_get_message_status`.",
+  "region": "in",
+  "category": "messaging",
+  "icon": "doubletick",
+  "docsUrl": "https://docs.doubletick.io/",
+  "requiredEnvVars": [
+    "DOUBLETICK_API_KEY"
+  ],
+  "envVarMeta": {
+    "DOUBLETICK_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "DoubleTick web app → Settings → Developer Documentation → Create new key. The key acts as your user, so create it with an account that has the WhatsApp numbers you want to use.",
+      "link": "https://web.doubletick.io/login"
+    }
+  },
+  "verifyHints": {
+    "401": "DoubleTick refused the key ('Invalid public api key'). Create a new one under Settings → Developer Documentation and paste it without 'Bearer'.",
+    "422": "DoubleTick found nothing for this request. Check that the key's user has a WhatsApp number assigned (doubletick_list_channels)."
+  },
+  "probe": {
+    "tool": "doubletick_list_channels"
+  },
+  "connector": {
+    "name": "DoubleTick",
+    "type": "REST",
+    "baseUrl": "https://public.doubletick.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{DOUBLETICK_API_KEY}}"
+    },
+    "healthcheckPath": "/organization/channel/profile"
+  },
+  "tools": [
+    {
+      "name": "doubletick_list_channels",
+      "description": "List the WhatsApp business numbers (WABA channels) assigned to the key's user, with number, display name and profile. Call this first: most other tools need one of these numbers. Empty means the user has no number assigned.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization/channel/profile"
+      }
+    },
+    {
+      "name": "doubletick_list_chats",
+      "description": "List inbox chats, most recent first, with customer, last message, status, tags and assigned agent. Filter by status, tags, agent or WhatsApp number. Cursor paging: up to 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Chats to return, 1-100. Default 10."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "unread",
+              "unresolved",
+              "done",
+              "waiting_for_response",
+              "open",
+              "open_cart"
+            ],
+            "description": "Chat status filter."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tag names."
+          },
+          "assigned_user_phone": {
+            "type": "string",
+            "description": "Phone number of the assigned agent; the text null for unassigned chats."
+          },
+          "waba_numbers": {
+            "type": "string",
+            "description": "Comma-separated WhatsApp business numbers (WhatsApp chats only)."
+          },
+          "instagram_handles": {
+            "type": "string",
+            "description": "Comma-separated Instagram handles (Instagram chats only)."
+          },
+          "next_chat_id": {
+            "type": "string",
+            "description": "Cursor: paginationOptions.nextChatId from the previous answer."
+          },
+          "next_chat_timestamp": {
+            "type": "number",
+            "description": "Cursor: paginationOptions.nextChatTimestamp from the previous answer (epoch ms)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats",
+        "queryParams": {
+          "limit": "$limit",
+          "status": "$status",
+          "tags": "$tags",
+          "assignedUserPhone": "$assigned_user_phone",
+          "wabaNumbers": "$waba_numbers",
+          "instagramHandles": "$instagram_handles",
+          "nextChatId": "$next_chat_id",
+          "nextChatTimestamp": "$next_chat_timestamp"
+        }
+      }
+    },
+    {
+      "name": "doubletick_get_chat_messages",
+      "description": "Get the messages exchanged between one of your WhatsApp numbers and a customer, optionally between two dates. Use it to read a conversation before replying or to summarise it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number, digits with country code, from doubletick_list_channels."
+          },
+          "customer_number": {
+            "type": "string",
+            "description": "Customer phone number with country code, digits only."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, DD-MM-YYYY."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, DD-MM-YYYY."
+          }
+        },
+        "required": [
+          "waba_number",
+          "customer_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat-messages",
+        "queryParams": {
+          "wabaNumber": "$waba_number",
+          "customerNumber": "$customer_number",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "doubletick_get_chat_window_status",
+      "description": "Check whether the 24-hour WhatsApp customer service window with a customer is open, which decides if a free-form message can be sent or a template is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "customer_phone_number": {
+            "type": "string",
+            "description": "Customer phone number with country code."
+          }
+        },
+        "required": [
+          "waba_number",
+          "customer_phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/status",
+        "queryParams": {
+          "wabaNumber": "$waba_number",
+          "customerPhoneNumber": "$customer_phone_number"
+        }
+      }
+    },
+    {
+      "name": "doubletick_get_customer",
+      "description": "Get a customer by phone number or customer id (one of the two is needed): name, assigned agent, opt-in, custom fields and, when a WhatsApp number is given, the tags for that number. 404 when unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "Customer phone number with country code."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "DoubleTick customer id, instead of the phone number."
+          },
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number, to include the customer's tags for it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer/details",
+        "queryParams": {
+          "phoneNumber": "$phone_number",
+          "customerId": "$customer_id",
+          "wabaNumber": "$waba_number"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_templates",
+      "description": "List WhatsApp message templates with name, language, category, components (header, body with placeholders, footer, buttons) and approval status. Pass waba_phone_numbers, or all_waba_phone_numbers=true for the numbers assigned to the key's user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "waba_phone_numbers": {
+            "type": "string",
+            "description": "Comma-separated WhatsApp business numbers, digits with country code, e.g. 919999999999."
+          },
+          "all_waba_phone_numbers": {
+            "type": "boolean",
+            "description": "true for the templates of every number the user can access, instead of waba_phone_numbers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED",
+              "PENDING",
+              "PAUSED",
+              "ALL"
+            ],
+            "description": "Approval status. Use ALL to see every template."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MARKETING",
+              "UTILITY"
+            ],
+            "description": "Template category."
+          },
+          "language": {
+            "type": "string",
+            "description": "Template language code, e.g. en, en_US, hi. Leave empty for all languages."
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/templates",
+        "queryParams": {
+          "wabaPhoneNumbers": "$waba_phone_numbers",
+          "allWabaPhoneNumbers": "$all_waba_phone_numbers",
+          "status": "$status",
+          "category": "$category",
+          "language": "$language",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_broadcast_groups",
+      "description": "List broadcast groups (contact lists for template broadcasts) with id, name, member count and creation date. Search by name and page with the after_* cursors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_query": {
+            "type": "string",
+            "description": "Text in the group name."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "NAME",
+              "DATE_CREATED"
+            ],
+            "description": "Sort field."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "description": "Sort direction."
+          },
+          "after_group_id": {
+            "type": "string",
+            "description": "Cursor: id of the last group of the previous page."
+          },
+          "after_group_name": {
+            "type": "string",
+            "description": "Cursor: name of the last group (when sorting by name)."
+          },
+          "after_date_created": {
+            "type": "string",
+            "description": "Cursor: creation date of the last group (when sorting by date)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "searchQuery": "$search_query",
+          "orderBy": "$order_by",
+          "format": "$format",
+          "afterGroupId": "$after_group_id",
+          "afterGroupName": "$after_group_name",
+          "afterDateCreated": "$after_date_created"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_team",
+      "description": "List the team members of the organisation with name, phone number, role and reporting managers. Agent phone numbers are used to assign chats.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team"
+      }
+    },
+    {
+      "name": "doubletick_get_team_member",
+      "description": "Get one team member by phone number: role, reporting managers, channel access and organisation details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_number": {
+            "type": "string",
+            "description": "Team member phone number with country code."
+          }
+        },
+        "required": [
+          "agent_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team/member",
+        "queryParams": {
+          "agentNumber": "$agent_number"
+        }
+      }
+    },
+    {
+      "name": "doubletick_get_wallet_balance",
+      "description": "Get the organisation's DoubleTick wallet balance, from which WhatsApp conversation fees are paid. Check it before large template sends or broadcasts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wallet/balance"
+      }
+    },
+    {
+      "name": "doubletick_get_message_status",
+      "description": "Get the delivery status of a sent message (sent, delivered, read, failed) from the messageId returned by a send tool. Limited to one call per second per organisation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "messageId returned when the message was sent."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whatsapp/message/status",
+        "queryParams": {
+          "messageId": "$message_id"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_notes",
+      "description": "List internal notes on a customer chat (from + to) or a WhatsApp group chat (group_id), newest first, with author and mentions. Notes are visible to the team only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code. With to, for a customer chat."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer phone number with country code."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of from and to."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Notes to return, up to 100. Default 30."
+          },
+          "last_note_id": {
+            "type": "string",
+            "description": "Cursor: id of the last note of the previous page."
+          },
+          "last_note_date": {
+            "type": "string",
+            "description": "Cursor: date of the last note of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "groupId": "$group_id",
+          "limit": "$limit",
+          "lastNoteId": "$last_note_id",
+          "lastNoteDate": "$last_note_date"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_quick_replies",
+      "description": "List the saved quick replies (canned answers) with shortcut and text. Use them to answer common questions in the team's usual wording.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Text in the shortcut or message."
+          },
+          "access_to": {
+            "type": "string",
+            "description": "Restrict to quick replies shared with this audience, as defined in DoubleTick."
+          },
+          "last_quick_reply_date": {
+            "type": "string",
+            "description": "Cursor: date of the last quick reply of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quick-replies",
+        "queryParams": {
+          "searchTerm": "$search_term",
+          "accessTo": "$access_to",
+          "lastQuickReplyDate": "$last_quick_reply_date"
+        }
+      }
+    },
+    {
+      "name": "doubletick_list_webhooks",
+      "description": "List the webhooks registered for the organisation with name, URL, subscribed events and creator. Use it to see which systems receive DoubleTick events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "name",
+              "url",
+              "createdBy",
+              "integrationCount"
+            ],
+            "description": "Sort field."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/webhooks",
+        "queryParams": {
+          "sortBy": "$sort_by",
+          "sortDirection": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "doubletick_send_text_message",
+      "description": "Send a free-form WhatsApp text message to a customer or a WhatsApp group. Only works within 24 hours of the customer's last message; otherwise send a template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code, e.g. +919999999999."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer number with country code. Leave empty when sending to group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of to."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. WhatsApp formatting (*bold*, _italic_) is supported."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional UUID v4 to use as the message id (for idempotency)."
+          }
+        },
+        "required": [
+          "from",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/whatsapp/message/text",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "groupId": "$group_id",
+          "messageId": "$message_id",
+          "content": {
+            "text": "$text"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_send_image_message",
+      "description": "Send an image by public URL, with an optional caption, to a customer or a WhatsApp group. Same 24-hour window rule as text messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer number with country code. Leave empty when sending to group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of to."
+          },
+          "media_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the image (JPEG or PNG)."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Caption under the image."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional UUID v4 to use as the message id."
+          }
+        },
+        "required": [
+          "from",
+          "media_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/whatsapp/message/image",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "groupId": "$group_id",
+          "messageId": "$message_id",
+          "content": {
+            "mediaUrl": "$media_url",
+            "caption": "$caption"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_send_document_message",
+      "description": "Send a document (PDF, spreadsheet...) by public URL with an optional file name and caption, e.g. an invoice or a quote. Same 24-hour window rule as text messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer number with country code. Leave empty when sending to group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of to."
+          },
+          "media_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the document."
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name shown to the customer, e.g. Invoice-1042.pdf."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Caption under the document."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional UUID v4 to use as the message id."
+          }
+        },
+        "required": [
+          "from",
+          "media_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/whatsapp/message/document",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "groupId": "$group_id",
+          "messageId": "$message_id",
+          "content": {
+            "mediaUrl": "$media_url",
+            "filename": "$filename",
+            "caption": "$caption"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_send_template_message",
+      "description": "Send an approved WhatsApp template to a customer, also outside the 24-hour window. Body placeholders are key-value objects. Returns per-message status and messageId; charges the wallet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer number with country code. Leave empty when sending to group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of to."
+          },
+          "template_name": {
+            "type": "string",
+            "description": "Template name from doubletick_list_templates (status APPROVED)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Template language code, exactly as listed, e.g. en or en_US."
+          },
+          "template_data": {
+            "type": "object",
+            "description": "Values for the template: {\"header\": {\"type\": \"IMAGE\", \"mediaUrl\": \"https://...\"}, \"body\": {\"placeholders\": [{\"name\": \"Asha\"}, {\"order\": \"1042\"}]}, \"buttons\": [{\"type\": \"URL\", \"parameter\": \"abc\"}]}. Omit parts the template does not have."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Optional data echoed back in DoubleTick webhooks for this message."
+          }
+        },
+        "required": [
+          "from",
+          "template_name",
+          "language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/whatsapp/message/template",
+        "bodyMapping": {
+          "messages": [
+            {
+              "from": "$from",
+              "to": "$to",
+              "groupId": "$group_id",
+              "customData": "$custom_data",
+              "content": {
+                "templateName": "$template_name",
+                "language": "$language",
+                "templateData": "$template_data"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_send_broadcast",
+      "description": "Send an approved template to every member of a broadcast group. Placeholders like {{Name}} are filled per member. Charges the wallet for each recipient; check the balance first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_name": {
+            "type": "string",
+            "description": "Broadcast group name from doubletick_list_broadcast_groups."
+          },
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "template_name": {
+            "type": "string",
+            "description": "Approved template name."
+          },
+          "language": {
+            "type": "string",
+            "description": "Template language code, e.g. en."
+          },
+          "template_data": {
+            "type": "object",
+            "description": "Template values: {\"header\": {...}, \"body\": {\"placeholders\": [\"{{Name}}\", \"Diwali sale\"]}, \"buttons\": [...]}. Broadcast body placeholders are plain strings."
+          }
+        },
+        "required": [
+          "group_name",
+          "from",
+          "template_name",
+          "language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/whatsapp/message/broadcast",
+        "bodyMapping": {
+          "groupName": "$group_name",
+          "from": "$from",
+          "content": {
+            "templateName": "$template_name",
+            "language": "$language",
+            "templateData": "$template_data"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_update_customer_tags",
+      "description": "Add tags and set custom fields on a customer, and optionally its name, opt-in and assigned agent. Creates the customer if the number is new. Existing tags are kept.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number with country code, e.g. 919876543210."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to add."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Custom field values: [{\"name\": \"City\", \"value\": \"Pune\"}]."
+          },
+          "name": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "opt_in": {
+            "type": "boolean",
+            "description": "WhatsApp marketing opt-in."
+          },
+          "agent_phone": {
+            "type": "string",
+            "description": "Agent to assign, phone with country code."
+          },
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number the tags belong to."
+          }
+        },
+        "required": [
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer/assign-tags-custom-fields",
+        "bodyMapping": {
+          "phone": "$phone",
+          "tags": "$tags",
+          "customFields": "$custom_fields",
+          "name": "$name",
+          "optIn": "$opt_in",
+          "agentPhone": "$agent_phone",
+          "wabaNumber": "$waba_number"
+        }
+      }
+    },
+    {
+      "name": "doubletick_remove_customer_tags",
+      "description": "Remove tags and custom field values from a customer. Pass empty arrays for the part you do not want to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number with country code."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to remove."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the custom fields to clear."
+          },
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number the tags belong to."
+          }
+        },
+        "required": [
+          "phone",
+          "tags",
+          "custom_fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer/remove-tags-custom-fields",
+        "bodyMapping": {
+          "phone": "$phone",
+          "tags": "$tags",
+          "customFields": "$custom_fields",
+          "wabaNumber": "$waba_number"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "doubletick_assign_chat",
+      "description": "Assign a customer chat (customer_phone_number) or a WhatsApp group chat (group_id) to a team member. Set reassign to true to move a chat that already has an agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assigned_user_phone_number": {
+            "type": "string",
+            "description": "Agent phone number from doubletick_list_team."
+          },
+          "customer_phone_number": {
+            "type": "string",
+            "description": "Customer phone number with country code. Use this or group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id. Use this or customer_phone_number."
+          },
+          "waba_number": {
+            "type": "string",
+            "description": "Your WhatsApp business number (customer chats only)."
+          },
+          "reassign": {
+            "type": "boolean",
+            "description": "true to replace the current agent."
+          }
+        },
+        "required": [
+          "assigned_user_phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/team-member/assign",
+        "bodyMapping": {
+          "assignedUserPhoneNumber": "$assigned_user_phone_number",
+          "customerPhoneNumber": "$customer_phone_number",
+          "groupId": "$group_id",
+          "wabaNumber": "$waba_number",
+          "reassign": "$reassign"
+        }
+      }
+    },
+    {
+      "name": "doubletick_create_note",
+      "description": "Add an internal note to a customer chat (from + to) or a WhatsApp group chat (group_id). Notes are seen by the team, never by the customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "from": {
+            "type": "string",
+            "description": "Your WhatsApp business number with country code."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customer phone number with country code."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "WhatsApp group id, instead of from and to."
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Mentions that notify team members: [{\"type\": \"user\", \"id\": \"<user id>\"}]."
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes",
+        "bodyMapping": {
+          "note": "$note",
+          "from": "$from",
+          "to": "$to",
+          "groupId": "$group_id",
+          "entities": "$entities"
+        }
+      }
+    },
+    {
+      "name": "doubletick_create_broadcast_group",
+      "description": "Create a broadcast group with an optional first list of members. Returns the group id and any numbers rejected as invalid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Group name, used later to send broadcasts."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Members: [{\"name\": \"Asha\", \"phone\": \"919876543210\"}]."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups",
+        "bodyMapping": {
+          "name": "$name",
+          "members": "$members"
+        }
+      }
+    },
+    {
+      "name": "doubletick_add_broadcast_group_members",
+      "description": "Add members to an existing broadcast group by group id. Returns the updated count and any numbers rejected as invalid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Broadcast group id from doubletick_list_broadcast_groups."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Members: [{\"name\": \"Asha\", \"phone\": \"919876543210\"}]."
+          }
+        },
+        "required": [
+          "group_id",
+          "members"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/add-members",
+        "bodyMapping": {
+          "groupId": "$group_id",
+          "members": "$members"
+        }
+      }
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
+import { presentedMcpApiKey } from './mcp-api-key.util';
 
 /**
  * Guard for the MCP endpoint (/mcp).
@@ -42,9 +43,11 @@ export class McpAuthGuard implements CanActivate {
     const configuredApiKey = this.configService.get<string>('MCP_API_KEY');
     const mcpBearerToken = this.configService.get<string>('MCP_BEARER_TOKEN');
 
-    // Check per-user MCP API key first (mcp_... prefix)
-    if (apiKey?.startsWith('mcp_')) {
-      const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
+    // Check per-user MCP API key first (mcp_... prefix), from X-API-Key or
+    // Authorization: Bearer (see presentedMcpApiKey).
+    const presentedKey = presentedMcpApiKey(request.headers, mcpBearerToken);
+    if (presentedKey) {
+      const user = await this.mcpApiKeysService.resolveUserByKey(presentedKey);
       if (user) {
         request.user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId };
         return true;

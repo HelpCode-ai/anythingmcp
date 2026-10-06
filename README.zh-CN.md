@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：262 个连接器，其中 15 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：298 个连接器，其中 16 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 262 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 15 个无需 API 密钥。
+  它自带 298 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 16 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 262 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 298 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|
@@ -223,8 +223,9 @@ docker compose up -d
 
 同一个 MCP 服务器适用于所有支持 MCP 的客户端，因此连接器只需构建一次：
 
-- **Claude。** 在 *Customize → Connectors* 中把服务器 URL 添加为**自定义连接器**，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。开箱即支持 OAuth 2.0。[Claude 配置](docs/integrations/claude.md)
+- **Claude。** 在 *Customize → Connectors* 中把服务器 URL 添加为**自定义连接器**，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。开箱即支持 OAuth 2.0。使用 AnythingMCP Cloud 时，也可以从 [Claude 目录](https://claude.ai/directory/anythingmcp)一键添加。[Claude 配置](docs/integrations/claude.md)
 - **ChatGPT。** ChatGPT 中的应用基于 MCP。在 ChatGPT 设置中添加服务器，或将其作为 Apps SDK 应用的工具层。[ChatGPT 配置](docs/integrations/chatgpt.md)
+- **Meta Muse。** 在 Muse 中打开 *Settings → Connectors → Add custom connector*，粘贴服务器 URL，然后登录 AnythingMCP。[Muse 配置](docs/integrations/muse.md)
 - **Copilot、Gemini、Cursor** 及其他 MCP 客户端：[客户端配置指南](docs/guides.md)。
 
 ---

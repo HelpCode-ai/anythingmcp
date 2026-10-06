@@ -589,6 +589,11 @@ export default function NewConnectorPage() {
                   <div>
                     <label className={labelClass}>Header name</label>
                     <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="X-API-Key" className={cn(inputClass, 'font-mono text-[13px]')} />
+                    {authKey && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(authKey) && (
+                      <p className="mt-1 text-[12px]" style={{ color: 'var(--danger)' }}>
+                        The HTTP header the key is sent in, e.g. X-API-Key: letters, digits and - only, no spaces.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className={labelClass}>API key</label>

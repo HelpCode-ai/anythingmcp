@@ -178,10 +178,10 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
-          if echo "$changed" | grep -qE '(^|/)package(-lock)?\.json$|^Dockerfile$|^\.dockerignore$|^start\.sh$|^packages/backend/prisma/|^packages/backend/prisma\.config\.ts$'; then
+          if echo "$changed" | grep -qE '(^|/)package(-lock)?\.json$|^Dockerfile$|^\.dockerignore$|^start\.sh$|^packages/backend/prisma/|^packages/backend/prisma\.config\.ts$|^packages/backend/(tsconfig(\.build)?|nest-cli)\.json$'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No dependency, Dockerfile or startup change: skipping the image boot."
+            echo "No dependency, Dockerfile, build config or startup change: skipping the image boot."
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 

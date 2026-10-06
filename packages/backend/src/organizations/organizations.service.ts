@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { Prisma, UserRole } from '../generated/prisma/client';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LastAdminConflictException } from './last-admin.exception';
+import { LicenseReleaseService } from '../license/license-release.service';
 
 /** Ordered least- to most-privileged; used to tell a demotion from a promotion. */
 const ORG_ROLE_RANK: Record<UserRole, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3 };
@@ -36,6 +37,7 @@ export class OrganizationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly securityEvents: SecurityEventService,
+    private readonly licenseRelease: LicenseReleaseService,
   ) {}
 
   async create(name: string) {
@@ -401,6 +403,9 @@ export class OrganizationsService {
       throw new ForbiddenException('Only org admins can delete the organization');
     }
 
+    // A subscription is cancelled in Stripe, not by deleting the workspace.
+    await this.licenseRelease.assertNoLiveSubscription([organizationId]);
+
     // Snapshot users (other than the deleter) whose CACHED active org is this one
     const orphans = await this.prisma.user.findMany({
       where: { organizationId, id: { not: userId } },
@@ -489,6 +494,9 @@ export class OrganizationsService {
         activeOrganization: activeOrg,
       };
     });
+
+    // The workspace's licence is left without one; end it on the licence site.
+    this.licenseRelease.releaseInBackground();
 
     return { ...result, autoCreated };
   }

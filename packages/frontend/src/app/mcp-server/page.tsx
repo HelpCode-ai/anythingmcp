@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
+import { copyText } from '@/lib/clipboard';
 
 export default function McpServerListPage() {
   const { token } = useAuth();
@@ -54,10 +55,11 @@ export default function McpServerListPage() {
 
   const handleCopy = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    navigator.clipboard?.writeText(`/mcp/${id}`).then(() => {
+    void copyText(`/mcp/${id}`).then((ok) => {
+      if (!ok) return;
       setCopiedId(id);
       setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
-    }).catch(() => {});
+    });
   };
 
   const filtered = servers.filter((s) => {

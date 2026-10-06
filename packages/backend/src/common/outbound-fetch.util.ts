@@ -5,6 +5,7 @@ import {
   createSsrfGuardedAgents,
   SsrfBlockedError,
 } from './ssrf.util';
+import { isCredentialHeader, keepsCredentials } from './outbound-http';
 
 /**
  * Download a third-party URL on a user's behalf: a file to attach to a
@@ -18,7 +19,8 @@ import {
  *    answer that changes after the check reaches an internal address.
  *  - A bare request: only the headers the caller passes, no env proxy, no
  *    cookies. Never pass connector credentials here; on a redirect to
- *    another origin, Authorization and Cookie are dropped anyway.
+ *    another origin, credential headers are dropped anyway (see
+ *    isCredentialHeader in outbound-http.ts).
  *  - Bounded: one deadline for the whole exchange (redirects and body
  *    included) and a byte cap, enforced on Content-Length up front and on
  *    the bytes actually read. The body is buffered, so it can be sent again
@@ -86,7 +88,6 @@ export function redactUrl(url: string): string {
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const CROSS_ORIGIN_DROPPED_HEADERS = new Set(['authorization', 'cookie']);
 
 /**
  * GET `url` with the guarantees described above. Throws SsrfBlockedError when
@@ -131,11 +132,9 @@ export async function fetchOutbound(
             'invalid_url',
           );
         }
-        if (new URL(next).origin !== new URL(current).origin) {
+        if (!keepsCredentials(new URL(current), new URL(next))) {
           headers = Object.fromEntries(
-            Object.entries(headers).filter(
-              ([k]) => !CROSS_ORIGIN_DROPPED_HEADERS.has(k.toLowerCase()),
-            ),
+            Object.entries(headers).filter(([k]) => !isCredentialHeader(k)),
           );
         }
         current = next;

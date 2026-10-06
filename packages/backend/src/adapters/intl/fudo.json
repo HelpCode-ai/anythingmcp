@@ -1,0 +1,1185 @@
+{
+  "slug": "fudo",
+  "name": "Fudo",
+  "description": "Fudo restaurant point of sale: sales and tickets with items and payments, payments and payment methods, customers, products and menu categories, expenses and suppliers, tables, rooms, kitchens, ingredients and staff. Fudo API v1alpha1 with an API key and secret; writes are included but installed switched off.",
+  "region": "intl",
+  "category": "food",
+  "icon": "fudo",
+  "docsUrl": "https://dev.fu.do/api",
+  "prerequisites": "API credentials (an apiKey and apiSecret) issued by Fudo support: write to soporte@fu.do with your account name and the user that should get API access.",
+  "instructions": "## Fudo\nFudo is a point-of-sale and management system for restaurants, bars and cafes, used mainly in Argentina and the rest of Latin America and in Spain. This connector reads the Fudo API v1alpha1 (`https://api.fu.do/v1alpha1`), a JSON:API: every answer has `data` with `id`, `type` and `attributes`, plus `included` when relations are embedded.\n\n## Setup\n1. Fudo issues API credentials on request: write to soporte@fu.do with the name of your Fudo account and the user that should get API access. Fudo recommends a dedicated user such as api@mirestaurante; the API can do what that user's role allows.\n2. Put the `apiKey` into `FUDO_API_KEY` and the `apiSecret` into `FUDO_API_SECRET`.\n3. The connector exchanges them at `POST https://auth.fu.do/api` for a token valid 24 hours and sends it as `Authorization: Bearer`. It renews the token before it expires. The key and secret are never sent to api.fu.do directly; sending them as headers there returns 401.\n\n## Start here\n- `fudo_list_payment_methods` checks the credentials and gives the method ids.\n- Sales of a day: `fudo_list_sales` with `created_at` = `and(gte.2026-10-06T00:00:00Z,lte.2026-10-06T23:59:59Z)`, `sale_state` = `in.(CLOSED)` and `include` = `payments.paymentMethod` or `items.product`.\n- Occupied tables: `fudo_list_tables` with `include=activeSales`.\n- Menu: `fudo_list_product_categories` with `include=products`, or `fudo_list_products`.\n\n## Filters\nFilter parameters take Fudo's operator expressions as documented: `eq.`, `neq.`, `gte.`, `lte.`, `in.(a,b)`, `ilike.%text%`, `is.null`, `isdistinct.null`, and `and(gte.x,lte.y)` for ranges. Times are ISO 8601 with Z (UTC), dates are YYYY-MM-DD. Some parameters (active, ids, table_id, user_id, provider_id, search, name) take the plain value and the connector adds the operator. Fudo validates each expression against a per-column pattern and answers 400 or 422 when the form is not accepted; the parameter descriptions give the accepted forms.\n\n## Pagination\n`page_size` (default 250, max 500) and `page_number` (from 1). There is no total count: keep requesting pages until a page has fewer items than `page_size`.\n\n## Include\nMost tools take `include`, a comma-separated list of relations to embed (for example `items.product,payments.paymentMethod` on a sale). Embedded records arrive in `included`, linked from `relationships`.\n\n## Writes\nCreating and updating customers, expenses and products is included but installed switched off; turn them on deliberately. Write bodies use JSON:API (`data.type`, `data.attributes`, `data.relationships`). Rate limiting answers 429.",
+  "requiredEnvVars": [
+    "FUDO_API_KEY",
+    "FUDO_API_SECRET"
+  ],
+  "envVarMeta": {
+    "FUDO_API_KEY": {
+      "label": "API key (apiKey)",
+      "kind": "credential",
+      "help": "The apiKey Fudo support sent you for the API user. Request it at soporte@fu.do with your account name and the user to enable.",
+      "link": "https://dev.fu.do/api"
+    },
+    "FUDO_API_SECRET": {
+      "label": "API secret (apiSecret)",
+      "kind": "credential",
+      "help": "The apiSecret sent together with the apiKey.",
+      "link": "https://dev.fu.do/api"
+    }
+  },
+  "verifyHints": {
+    "400": "Fudo refused the login. Check that the apiKey and apiSecret are the pair Fudo support issued and were pasted without spaces.",
+    "401": "Fudo did not accept the credentials. Check the apiKey and apiSecret; if they are right, ask soporte@fu.do whether API access is still enabled for that user.",
+    "403": "The API user's role does not allow this. Give the user a role with access to sales, customers and products in Fudo.",
+    "rate_limited": "Fudo is rate limiting the requests. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "fudo_list_payment_methods",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "Fudo API",
+    "type": "REST",
+    "baseUrl": "https://api.fu.do/v1alpha1",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://auth.fu.do/api",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "apiKey": "${username}",
+        "apiSecret": "${password}"
+      },
+      "username": "{{FUDO_API_KEY}}",
+      "password": "{{FUDO_API_SECRET}}",
+      "tokenJsonPath": "token",
+      "expiryJsonPath": "exp",
+      "expiryFormat": "unix",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 3600,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/payment-methods"
+  },
+  "tools": [
+    {
+      "name": "fudo_list_customers",
+      "description": "List the restaurant's customers with name, phone, e-mail, address, sales count, first and last sale date and house account. Filter by activity, origin, sales count or a free-text search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the customer fields, e.g. maria gomez."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active customers, false for inactive ones."
+          },
+          "origin": {
+            "type": "string",
+            "description": "eq.ONLINE-MENU, eq.RESERVATION or is.null (created in the POS)."
+          },
+          "sales_count": {
+            "type": "string",
+            "description": "Operator expression on the number of sales, e.g. gte.5 or and(gte.2,lte.10)."
+          },
+          "last_sale_date": {
+            "type": "string",
+            "description": "Last sale time. Operator expression: gte.<time>, lte.<time> or and(gte.<time>,lte.<time>), times as 2026-10-01T00:00:00Z."
+          },
+          "first_sale_date": {
+            "type": "string",
+            "description": "First sale time. Operator expression: gte.<time>, lte.<time> or and(gte.<time>,lte.<time>), times as 2026-10-01T00:00:00Z."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name, salesCount; prefix - for descending, e.g. -salesCount,name."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "filter[@all]": "fts.${search}",
+          "filter[active]": "eq.${active}",
+          "filter[origin]": "$origin",
+          "filter[salesCount]": "$sales_count",
+          "filter[lastSaleDate]": "$last_sale_date",
+          "filter[firstSaleDate]": "$first_sale_date",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_customer",
+      "description": "Get one customer by id with contact data, fiscal address, discount percentage, house account flag, sales count and first and last sale dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Numeric customer id from fudo_list_customers."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "fudo_list_products",
+      "description": "List products on the menu with name, code, price, cost, stock, stock control, active flag and position. Filter by name, category, active or ids; embed the category or modifiers with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Case-insensitive name match; % is the wildcard, e.g. %pizza%."
+          },
+          "product_category_id": {
+            "type": "string",
+            "description": "Only products of this category id."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active products, false for inactive ones."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated product ids, e.g. 12,15,20."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. productCategory, productModifiersGroups.productModifiers, proportions.ingredient, unit, menuItems.menu."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name, position; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "filter[name]": "ilike.${name}",
+          "filter[productCategoryId]": "eq.${product_category_id}",
+          "filter[active]": "eq.${active}",
+          "filter[id]": "in.(${ids})",
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_product",
+      "description": "Get one product by id with price, cost, stock, description and flags; embed category, modifiers, recipe proportions or menus with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. productCategory, productModifiersGroups.productModifiers, proportions.ingredient, unit, menuItems.menu."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_product_categories",
+      "description": "List product categories (menu sections) with name, position, parent category and kitchen. Embed products, kitchen, parent category or taxes with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: kitchen, products, parentCategory, taxes."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name, position; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-categories",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_product_category",
+      "description": "Get one product category by id with name and position; embed its products, kitchen, parent category or taxes with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Numeric category id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: kitchen, products, parentCategory, taxes."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-categories/{category_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_sales",
+      "description": "List sales (tickets) with total, type (eat-in, takeaway, delivery), state, people, customer name and created and closed times. Filter by period, state, type, table, waiter or payment method; embed items and payments with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "description": "Creation time. Operator expression: gte.<time>, lte.<time> or and(gte.<time>,lte.<time>), times as 2026-10-01T00:00:00Z."
+          },
+          "closed_at": {
+            "type": "string",
+            "description": "Closing time range, only as and(gte.<time>,lt.<time>), e.g. and(gte.2026-10-01T00:00:00Z,lt.2026-10-02T00:00:00Z)."
+          },
+          "sale_state": {
+            "type": "string",
+            "description": "in.(...) with any of PENDING, CANCELED, CLOSED, IN-COURSE, PAYMENT-PROCESS, DELIVERY-SENT, READY-TO-DELIVER, e.g. in.(CLOSED)."
+          },
+          "sale_type": {
+            "type": "string",
+            "description": "Operator expression on the sale type, e.g. in.(EAT-IN,TAKEAWAY) or eq.DELIVERY."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Only sales of this table id."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only sales of this user (waiter) id."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "eq.<id> or in.(<id>,<id>) on the payment method."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. items.product, payments.paymentMethod, customer, discounts, tips, table.room, waiter, commercialDocuments, shippingCosts."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, createdAt, closedAt; prefix - for descending, e.g. -createdAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales",
+        "queryParams": {
+          "filter[createdAt]": "$created_at",
+          "filter[closedAt]": "$closed_at",
+          "filter[saleState]": "$sale_state",
+          "filter[saleType]": "$sale_type",
+          "filter[tableId]": "eq.${table_id}",
+          "filter[userId]": "eq.${user_id}",
+          "filter[paymentMethodId]": "$payment_method_id",
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_sale",
+      "description": "Get one sale by id with total, type, state, people, comment and times; embed the items with products, payments, discounts, tips, customer and table with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Numeric sale id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. items.product, payments.paymentMethod, customer, discounts, tips, table.room, waiter, commercialDocuments, shippingCosts."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/{sale_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_payments",
+      "description": "List payments received with amount, payment method, paid and created times and canceled flag. Filter by time, amount or canceled; embed the payment method with include. Use it for cash-up and revenue by method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "description": "Creation time. Operator expression: gte.<time>, lte.<time> or and(gte.<time>,lte.<time>), times as 2026-10-01T00:00:00Z."
+          },
+          "paid_at": {
+            "type": "string",
+            "description": "Payment time. Operator expression: gte.<time>, lte.<time> or and(gte.<time>,lte.<time>), times as 2026-10-01T00:00:00Z."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Operator expression on the amount, e.g. gte.1000."
+          },
+          "canceled": {
+            "type": "string",
+            "description": "eq.true for canceled payments only, neq.true to leave them out."
+          },
+          "include": {
+            "type": "string",
+            "description": "paymentMethod to embed the method."
+          },
+          "sort": {
+            "type": "string",
+            "description": "id or -id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "filter[createdAt]": "$created_at",
+          "filter[paidAt]": "$paid_at",
+          "filter[amount]": "$amount",
+          "filter[canceled]": "$canceled",
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_payment",
+      "description": "Get one payment by id with amount, received amount, paid time, external reference and canceled flag; embed the payment method with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Numeric payment id."
+          },
+          "include": {
+            "type": "string",
+            "description": "paymentMethod to embed the method."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/{payment_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_payment_methods",
+      "description": "List the payment methods configured in Fudo (cash, cards, transfers, online processors) with id, name and kind. Use the ids to filter sales and payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "id or -id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment-methods",
+        "queryParams": {
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_expenses",
+      "description": "List expenses (purchases and costs) with amount, date, due date, description, status and receipt number. Filter by date, category, provider or payment method; embed category and provider with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Expense date: gte.<date> or and(gte.<date>,lte.<date>), dates as 2026-10-01."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date: gte.<date> or and(gte.<date>,lte.<date>)."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Creation time: gte.<time> or and(gte.<time>,lte.<time>)."
+          },
+          "expense_category_id": {
+            "type": "string",
+            "description": "eq.<id> or in.(<id>,<id>) on the expense category."
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "Only expenses of this provider (supplier) id."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "eq.<id>, is.null (unpaid) or isdistinct.null (paid)."
+          },
+          "canceled": {
+            "type": "string",
+            "description": "eq.true for canceled only, neq.true to leave them out."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. expenseCategory, provider, paymentMethod, payments, expenseItems.product, user."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, createdAt, date, dueDate; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "filter[date]": "$date",
+          "filter[dueDate]": "$due_date",
+          "filter[createdAt]": "$created_at",
+          "filter[expenseCategoryId]": "$expense_category_id",
+          "filter[providerId]": "eq.${provider_id}",
+          "filter[paymentMethodId]": "$payment_method_id",
+          "filter[canceled]": "$canceled",
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_expense",
+      "description": "Get one expense by id with amount, dates, description, status and receipt; embed category, provider, items and payments with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Numeric expense id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. expenseCategory, provider, paymentMethod, payments, expenseItems.product, user."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses/{expense_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_expense_categories",
+      "description": "List expense categories (rent, supplies, salaries...) with id and name. Use the ids to filter or create expenses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expense-categories",
+        "queryParams": {
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_tables",
+      "description": "List the dining tables with number, room and status. Embed the open sales on each table with include=activeSales to see which tables are occupied and their running totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. room, activeSales, activeSales.items.product, activeSales.payments, activeSales.customer."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, number; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tables",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_table",
+      "description": "Get one table by id with number and room; embed its open sales with items and payments with include.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "string",
+            "description": "Numeric table id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated relations to embed, e.g. room, activeSales, activeSales.items.product, activeSales.payments, activeSales.customer."
+          }
+        },
+        "required": [
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tables/{table_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_rooms",
+      "description": "List the rooms (dining areas such as salon or terrace) with id and name; embed their tables with include=tables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "tables to embed the tables of each room."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rooms",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_kitchens",
+      "description": "List the kitchens (preparation stations such as kitchen or bar) with id and name. Product categories are routed to a kitchen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kitchens",
+        "queryParams": {
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_providers",
+      "description": "List providers (suppliers) with name, e-mail, phone, address, fiscal number and house account balance. Filter by active or a free-text search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "description": "true for active providers, false for inactive ones."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the provider fields."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/providers",
+        "queryParams": {
+          "filter[active]": "eq.${active}",
+          "filter[@all]": "fts.${search}",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_ingredients",
+      "description": "List ingredients with cost, unit, stock, minimum stock and stock control. Filter by name or category; use it for stock checks and recipe costing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Case-insensitive name match; % is the wildcard, e.g. %tomate%."
+          },
+          "ingredient_category_id": {
+            "type": "string",
+            "description": "Only ingredients of this category id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: ingredientCategory, recipeCard, unit."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ingredients",
+        "queryParams": {
+          "filter[name]": "ilike.${name}",
+          "filter[ingredientCategoryId]": "eq.${ingredient_category_id}",
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_users",
+      "description": "List the Fudo users (staff such as waiters and cashiers) with name, e-mail and active flag; embed their role or cash registers with include. Use the ids to filter sales by waiter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: role, deliveryCashRegister, tablesCashRegister, takeAwayCashRegister."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_create_customer",
+      "description": "Create a customer in Fudo with name and optional contact data. Fudo requires a default payment method for the customer. Returns the new customer with its id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Default payment method id, from fudo_list_payment_methods."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address as text."
+          },
+          "vat_number": {
+            "type": "string",
+            "description": "Tax id (CUIT, RFC, NIF...)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Internal note."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "description": "Default discount in percent."
+          },
+          "house_account_enabled": {
+            "type": "boolean",
+            "description": "Allow the customer to buy on account."
+          }
+        },
+        "required": [
+          "name",
+          "payment_method_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "data": {
+            "type": "Customer",
+            "attributes": {
+              "name": "$name",
+              "email": "$email",
+              "phone": "$phone",
+              "address": "$address",
+              "vatNumber": "$vat_number",
+              "comment": "$comment",
+              "discountPercentage": "$discount_percentage",
+              "houseAccountEnabled": "$house_account_enabled"
+            },
+            "relationships": {
+              "paymentMethod": {
+                "data": {
+                  "id": "$payment_method_id",
+                  "type": "PaymentMethod"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_update_customer",
+      "description": "Change a customer's contact data, discount, house account or active flag. Only the fields given are sent; Fudo also requires the default payment method. Returns the updated customer.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Numeric customer id."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Default payment method id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "email": {
+            "type": "string",
+            "description": "New e-mail."
+          },
+          "phone": {
+            "type": "string",
+            "description": "New phone."
+          },
+          "address": {
+            "type": "string",
+            "description": "New address."
+          },
+          "vat_number": {
+            "type": "string",
+            "description": "New tax id."
+          },
+          "comment": {
+            "type": "string",
+            "description": "New internal note."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "description": "New default discount in percent."
+          },
+          "house_account_enabled": {
+            "type": "boolean",
+            "description": "Allow buying on account."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to deactivate the customer."
+          }
+        },
+        "required": [
+          "customer_id",
+          "payment_method_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/customers/{customer_id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$customer_id",
+            "type": "Customer",
+            "attributes": {
+              "name": "$name",
+              "email": "$email",
+              "phone": "$phone",
+              "address": "$address",
+              "vatNumber": "$vat_number",
+              "comment": "$comment",
+              "discountPercentage": "$discount_percentage",
+              "houseAccountEnabled": "$house_account_enabled",
+              "active": "$active"
+            },
+            "relationships": {
+              "paymentMethod": {
+                "data": {
+                  "id": "$payment_method_id",
+                  "type": "PaymentMethod"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_create_expense",
+      "description": "Record an expense (purchase, bill or cost) with amount and date, and link it to a category, provider or payment method. Returns the new expense with its id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Total amount."
+          },
+          "date": {
+            "type": "string",
+            "description": "Expense date, e.g. 2026-10-06."
+          },
+          "description": {
+            "type": "string",
+            "description": "What was bought or paid."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, e.g. 2026-10-31."
+          },
+          "payment_date": {
+            "type": "string",
+            "description": "Payment date when already paid."
+          },
+          "receipt_number": {
+            "type": "string",
+            "description": "Invoice or receipt number."
+          },
+          "use_in_cash_count": {
+            "type": "boolean",
+            "description": "true when paid from the cash register, so it counts in the cash-up."
+          },
+          "relationships": {
+            "type": "object",
+            "description": "JSON:API links by id, e.g. {\"expenseCategory\": {\"data\": {\"id\": \"3\", \"type\": \"ExpenseCategory\"}}, \"provider\": {\"data\": {\"id\": \"7\", \"type\": \"Provider\"}}, \"paymentMethod\": {\"data\": {\"id\": \"1\", \"type\": \"PaymentMethod\"}}}."
+          }
+        },
+        "required": [
+          "amount",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/expenses",
+        "bodyMapping": {
+          "data": {
+            "type": "Expense",
+            "attributes": {
+              "amount": "$amount",
+              "date": "$date",
+              "description": "$description",
+              "dueDate": "$due_date",
+              "paymentDate": "$payment_date",
+              "receiptNumber": "$receipt_number",
+              "useInCashCount": "$use_in_cash_count"
+            },
+            "relationships": "$relationships"
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_update_product",
+      "description": "Change a product's price, cost, stock, minimum stock, name, code, description or active flag. Only the fields given are sent. Returns the updated product.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id."
+          },
+          "price": {
+            "type": "number",
+            "description": "New sale price."
+          },
+          "cost": {
+            "type": "number",
+            "description": "New cost."
+          },
+          "stock": {
+            "type": "number",
+            "description": "New stock level."
+          },
+          "min_stock": {
+            "type": "number",
+            "description": "New minimum stock."
+          },
+          "stock_control": {
+            "type": "boolean",
+            "description": "Track stock for this product."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "code": {
+            "type": "string",
+            "description": "New product code."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to take the product off sale."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$product_id",
+            "type": "Product",
+            "attributes": {
+              "price": "$price",
+              "cost": "$cost",
+              "stock": "$stock",
+              "minStock": "$min_stock",
+              "stockControl": "$stock_control",
+              "name": "$name",
+              "code": "$code",
+              "description": "$description",
+              "active": "$active"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

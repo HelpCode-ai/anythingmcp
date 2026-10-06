@@ -183,7 +183,21 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceRequests"
+        "path": "/ServiceRequests",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Description": "$Description",
+          "ExternalId": "$ExternalId",
+          "TargetTimeInMinutes": "$TargetTimeInMinutes",
+          "CustomerId": "$CustomerId",
+          "CurrentOwnerId": "$CurrentOwnerId",
+          "DueDateRangeEnd": "$DueDateRangeEnd",
+          "DueDateRangeStart": "$DueDateRangeStart",
+          "CostCenterId": "$CostCenterId",
+          "IsTemplate": "$IsTemplate",
+          "Type": "$Type",
+          "CreateFromServiceRequestTemplateId": "$CreateFromServiceRequestTemplateId"
+        }
       }
     },
     {
@@ -235,7 +249,18 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests({requestId}L)"
+        "path": "/ServiceRequests({requestId}L)",
+        "bodyMapping": {
+          "Id": "$requestId",
+          "Name": "$Name",
+          "Description": "$Description",
+          "ExternalId": "$ExternalId",
+          "TargetTimeInMinutes": "$TargetTimeInMinutes",
+          "CustomerId": "$CustomerId",
+          "CurrentOwnerId": "$CurrentOwnerId",
+          "DueDateRangeEnd": "$DueDateRangeEnd",
+          "CostCenterId": "$CostCenterId"
+        }
       }
     },
     {
@@ -507,7 +532,17 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Appointments"
+        "path": "/Appointments",
+        "bodyMapping": {
+          "Type": "$Type",
+          "StartDateTime": "$StartDateTime",
+          "EndDateTime": "$EndDateTime",
+          "ContactId": "$ContactId",
+          "ContactIds": "$ContactIds",
+          "ServiceRequestId": "$ServiceRequestId",
+          "State": "$State",
+          "Note": "$Note"
+        }
       }
     },
     {
@@ -551,7 +586,16 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Appointments({appointmentId}L)"
+        "path": "/Appointments({appointmentId}L)",
+        "bodyMapping": {
+          "Id": "$appointmentId",
+          "Type": "$Type",
+          "State": "$State",
+          "StartDateTime": "$StartDateTime",
+          "EndDateTime": "$EndDateTime",
+          "ContactId": "$ContactId",
+          "Note": "$Note"
+        }
       }
     },
     {
@@ -699,7 +743,19 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Companies"
+        "path": "/Companies",
+        "bodyMapping": {
+          "Name": "$Name",
+          "ExternalId": "$ExternalId",
+          "IsPhysicalPerson": "$IsPhysicalPerson",
+          "IsSupplier": "$IsSupplier",
+          "Note": "$Note",
+          "SupportTelephone": "$SupportTelephone",
+          "SupportFax": "$SupportFax",
+          "SupportMail": "$SupportMail",
+          "MainContactId": "$MainContactId",
+          "Location": "$Location"
+        }
       }
     },
     {
@@ -751,7 +807,18 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Companies({companyId}L)"
+        "path": "/Companies({companyId}L)",
+        "bodyMapping": {
+          "Id": "$companyId",
+          "Name": "$Name",
+          "ExternalId": "$ExternalId",
+          "IsPhysicalPerson": "$IsPhysicalPerson",
+          "Note": "$Note",
+          "SupportTelephone": "$SupportTelephone",
+          "SupportFax": "$SupportFax",
+          "SupportMail": "$SupportMail",
+          "Location": "$Location"
+        }
       }
     },
     {
@@ -908,7 +975,21 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Contacts"
+        "path": "/Contacts",
+        "bodyMapping": {
+          "FirstName": "$FirstName",
+          "LastName": "$LastName",
+          "Email": "$Email",
+          "JobTitle": "$JobTitle",
+          "MobilePhone": "$MobilePhone",
+          "Telephone": "$Telephone",
+          "Fax": "$Fax",
+          "Note": "$Note",
+          "Gender": "$Gender",
+          "CompanyId": "$CompanyId",
+          "IsUser": "$IsUser",
+          "ExternalId": "$ExternalId"
+        }
       }
     },
     {
@@ -964,7 +1045,19 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Contacts({contactId}L)"
+        "path": "/Contacts({contactId}L)",
+        "bodyMapping": {
+          "Id": "$contactId",
+          "FirstName": "$FirstName",
+          "LastName": "$LastName",
+          "Email": "$Email",
+          "JobTitle": "$JobTitle",
+          "MobilePhone": "$MobilePhone",
+          "Telephone": "$Telephone",
+          "Note": "$Note",
+          "Gender": "$Gender",
+          "ExternalId": "$ExternalId"
+        }
       }
     },
     {
@@ -1080,7 +1173,16 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceObjects"
+        "path": "/ServiceObjects",
+        "bodyMapping": {
+          "Name": "$Name",
+          "ExternalId": "$ExternalId",
+          "CompanyId": "$CompanyId",
+          "Note": "$Note",
+          "ParentServiceObjectId": "$ParentServiceObjectId",
+          "ProductId": "$ProductId",
+          "Location": "$Location"
+        }
       }
     },
     {
@@ -1124,7 +1226,16 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceObjects({serviceObjectId}L)"
+        "path": "/ServiceObjects({serviceObjectId}L)",
+        "bodyMapping": {
+          "Id": "$serviceObjectId",
+          "Name": "$Name",
+          "ExternalId": "$ExternalId",
+          "CompanyId": "$CompanyId",
+          "Note": "$Note",
+          "ParentServiceObjectId": "$ParentServiceObjectId",
+          "Location": "$Location"
+        }
       }
     },
     {
@@ -1209,7 +1320,12 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Users({userId}L)"
+        "path": "/Users({userId}L)",
+        "bodyMapping": {
+          "Id": "$userId",
+          "IsActive": "$IsActive",
+          "ContactId": "$ContactId"
+        }
       }
     },
     {
@@ -1304,7 +1420,12 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Products"
+        "path": "/Products",
+        "bodyMapping": {
+          "Name": "$Name",
+          "SubKey": "$SubKey",
+          "Description": "$Description"
+        }
       }
     },
     {
@@ -1407,7 +1528,14 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Documents({documentId}L)"
+        "path": "/Documents({documentId}L)",
+        "bodyMapping": {
+          "Id": "$documentId",
+          "FileName": "$FileName",
+          "ExternalId": "$ExternalId",
+          "Note": "$Note",
+          "IsGlobal": "$IsGlobal"
+        }
       }
     },
     {
@@ -1543,7 +1671,16 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/TimeEvents"
+        "path": "/TimeEvents",
+        "bodyMapping": {
+          "TimeEventType": "$TimeEventType",
+          "StartDateTime": "$StartDateTime",
+          "EndDateTime": "$EndDateTime",
+          "ContactId": "$ContactId",
+          "ServiceRequestId": "$ServiceRequestId",
+          "Description": "$Description",
+          "IsApproved": "$IsApproved"
+        }
       }
     },
     {
@@ -1643,7 +1780,17 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Steps"
+        "path": "/Steps",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Type": "$Type",
+          "Description": "$Description",
+          "Comment": "$Comment",
+          "ServiceRequestId": "$ServiceRequestId",
+          "StepListTemplateId": "$StepListTemplateId",
+          "ParentId": "$ParentId",
+          "Data": "$Data"
+        }
       }
     },
     {
@@ -1691,7 +1838,17 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Steps({stepId}L)"
+        "path": "/Steps({stepId}L)",
+        "bodyMapping": {
+          "Id": "$stepId",
+          "Name": "$Name",
+          "IsDone": "$IsDone",
+          "HasError": "$HasError",
+          "Comment": "$Comment",
+          "Description": "$Description",
+          "Data": "$Data",
+          "ServiceRequestId": "$ServiceRequestId"
+        }
       }
     },
     {
@@ -1835,7 +1992,19 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ItemTypes"
+        "path": "/ItemTypes",
+        "bodyMapping": {
+          "NameOrNumber": "$NameOrNumber",
+          "Type": "$Type",
+          "ExternalId": "$ExternalId",
+          "Description": "$Description",
+          "Manufacture": "$Manufacture",
+          "Price": "$Price",
+          "Costs": "$Costs",
+          "VAT": "$VAT",
+          "UnitId": "$UnitId",
+          "GlobalTradeItemNr": "$GlobalTradeItemNr"
+        }
       }
     },
     {
@@ -1885,7 +2054,20 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ItemTypes({itemTypeId}L)"
+        "path": "/ItemTypes({itemTypeId}L)",
+        "bodyMapping": {
+          "Id": "$itemTypeId",
+          "NameOrNumber": "$NameOrNumber",
+          "Type": "$Type",
+          "Description": "$Description",
+          "Manufacture": "$Manufacture",
+          "Price": "$Price",
+          "Costs": "$Costs",
+          "VAT": "$VAT",
+          "ExternalId": "$ExternalId",
+          "UnitId": "$UnitId",
+          "GlobalTradeItemNr": "$GlobalTradeItemNr"
+        }
       }
     },
     {
@@ -2011,7 +2193,25 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Items"
+        "path": "/Items",
+        "bodyMapping": {
+          "ServiceRequestId": "$ServiceRequestId",
+          "ItemTypeId": "$ItemTypeId",
+          "NameOrNumber": "$NameOrNumber",
+          "Type": "$Type",
+          "QuantityHours": "$QuantityHours",
+          "PlannedQuantityHours": "$PlannedQuantityHours",
+          "Price": "$Price",
+          "Costs": "$Costs",
+          "Discount": "$Discount",
+          "VAT": "$VAT",
+          "Manufacture": "$Manufacture",
+          "Note": "$Note",
+          "ExternalId": "$ExternalId",
+          "UnitId": "$UnitId",
+          "UnitString": "$UnitString",
+          "ServiceObjectId": "$ServiceObjectId"
+        }
       }
     },
     {
@@ -2049,7 +2249,16 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Items({itemId}L)"
+        "path": "/Items({itemId}L)",
+        "bodyMapping": {
+          "Id": "$itemId",
+          "QuantityHours": "$QuantityHours",
+          "Price": "$Price",
+          "Discount": "$Discount",
+          "Note": "$Note",
+          "NameOrNumber": "$NameOrNumber",
+          "ExternalId": "$ExternalId"
+        }
       }
     },
     {
@@ -2101,7 +2310,10 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ItemUnits"
+        "path": "/ItemUnits",
+        "bodyMapping": {
+          "Name": "$Name"
+        }
       }
     },
     {
@@ -2190,7 +2402,12 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Tags"
+        "path": "/Tags",
+        "bodyMapping": {
+          "Name": "$Name",
+          "ColorDefinition": "$ColorDefinition",
+          "Type": "$Type"
+        }
       }
     },
     {
@@ -2230,7 +2447,10 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/Qualifications"
+        "path": "/Qualifications",
+        "bodyMapping": {
+          "Name": "$Name"
+        }
       }
     },
     {
@@ -2255,7 +2475,11 @@
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Qualifications({qualificationId}L)"
+        "path": "/Qualifications({qualificationId}L)",
+        "bodyMapping": {
+          "Id": "$qualificationId",
+          "Name": "$Name"
+        }
       }
     },
     {
@@ -2307,7 +2531,10 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/CostCenters"
+        "path": "/CostCenters",
+        "bodyMapping": {
+          "Name": "$Name"
+        }
       }
     },
     {
@@ -2387,7 +2614,12 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/StepListTemplates"
+        "path": "/StepListTemplates",
+        "bodyMapping": {
+          "Name": "$Name",
+          "MappingId": "$MappingId",
+          "IsReleased": "$IsReleased"
+        }
       }
     },
     {
@@ -2412,7 +2644,10 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceRequests({serviceRequestId}L)/GenerateReportHash"
+        "path": "/ServiceRequests({serviceRequestId}L)/GenerateReportHash",
+        "bodyMapping": {
+          "reportDefinitionId": "$reportDefinitionId"
+        }
       }
     }
   ]

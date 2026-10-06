@@ -1,8 +1,9 @@
 import { devices, expect, test, type Page } from '@playwright/test';
 
 /**
- * The starter pack on /welcome: keyless connectors, ticked by default, added
- * in one click. Covers the choice, the request it sends, the outcome with its
+ * The starter pack on /welcome: keyless demos the user can tick and add in
+ * one click (the server sends none preselected; these mocks do, to cover the
+ * selection logic). Covers the choice, the request it sends, the outcome with its
  * "Try it" links and the path to connecting a client, partial failures, and
  * a phone-width layout with no horizontal scrolling in either state.
  *
@@ -28,6 +29,12 @@ const PACK = [
   { slug: 'openplz', name: 'OpenPLZ Germany', pitch: 'German postal codes, towns and streets, for checking addresses.', icon: 'openplz', category: 'government', toolCount: 5, preselected: false, installed: false },
 ];
 
+const POPULAR = [
+  { slug: 'telegram-bot', name: 'Telegram Bot API', icon: 'telegram', category: 'messaging', setupKind: 'credentials', needs: ['Bot token'], installed: false },
+  { slug: 'etsy', name: 'Etsy Open API v3', icon: 'etsy', category: 'ecommerce', setupKind: 'oauth_browser', needs: ['Keystring', 'Shared secret'], installed: false },
+  { slug: 'odoo', name: 'Odoo JSON-2 API', icon: 'odoo', category: 'erp', setupKind: 'credentials', needs: ['URL', 'DB', 'API key'], installed: true },
+];
+
 type InstallReply = { status: number; body: unknown };
 
 async function openWelcome(
@@ -36,6 +43,8 @@ async function openWelcome(
     pack?: unknown;
     connectors?: { current: number; max: number | null; remaining: number | null };
     install?: (slugs: string[]) => InstallReply;
+    popular?: unknown[] | 'fail';
+    catalog?: unknown[];
   } = {},
 ) {
   const posted: string[][] = [];
@@ -74,7 +83,10 @@ async function openWelcome(
         connectors: opts.connectors ?? { current: 0, max: null, remaining: null },
       });
     }
-    if (p.endsWith('/adapters')) return json([]);
+    if (p.endsWith('/adapters/popular-connectors')) {
+      return opts.popular === 'fail' ? json({ message: 'boom' }, 500) : json({ items: opts.popular ?? POPULAR });
+    }
+    if (p.endsWith('/adapters')) return json(opts.catalog ?? []);
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: null });
     if (p.endsWith('/users/me')) return json(USER);
     if (p.endsWith('/organizations/current')) return json({ id: 'o1', name: 'Acme', createdAt: '2026-01-01' });
@@ -97,7 +109,7 @@ test.describe('starter pack on /welcome', () => {
   test('ticks the preselected connectors and adds exactly the ones left ticked', async ({ page }) => {
     const posted = await openWelcome(page);
 
-    const pack = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const pack = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
     await expect(pack).toBeVisible();
     await expect(pack.getByRole('checkbox')).toHaveCount(5);
     await expect(pack.getByRole('checkbox', { checked: true })).toHaveCount(3);
@@ -129,7 +141,7 @@ test.describe('starter pack on /welcome', () => {
 
   test('cannot submit an empty selection', async ({ page }) => {
     const posted = await openWelcome(page);
-    const pack = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const pack = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
     for (const name of ['Agent Skills Finder', 'Hacker News', 'Nominatim (OpenStreetMap)']) {
       await pack.getByText(name, { exact: true }).click();
     }
@@ -140,7 +152,7 @@ test.describe('starter pack on /welcome', () => {
   test('shows what the workspace already has as done, and does not resend it', async ({ page }) => {
     const pack = PACK.map((i) => (i.slug === 'hackernews' ? { ...i, installed: true } : i));
     const posted = await openWelcome(page, { pack });
-    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const region = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
 
     await expect(region.getByText('Already added')).toBeVisible();
     await expect(region.getByRole('checkbox', { name: /Hacker News/ })).toBeDisabled();
@@ -163,7 +175,7 @@ test.describe('starter pack on /welcome', () => {
         },
       }),
     });
-    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const region = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
     await region.getByRole('button', { name: 'Add 3 connectors' }).click();
 
     await expect(region.getByRole('status')).toHaveText('Added 2 connectors to Default (Test).');
@@ -175,7 +187,7 @@ test.describe('starter pack on /welcome', () => {
     await openWelcome(page, {
       install: () => ({ status: 500, body: { message: 'Server unavailable' } }),
     });
-    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const region = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
     await region.getByRole('button', { name: 'Add 3 connectors' }).click();
 
     await expect(region.getByRole('alert')).toBeVisible();
@@ -193,7 +205,7 @@ test.describe('starter pack on /welcome', () => {
     const posted = await openWelcome(page, {
       connectors: { current: 0, max: 2, remaining: 2 },
     });
-    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const region = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
 
     // Three are preselected by the catalogue, but only two fit, so the button
     // says "Add 2" and a third, unticked card is disabled.
@@ -221,7 +233,7 @@ test.describe('starter pack at phone width', () => {
 
   test('fits the screen before and after adding, with a full-width button', async ({ page }) => {
     await openWelcome(page);
-    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+    const region = page.getByRole('region', { name: 'Want to try it before setting up an app?' });
     await expect(region.getByRole('checkbox')).toHaveCount(5);
     await page.waitForTimeout(300);
 
@@ -243,5 +255,31 @@ test.describe('starter pack at phone width', () => {
     expect(o.doc).toBeLessThanOrEqual(o.vw);
     expect(o.main).toBeLessThanOrEqual(o.vw);
     await shot(page, 'mobile-done');
+  });
+});
+
+test.describe('popular apps on /welcome', () => {
+  test('leads with the apps workspaces connect, saying what each setup asks for', async ({ page }) => {
+    await openWelcome(page);
+    const telegram = page.getByRole('link', { name: /Telegram Bot API/ });
+    await expect(telegram).toHaveAttribute('href', '/connectors/setup/telegram-bot');
+    await expect(telegram).toContainText('Bot token');
+    await expect(page.getByRole('link', { name: /Etsy Open API v3/ })).toContainText('Sign in · Keystring and Shared secret');
+    await expect(page.getByRole('link', { name: /Odoo JSON-2 API/ })).toContainText('Already added');
+  });
+
+  test('puts the popular apps above the no-key demos', async ({ page }) => {
+    await openWelcome(page);
+    const popularTop = (await page.getByRole('link', { name: /Telegram Bot API/ }).boundingBox())!.y;
+    const demosTop = (await page.getByRole('region', { name: 'Want to try it before setting up an app?' }).boundingBox())!.y;
+    expect(popularTop).toBeLessThan(demosTop);
+  });
+
+  test('falls back to a fixed list from the catalog when the ranking fails', async ({ page }) => {
+    await openWelcome(page, {
+      popular: 'fail',
+      catalog: [{ slug: 'telegram-bot', name: 'Telegram Bot API', icon: 'telegram', category: 'messaging', setupKind: 'credentials', requiredEnvVars: ['TELEGRAM_BOT_TOKEN'] }],
+    });
+    await expect(page.getByRole('link', { name: /Telegram Bot API/ })).toHaveAttribute('href', '/connectors/setup/telegram-bot');
   });
 });

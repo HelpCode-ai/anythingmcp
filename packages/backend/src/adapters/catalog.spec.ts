@@ -1,4 +1,5 @@
 import { listAdapters, getAdapter } from './catalog';
+import { REQUEST_BODY_METHODS } from '../connectors/engines/rest.engine';
 
 const VALID_AUTH_TYPES = new Set([
   'NONE',
@@ -43,6 +44,52 @@ const VALID_ODATA_BUILTIN_METHODS = new Set([
   'ODATA_QUERY',
   'ODATA_GET',
 ]);
+
+/**
+ * Declared tool arguments that are deliberately not sent anywhere, as
+ * `"<slug>/<tool>": ["arg", ...]`, each with the reason next to it. Empty on
+ * purpose: an argument the request never carries is a promise the model
+ * cannot see broken, so the bar for adding one is a vendor quirk that leaves
+ * no other way, written down here.
+ */
+const ARGS_NOT_SENT_BY_DESIGN: Record<string, string[]> = {};
+
+/** HTTP verbs RestEngine sends as such (not `static`, not OData built-ins). */
+const REST_HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Every argument name a REST tool's endpointMapping hands to RestEngine, by
+ * the rules RestEngine.execute applies:
+ * - `{name}` in `path` is replaced with the argument of that name;
+ * - in `queryParams`, `headers` and `bodyMapping` (nested values included,
+ *   `__merge` / `__file` / `__raw` markers too) a whole-string `$name` or an
+ *   embedded `${name}` is resolved from the arguments;
+ * - `bodyTemplate` interpolates `${name}`;
+ * - a body (`bodyMapping` or `bodyTemplate`) is only built for
+ *   REQUEST_BODY_METHODS, so on any other method it contributes nothing.
+ */
+function argumentsSent(em: Record<string, unknown>): Set<string> {
+  const sent = new Set<string>();
+  for (const m of String(em.path ?? '').matchAll(/\{([^{}]+)\}/g)) sent.add(m[1]);
+  const fields: unknown[] = [em.queryParams, em.headers];
+  const sendsBody = REQUEST_BODY_METHODS.has(String(em.method).toUpperCase());
+  if (sendsBody) fields.push(em.bodyMapping);
+  for (const field of fields) {
+    const strings: Array<{ path: string; value: string }> = [];
+    collectStrings(field, '', strings);
+    for (const { value } of strings) {
+      const full = /^\$([\w$]+)$/.exec(value);
+      if (full) sent.add(full[1]);
+      for (const m of value.matchAll(/\$\{([\w$]+)\}/g)) sent.add(m[1]);
+    }
+  }
+  if (sendsBody && typeof em.bodyTemplate === 'string') {
+    for (const m of em.bodyTemplate.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+      sent.add(m[1]);
+    }
+  }
+  return sent;
+}
 
 /**
  * Recursively collect every string value in an object/array, together with the
@@ -219,6 +266,86 @@ describe('adapter catalog', () => {
       }
     }
     expect(broken).toEqual([]);
+  });
+
+  /**
+   * The reverse of the reference check further down: there, every `$x` must
+   * be a declared argument; here, every declared argument must be sent. A
+   * property nobody maps is accepted from the model and dropped before the
+   * request, and the call still succeeds, so nothing tells the model its
+   * argument did nothing (#890: MFR's create/update tools went out with an
+   * empty body, Coda's bulk delete without its row ids, a "restrict to this
+   * subreddit" search searched all of Reddit).
+   *
+   * REST tools only. GraphQL, database and MCP tools hand their arguments to
+   * their engines by other rules, and OData built-ins and `static` tools do
+   * not build an HTTP request from them at all.
+   */
+  it('every declared argument of a REST tool reaches the request', () => {
+    const dropped: string[] = [];
+    for (const meta of adapters) {
+      const a = getAdapter(meta.slug)!;
+      if (a.connector.type !== 'REST') continue;
+      for (const tool of a.tools) {
+        const em = tool.endpointMapping as Record<string, unknown>;
+        if (!REST_HTTP_METHODS.has(String(em.method).toUpperCase())) continue;
+        const sent = argumentsSent(em);
+        const allowed = new Set(ARGS_NOT_SENT_BY_DESIGN[`${a.slug}/${tool.name}`] ?? []);
+        const declared = Object.keys(
+          ((tool.parameters as { properties?: Record<string, unknown> })?.properties) ?? {},
+        );
+        for (const name of declared) {
+          if (!sent.has(name) && !allowed.has(name)) {
+            dropped.push(`${a.slug}/${tool.name} (${String(em.method).toUpperCase()}): ${name}`);
+          }
+        }
+      }
+    }
+    expect(dropped).toEqual([]);
+  });
+
+  /**
+   * RestEngine builds no body for a GET, so a body mapping there is dead
+   * configuration that looks like it sends something.
+   */
+  it('no REST tool maps a body on a method that sends none', () => {
+    const dead: string[] = [];
+    for (const meta of adapters) {
+      const a = getAdapter(meta.slug)!;
+      if (a.connector.type !== 'REST') continue;
+      for (const tool of a.tools) {
+        const em = tool.endpointMapping as Record<string, unknown>;
+        const method = String(em.method).toUpperCase();
+        if (!REST_HTTP_METHODS.has(method) || REQUEST_BODY_METHODS.has(method)) continue;
+        if (em.bodyMapping !== undefined || em.bodyTemplate !== undefined) {
+          dead.push(`${a.slug}/${tool.name} (${method})`);
+        }
+      }
+    }
+    expect(dead).toEqual([]);
+  });
+
+  /** An exception that no longer matches anything is a stale excuse. */
+  it('every ARGS_NOT_SENT_BY_DESIGN entry names a declared, unsent argument', () => {
+    const stale: string[] = [];
+    for (const [key, names] of Object.entries(ARGS_NOT_SENT_BY_DESIGN)) {
+      const [slug, toolName] = key.split('/');
+      const tool = getAdapter(slug)?.tools.find((t) => t.name === toolName);
+      if (!tool) {
+        stale.push(`${key}: no such tool`);
+        continue;
+      }
+      const em = tool.endpointMapping as Record<string, unknown>;
+      const sent = argumentsSent(em);
+      const declared = new Set(
+        Object.keys(((tool.parameters as { properties?: Record<string, unknown> })?.properties) ?? {}),
+      );
+      for (const name of names) {
+        if (!declared.has(name)) stale.push(`${key}: ${name} is not declared`);
+        else if (sent.has(name)) stale.push(`${key}: ${name} is sent after all`);
+      }
+    }
+    expect(stale).toEqual([]);
   });
 
   describe.each(adapters)('$slug', (meta) => {

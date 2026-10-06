@@ -711,6 +711,10 @@ model ToolInvocation {
 
   clientInfo String? @map("client_info") // JSON: {authMethod, apiKeyName, userEmail, mcpServerName}
 
+  // How many identical calls this row stands for: a failure repeating within
+  // a minute is counted here instead of stored again (see AuditService).
+  repeatCount Int @default(1) @map("repeat_count")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([toolId, createdAt])

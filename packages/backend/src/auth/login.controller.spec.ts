@@ -189,6 +189,26 @@ describe('LoginController', () => {
       );
       expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin"');
       expect(res._sent).toContain('href="/forgot-password"');
+      // The sign-up is a button at the top of the card, before the form.
+      expect(res._sent).toContain('class="signup-btn"');
+      const html = res._sent ?? '';
+      expect(html.indexOf('class="signup-btn"')).toBeLessThan(html.indexOf('id="email"'));
+    });
+
+    it('keeps only the small sign-up link after a failed sign-in', async () => {
+      const cloud = new LoginController(
+        authService as unknown as AuthService,
+        prisma as unknown as PrismaService,
+        config as unknown as ConfigService,
+        store as unknown as PrismaOAuthStore,
+        sso as unknown as SsoService,
+        { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
+        grants as any,
+      );
+      const res = makeRes();
+      await cloud.showLoginPage('Invalid email or password', undefined as unknown as string, makeReq({ cookies: {} }), res);
+      expect(res._sent).not.toContain('class="signup-btn"');
+      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin"');
     });
 
     it('offers no sign-up on self-hosted (registration is invite-based there)', async () => {

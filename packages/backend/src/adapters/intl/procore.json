@@ -1,0 +1,826 @@
+{
+  "slug": "procore",
+  "name": "Procore",
+  "description": "Read Procore construction projects: companies, projects and directory, RFIs and submittals, daily and manpower logs, project documents and files, budget views and line items, subcontracts and purchase orders. OAuth 2.0, read-only.",
+  "region": "intl",
+  "category": "construction",
+  "icon": "procore",
+  "docsUrl": "https://developers.procore.com/reference/rest/docs/rest-api-overview",
+  "prerequisites": "A Procore app created at developers.procore.com with a Web server (authorization code) OAuth credential, installed in your company by a Procore company administrator.",
+  "instructions": "**What this connects to**: the Procore REST API (`https://api.procore.com/rest/...`): companies, projects, directory, RFIs, submittals, daily logs, the Documents tool, budgets and commitments. Every call runs as the Procore user who authorized the connector and sees what that user sees. This first version only reads.\n\n**Start with `procore_list_companies`** for the company id, then `procore_list_projects`. Every company-scoped tool takes `company_id`; it is sent as the `Procore-Company-Id` header, which Procore requires (calls without it are refused with 400).\n\n**Setup (OAuth 2.0 authorization code)**\n1. At https://developers.procore.com sign in, **Create New App**, and add an OAuth credential of type **Web server application** (authorization code). Set the redirect URI to `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n2. Copy the production client ID and client secret into `PROCORE_CLIENT_ID` and `PROCORE_CLIENT_SECRET`.\n3. A company administrator installs the app in the company (Company Admin > App Management > Install Custom App, with the app's version key), otherwise the company's data is not reachable.\n4. On the connector page click **Authorize with Provider** and sign in to Procore. Tokens are refreshed automatically.\n\n**Sandbox**: developer sandboxes use `https://sandbox.procore.com` and `https://login-sandbox.procore.com`; change the base URL and the OAuth URLs in the connector settings to test there.\n\n**Paging**: lists return 100 items per page; pass `page` (and `per_page`). The `_headers` of the answer carry `total` and a `link` header; `_pagination.nextUrl` is absent on the last page.\n\n**Rate limits**: 3,600 requests per hour per app and user, with short bursts limited too; a 429 says when to retry.\n\n**Pitfalls**: a 403 means the user's permission template lacks access to that tool (RFIs, Budget, Documents) on the project. Budget and commitments need the Financials tools enabled on the project. Ids are integers.",
+  "requiredEnvVars": [
+    "PROCORE_CLIENT_ID",
+    "PROCORE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "PROCORE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "developers.procore.com > My Apps > your app > OAuth Credentials (Production): Client ID.",
+      "link": "https://developers.procore.com/developer_apps"
+    },
+    "PROCORE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The Client Secret shown next to the client ID of the same app.",
+      "link": "https://developers.procore.com/developer_apps"
+    }
+  },
+  "verifyHints": {
+    "401": "Procore did not accept the token. Authorize the connector again (Authorize with Provider), and check that client ID and secret are the production credentials of the app.",
+    "403": "The Procore user lacks permission for this tool on the project, or the app is not installed in this company (Company Admin > App Management).",
+    "400": "Procore refused the call, usually because the company id is missing or wrong. Take it from procore_list_companies."
+  },
+  "connector": {
+    "name": "Procore",
+    "type": "REST",
+    "baseUrl": "https://api.procore.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{PROCORE_CLIENT_ID}}",
+      "clientSecret": "{{PROCORE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.procore.com/oauth/authorize",
+      "tokenUrl": "https://login.procore.com/oauth/token"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/rest/v1.0/me"
+  },
+  "probe": {
+    "tool": "procore_list_companies"
+  },
+  "tools": [
+    {
+      "name": "procore_list_companies",
+      "description": "The Procore companies the authorized user belongs to, with company id, name and whether it is active. Start here: every other tool needs the company id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/companies",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_get_me",
+      "description": "The authorized Procore user: id, login (email) and name. Use it to confirm which account the connector acts as.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/me"
+      }
+    },
+    {
+      "name": "procore_list_projects",
+      "description": "Projects of a company with id, name, project number, address, stage, status, start and completion dates. Company admins see all projects, other users only those they were added to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Inactive",
+              "All"
+            ],
+            "description": "Filter by project status (default Active)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/companies/{company_id}/projects",
+        "queryParams": {
+          "filters[by_status]": "$status",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_get_project",
+      "description": "One project with its full details: number, address, stage, type, office, dates, value, owner and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_company_users",
+      "description": "People in the company directory with id, name, email, job title, company (vendor) and whether they are employees or active. Use it to resolve user ids on RFIs or logs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by name or email."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.3/companies/{company_id}/users",
+        "queryParams": {
+          "filters[search]": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_list_project_users",
+      "description": "People in one project's directory with id, name, email, company and permission template. Use it to see who is on a project team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}/users",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_list_rfis",
+      "description": "RFIs of a project with number, subject, status, ball in court, assignees, RFI manager, due date and cost or schedule impact. Filter by status to find open questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "open",
+              "closed"
+            ],
+            "description": "Only RFIs with this status."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in number and subject."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}/rfis",
+        "queryParams": {
+          "filters[status]": "$status",
+          "filters[search]": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_get_rfi",
+      "description": "One RFI with its question, answers (official and others), assignees, distribution list, attachments, due date and impacts. Use the id from list_rfis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "rfi_id": {
+            "type": "integer",
+            "description": "RFI id from list_rfis."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id",
+          "rfi_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}/rfis/{rfi_id}",
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_submittals",
+      "description": "Submittals of a project with number, revision, title, type, status, spec section, ball in court, approvers and required-on-site date. Use it to track what is waiting for review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in number and title."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.1/projects/{project_id}/submittals",
+        "queryParams": {
+          "filters[search]": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_get_submittal",
+      "description": "One submittal with its workflow (approvers and responses), attachments, distribution, dates and linked drawings. Use the id from list_submittals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "submittal_id": {
+            "type": "integer",
+            "description": "Submittal id from list_submittals."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id",
+          "submittal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.1/projects/{project_id}/submittals/{submittal_id}",
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_daily_logs",
+      "description": "All daily log entries of a project for one day or a date range, grouped by log type (manpower, notes, weather, deliveries, inspections, safety violations and more). Use it for site reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "log_date": {
+            "type": "string",
+            "description": "One day, YYYY-MM-DD."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of a date range, YYYY-MM-DD (use with end_date)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the date range, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}/daily_logs",
+        "queryParams": {
+          "log_date": "$log_date",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_manpower_logs",
+      "description": "Manpower log entries of a project: company or trade, number of workers, hours and location per day. Use it to report crew size over a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "log_date": {
+            "type": "string",
+            "description": "One day, YYYY-MM-DD."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of a date range, YYYY-MM-DD (use with end_date)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the date range, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/projects/{project_id}/manpower_logs",
+        "queryParams": {
+          "log_date": "$log_date",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_folders",
+      "description": "The root of a project's Documents tool: folders and files at the top level with id, name, size and update date. Use get_folder to open a subfolder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/folders",
+        "queryParams": {
+          "project_id": "$project_id"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_get_folder",
+      "description": "One folder of a project's Documents tool with its subfolders and files (id, name, size, version, updated by). Walk the tree with the folder ids it returns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "folder_id": {
+            "type": "integer",
+            "description": "Folder id from list_folders or a parent get_folder."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id",
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/folders/{folder_id}",
+        "queryParams": {
+          "project_id": "$project_id"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_get_file",
+      "description": "One file of a project's Documents tool with its versions, size, uploader and the download URL of each version. Use the id from get_folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File id from list_folders or get_folder."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/files/{file_id}",
+        "queryParams": {
+          "project_id": "$project_id"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "procore_list_budget_views",
+      "description": "The budget views configured for a project (e.g. Procore Standard Budget) with id and name. Pick one for list_budget_rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/budget_views",
+        "queryParams": {
+          "project_id": "$project_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_list_budget_rows",
+      "description": "Budget line items of a project in one budget view: cost code, category, original budget, approved changes, revised budget, committed and direct costs, forecast. Use it for cost reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "budget_view_id": {
+            "type": "integer",
+            "description": "Budget view id from list_budget_views."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id",
+          "budget_view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/budget_views/{budget_view_id}/detail_rows",
+        "queryParams": {
+          "project_id": "$project_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_list_subcontracts",
+      "description": "Subcontracts (work order contracts) of a project with number, title, vendor, status, executed flag and grand total. Use it with list_purchase_orders for all commitments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/work_order_contracts",
+        "queryParams": {
+          "project_id": "$project_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "procore_list_purchase_orders",
+      "description": "Purchase order contracts of a project with number, title, vendor, status, executed flag and grand total. Together with list_subcontracts these are the project's commitments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Procore company id from list_companies. Sent as the Procore-Company-Id header, which Procore requires on company data."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from list_projects."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 100, maximum 100 on most lists)."
+          }
+        },
+        "required": [
+          "company_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/v1.0/purchase_order_contracts",
+        "queryParams": {
+          "project_id": "$project_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Procore-Company-Id": "$company_id"
+        },
+        "exposeHeaders": [
+          "total",
+          "per-page",
+          "link"
+        ]
+      }
+    }
+  ]
+}

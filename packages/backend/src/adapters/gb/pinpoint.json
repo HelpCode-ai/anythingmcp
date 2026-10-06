@@ -1,0 +1,923 @@
+{
+  "slug": "pinpoint",
+  "name": "Pinpoint",
+  "description": "Pinpoint applicant tracking (ATS): jobs, job postings, hiring workflows and stages, applications, candidates, interviews, comments, scorecards, requisitions, users and company structure. JSON:API v1 on your company's pinpointhq.com subdomain, X-API-KEY header.",
+  "region": "gb",
+  "category": "hr",
+  "icon": "pinpoint",
+  "docsUrl": "https://developers.pinpointhq.com/",
+  "instructions": "**Credentials**: Pinpoint needs two values.\n1. `PINPOINT_SUBDOMAIN`: the part before `.pinpointhq.com` in the address you sign in at (for `acme.pinpointhq.com` it is `acme`). Each company has its own API host, `https://<subdomain>.pinpointhq.com/api/v1`.\n2. `PINPOINT_API_KEY`: in Pinpoint open **Settings > API & Webhooks**, make sure the **Pinpoint API** toggle is on, then create a key on the **API Keys** tab. Pinpoint recommends a separate **read-only** key for AI tools; the two write tools here (`pinpoint_add_comment`, `pinpoint_move_application_stage`) need a key with write access. The key is sent in the `X-API-KEY` header.\n\nA missing or wrong key answers 401; 403 means the API integration is switched off for the account.\n\n**Data model**: a *job* has *job postings* (adverts) and a *hiring workflow* of *stages*. A *candidate* (a person) has one *application* per job; the application sits in a stage. *Comments* are internal notes on applications, candidates or jobs; *interviews* belong to applications. Start with `pinpoint_list_jobs` (status `open`), then `pinpoint_list_applications` with `job_id`, and `pinpoint_get_application` with `include=candidate,stage` for the details.\n\n**JSON:API**: answers follow the JSON:API format: records are in `data[]` with `id`, `type` and `attributes`; related records requested with `include` are in `included[]`, linked through `relationships`. Ids are strings.\n\n**Paging**: `page` starts at 1, `page_size` defaults to 100 (max 1000). Every list asks for `meta.stats.total.count` so you know the total; follow `links.next` or raise `page` until a page has fewer rows than `page_size`.\n\n**Filters**: dates are ISO 8601 (`2026-09-01T00:00:00Z`). Multiple values in one filter are comma-separated (`status=open,hold`). Confidential jobs are hidden from `pinpoint_list_jobs` unless `visibility` names `confidential`.\n\n**Rate limits**: 120 requests per IP per minute and 240 per 8 minutes; above that Pinpoint answers 429 with `Retry-After`. Prefer one list call with filters and `include` over many single fetches.",
+  "prerequisites": "An administrator has to switch on the **Pinpoint API** under Settings > API & Webhooks before a key can be created.",
+  "requiredEnvVars": [
+    "PINPOINT_SUBDOMAIN",
+    "PINPOINT_API_KEY"
+  ],
+  "envVarMeta": {
+    "PINPOINT_SUBDOMAIN": {
+      "label": "Pinpoint subdomain",
+      "kind": "address",
+      "help": "The part before .pinpointhq.com in the address you sign in at: for acme.pinpointhq.com enter acme.",
+      "example": "acme",
+      "link": "https://developers.pinpointhq.com/docs/introduction",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "patternMessage": "Only the subdomain, e.g. acme, without https:// or .pinpointhq.com."
+    },
+    "PINPOINT_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Pinpoint > Settings > API & Webhooks > API Keys. Switch on the Pinpoint API toggle first. A read-only key is enough for every read tool.",
+      "link": "https://help.pinpoint.support/en/articles/13560259-managing-monitoring-your-pinpoint-api"
+    }
+  },
+  "verifyHints": {
+    "401": "Pinpoint refused the API key. Create a new key under Settings > API & Webhooks > API Keys and check it belongs to this subdomain.",
+    "403": "The Pinpoint API is switched off for this account. Turn on the Pinpoint API toggle under Settings > API & Webhooks.",
+    "404": "No Pinpoint API at this subdomain. Enter only the part before .pinpointhq.com.",
+    "unreachable": "Pinpoint could not be reached at this subdomain. Enter only the part before .pinpointhq.com, e.g. acme."
+  },
+  "connector": {
+    "name": "Pinpoint API v1",
+    "type": "REST",
+    "baseUrl": "https://{{PINPOINT_SUBDOMAIN}}.pinpointhq.com/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{PINPOINT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/vnd.api+json",
+      "Content-Type": "application/vnd.api+json"
+    }
+  },
+  "probe": {
+    "tool": "pinpoint_list_jobs",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "pinpoint_list_jobs",
+      "description": "List jobs (vacancies) with title, status, visibility, employment type, workplace type and dates. Filter by status, department, location or a search term; add include=stages for the hiring stages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Job status, comma-separated: open, closed, archived, pending_approval, draft, hold, cancelled, filled, preview."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Comma-separated: internal, external, confidential, private_job. Confidential jobs are left out unless named here."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Only jobs of this department id (pinpoint_list_departments)."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Only jobs of this location id (pinpoint_list_locations)."
+          },
+          "hiring_manager_user_id": {
+            "type": "string",
+            "description": "Only jobs whose hiring manager is this user id (pinpoint_list_users)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search on the job."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): department, division, location, company, hiring_manager_user, recruitment_manager_user, creator_user, job_postings, questions, custom_attributes, stages, applications."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at, opened_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[visibility]": "$visibility",
+          "filter[department_id]": "$department_id",
+          "filter[location_id]": "$location_id",
+          "filter[hiring_manager_user_id]": "$hiring_manager_user_id",
+          "filter[search]": "$search",
+          "include": "$include",
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_get_job",
+      "description": "Return one job by id with its attributes; use include to embed the hiring stages, job postings, questions, managers, department and location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Job id from pinpoint_list_jobs."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): department, division, location, company, hiring_manager_user, recruitment_manager_user, creator_user, job_postings, questions, custom_attributes, stages, applications."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_applications",
+      "description": "List applications (a candidate applying to a job) with stage, status dates, source and contact details. Filter by job, stage, stage type (applied, review, interview, offer, hired, rejected), candidate or e-mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Only applications to this job id."
+          },
+          "stage_id": {
+            "type": "string",
+            "description": "Only applications currently in this stage id (stages come from pinpoint_get_job or pinpoint_list_hiring_workflows with include=stages)."
+          },
+          "stage_basic_type": {
+            "type": "string",
+            "description": "Comma-separated stage types: applied, review, interview, offer, hired, rejected."
+          },
+          "candidate_id": {
+            "type": "string",
+            "description": "Only applications of this candidate id."
+          },
+          "candidate_email": {
+            "type": "string",
+            "description": "Only applications whose candidate has this e-mail address."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): job, job_posting, stage, furthest_stage, candidate, offers, answers, custom_attributes, scorecard_ratings, scorecard_notes, user_scorecards, comments, resume, onboarding_application, document_requests."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/applications",
+        "queryParams": {
+          "filter[job_id]": "$job_id",
+          "filter[stage_id]": "$stage_id",
+          "filter[stage_basic_type]": "$stage_basic_type",
+          "filter[candidate_id]": "$candidate_id",
+          "filter[candidate_email]": "$candidate_email",
+          "include": "$include",
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_get_application",
+      "description": "Return one application by id; include=stage,candidate,job,answers,offers,comments embeds the current stage, the candidate, the job, screening answers, offers and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Application id from pinpoint_list_applications."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): job, job_posting, stage, furthest_stage, candidate, offers, answers, custom_attributes, scorecard_ratings, scorecard_notes, user_scorecards, comments, resume, onboarding_application, document_requests."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/applications/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_candidates",
+      "description": "List candidates (people, across all their applications) with name, e-mail, phone and timestamps. Use updated_after for recent changes, or include=applications to see where each applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Only candidates with this phone number."
+          },
+          "blocked": {
+            "type": "boolean",
+            "description": "true for blocked candidates only, false to exclude them."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): applications, job_seekers, skills, custom_attributes, hris_references."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates",
+        "queryParams": {
+          "filter[phone]": "$phone",
+          "filter[blocked]": "$blocked",
+          "include": "$include",
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_get_candidate",
+      "description": "Return one candidate by id with contact details; include=applications lists every application of this person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Candidate id from pinpoint_list_candidates or an application's candidate relationship."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): applications, job_seekers, skills, custom_attributes, hris_references."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_comments",
+      "description": "List comments (internal notes) with text, author and date. Filter by what they are attached to, e.g. commentable_type Application with the application id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commentable_type": {
+            "type": "string",
+            "description": "Type the comments belong to: Application, Candidate, JobSeeker, Job, Task, ReferenceCheckSubmission or PinpointCheckOrder.",
+            "enum": [
+              "Application",
+              "Candidate",
+              "JobSeeker",
+              "Job",
+              "Task",
+              "ReferenceCheckSubmission",
+              "PinpointCheckOrder"
+            ]
+          },
+          "commentable_id": {
+            "type": "string",
+            "description": "Id of the record the comments belong to; use together with commentable_type."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): user, commentable."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments",
+        "queryParams": {
+          "filter[commentable_type]": "$commentable_type",
+          "filter[commentable_id]": "$commentable_id",
+          "include": "$include",
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_interviews",
+      "description": "List scheduled interviews with start and end time, attendance (attended, no_show) and the stage. Filter by start time window or by the application interviewed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_after": {
+            "type": "string",
+            "description": "Only interviews starting after this time, ISO 8601."
+          },
+          "start_before": {
+            "type": "string",
+            "description": "Only interviews starting before this time, ISO 8601."
+          },
+          "interviewable_type": {
+            "type": "string",
+            "description": "Type of record interviewed, usually Application."
+          },
+          "interviewable_id": {
+            "type": "string",
+            "description": "Id of that record, e.g. an application id."
+          },
+          "presence": {
+            "type": "string",
+            "description": "attended or no_show.",
+            "enum": [
+              "attended",
+              "no_show"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): stage, interview_parts, interviewable."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at, start_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/interviews",
+        "queryParams": {
+          "filter[start_at][gt]": "$start_after",
+          "filter[start_at][lt]": "$start_before",
+          "filter[interviewable_type]": "$interviewable_type",
+          "filter[interviewable_id]": "$interviewable_id",
+          "filter[presence]": "$presence",
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_get_interview",
+      "description": "Return one interview by id with its times, attendance and, with include, the stage, the interview parts and the application interviewed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Interview id from pinpoint_list_interviews."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): stage, interview_parts, interviewable."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/interviews/{id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_hiring_workflows",
+      "description": "List hiring workflows (the stage pipelines jobs use). include defaults to stages, so each workflow comes with its ordered stages and their ids for filtering applications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Related resources to embed; \"stages\" (default) adds the workflow's stages.",
+            "default": "stages"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/hiring_workflows",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_job_postings",
+      "description": "List job postings (the adverts of a job on the careers site and job boards) with title, status, employment and workplace type. Filter by job, status or location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Only postings of this job id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Posting status, e.g. published."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Only postings for this location id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed, e.g. job."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job_postings",
+        "queryParams": {
+          "filter[job_id]": "$job_id",
+          "filter[status]": "$status",
+          "filter[location_id]": "$location_id",
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_departments",
+      "description": "List the company's departments with id and name. Use the id to filter jobs and job postings by department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments",
+        "queryParams": {
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_divisions",
+      "description": "List the company's divisions with id and name, the level above departments in Pinpoint's company structure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_after": {
+            "type": "string",
+            "description": "Only records updated after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only records created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/divisions",
+        "queryParams": {
+          "filter[updated_at][gt]": "$updated_after",
+          "filter[created_at][gt]": "$created_after",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_locations",
+      "description": "List the company's locations with id, name and address. Use the id to filter jobs and job postings by location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_users",
+      "description": "List Pinpoint users (recruiters, hiring managers, interviewers) with name, e-mail and role. Filter by e-mail or by the job they manage; the id is used for comment authors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the user with this e-mail address."
+          },
+          "hiring_manager_job_id": {
+            "type": "string",
+            "description": "Only the hiring managers of this job id."
+          },
+          "interviewing_user_id": {
+            "type": "string",
+            "description": "Filter by interviewing user id."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "filter[email]": "$email",
+          "filter[hiring_manager_job_id]": "$hiring_manager_job_id",
+          "filter[interviewing_user_id]": "$interviewing_user_id",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_scorecards",
+      "description": "List the interview scorecard templates with their sections and the stages they apply to (use include). Filled-in ratings are on the application, via include=user_scorecards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed (JSON:API include): scorecard_sections, scorecard_notes, user_scorecards, stages."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scorecards",
+        "queryParams": {
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_list_requisitions",
+      "description": "List job requisitions (approved requests to hire) with identifier, status and dates. Jobs can be filtered by requisition id in pinpoint_list_jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Only the requisition with this identifier."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related resources to embed."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key; prefix with - for descending. One of: id, created_at, updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, default 100, at most 1000. Use small pages (10 to 50) for a first look."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/requisitions",
+        "queryParams": {
+          "filter[identifier]": "$identifier",
+          "include": "$include",
+          "sort": "$sort",
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "stats[total]": "count"
+        }
+      }
+    },
+    {
+      "name": "pinpoint_add_comment",
+      "description": "Add an internal comment (note) to an application, a candidate or a job seeker. The note is visible to the hiring team in Pinpoint, not to the candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commentable_type": {
+            "type": "string",
+            "description": "What the comment is attached to.",
+            "enum": [
+              "applications",
+              "candidates",
+              "job_seekers"
+            ]
+          },
+          "commentable_id": {
+            "type": "string",
+            "description": "Id of that application, candidate or job seeker."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "Text of the comment."
+          }
+        },
+        "required": [
+          "commentable_type",
+          "commentable_id",
+          "body_text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/comments",
+        "bodyMapping": {
+          "data": {
+            "type": "comments",
+            "attributes": {
+              "body_text": "$body_text"
+            },
+            "relationships": {
+              "commentable": {
+                "data": {
+                  "type": "$commentable_type",
+                  "id": "$commentable_id"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pinpoint_move_application_stage",
+      "description": "Move an application to another stage of its hiring workflow, e.g. from review to interview. Stage moves can trigger the automatic e-mails configured on that stage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Application id."
+          },
+          "stage_id": {
+            "type": "string",
+            "description": "Target stage id from the job's stages (pinpoint_get_job with include=stages)."
+          }
+        },
+        "required": [
+          "id",
+          "stage_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/applications/{id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$id",
+            "type": "applications",
+            "relationships": {
+              "stage": {
+                "data": {
+                  "type": "stages",
+                  "id": "$stage_id"
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

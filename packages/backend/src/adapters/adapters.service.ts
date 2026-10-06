@@ -16,8 +16,15 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
-import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
+import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
 import { STARTER_PACK } from './starter-pack';
+import {
+  POPULAR_CACHE_MS,
+  POPULAR_FALLBACK,
+  POPULAR_MAX,
+  POPULAR_MIN_WORKSPACES,
+  POPULAR_WINDOW_DAYS,
+} from './popular-connectors';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -30,6 +37,7 @@ import {
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
+import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 
 @Injectable()
 export class AdaptersService {
@@ -118,6 +126,77 @@ export class AdaptersService {
     return items;
   }
 
+  private popularCache: { at: number; slugs: string[] } | null = null;
+
+  /**
+   * The apps /welcome offers first, most-working first (see
+   * ./popular-connectors.ts), each with what its setup asks for and whether
+   * this workspace already has it.
+   */
+  async popularConnectors(organizationId: string): Promise<PopularConnectorItem[]> {
+    const [ranked, installed] = await Promise.all([
+      this.rankedPopularSlugs(),
+      this.installedAdapterSlugs(organizationId),
+    ]);
+    const items: PopularConnectorItem[] = [];
+    for (const slug of [...ranked, ...POPULAR_FALLBACK]) {
+      if (items.length >= POPULAR_MAX) break;
+      if (items.some((i) => i.slug === slug)) continue;
+      const adapter = getAdapter(slug);
+      if (!adapter || !this.isInstallableHere(adapter)) continue;
+      const requiredEnvVars = withoutOperatorProvided(adapter.requiredEnvVars) ?? [];
+      const kind = setupKind({ ...adapter, requiredEnvVars });
+      if (kind === 'none') continue;
+      const needs = describeAdapterEnvVars({ ...adapter, requiredEnvVars })
+        .filter((v) => v.required && !v.advanced)
+        .map((v) => v.label);
+      items.push({
+        slug,
+        name: adapter.name,
+        icon: adapter.icon,
+        category: adapter.category,
+        setupKind: kind,
+        needs,
+        installed: installed.has(slug),
+      });
+    }
+    return items;
+  }
+
+  /** Adapter slugs by successful workspaces over the window, cached for an hour. */
+  private async rankedPopularSlugs(): Promise<string[]> {
+    const now = Date.now();
+    if (this.popularCache && now - this.popularCache.at < POPULAR_CACHE_MS) {
+      return this.popularCache.slugs;
+    }
+    let slugs: string[] = [];
+    try {
+      // tool_invocations is large; the EXISTS goes through its
+      // (connector_id, created_at) index, one recent connector at a time.
+      const rows = await this.prisma.$queryRaw<Array<{ slug: string; workspaces: bigint }>>`
+        SELECT c.config->>'adapterSlug' AS slug,
+               COUNT(DISTINCT c.organization_id) AS workspaces
+        FROM connectors c
+        WHERE c.created_at > now() - make_interval(days => ${POPULAR_WINDOW_DAYS})
+          AND c.config ? 'adapterSlug'
+          AND EXISTS (
+            SELECT 1 FROM tool_invocations ti
+            WHERE ti.connector_id = c.id AND ti.status = 'SUCCESS'
+          )
+        GROUP BY 1
+        HAVING COUNT(DISTINCT c.organization_id) >= ${POPULAR_MIN_WORKSPACES}
+        ORDER BY 2 DESC, 1
+        LIMIT 40`;
+      slugs = rows.map((r) => r.slug).filter((s): s is string => typeof s === 'string');
+    } catch (err: any) {
+      // The page still has the fallback list; a ranking that fails is not
+      // worth an error on a new user's first screen.
+      this.logger.warn(`Could not rank popular connectors: ${err?.message ?? err}`);
+    }
+    this.popularCache = { at: now, slugs };
+    return slugs;
+  }
+
   /** Catalog slugs this workspace already has a connector for. */
   async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
     const rows = await this.prisma.connector.findMany({
@@ -187,6 +266,9 @@ export class AdaptersService {
         credentials,
         adapter.connector.type,
       );
+      // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) given as the
+      // whole address the browser shows: keep the label it stands for.
+      credentials = normalizeSubdomainVariables(adapter.connector.baseUrl, credentials);
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials
@@ -309,20 +391,7 @@ export class AdaptersService {
     const tool = call ? adapter.tools.find((t) => t.name === call.toolName) : undefined;
     if (!call || !tool) return { ok: null, skipped: 'no_probe' };
 
-    const transient = {
-      // No id: token services then keep what they fetch in memory only.
-      id: '',
-      name: adapter.connector.name,
-      type: adapter.connector.type,
-      baseUrl: prepared.resolvedBaseUrl,
-      authType: adapter.connector.authType || 'NONE',
-      authConfig: prepared.encryptedAuth,
-      headers: prepared.resolvedHeaders,
-      envVars: prepared.envVarsToPersist,
-      config: { ...(adapter.connector.config ?? {}), adapterSlug: slug },
-      organizationId,
-      specUrl: null,
-    } as unknown as Parameters<ConnectorsService['executeConnectorCall']>[0];
+    const transient = this.transientConnector(adapter, prepared, organizationId);
 
     const started = Date.now();
     try {
@@ -348,20 +417,125 @@ export class AdaptersService {
             ? err.response.status
             : undefined;
       const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
-      const { kind, hint } = classifyToolExecutionError({
+      const classified = classifyToolExecutionError({
         status,
         authType: adapter.connector.authType,
         message: upstream,
       });
+      // The adapter knows its own failures better than the shared classifier:
+      // an Odoo 404 means "older than 19", not "check the tool path".
+      const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
+      const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
+      const suggest = typeof own === 'object' && own?.suggest ? own.suggest : undefined;
       return {
         ok: false,
-        kind,
+        kind: classified.kind,
         toolName: call.toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
         message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
+        ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
+  }
+
+  /**
+   * Run every read-only tool of an adapter definition with these credentials,
+   * against a connector that exists only in memory, and report what each
+   * returned without the data itself: status, duration and the shape of the
+   * answer (type, item count, top-level keys).
+   *
+   * For checking a new adapter against a working account before it ships
+   * (scripts/ops/verify-adapter-with-connector.mjs). The definition is passed
+   * in, not looked up, so an adapter that is not in the catalog yet can be
+   * checked. A tool runs only when its annotations say read-only, the same
+   * conservative derivation the MCP surface uses: a GET, a GraphQL query, or
+   * an explicit `readOnlyHint` in the adapter JSON. Everything else is
+   * reported as skipped and never sent.
+   */
+  async exerciseReadTools(
+    adapter: AdapterDefinition,
+    organizationId: string,
+    credentials: Record<string, string>,
+    opts: {
+      /** Arguments per tool, for tools with required parameters. */
+      params?: Record<string, Record<string, unknown>>;
+      /** Only these tools. */
+      only?: string[];
+    } = {},
+  ): Promise<ExerciseResult[]> {
+    const prepared = this.prepareConnector(adapter, credentials);
+    const transient = this.transientConnector(adapter, prepared, organizationId);
+    const results: ExerciseResult[] = [];
+    for (const tool of adapter.tools) {
+      if (opts.only && !opts.only.includes(tool.name)) continue;
+      const annotations = deriveToolAnnotations({
+        name: tool.name,
+        connectorType: adapter.connector.type,
+        endpointMapping: tool.endpointMapping as { method?: string; path?: string },
+        annotations: (tool as { annotations?: unknown }).annotations,
+      });
+      if (annotations.readOnlyHint !== true) {
+        results.push({ tool: tool.name, outcome: 'skipped', reason: 'not read-only' });
+        continue;
+      }
+      const required = ((tool.parameters as { required?: string[] })?.required ?? []) as string[];
+      const params = { ...(opts.params?.[tool.name] ?? {}) };
+      const missing = required.filter((name) => params[name] === undefined && credentials[name] === undefined);
+      if (missing.length > 0) {
+        results.push({ tool: tool.name, outcome: 'skipped', reason: `needs ${missing.join(', ')}` });
+        continue;
+      }
+      const started = Date.now();
+      try {
+        const raw = await this.connectors.executeConnectorCall(
+          transient,
+          tool.endpointMapping as any,
+          params,
+          tool.name,
+          tool.parameters,
+        );
+        const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
+        results.push({ tool: tool.name, outcome: 'ok', durationMs: Date.now() - started, shape: describeShape(shaped) });
+      } catch (err: any) {
+        const status: number | null =
+          typeof err?.status === 'number'
+            ? err.status
+            : typeof err?.response?.status === 'number'
+              ? err.response.status
+              : null;
+        results.push({
+          tool: tool.name,
+          outcome: 'error',
+          durationMs: Date.now() - started,
+          status,
+          message: String(err?.message ?? err ?? 'unknown error').slice(0, 200),
+        });
+      }
+    }
+    return results;
+  }
+
+  /** The in-memory connector a verification runs against: no id, no row. */
+  private transientConnector(
+    adapter: AdapterDefinition,
+    prepared: ReturnType<AdaptersService['prepareConnector']>,
+    organizationId: string,
+  ) {
+    return {
+      // No id: token services then keep what they fetch in memory only.
+      id: '',
+      name: adapter.connector.name,
+      type: adapter.connector.type,
+      baseUrl: prepared.resolvedBaseUrl,
+      authType: adapter.connector.authType || 'NONE',
+      authConfig: prepared.encryptedAuth,
+      headers: prepared.resolvedHeaders,
+      envVars: prepared.envVarsToPersist,
+      config: { ...(adapter.connector.config ?? {}), adapterSlug: adapter.slug },
+      organizationId,
+      specUrl: null,
+    } as unknown as Parameters<ConnectorsService['executeConnectorCall']>[0];
   }
 
   async importAdapter(
@@ -698,6 +872,17 @@ export class AdaptersService {
   }
 }
 
+export interface PopularConnectorItem {
+  slug: string;
+  name: string;
+  icon: string;
+  category: string;
+  setupKind: SetupKind;
+  /** Labels of the values the setup asks for, e.g. ["Keystring", "Shared secret"]. */
+  needs: string[];
+  installed: boolean;
+}
+
 export interface StarterPackItem {
   slug: string;
   name: string;
@@ -718,8 +903,16 @@ export type VerifyResult =
       missing?: string[];
       toolName?: string;
       status?: number | null;
+      /** Another adapter to offer instead, from the adapter's verifyHints. */
+      suggest?: string;
+      suggestName?: string;
     }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
+
+export type ExerciseResult =
+  | { tool: string; outcome: 'ok'; durationMs: number; shape: string }
+  | { tool: string; outcome: 'error'; durationMs: number; status: number | null; message: string }
+  | { tool: string; outcome: 'skipped'; reason: string };
 
 export type ImportProbeResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
@@ -735,6 +928,21 @@ export type ImportProbeResult =
 function hasUsableValue(value: unknown): boolean {
   // [^{}] rather than [^}]: linear on a run of '{' (#788).
   return typeof value === 'string' && value.trim() !== '' && !/\{\{[^{}]+\}\}/.test(value);
+}
+
+/**
+ * What came back, without the data: `array(25) of {id,title,…}`,
+ * `object {data,meta}`, `string(120)`. Keys only, never values.
+ */
+function describeShape(value: unknown): string {
+  const keys = (v: unknown) => {
+    const k = v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v as object) : [];
+    return `{${k.slice(0, 12).join(',')}${k.length > 12 ? ',…' : ''}}`;
+  };
+  if (Array.isArray(value)) return `array(${value.length})${value.length ? ` of ${keys(value[0])}` : ''}`;
+  if (value && typeof value === 'object') return `object ${keys(value)}`;
+  if (typeof value === 'string') return `string(${value.length})`;
+  return typeof value;
 }
 
 /** A short, printable slice of the probe's response for the install form. */

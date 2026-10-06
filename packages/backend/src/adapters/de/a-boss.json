@@ -1,0 +1,830 @@
+{
+  "slug": "a-boss",
+  "name": "ABOSS",
+  "description": "ABOSS booking agency software for the live music industry: events and tour dates, deals and fees, projects (artists), venues, travel, contacts, invoices, contracts and advancing, read through the ABOSS Agency API v1.",
+  "region": "de",
+  "category": "crm",
+  "icon": "a-boss",
+  "docsUrl": "https://aboss.readme.io/reference/get_v1-events",
+  "prerequisites": "An API Key Manager for your agency: ABOSS support designates one on request (support@a-boss.net, with your agency id). That user creates the key under Office → API Key → Settings and ticks the scopes this connector should read.",
+  "instructions": "**Getting the API key**: an agency's API key is created by its API Key Manager, a user with *Administrate* permission on Office whom ABOSS support designates on request (support@a-boss.net, with your agency id and name). That user opens **Office → API Key → Settings**, confirms the password, ticks the scopes the integration needs and copies the key into `ABOSS_API_KEY`. It is sent as `Authorization: Bearer <key>`.\n\n**Scopes decide what works.** The key carries one scope per module: events (always included), deals, projects, locations, travels, contacts, invoices, contracts and advancings. A tool whose module is not ticked answers 401 or 403; tick the scope in the key settings rather than creating a new key.\n\n**Read-only API**: the ABOSS Agency API v1 only reads. Nothing in this connector changes data in ABOSS.\n\n**Rate limit**: 60 requests per minute per key (`X-RateLimit-Limit`, `X-RateLimit-Remaining`); above it ABOSS answers 429.\n\n**Pagination**: list tools return `{pagination, data}`. `pagination.count` is the total, `pagination.next` the next page number (null on the last page). `limit` is 25 by default, 200 at most.\n\n**Narrow every list.** ABOSS builds full objects for each row; unfiltered deals, travel, contracts and advancing lists of a busy agency take tens of seconds and can time out. Pass a date range, `updated_at_from`, `event_id` or `ids`, and keep `limit` small.\n\n**Dates** are ISO 8601 without a time zone, e.g. `2026-10-01T00:00:00`. Range filters are inclusive: `start_from`/`start_to` on events and travel, `updated_at_from`/`updated_at_to` on every list, `date_from`/`date_to` and `due_date_to` on invoices.\n\n**Which tool to start with**: `a_boss_list_projects` gives the artists or acts and their ids; `a_boss_list_events` with `project_ids` and a `start_from`/`start_to` range gives a tour schedule. Each event links its location, contacts, deal, advancing, invoices and contracts by id; read them with the matching get tool.\n\n**Shared events**: another agency or an artist can share events with your agency. They are hidden unless `include_shared=true` is set on the events tools and `a_boss_get_deal`; without it a shared event or deal answers 404. Shared items carry `access: \"shared\"` and the sharing party's private fields are null. `a_boss_list_deals` never lists shared deals.",
+  "requiredEnvVars": [
+    "ABOSS_API_KEY"
+  ],
+  "envVarMeta": {
+    "ABOSS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "ABOSS Agency → Office → API Key → Settings (only the agency's API Key Manager sees it). Tick the scopes for every module you want to read; Events is always included.",
+      "link": "https://help.a-boss.net/en/articles/13769114-the-aboss-agency-api"
+    }
+  },
+  "verifyHints": {
+    "401": "ABOSS refused the key, or the key lacks the scope for this module. Check the key under Office → API Key → Settings and tick the scopes you need.",
+    "rate_limited": "ABOSS allows 60 requests per minute per key. Wait a minute and try again."
+  },
+  "connector": {
+    "name": "ABOSS Agency API",
+    "type": "REST",
+    "baseUrl": "https://agency-api.a-boss.net",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ABOSS_API_KEY}}"
+    }
+  },
+  "probe": {
+    "tool": "a_boss_list_events",
+    "params": {
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "a_boss_list_events",
+      "description": "List events (shows, holds, blocks) with title, start and end, status, project, location, client contact, deal, advancing, invoices and contracts. Filter by date range, status, project or venue to build a tour schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_from": {
+            "type": "string",
+            "description": "Only items whose start is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "start_to": {
+            "type": "string",
+            "description": "Only items whose start is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "end_from": {
+            "type": "string",
+            "description": "Only items whose end is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "end_to": {
+            "type": "string",
+            "description": "Only items whose end is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "interest",
+                "option",
+                "confirmed",
+                "cancelled"
+              ]
+            },
+            "description": "Only events with these statuses: unknown, interest, option, confirmed, cancelled."
+          },
+          "mode": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "project_event",
+                "user_event",
+                "agency_event"
+              ]
+            },
+            "description": "Only these event modes: project_event (an artist's show), user_event (personal), agency_event (agency-internal)."
+          },
+          "group": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "event",
+                "block"
+              ]
+            },
+            "description": "event for single events, block for blocks spanning several days (tours, holds)."
+          },
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events of these projects (artists or acts), ids from a_boss_list_projects."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only events at this location (venue), id from a_boss_list_locations."
+          },
+          "client_contact_id": {
+            "type": "integer",
+            "description": "Only events with this client (promoter) contact."
+          },
+          "contract_contact_id": {
+            "type": "integer",
+            "description": "Only events with this contract contact."
+          },
+          "invoice_contact_id": {
+            "type": "integer",
+            "description": "Only events with this invoice contact."
+          },
+          "include_shared": {
+            "type": "boolean",
+            "description": "Also return items another agency or an artist shares with your agency. Shared items have access \"shared\" and private fields set to null."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these event ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/events",
+        "queryParams": {
+          "start[gte]": "$start_from",
+          "start[lte]": "$start_to",
+          "end[gte]": "$end_from",
+          "end[lte]": "$end_to",
+          "status[]": "$status",
+          "mode[]": "$mode",
+          "group[]": "$group",
+          "project_id[]": "$project_ids",
+          "location_id": "$location_id",
+          "client_contact_id": "$client_contact_id",
+          "contract_contact_id": "$contract_contact_id",
+          "invoice_contact_id": "$invoice_contact_id",
+          "include_shared": "$include_shared",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_event",
+      "description": "Return one event by id with its project, location, contacts, deal, advancing, invoices, contracts, notes and responsible agents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Event id, from a_boss_list_events or from a linked object."
+          },
+          "include_shared": {
+            "type": "boolean",
+            "description": "Also return items another agency or an artist shares with your agency. Shared items have access \"shared\" and private fields set to null."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/events/{id}",
+        "queryParams": {
+          "include_shared": "$include_shared"
+        }
+      }
+    },
+    {
+      "name": "a_boss_list_deals",
+      "description": "List deals (the financial terms of an event): fee, currency, deal type, costs, buyouts and the linked event. Shared deals are never listed; read them with a_boss_get_deal. Narrow with updated_at_from or ids: an unfiltered list can take over a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these deal ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals",
+        "queryParams": {
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_deal",
+      "description": "Return one deal by id with fee, currency, costs, settlement details, notes and billing notes. Use include_shared to read a deal shared by another agency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Deal id, from a_boss_list_deals or from a linked object."
+          },
+          "include_shared": {
+            "type": "boolean",
+            "description": "Also return items another agency or an artist shares with your agency. Shared items have access \"shared\" and private fields set to null."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deals/{id}",
+        "queryParams": {
+          "include_shared": "$include_shared"
+        }
+      }
+    },
+    {
+      "name": "a_boss_list_projects",
+      "description": "List projects (the artists or acts the agency books) with title and archived flag. Start here to get project ids for filtering events and travel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only projects whose title contains this text."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived projects only, false for active ones only."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these project ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects",
+        "queryParams": {
+          "title": "$title",
+          "archived": "$archived",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_project",
+      "description": "Return one project (artist or act) by id with its title, archived flag and details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Project id, from a_boss_list_projects or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_locations",
+      "description": "List locations (venues and other places) with title, address, city, country and capacity details. Filter by name, city or country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only locations whose title contains this text."
+          },
+          "city": {
+            "type": "string",
+            "description": "Only locations whose city contains this text."
+          },
+          "country": {
+            "type": "string",
+            "description": "Only locations whose country contains this text."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these location ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/locations",
+        "queryParams": {
+          "title": "$title",
+          "city": "$city",
+          "country": "$country",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_location",
+      "description": "Return one location (venue) by id with address, contact details and venue information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Location id, from a_boss_list_locations or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/locations/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_travels",
+      "description": "List travel items (flights, trains, cars, hotels) with start and end, type, booking details and linked event and project. Filter by date, project or event for a day sheet. Always pass a start range: an unfiltered list can time out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_from": {
+            "type": "string",
+            "description": "Only items whose start is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "start_to": {
+            "type": "string",
+            "description": "Only items whose start is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "end_from": {
+            "type": "string",
+            "description": "Only items whose end is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "end_to": {
+            "type": "string",
+            "description": "Only items whose end is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only travel of these projects."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only travel linked to this location."
+          },
+          "event_id": {
+            "type": "integer",
+            "description": "Only travel linked to this event."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these travel item ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/travels",
+        "queryParams": {
+          "start[gte]": "$start_from",
+          "start[lte]": "$start_to",
+          "end[gte]": "$end_from",
+          "end[lte]": "$end_to",
+          "project_id[]": "$project_ids",
+          "location_id": "$location_id",
+          "event_id": "$event_id",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_travel",
+      "description": "Return one travel item by id with times, places, booking reference, passengers and the linked event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Travel item id, from a_boss_list_travels or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/travels/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_contacts",
+      "description": "List contacts (promoters, venue staff, crew, artists) with name, type, company, e-mail, phone and address. Use name for a wildcard search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Wildcard search on the contact's name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Contact type, e.g. person."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these contact ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts",
+        "queryParams": {
+          "name": "$name",
+          "type": "$type",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_contact",
+      "description": "Return one contact by id with name, company, e-mail, phone, address, labels and travel preferences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Contact id, from a_boss_list_contacts or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_invoices",
+      "description": "List invoices with number, date, due date, amounts excluding and including VAT, currency, and the ready-to-send, sent and paid flags. Filter for unpaid or overdue invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Only invoices dated on or after this time, ISO 8601, e.g. 2026-01-01T00:00:00."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only invoices dated on or before this time."
+          },
+          "due_date_to": {
+            "type": "string",
+            "description": "Only invoices due on or before this time; with paid=false this lists overdue invoices."
+          },
+          "ready_to_send": {
+            "type": "boolean",
+            "description": "Only invoices marked ready to send (true) or not (false)."
+          },
+          "sent": {
+            "type": "boolean",
+            "description": "Only sent (true) or unsent (false) invoices."
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "Only paid (true) or unpaid (false) invoices."
+          },
+          "contact_id": {
+            "type": "integer",
+            "description": "Only invoices for this contact."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these invoice ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices",
+        "queryParams": {
+          "date[gte]": "$date_from",
+          "date[lte]": "$date_to",
+          "due_date[lte]": "$due_date_to",
+          "ready_to_send": "$ready_to_send",
+          "sent": "$sent",
+          "paid": "$paid",
+          "contact_id": "$contact_id",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_invoice",
+      "description": "Return one invoice by id with its lines, amounts, VAT, contact, linked events and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Invoice id, from a_boss_list_invoices or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_contracts",
+      "description": "List contracts with their status, dates and linked event and contacts. Narrow with updated_at_from or ids on large accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these contract ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contracts",
+        "queryParams": {
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_contract",
+      "description": "Return one contract by id with status, parties, dates and the linked event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Contract id, from a_boss_list_contracts or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contracts/{id}"
+      }
+    },
+    {
+      "name": "a_boss_list_advancings",
+      "description": "List advancing items (show preparation: schedule, hospitality, technical and logistics details agreed with the venue), optionally for one event. Narrow with event_id or updated_at_from on large accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "description": "Only the advancing of this event."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these advancing item ids."
+          },
+          "updated_at_from": {
+            "type": "string",
+            "description": "Only items whose last change is on or after this time, ISO 8601 without zone, e.g. 2026-10-01T00:00:00."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "Only items whose last change is on or before this time, ISO 8601 without zone, e.g. 2026-12-31T23:59:59."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. pagination.next in the answer is the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, maximum 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/advancings",
+        "queryParams": {
+          "event_id": "$event_id",
+          "id[]": "$ids",
+          "updated_at[gte]": "$updated_at_from",
+          "updated_at[lte]": "$updated_at_to",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "a_boss_get_advancing",
+      "description": "Return one advancing item by id with all its sections for the linked event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Advancing item id, from a_boss_list_advancings or from a linked object."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/advancings/{id}"
+      }
+    }
+  ]
+}

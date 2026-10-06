@@ -1,0 +1,840 @@
+{
+  "slug": "exercise-com",
+  "name": "Exercise.com",
+  "description": "Exercise.com gym and coaching software: members and staff, appointments and classes, scheduled occurrences and rosters, visits and check-ins, calendar, services, locations, availability schedules, waitlists, assessments, groups and logged workouts. Tenant API v4 on your own platform host.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "exercise-com",
+  "docsUrl": "https://www.exercise.com/support/how-to-use-the-exercise-com-api-keys/",
+  "instructions": "**Credentials**: Exercise.com runs each business on its own host (your custom-branded platform, e.g. `train.yourgym.com` or `yourgym.exercise.com`). Put that host, without https://, in `EXERCISE_HOST`; the API is served from it at `/api/v4`.\n\nAPI access is a paid add-on: ask your Exercise.com account representative to enable it. The v4 API takes two credentials on each call, as its reference documents (security `api_key` and `bearer` together):\n1. `EXERCISE_API_KEY`: create it under **Account > Customize Platform > Developers > Add** and copy it at once (it is shown only once). Sent in the `API-TOKEN` header.\n2. `EXERCISE_ACCESS_TOKEN`: the bearer token of the account the API acts as (a Personal API Token issued in the product, or the token provided with API access), sent as `Authorization: Bearer`. Use a token of the owner or an admin to see every member.\nMost member, booking and service reads answer with the access token alone, but schedules, assessment templates and logged workouts answer 401 unless both are sent.\n\n**Where to start**: `exercise_com_list_users` gives member and staff ids (`user_id`). For bookings use `exercise_com_get_calendar` with `affinity=schedule` and a Unix-time window, or `exercise_com_list_appointments` / `exercise_com_list_scheduled_appointments`, then `exercise_com_list_visits` with `appointment_id` for who booked and attended.\n\n**Filtering**: most list tools take `filter`, Ransack predicates written as a query-string fragment: `q[status_eq]=completed&q[created_at_gteq]=2026-09-01`. Keys are `<field>_<predicate>` such as `_eq`, `_in`, `_gteq`, `_lteq`, `_cont`; `q[s]=created_at desc` sorts. Unknown fields are ignored or rejected depending on the resource, so start without a filter and look at the field names in the answer.\n\n**Appointments need a date window**: `exercise_com_list_appointments` over the whole history is slow enough to fail with HTTP 500, so its `filter` is required; pass `q[start_time_gteq]` and `q[start_time_lt]`.\n\n**Paging**: `per` and `page` (from 1). When either is set, the answer includes `meta.total`. Without them some lists return everything. `pluck_columns` returns a plain array of just those stored columns for every match (it can ignore `per`), handy for id lookups; computed fields such as `service_name` are not columns and make the call fail.\n\n**Times**: the calendar takes Unix timestamps in seconds for `start` and `end`; other filters take dates or ISO 8601 times. Visits carry the time zone of the business.\n\n**Errors**: 401 `Access denied` means a wrong host, a wrong or revoked token, or API access not enabled; 403 means the token's account may not see the resource; 404 a wrong id.\n\nThe interactive reference is at https://train.demoexercise.com/api-docs/ (\"API V4 Docs\"); its login is given in Exercise.com's support article on API keys (the docsUrl of this connector).\n\nPackages, user packages, invoices and charges are not part of the documented v4 tenant API; Exercise.com documents them only in its newer API at api.exercise.com.",
+  "prerequisites": "API access is a paid add-on of Exercise.com: your account representative enables it. You need an API key from **Account > Customize Platform > Developers** and an access token of the owner or an admin account.",
+  "requiredEnvVars": [
+    "EXERCISE_HOST",
+    "EXERCISE_API_KEY",
+    "EXERCISE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "EXERCISE_HOST": {
+      "label": "Platform host",
+      "kind": "address",
+      "help": "The host name your members and staff open the platform at, without https:// and without a path, e.g. train.yourgym.com.",
+      "example": "train.yourgym.com",
+      "link": "https://www.exercise.com/support/how-to-use-the-exercise-com-api-keys/",
+      "pattern": "^(?!https?://)[a-z0-9.-]+\\.[a-z]{2,}$",
+      "patternMessage": "Only the host name, e.g. train.yourgym.com, without https:// or a path."
+    },
+    "EXERCISE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Account > Customize Platform > Developers > Add. Copy it right away; Exercise.com shows it only once. Sent in the API-TOKEN header.",
+      "link": "https://www.exercise.com/support/create-api-key/"
+    },
+    "EXERCISE_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "help": "The bearer token of the account the API acts as: a Personal API Token issued in the product, or the access token your account representative provides with API access. Paste it without the word Bearer.",
+      "link": "https://www.exercise.com/support/how-to-use-the-exercise-com-api-keys/"
+    }
+  },
+  "verifyHints": {
+    "401": "Exercise.com answered \"Access denied\". Check the host is your own platform host, that both the API key (Developers tab) and the access token are current, and that API access is enabled for your account.",
+    "403": "The credentials work but the account may not read this. Use an access token of the platform owner or an admin.",
+    "unreachable": "Nothing answered at this host. Enter only the host name you open the platform at, e.g. train.yourgym.com."
+  },
+  "connector": {
+    "name": "Exercise.com API v4",
+    "type": "REST",
+    "baseUrl": "https://{{EXERCISE_HOST}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "API-TOKEN",
+      "apiKey": "{{EXERCISE_API_KEY}}",
+      "extraHeaders": {
+        "Authorization": "Bearer {{EXERCISE_ACCESS_TOKEN}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "exercise_com_list_users",
+    "params": {
+      "per": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "exercise_com_list_users",
+      "description": "List the platform's users (members, clients and staff) with name, e-mail, phone, head trainer and sign-up dates. Filter with q[email_cont]=... or trainer_id; the id is the user_id other tools use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trainer_id": {
+            "type": "integer",
+            "description": "Only users whose head trainer is this user id."
+          },
+          "with_ids": {
+            "type": "string",
+            "description": "Comma-separated user ids to fetch; paging is ignored when set."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/users",
+        "queryParams": {
+          "trainer_id": "$trainer_id",
+          "with_ids": "$with_ids",
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_user",
+      "description": "Return one user by id with profile, contact details, head trainer, membership and sign-up information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id from exercise_com_list_users."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/users/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_visits",
+      "description": "List visits (bookings and check-ins of a member for an appointment or class) with status, registered, completed, no-show and cancelled times, payment and package used. Filter by appointment or with a Ransack filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "Only visits of this appointment id."
+          },
+          "active_visits": {
+            "type": "string",
+            "description": "Pass true to return only finished visits for appointments and check-ins."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/visits",
+        "queryParams": {
+          "appointment_id": "$appointment_id",
+          "active_visits": "$active_visits",
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_visit",
+      "description": "Return one visit by id with member, appointment, status timestamps, check-in and check-out, payment and booking details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Visit id from exercise_com_list_visits."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/visits/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_appointments",
+      "description": "List appointments (booked sessions and class occurrences) with service, trainers, location, start and end time, status and capacity. Always narrow by date: an unfiltered list of all history times out with a 500.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Required: a start_time window, e.g. q[start_time_gteq]=2026-09-01&q[start_time_lt]=2026-10-01, optionally with q[service_id_eq]=12 or q[s]=start_time desc. Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/appointments",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_appointment",
+      "description": "Return one appointment by id with its service, trainer, location, times, capacity, price and booking rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Appointment id from exercise_com_list_appointments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/appointments/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_scheduled_appointments",
+      "description": "List scheduled appointments: the dated occurrences of recurring classes and sessions, with start and end, trainer, location and capacity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/scheduled_appointments",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_scheduled_appointment",
+      "description": "Return one scheduled appointment (one occurrence of a recurring class or session) by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Scheduled appointment id from exercise_com_list_scheduled_appointments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/scheduled_appointments/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_scheduled_appointment_members",
+      "description": "List the members booked into scheduled appointments (class rosters). Pass scheduled_appointment_id for one occurrence's roster.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheduled_appointment_id": {
+            "type": "integer",
+            "description": "Only the members of this scheduled appointment."
+          },
+          "appointment_id": {
+            "type": "integer",
+            "description": "Together with scheduled_appointment_id: leave out members whose visit for this appointment was deleted."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/scheduled_appointment_members",
+        "queryParams": {
+          "scheduled_appointment_id": "$scheduled_appointment_id",
+          "appointment_id": "$appointment_id",
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_calendar",
+      "description": "Return calendar events between two Unix timestamps: appointments and trainer availability (affinity schedule), scheduled workouts (logger), logged workouts (summary) or assessments, habits and check-ins (webview).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "description": "Window start as a Unix timestamp in seconds, e.g. 1759708800."
+          },
+          "end": {
+            "type": "integer",
+            "description": "Window end as a Unix timestamp in seconds."
+          },
+          "affinity": {
+            "type": "string",
+            "description": "Comma-separated: schedule (appointments and availability), logger (scheduled workouts), summary (logged workouts), webview (assessments, habits, check-ins, waivers). affinity or object_type is required.",
+            "default": "schedule"
+          },
+          "object_type": {
+            "type": "string",
+            "description": "Comma-separated object types instead of affinity: appointment, scheduled_appointment, schedule, schedule_service, workout, logged-workout, assessment, habit, checkin, required."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only this user's events."
+          },
+          "user_ids": {
+            "type": "string",
+            "description": "Comma-separated user ids."
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only this group's events."
+          },
+          "service_id": {
+            "type": "integer",
+            "description": "schedule affinity: only this service id."
+          },
+          "trainer_id": {
+            "type": "integer",
+            "description": "schedule affinity: only this trainer's user id."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "schedule affinity: only this location id."
+          },
+          "cancelled": {
+            "type": "boolean",
+            "description": "schedule affinity: true to include cancelled events."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/calendar",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "affinity": "$affinity",
+          "object_type": "$object_type",
+          "user_id": "$user_id",
+          "user_ids": "$user_ids",
+          "group_id": "$group_id",
+          "q[service]": "$service_id",
+          "q[trainer]": "$trainer_id",
+          "q[location]": "$location_id",
+          "q[cancelled]": "$cancelled"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_services",
+      "description": "List the services offered (session and class types) with name, duration, price and booking settings. The id is used to filter appointments and the calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/services",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_service",
+      "description": "Return one service by id with duration, price, packages that cover it and booking rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Service id from exercise_com_list_services."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/services/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_locations",
+      "description": "List the business locations with name and address. The id is used to filter appointments and the calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/locations",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_schedules",
+      "description": "List trainers' availability schedules (the time windows in which services can be booked).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/schedules",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_waitlist_entries",
+      "description": "List waitlist entries for full appointments with member and position. Pass appointment_id for one appointment's waitlist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "Only entries for this appointment id."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/fbm/waitlist_entries",
+        "queryParams": {
+          "appointment_id": "$appointment_id",
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_assessments",
+      "description": "List assessment templates (fitness tests, questionnaires, intake forms) with name and questions. Pass user_id and assigned=true for those assigned to one member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only assessments for this user id."
+          },
+          "assigned": {
+            "type": "boolean",
+            "description": "true to return only assigned assessments."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/assessments",
+        "queryParams": {
+          "user_id": "$user_id",
+          "assigned": "$assigned",
+          "__rawquery": "$filter",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_user_assessments",
+      "description": "List completed or assigned assessments of members, with answers, scores and dates. Filter by user_id for one member's results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only this user's assessments."
+          },
+          "for_trainer": {
+            "type": "boolean",
+            "description": "true for every assessment the trainer can see."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/user_assessments",
+        "queryParams": {
+          "user_id": "$user_id",
+          "for_trainer": "$for_trainer",
+          "__rawquery": "$filter",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_get_user_assessment",
+      "description": "Return one member's assessment by id with every answer and score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User assessment id from exercise_com_list_user_assessments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/user_assessments/{id}"
+      }
+    },
+    {
+      "name": "exercise_com_list_groups",
+      "description": "List groups (teams, classes or communities; type 1 free, 2 paid) with name, members and privacy. The id filters the calendar and workouts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/groups",
+        "queryParams": {
+          "__rawquery": "$filter",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_list_workouts",
+      "description": "List completed (logged) workouts with date, user and summary. Defaults to the API user's own; set for_trainer=true for the whole platform, and start_date with end_date for a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Completed workouts of this user."
+          },
+          "for_trainer": {
+            "type": "boolean",
+            "description": "true for every completed workout on the platform (trainer accounts)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "With for_trainer: only members of this group."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Period start, YYYY-MM-DD; needs end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Period end, YYYY-MM-DD; needs start_date."
+          },
+          "all_fields": {
+            "type": "boolean",
+            "description": "true to include blocks and exercises."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Ransack filter as a query-string fragment of q[...] predicates joined with &, e.g. q[status_eq]=completed&q[created_at_gteq]=2026-09-01. Predicates: _eq, _not_eq, _in, _lt, _lteq, _gt, _gteq, _cont, _null; q[s]=created_at desc sorts."
+          },
+          "pluck_columns": {
+            "type": "string",
+            "description": "Comma-separated stored columns to return instead of full records, e.g. id,first_name,last_name,email. The answer is then a plain array of every match (per and page may be ignored); computed fields such as service_name are not columns and fail."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page. When per or page is set the answer carries meta.total with the total count."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v4/workouts",
+        "queryParams": {
+          "user_id": "$user_id",
+          "for_trainer": "$for_trainer",
+          "group_id": "$group_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "all_fields": "$all_fields",
+          "__rawquery": "$filter",
+          "pluck_columns": "$pluck_columns",
+          "per": "$per",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "exercise_com_book_visit",
+      "description": "Book a member into an appointment by creating a visit. Booking can charge the member or use one of their packages, depending on the service settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "Appointment id to book."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Member's user id."
+          }
+        },
+        "required": [
+          "appointment_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v4/fbm/visits",
+        "bodyMapping": {
+          "visit": {
+            "appointment_id": "$appointment_id",
+            "user_id": "$user_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "exercise_com_cancel_visit",
+      "description": "Delete (cancel) a visit by id. Late-cancel rules and fees of the service may apply, and the member may be notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Visit id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v4/fbm/visits/{id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

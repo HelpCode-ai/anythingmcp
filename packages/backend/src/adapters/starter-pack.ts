@@ -5,7 +5,7 @@
  * a third of workspaces ever add a connector. Installing these for everyone
  * would not fix that and would cost memory, because every connector's tools
  * live in the in-memory registry. So the pack is offered, not installed: a
- * few connectors that need no key, ticked by default, added in one click.
+ * few connectors that need no key, added in one click for those who want them.
  *
  * Membership is chosen from production data: each one installs with no input
  * at all and answered its calls reliably over the previous 30 days. An entry
@@ -21,21 +21,28 @@ export interface StarterPackEntry {
   pitch: string;
 }
 
+/*
+ * Nothing is preselected any more (October 2026). Preselected, the pack took
+ * the trial's connector slots with demos: Hacker News was installed by 78 new
+ * workspaces and called by 2, which then had no room left for the app they
+ * came for. /welcome now leads with the apps people actually connect
+ * (./popular-connectors.ts) and offers these as an optional try-out.
+ */
 export const STARTER_PACK: readonly StarterPackEntry[] = [
   {
     slug: 'agent-skills',
-    preselected: true,
+    preselected: false,
     pitch:
       'Find a ready-made skill for a task, like a README or release notes, and have your AI follow it.',
   },
   {
     slug: 'hackernews',
-    preselected: true,
+    preselected: false,
     pitch: 'Top, new and Ask HN stories with their comments, for tech news and research.',
   },
   {
     slug: 'nominatim',
-    preselected: true,
+    preselected: false,
     pitch: 'Turn addresses into coordinates and back, worldwide, with OpenStreetMap.',
   },
   {
