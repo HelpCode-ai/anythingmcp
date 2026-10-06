@@ -1,0 +1,640 @@
+{
+  "slug": "football-data",
+  "name": "football-data.org",
+  "description": "football-data.org API v4: football competitions, league tables, fixtures and results, head-to-head, teams, squads, players and top scorers. Free plan covers 12 major competitions with an API token.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "football-data",
+  "docsUrl": "https://docs.football-data.org/general/v4/index.html",
+  "instructions": "## football-data.org\nThis connector reads the football-data.org API v4 (`https://api.football-data.org/v4`): competitions, league tables, fixtures and results, head-to-head, teams and squads, players, top scorers and areas.\n\n## Setup\nRegister at football-data.org (free) and copy the API token from the e-mail you receive, or from your account page. Put it in `FOOTBALL_DATA_API_TOKEN`. It is sent as the `X-Auth-Token` header.\n\n## Plans and coverage\n- The **free plan** covers 12 competitions: Premier League (PL), Championship (ELC), Bundesliga (BL1), Serie A (SA), LaLiga (PD), Ligue 1 (FL1), Eredivisie (DED), Primeira Liga (PPL), Brasileirao Serie A (BSA), Champions League (CL), European Championship (EC) and FIFA World Cup (WC). It includes fixtures, results, league tables and scorers. Scores and schedules are **delayed** on the free plan; live scores, lineups and match statistics need a paid plan.\n- A competition or resource outside the plan answers **403** \"restricted ... check your subscription\". That is the plan, not a broken token. Single matches of past seasons can answer 403 on the free plan as well. An invalid token answers **400** \"Your API token is invalid\".\n- Rate limit: **10 requests per minute** on the free plan, more on paid plans. On 429 wait about a minute before retrying. One competition match list returns a whole season, so prefer it to many single-match calls.\n\n## Which football connector\nfootball-data.org is free and covers the big leagues well. The **API-Football** connector (`api-football`) covers over 1,000 leagues and cups and adds lineups, player statistics, injuries, predictions and betting odds, but needs a paid plan beyond 100 requests a day. Use this one for tables, fixtures, results and scorers of the major competitions; use API-Football for smaller leagues and deep match data.\n\n## Ids and codes\n- Competitions take a code (PL, BL1, SA, PD, FL1, CL, WC ...) or a numeric id. `football_data_list_competitions` lists the ones your token can read.\n- Team, match and person ids are integers that appear in every list. Find a team with `football_data_list_competition_teams`, a match with `football_data_list_competition_matches` or `football_data_list_matches`.\n- `season` is the starting year: 2025 means 2025/26.\n- All times are UTC (`utcDate`). Convert before quoting a kickoff time.\n\n## Match lists\nList endpoints hide goals, bookings, lineups and substitutions to keep answers small. Set `unfold_goals` (and the other `unfold_*` flags) to include them, or call `football_data_get_match` for one match. A date range on `football_data_list_matches` may span at most 10 days.\n\n## Where to start\n`football_data_list_competitions` to see what the token covers, then `football_data_get_standings` or `football_data_list_competition_matches` with a code. For a preview: find the match id, then `football_data_get_head2head` and `football_data_list_team_matches` for both teams' recent form.",
+  "requiredEnvVars": [
+    "FOOTBALL_DATA_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "FOOTBALL_DATA_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "help": "Register for free at football-data.org; the token arrives by e-mail and is also shown on your account page after signing in.",
+      "link": "https://www.football-data.org/client/register",
+      "pattern": "^[a-z0-9]{32}$",
+      "patternMessage": "A football-data.org token is 32 lowercase letters and digits."
+    }
+  },
+  "verifyHints": {
+    "400": "football-data.org says the token is invalid. Paste the token from the registration e-mail or your account page, without spaces.",
+    "403": "The token works but this resource is not in your plan. The free plan covers 12 competitions (PL, ELC, BL1, SA, PD, FL1, DED, PPL, BSA, CL, EC, WC).",
+    "rate_limited": "The free plan allows 10 requests per minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "football_data_list_competitions"
+  },
+  "connector": {
+    "name": "football-data.org API v4",
+    "type": "REST",
+    "baseUrl": "https://api.football-data.org/v4",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Auth-Token",
+      "apiKey": "{{FOOTBALL_DATA_API_TOKEN}}"
+    },
+    "healthcheckPath": "/competitions"
+  },
+  "tools": [
+    {
+      "name": "football_data_list_competitions",
+      "description": "List the competitions the token can access (with a token) with id, code, name, type (LEAGUE, CUP, LEAGUE_CUP, PLAYOFFS), area and current season with its current matchday. Call this first to learn which codes your plan covers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "areas": {
+            "type": "string",
+            "description": "Comma separated area ids to narrow down, e.g. 2072 for England. Area ids come from football_data_list_areas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions",
+        "queryParams": {
+          "areas": "$areas"
+        }
+      }
+    },
+    {
+      "name": "football_data_get_competition",
+      "description": "Get one competition with its area, type, current season and the list of past seasons (id, start and end date, winner). Use it to see how far back the data for a league goes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "competition": {
+            "type": "string",
+            "description": "Competition code or numeric id, e.g. PL (Premier League), BL1 (Bundesliga), SA (Serie A), PD (LaLiga), FL1 (Ligue 1), CL (Champions League), WC (World Cup). Codes come from football_data_list_competitions."
+          }
+        },
+        "required": [
+          "competition"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions/{competition}"
+      }
+    },
+    {
+      "name": "football_data_get_standings",
+      "description": "Get the league table of a competition: position, points, played, won, draw, lost, goals for and against, goal difference and recent form per team. Leagues return TOTAL, HOME and AWAY tables; group competitions return one table per group; cups answer 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "competition": {
+            "type": "string",
+            "description": "Competition code or numeric id, e.g. PL (Premier League), BL1 (Bundesliga), SA (Serie A), PD (LaLiga), FL1 (Ligue 1), CL (Champions League), WC (World Cup). Codes come from football_data_list_competitions."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Starting year of the season, 4 digits: 2025 for 2025/26. Defaults to the current season."
+          },
+          "matchday": {
+            "type": "integer",
+            "description": "Table as it stood after this matchday. Combined with season it is computed from results only, without point deductions."
+          },
+          "date": {
+            "type": "string",
+            "description": "Table as it stood on this date, yyyy-MM-dd."
+          }
+        },
+        "required": [
+          "competition"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions/{competition}/standings",
+        "queryParams": {
+          "season": "$season",
+          "matchday": "$matchday",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "football_data_list_competition_matches",
+      "description": "List the matches of a competition (fixtures and results) with date in UTC, status, matchday, stage, group, teams and score. Defaults to the whole current season; narrow it with matchday, a date range, status or stage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "competition": {
+            "type": "string",
+            "description": "Competition code or numeric id, e.g. PL (Premier League), BL1 (Bundesliga), SA (Serie A), PD (LaLiga), FL1 (Ligue 1), CL (Champions League), WC (World Cup). Codes come from football_data_list_competitions."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Starting year of the season, 4 digits: 2025 for 2025/26. Defaults to the current season."
+          },
+          "matchday": {
+            "type": "integer",
+            "description": "Matchday (round) number, e.g. 15."
+          },
+          "status": {
+            "type": "string",
+            "description": "Match status, or a comma separated list: SCHEDULED, TIMED, IN_PLAY, PAUSED, EXTRA_TIME, PENALTY_SHOOTOUT, FINISHED, SUSPENDED, POSTPONED, CANCELLED, AWARDED. LIVE is a shortcut for IN_PLAY and PAUSED."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date, yyyy-MM-dd. Use together with date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date, yyyy-MM-dd, inclusive. Use together with date_from."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Stage, e.g. REGULAR_SEASON, GROUP_STAGE, LAST_16, QUARTER_FINALS, SEMI_FINALS, FINAL."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group, e.g. GROUP_A."
+          },
+          "unfold_goals": {
+            "type": "boolean",
+            "description": "true to include goals (scorer, assist, minute) in each match of the list. Off by default in lists."
+          },
+          "unfold_bookings": {
+            "type": "boolean",
+            "description": "true to include yellow and red cards in each match of the list."
+          },
+          "unfold_lineups": {
+            "type": "boolean",
+            "description": "true to include lineups and benches in each match of the list (paid plans)."
+          },
+          "unfold_subs": {
+            "type": "boolean",
+            "description": "true to include substitutions in each match of the list."
+          }
+        },
+        "required": [
+          "competition"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions/{competition}/matches",
+        "queryParams": {
+          "season": "$season",
+          "matchday": "$matchday",
+          "status": "$status",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "stage": "$stage",
+          "group": "$group"
+        },
+        "headers": {
+          "X-Unfold-Goals": "$unfold_goals",
+          "X-Unfold-Bookings": "$unfold_bookings",
+          "X-Unfold-Lineups": "$unfold_lineups",
+          "X-Unfold-Subs": "$unfold_subs"
+        }
+      }
+    },
+    {
+      "name": "football_data_list_competition_teams",
+      "description": "List the teams taking part in a competition's season, with id, name, short name, three-letter code, crest, venue and, depending on the plan, coach and squad. Use it to find team ids for a league.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "competition": {
+            "type": "string",
+            "description": "Competition code or numeric id, e.g. PL (Premier League), BL1 (Bundesliga), SA (Serie A), PD (LaLiga), FL1 (Ligue 1), CL (Champions League), WC (World Cup). Codes come from football_data_list_competitions."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Starting year of the season, 4 digits: 2025 for 2025/26. Defaults to the current season."
+          }
+        },
+        "required": [
+          "competition"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions/{competition}/teams",
+        "queryParams": {
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "football_data_get_top_scorers",
+      "description": "Get the top scorers of a competition's season: player, team, goals, assists, penalties and matches played, sorted by goals. Use it for golden boot and assist questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "competition": {
+            "type": "string",
+            "description": "Competition code or numeric id, e.g. PL (Premier League), BL1 (Bundesliga), SA (Serie A), PD (LaLiga), FL1 (Ligue 1), CL (Champions League), WC (World Cup). Codes come from football_data_list_competitions."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Starting year of the season, 4 digits: 2025 for 2025/26. Defaults to the current season."
+          },
+          "matchday": {
+            "type": "integer",
+            "description": "Scorer list as it stood after this matchday."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of players to return."
+          }
+        },
+        "required": [
+          "competition"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/competitions/{competition}/scorers",
+        "queryParams": {
+          "season": "$season",
+          "matchday": "$matchday",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "football_data_list_matches",
+      "description": "List matches across all competitions the plan covers: today's matches by default, or a single date, a date range (max 10 days), a list of match ids, or a status such as LIVE. Use it for 'what is on today' and live scores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "One day, yyyy-MM-dd. Defaults to today (UTC)."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date, yyyy-MM-dd. Must be used with date_to; the range may span at most 10 days."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date, yyyy-MM-dd, inclusive. Use together with date_from."
+          },
+          "status": {
+            "type": "string",
+            "description": "Match status, or a comma separated list: SCHEDULED, TIMED, IN_PLAY, PAUSED, EXTRA_TIME, PENALTY_SHOOTOUT, FINISHED, SUSPENDED, POSTPONED, CANCELLED, AWARDED. LIVE is a shortcut for IN_PLAY and PAUSED."
+          },
+          "competitions": {
+            "type": "string",
+            "description": "Comma separated competition codes to narrow down, e.g. PL,CL."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma separated match ids to fetch in one call, e.g. 330299,330300."
+          },
+          "unfold_goals": {
+            "type": "boolean",
+            "description": "true to include goals (scorer, assist, minute) in each match of the list. Off by default in lists."
+          },
+          "unfold_bookings": {
+            "type": "boolean",
+            "description": "true to include yellow and red cards in each match of the list."
+          },
+          "unfold_lineups": {
+            "type": "boolean",
+            "description": "true to include lineups and benches in each match of the list (paid plans)."
+          },
+          "unfold_subs": {
+            "type": "boolean",
+            "description": "true to include substitutions in each match of the list."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/matches",
+        "queryParams": {
+          "date": "$date",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "status": "$status",
+          "competitions": "$competitions",
+          "ids": "$ids"
+        },
+        "headers": {
+          "X-Unfold-Goals": "$unfold_goals",
+          "X-Unfold-Bookings": "$unfold_bookings",
+          "X-Unfold-Lineups": "$unfold_lineups",
+          "X-Unfold-Subs": "$unfold_subs"
+        }
+      }
+    },
+    {
+      "name": "football_data_get_match",
+      "description": "Get one match in full: competition, season, kickoff in UTC, status, venue, referees, teams, score (half time, full time, extra time, penalties), goals, bookings and substitutions. Lineups and statistics need a paid plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id, from any match list."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/matches/{match_id}"
+      }
+    },
+    {
+      "name": "football_data_get_head2head",
+      "description": "Get the previous meetings of the two teams of a match, with an aggregate of wins, draws, losses and goals for each side. Pass the id of the upcoming match; use it for previews.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Id of the match whose two teams are compared."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of previous meetings to return."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only meetings on or after this date, yyyy-MM-dd."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only meetings on or before this date, yyyy-MM-dd."
+          },
+          "competitions": {
+            "type": "string",
+            "description": "Comma separated competition codes to narrow down, e.g. PL,CL."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/matches/{match_id}/head2head",
+        "queryParams": {
+          "limit": "$limit",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "competitions": "$competitions"
+        }
+      }
+    },
+    {
+      "name": "football_data_list_teams",
+      "description": "List all teams in the database page by page, with id, name, short name, three-letter code and crest. Prefer football_data_list_competition_teams to find a team of a known league.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Teams per page, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of teams to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "football_data_get_team",
+      "description": "Get one team: name, area, address, website, founding year, club colours, venue, running competitions, coach and squad with positions and dates of birth.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id, e.g. 5 for FC Bayern Muenchen. Ids come from football_data_list_competition_teams or any match."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}"
+      }
+    },
+    {
+      "name": "football_data_list_team_matches",
+      "description": "List the matches of one team across competitions, with a summary of wins, draws and losses. Filter by date range, season, competitions, status or home and away. Use it for form and upcoming fixtures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date, yyyy-MM-dd. Use together with date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date, yyyy-MM-dd, inclusive. Use together with date_from."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Starting year of the season, 4 digits: 2025 for 2025/26. Defaults to the current season."
+          },
+          "competitions": {
+            "type": "string",
+            "description": "Comma separated competition codes to narrow down, e.g. PL,CL."
+          },
+          "status": {
+            "type": "string",
+            "description": "Match status, or a comma separated list: SCHEDULED, TIMED, IN_PLAY, PAUSED, EXTRA_TIME, PENALTY_SHOOTOUT, FINISHED, SUSPENDED, POSTPONED, CANCELLED, AWARDED. LIVE is a shortcut for IN_PLAY and PAUSED."
+          },
+          "venue": {
+            "type": "string",
+            "enum": [
+              "HOME",
+              "AWAY"
+            ],
+            "description": "HOME or AWAY matches only."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum matches, 1 to 500 (default 100)."
+          },
+          "unfold_goals": {
+            "type": "boolean",
+            "description": "true to include goals (scorer, assist, minute) in each match of the list. Off by default in lists."
+          },
+          "unfold_bookings": {
+            "type": "boolean",
+            "description": "true to include yellow and red cards in each match of the list."
+          },
+          "unfold_lineups": {
+            "type": "boolean",
+            "description": "true to include lineups and benches in each match of the list (paid plans)."
+          },
+          "unfold_subs": {
+            "type": "boolean",
+            "description": "true to include substitutions in each match of the list."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/matches",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "season": "$season",
+          "competitions": "$competitions",
+          "status": "$status",
+          "venue": "$venue",
+          "limit": "$limit"
+        },
+        "headers": {
+          "X-Unfold-Goals": "$unfold_goals",
+          "X-Unfold-Bookings": "$unfold_bookings",
+          "X-Unfold-Lineups": "$unfold_lineups",
+          "X-Unfold-Subs": "$unfold_subs"
+        }
+      }
+    },
+    {
+      "name": "football_data_get_person",
+      "description": "Get one person (player, coach or referee): name, date of birth, nationality, position, shirt number and current team with contract dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "description": "Person id, from a squad, a lineup, a goal or the scorer list."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/persons/{person_id}"
+      }
+    },
+    {
+      "name": "football_data_list_person_matches",
+      "description": "List the matches of one player with an aggregate (matches, minutes, goals, assists, cards, subbed in and out). Filter by event (GOAL, ASSIST, SUB_IN, SUB_OUT), starting or bench, competitions and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "description": "Person id."
+          },
+          "lineup": {
+            "type": "string",
+            "enum": [
+              "STARTING",
+              "BENCH"
+            ],
+            "description": "STARTING for matches started, BENCH for matches begun on the bench."
+          },
+          "event": {
+            "type": "string",
+            "enum": [
+              "GOAL",
+              "ASSIST",
+              "SUB_IN",
+              "SUB_OUT"
+            ],
+            "description": "Only matches in which the player had this event."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date, yyyy-MM-dd. Use together with date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date, yyyy-MM-dd, inclusive. Use together with date_from."
+          },
+          "competitions": {
+            "type": "string",
+            "description": "Comma separated competition codes to narrow down, e.g. PL,CL."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum matches, 1 to 100 (default 15)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of matches to skip, for paging."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/persons/{person_id}/matches",
+        "queryParams": {
+          "lineup": "$lineup",
+          "e": "$event",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "competitions": "$competitions",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "football_data_list_areas",
+      "description": "List the areas (countries and continents) with id, name, country code, flag and parent area. Area ids filter football_data_list_competitions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/areas"
+      }
+    },
+    {
+      "name": "football_data_get_area",
+      "description": "Get one area with its parent area and its child areas, e.g. a continent with its countries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "area_id": {
+            "type": "integer",
+            "description": "Area id, e.g. 2072 for England or 2077 for Europe."
+          }
+        },
+        "required": [
+          "area_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/areas/{area_id}"
+      }
+    }
+  ]
+}

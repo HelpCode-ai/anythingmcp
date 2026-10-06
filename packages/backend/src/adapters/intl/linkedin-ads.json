@@ -1,0 +1,612 @@
+{
+  "slug": "linkedin-ads",
+  "name": "LinkedIn Ads",
+  "description": "Read LinkedIn Campaign Manager through the Marketing API: ad accounts, campaign groups, campaigns and creatives, and ad analytics (impressions, clicks, spend, conversions, leads) by campaign, creative, day or member demographics such as company, job function and seniority.",
+  "instructions": "## LinkedIn Ads (Marketing API)\nThis connector reads LinkedIn Campaign Manager data through the versioned Marketing API at `https://api.linkedin.com/rest` (header `LinkedIn-Version: 202609`, Rest.li 2.0): ad accounts, campaign groups, campaigns, creatives and ad analytics. It does not create or change anything.\n\n**Setup.** Create an app at linkedin.com/developers (it must be linked to a LinkedIn Page), request the **Advertising API** product and wait for LinkedIn's approval (the Development tier is enough for your own accounts). Under Auth, add the redirect URI shown on the connector page as an authorized redirect URL, and copy the client ID and secret here. Save, then click **Authorize with Provider** and sign in with a member who has a role on the ad accounts. The scopes are `r_ads` (accounts, campaigns, creatives) and `r_ads_reporting` (analytics). Access tokens last 60 days; approved Advertising API apps also get a refresh token (one year), which the connector uses to renew access automatically. When the refresh token expires, authorize again.\n\n**Which tool first.** `linkedin_ads_list_my_ad_accounts` returns the accounts the member can use as URNs like `urn:li:sponsoredAccount:507404993`; pass only the number as `account_id`. Then list campaign groups, campaigns and creatives, and read performance with the analytics tools.\n\n**Ids.** LinkedIn returns URNs (`urn:li:sponsoredCampaign:123`, `urn:li:sponsoredCreative:456`). Every tool takes the plain number; the connector builds and encodes the URN itself. Analytics rows carry the URN of their pivot in `pivotValues`; match it against the list tools to get names.\n\n**Pagination.** Search answers (accounts, campaign groups, campaigns, creatives) carry `metadata.nextPageToken`; pass it as `page_token` until it is missing. Analytics is not paginated and returns at most 15,000 rows.\n\n**Analytics.** Give the date range as separate numbers (start_year, start_month, ...); the end date is inclusive. `time_granularity` ALL returns one row per pivot value, DAILY one row per day. Ask for the metrics you need in `fields` (at most 20) and always keep `dateRange` and `pivotValues`. Cost is `costInLocalCurrency` (the account currency) or `costInUsd`. Performance data is near real time and kept 10 years; demographic pivots (MEMBER_*) are approximate, delayed 12 to 24 hours, kept 2 years, show only the top 100 values per creative per day and drop values with fewer than 3 events. Test accounts have no analytics. An empty `elements` list means no activity or no access, not an error.\n\n**Limits.** LinkedIn throttles per application and member per day, and analytics also by data volume (45 million metric values per 5 minutes). A 429 means wait and retry later.\n\n**Errors.** 401: authorize again. 403 `USER_NOT_AUTHORIZED` or `ACCESS_DENIED`: the member has no role on that account, or the app lacks the Advertising API product or the `r_ads_reporting` scope. 426 or a version error: the `LinkedIn-Version` header is no longer supported (each version lives at least one year).",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "linkedin",
+  "docsUrl": "https://learn.microsoft.com/en-us/linkedin/marketing/",
+  "requiredEnvVars": [
+    "LINKEDIN_ADS_CLIENT_ID",
+    "LINKEDIN_ADS_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "LINKEDIN_ADS_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "LINKEDIN_ADS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "linkedin.com/developers → My apps → your app (with the Advertising API product) → Auth → Client ID.",
+      "link": "https://www.linkedin.com/developers/apps"
+    },
+    "LINKEDIN_ADS_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "help": "Same Auth tab → Primary Client Secret.",
+      "link": "https://www.linkedin.com/developers/apps"
+    },
+    "LINKEDIN_ADS_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in.",
+      "advanced": true
+    }
+  },
+  "prerequisites": "A LinkedIn developer app with the **Advertising API** product approved, and the redirect URI below added under Auth → Authorized redirect URLs. The sign-in must be done by a member with a role on the ad accounts.",
+  "verifyHints": {
+    "401": "LinkedIn refused the access token. Click Authorize with Provider again; tokens last 60 days and refresh tokens one year.",
+    "403": "The member has no role on this ad account, or the app lacks the Advertising API product or the r_ads_reporting scope.",
+    "426": "LinkedIn no longer supports the API version this connector sends. Update the connector from the catalog.",
+    "rate_limited": "LinkedIn is throttling this app or member. Try again later; analytics calls are also limited by data volume."
+  },
+  "probe": {
+    "tool": "linkedin_ads_list_my_ad_accounts"
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "LinkedIn Marketing API (Ads)",
+    "type": "REST",
+    "baseUrl": "https://api.linkedin.com/rest",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{LINKEDIN_ADS_CLIENT_ID}}",
+      "clientSecret": "{{LINKEDIN_ADS_CLIENT_SECRET}}",
+      "refreshToken": "{{LINKEDIN_ADS_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://www.linkedin.com/oauth/v2/authorization",
+      "tokenUrl": "https://www.linkedin.com/oauth/v2/accessToken",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "r_ads r_ads_reporting"
+    }
+  },
+  "tools": [
+    {
+      "name": "linkedin_ads_list_my_ad_accounts",
+      "description": "List the ad accounts the authorized LinkedIn member has a role on, as account URNs (urn:li:sponsoredAccount:<id>) with the role (VIEWER, CREATIVE_MANAGER, CAMPAIGN_MANAGER, ACCOUNT_MANAGER, ACCOUNT_BILLING_ADMIN). Start here: the number in the URN is the account_id for every other tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccountUsers",
+        "queryParams": {
+          "q": "authenticatedUser"
+        },
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_search_ad_accounts",
+      "description": "Search the ad accounts the member can reach by status, with id, name, currency, type (BUSINESS or ENTERPRISE), status, servingStatuses (RUNNABLE or the hold reason) and the organization it advertises for. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: ACTIVE, DRAFT, CANCELED, PENDING_DELETION, REMOVED.",
+            "default": "ACTIVE"
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "description": "Sort by account id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100, max 1000; creatives max 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "metadata.nextPageToken from the previous answer, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "q": "search",
+          "search": "(status:(values:List(${status})))",
+          "sortOrder": "$sort_order",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_ad_account",
+      "description": "Get one ad account by id: name, currency, type, status, servingStatuses, test flag and the organization or person it advertises for. Use it to read the account currency before interpreting costInLocalCurrency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_list_campaign_groups",
+      "description": "List the campaign groups of an ad account with id, name, status, total budget, run schedule, objective and servingStatuses. Filter by status; page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: ACTIVE, PAUSED, DRAFT, ARCHIVED, CANCELED, PENDING_DELETION, REMOVED.",
+            "default": "ACTIVE,PAUSED,DRAFT"
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "description": "Sort by campaign group id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100, max 1000; creatives max 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "metadata.nextPageToken from the previous answer, to read the next page."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/adCampaignGroups",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "q": "search",
+          "search": "(status:(values:List(${status})))",
+          "sortOrder": "$sort_order",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_campaign_group",
+      "description": "Get one campaign group by id with its budget, schedule, objective, status and serving statuses. Use it to explain why the campaigns under a group are not delivering.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "campaign_group_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric campaign group id (the number after urn:li:sponsoredCampaignGroup:)."
+          }
+        },
+        "required": [
+          "account_id",
+          "campaign_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/adCampaignGroups/{campaign_group_id}",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_list_campaigns",
+      "description": "List the campaigns of an ad account with id, name, campaignGroup, type, objectiveType, status, costType, dailyBudget, totalBudget, unitCost (bid), runSchedule, targetingCriteria and servingStatuses. Filter by status; page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: ACTIVE, PAUSED, DRAFT, ARCHIVED, COMPLETED, CANCELED, PENDING_DELETION, REMOVED.",
+            "default": "ACTIVE,PAUSED,DRAFT"
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "description": "Sort by campaign id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100, max 1000; creatives max 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "metadata.nextPageToken from the previous answer, to read the next page."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/adCampaigns",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "q": "search",
+          "search": "(status:(values:List(${status})))",
+          "sortOrder": "$sort_order",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_campaign",
+      "description": "Get one campaign by id with budget, bid, cost type, objective, schedule, full targeting criteria, locale and serving statuses. Use it to review a campaign's setup or the reason it does not serve.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric campaign id (the number after urn:li:sponsoredCampaign:)."
+          }
+        },
+        "required": [
+          "account_id",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/adCampaigns/{campaign_id}",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_list_creatives",
+      "description": "List the creatives (ads) of an ad account with id, campaign, intendedStatus, isServing, servingHoldReasons, review status and the content reference (post or ad format). Optionally filter by intended status. Page with page_token (max 100 per page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "intended_statuses": {
+            "type": "string",
+            "description": "Optional comma-separated statuses: ACTIVE, PAUSED, DRAFT, ARCHIVED, CANCELED, PENDING_DELETION, REMOVED."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "description": "Sort by creative id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100, max 1000; creatives max 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "metadata.nextPageToken from the previous answer, to read the next page."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/creatives",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "q": "criteria",
+          "intendedStatuses": "List(${intended_statuses})",
+          "sortOrder": "$sort_order",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_list_campaign_creatives",
+      "description": "List the creatives of one campaign with id, intendedStatus, isServing, servingHoldReasons, review status and content reference. Use it to see which ads run in a campaign or why one is held. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric campaign id from linkedin_ads_list_campaigns."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (default 100, max 1000; creatives max 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "metadata.nextPageToken from the previous answer, to read the next page."
+          }
+        },
+        "required": [
+          "account_id",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/creatives?q=criteria&campaigns=List(urn%3Ali%3AsponsoredCampaign%3A{campaign_id})",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_creative",
+      "description": "Get one creative by id: campaign, content reference, intended and serving status, review outcome and hold reasons. Use it to put details on a creative URN from an analytics row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "creative_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric creative id (the number after urn:li:sponsoredCreative:)."
+          }
+        },
+        "required": [
+          "account_id",
+          "creative_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAccounts/{account_id}/creatives/urn%3Ali%3AsponsoredCreative%3A{creative_id}",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_account_analytics",
+      "description": "Get performance for a whole ad account over a date range, grouped by one pivot: by CAMPAIGN (default), CREATIVE, CAMPAIGN_GROUP, or by member demographics such as company, job function or seniority. Returns impressions, clicks, spend (costInLocalCurrency), conversions, leads and more per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric ad account id (the number after urn:li:sponsoredAccount:), from linkedin_ads_list_my_ad_accounts."
+          },
+          "pivot": {
+            "type": "string",
+            "description": "How rows are grouped: ACCOUNT, CAMPAIGN_GROUP, CAMPAIGN, CREATIVE, CONVERSION, or a demographic pivot such as MEMBER_COMPANY, MEMBER_JOB_FUNCTION, MEMBER_SENIORITY, MEMBER_INDUSTRY, MEMBER_COMPANY_SIZE, MEMBER_COUNTRY_V2, MEMBER_REGION_V2.",
+            "default": "CAMPAIGN"
+          },
+          "time_granularity": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "DAILY",
+              "MONTHLY",
+              "YEARLY"
+            ],
+            "description": "ALL for one total per pivot value over the range, DAILY or MONTHLY for a time series.",
+            "default": "ALL"
+          },
+          "start_year": {
+            "type": "integer",
+            "description": "Start date: year, e.g. 2026."
+          },
+          "start_month": {
+            "type": "integer",
+            "description": "Start date: month, 1 to 12."
+          },
+          "start_day": {
+            "type": "integer",
+            "description": "Start date: day of month, 1 to 31."
+          },
+          "end_year": {
+            "type": "integer",
+            "description": "End date (inclusive): year."
+          },
+          "end_month": {
+            "type": "integer",
+            "description": "End date: month, 1 to 12."
+          },
+          "end_day": {
+            "type": "integer",
+            "description": "End date: day of month."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20. Without pivotValues and dateRange the rows cannot be told apart.",
+            "default": "dateRange,pivotValues,impressions,clicks,costInLocalCurrency,landingPageClicks,externalWebsiteConversions,oneClickLeads,totalEngagements,videoViews,approximateMemberReach"
+          }
+        },
+        "required": [
+          "account_id",
+          "start_year",
+          "start_month",
+          "start_day",
+          "end_year",
+          "end_month",
+          "end_day"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAnalytics?q=analytics&accounts=List(urn%3Ali%3AsponsoredAccount%3A{account_id})",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "pivot": "$pivot",
+          "timeGranularity": "$time_granularity",
+          "dateRange": "(start:(year:${start_year},month:${start_month},day:${start_day}),end:(year:${end_year},month:${end_month},day:${end_day}))",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "linkedin_ads_get_campaign_analytics",
+      "description": "Get performance for one campaign over a date range, grouped by one pivot: by CREATIVE (default), by day with time_granularity DAILY, or by member demographics. Returns impressions, clicks, spend, conversions, leads and more per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Numeric campaign id from linkedin_ads_list_campaigns."
+          },
+          "pivot": {
+            "type": "string",
+            "description": "How rows are grouped: ACCOUNT, CAMPAIGN_GROUP, CAMPAIGN, CREATIVE, CONVERSION, or a demographic pivot such as MEMBER_COMPANY, MEMBER_JOB_FUNCTION, MEMBER_SENIORITY, MEMBER_INDUSTRY, MEMBER_COMPANY_SIZE, MEMBER_COUNTRY_V2, MEMBER_REGION_V2.",
+            "default": "CREATIVE"
+          },
+          "time_granularity": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "DAILY",
+              "MONTHLY",
+              "YEARLY"
+            ],
+            "description": "ALL for one total per pivot value over the range, DAILY or MONTHLY for a time series.",
+            "default": "ALL"
+          },
+          "start_year": {
+            "type": "integer",
+            "description": "Start date: year, e.g. 2026."
+          },
+          "start_month": {
+            "type": "integer",
+            "description": "Start date: month, 1 to 12."
+          },
+          "start_day": {
+            "type": "integer",
+            "description": "Start date: day of month, 1 to 31."
+          },
+          "end_year": {
+            "type": "integer",
+            "description": "End date (inclusive): year."
+          },
+          "end_month": {
+            "type": "integer",
+            "description": "End date: month, 1 to 12."
+          },
+          "end_day": {
+            "type": "integer",
+            "description": "End date: day of month."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20. Without pivotValues and dateRange the rows cannot be told apart.",
+            "default": "dateRange,pivotValues,impressions,clicks,costInLocalCurrency,landingPageClicks,externalWebsiteConversions,oneClickLeads,totalEngagements,videoViews,approximateMemberReach"
+          }
+        },
+        "required": [
+          "campaign_id",
+          "start_year",
+          "start_month",
+          "start_day",
+          "end_year",
+          "end_month",
+          "end_day"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adAnalytics?q=analytics&campaigns=List(urn%3Ali%3AsponsoredCampaign%3A{campaign_id})",
+        "headers": {
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "queryParams": {
+          "pivot": "$pivot",
+          "timeGranularity": "$time_granularity",
+          "dateRange": "(start:(year:${start_year},month:${start_month},day:${start_day}),end:(year:${end_year},month:${end_month},day:${end_day}))",
+          "fields": "$fields"
+        }
+      }
+    }
+  ]
+}

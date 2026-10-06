@@ -1,0 +1,629 @@
+{
+  "slug": "zenhub",
+  "name": "Zenhub",
+  "description": "Work with Zenhub boards from an AI agent through the GraphQL API: workspaces, pipelines and the issues in them, issue details, sprints and their issues, epics and their child issues, estimates; move issues, set estimates, plan sprints, create issues and comment. 17 typed tools plus a generic query tool, personal API key.",
+  "instructions": "This connector uses the Zenhub GraphQL API (`https://api.zenhub.com/public/graphql`). Schema and examples: https://developers.zenhub.com/ (the Explorer shows the full schema).\n\n**Setup**:\n1. In Zenhub open the dashboard's **API** section (https://app.zenhub.com/settings/tokens) and create a **Personal API Key** for the GraphQL API. A user can have up to 5 keys.\n2. Copy the key (it is shown once) into `ZENHUB_API_KEY`.\n\n**Authentication**: `Authorization: Bearer <key>`. A 401 means the key is wrong or revoked. The key acts as its user: workspaces and repositories that user cannot see are missing from every result.\n\n**Where to start**: `zenhub_get_viewer` checks the key and lists the organizations. Find a workspace with `zenhub_search_workspaces` (by name) or `zenhub_list_organizations`. Then `zenhub_list_pipelines` for the board columns and `zenhub_list_pipeline_issues` for the issues in one column. Sprints: `zenhub_list_sprints` then `zenhub_list_sprint_issues`. Epics: `zenhub_list_epics` then `zenhub_list_epic_issues`.\n\n**Ids**: Zenhub uses its own opaque ids (for example Z2lkOi8vcmFwdG9yL0lzc3VlLzEwNzQyOQ) for issues, pipelines, sprints, epics and repositories; workspace ids are 24-character hex strings. An issue number plus a repository identifies an issue in `zenhub_get_issue`; the mutations need the Zenhub issue `id`.\n\n**Limits**: each API key gets 90 seconds of processing time per minute (token bucket, headers `X-RateLimit-Limit`, `X-RateLimit-Used`, `X-RateLimit-Remaining`) and at most 30 concurrent requests. A single query may not exceed a complexity of 200 points: every field counts 1 and a connection multiplies its children by `first`. That is why the list tools default to 10 to 30 items and request few fields. Avoid polling; Zenhub offers webhooks for change notifications.\n\n**Pagination**: Relay cursors. Pass `pageInfo.endCursor` back as `after` while `pageInfo.hasNextPage` is true. `first` may not exceed 100, and the complexity limit usually bites first.\n\n**Errors**: a GraphQL answer can be HTTP 200 with an `errors` list; the tool then reports the message. \"Field doesn't exist\" means the query does not match the schema.\n\n**Beyond the typed tools**: every GraphQL connector also gets `zenhub_graphql_query` (read-only, any query document), `zenhub_graphql_mutation`, and a schema tool, for operations not covered here (releases, roadmaps, dependencies, priorities, labels).\n\n**Writes**: `zenhub_move_issue`, `zenhub_set_estimate`, `zenhub_add_issues_to_sprints`, `zenhub_create_issue` and `zenhub_add_comment` change the board or post content visible to the team.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "zenhub",
+  "docsUrl": "https://developers.zenhub.com/graphql-api-docs/getting-started",
+  "requiredEnvVars": [
+    "ZENHUB_API_KEY"
+  ],
+  "envVarMeta": {
+    "ZENHUB_API_KEY": {
+      "label": "Personal API key",
+      "kind": "credential",
+      "help": "Zenhub dashboard > API section > create a Personal API Key for the GraphQL API. It is shown once; copy it without Bearer.",
+      "link": "https://app.zenhub.com/settings/tokens",
+      "pattern": "^(?!Bearer\\s)\\S+$",
+      "patternMessage": "Paste the key alone, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Zenhub refused the key. Check that it is a GraphQL Personal API Key (not a legacy REST token), copied whole and not revoked.",
+    "rate_limited": "Zenhub limits each key to 90 seconds of processing time per minute and 30 concurrent requests. Wait a moment and try again."
+  },
+  "connector": {
+    "name": "Zenhub GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.zenhub.com/public/graphql",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ZENHUB_API_KEY}}"
+    }
+  },
+  "probe": {
+    "tool": "zenhub_get_viewer"
+  },
+  "tools": [
+    {
+      "name": "zenhub_get_viewer",
+      "description": "Return the Zenhub user behind the API key (id, name, email, GitHub login) and the Zenhub organizations it belongs to. Cheap; use it to check the key and to find organization ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Viewer { viewer { id name email githubUser { login } zenhubOrganizations(first: 20) { nodes { id name } } } }"
+      }
+    },
+    {
+      "name": "zenhub_list_organizations",
+      "description": "List the Zenhub organizations of the user with their workspaces (id, name, description). Use it to find a workspace id when the name is not known.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 10, at most 20 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "workspaces_first": {
+            "type": "integer",
+            "description": "Workspaces listed per organization, default 10.",
+            "minimum": 1,
+            "maximum": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Organizations($first: Int = 10, $workspacesFirst: Int = 10) { viewer { zenhubOrganizations(first: $first) { nodes { id name workspaces(first: $workspacesFirst) { totalCount nodes { id name description } } } } } }",
+        "queryParams": {
+          "first": "$first",
+          "workspacesFirst": "$workspaces_first"
+        }
+      }
+    },
+    {
+      "name": "zenhub_search_workspaces",
+      "description": "Find workspaces the user can access by name. Returns id, name, display name, description, organization and last update. The workspace id is needed by most other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Part of the workspace name, for example Backend."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 20, at most 50 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchWorkspaces($query: String!, $first: Int = 20, $after: String) { viewer { searchWorkspaces(query: $query, first: $first, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id name displayName description updatedAt zenhubOrganization { id name } } } } }",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_get_workspace",
+      "description": "Get one workspace: name, description, organization, default repository, connected repositories (Zenhub id, GitHub id, name), the active sprint and the average sprint velocity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          },
+          "repositories_first": {
+            "type": "integer",
+            "description": "Connected repositories to list, default 25.",
+            "minimum": 1,
+            "maximum": 40
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Workspace($workspaceId: ID!, $repositoriesFirst: Int = 25) { workspace(id: $workspaceId) { id name displayName description updatedAt averageSprintVelocity zenhubOrganization { id name } defaultRepository { id ghId name ownerName } repositoriesConnection(first: $repositoriesFirst) { totalCount nodes { id ghId name ownerName } } activeSprint { id name startAt endAt totalPoints completedPoints } } }",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "repositoriesFirst": "$repositories_first"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_pipelines",
+      "description": "List the pipelines (board columns) of a workspace in board order: id, name, description and stage (BACKLOG, SPRINT_BACKLOG, DEVELOPMENT, REVIEW, COMPLETED). Pipeline ids are needed to list or move issues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 30, at most 40 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 40
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Pipelines($workspaceId: ID!, $first: Int = 30) { workspace(id: $workspaceId) { id name pipelinesConnection(first: $first) { totalCount nodes { id name description stage } } } }",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "first": "$first"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_pipeline_issues",
+      "description": "List the issues in one pipeline (board column), in board order: id, number, title, state, repository, estimate, plus the total count. Optional text search and filters by label, assignee, sprint or estimate. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline id from zenhub_list_pipelines."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional text to match in issue titles, for example login bug."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional IssueSearchFiltersInput, for example {\"labels\": {\"in\": [\"Backend\"]}}, {\"assignees\": {\"in\": [\"github_login\"]}}, {\"sprints\": {\"in\": [\"SPRINT_ID\"]}} or {\"repositoryIds\": [\"REPO_ID\"]}. Default: no filter.",
+            "default": {}
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 15, at most 15 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 15
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query PipelineIssues($pipelineId: ID!, $query: String, $filters: IssueSearchFiltersInput! = {}, $first: Int = 15, $after: String) { searchIssuesByPipeline(pipelineId: $pipelineId, query: $query, filters: $filters, first: $first, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id number title state pullRequest htmlUrl repository { id ghId name } estimate { value } } } }",
+        "queryParams": {
+          "pipelineId": "$pipeline_id",
+          "query": "$query",
+          "filters": "$filters",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_get_issue",
+      "description": "Get one issue by repository and number: title, body, state, type, estimate, its pipeline in the workspace, sprints, labels, assignees and parent epics. Give the GitHub repository id (ghId) or the Zenhub repository id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "integer",
+            "description": "Issue number in the repository, for example 42."
+          },
+          "repository_gh_id": {
+            "type": "integer",
+            "description": "GitHub repository id (ghId from zenhub_get_workspace). Give this or repository_id."
+          },
+          "repository_id": {
+            "type": "string",
+            "description": "Zenhub repository id (id from zenhub_get_workspace). Give this or repository_gh_id."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          }
+        },
+        "required": [
+          "issue_number",
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Issue($issueNumber: Int!, $repositoryGhId: Int, $repositoryId: ID, $workspaceId: ID!) { issueByInfo(issueNumber: $issueNumber, repositoryGhId: $repositoryGhId, repositoryId: $repositoryId) { id number title state pullRequest htmlUrl repository { id ghId name } estimate { value } body type createdAt closedAt pipelineIssue(workspaceId: $workspaceId) { pipeline { id name } priority { name } } sprints(first: 5) { nodes { id name state } } labels(first: 10) { nodes { name } } assignees(first: 10) { nodes { login } } parentZenhubEpics(first: 5) { nodes { id title } } } }",
+        "queryParams": {
+          "issueNumber": "$issue_number",
+          "repositoryGhId": "$repository_gh_id",
+          "repositoryId": "$repository_id",
+          "workspaceId": "$workspace_id"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_sprints",
+      "description": "List the sprints of a workspace, newest first: id, name, state, start and end, total and completed story points, closed issue count. state OPEN (default) returns current and upcoming sprints, CLOSED past ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ],
+            "default": "OPEN",
+            "description": "OPEN for current and upcoming sprints, CLOSED for finished ones."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 10, at most 25 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Sprints($workspaceId: ID!, $state: SprintState!, $first: Int = 10, $after: String) { workspace(id: $workspaceId) { id activeSprint { id name } sprints(first: $first, after: $after, filters: { state: { eq: $state } }, orderBy: { field: END_AT, direction: DESC }) { totalCount pageInfo { hasNextPage endCursor } nodes { id name generatedName state startAt endAt totalPoints completedPoints closedIssuesCount } } } }",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "state": "$state",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_sprint_issues",
+      "description": "List the issues in one sprint: id, number, title, state, repository and estimate, plus the sprint's points. Use for sprint reviews and to see what is left. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sprint_id": {
+            "type": "string",
+            "description": "Sprint id from zenhub_list_sprints."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 15, at most 15 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 15
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "sprint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SprintIssues($sprintId: ID!, $first: Int = 15, $after: String) { node(id: $sprintId) { ... on Sprint { id name state startAt endAt totalPoints completedPoints issues(first: $first, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id number title state pullRequest htmlUrl repository { id ghId name } estimate { value } } } } } }",
+        "queryParams": {
+          "sprintId": "$sprint_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_epics",
+      "description": "List the Zenhub epics of a workspace: id, title, state (open, to do, in progress or closed), start and end dates, estimate, and issue count and estimate progress. Optional title search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional text to match in epic titles."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 10, at most 15 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 15
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Epics($workspaceId: ID!, $query: String, $first: Int = 10, $after: String) { workspace(id: $workspaceId) { id zenhubEpics(query: $query, first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount pageInfo { hasNextPage endCursor } nodes { id title state startOn endOn estimate { value } zenhubIssueCountProgress { open closed total } zenhubIssueEstimateProgress { open closed total } } } } }",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "query": "$query",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_list_epic_issues",
+      "description": "List the child issues of one or more Zenhub epics: id, number, title, state, repository and estimate. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "epic_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Zenhub epic ids from zenhub_list_epics."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 15, at most 15 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 15
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer."
+          }
+        },
+        "required": [
+          "epic_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query EpicIssues($epicIds: [ID!]!, $first: Int = 15, $after: String) { searchIssuesByZenhubEpics(zenhubEpicIds: $epicIds, filters: {}, first: $first, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id number title state pullRequest htmlUrl repository { id ghId name } estimate { value } } } }",
+        "queryParams": {
+          "epicIds": "$epic_ids",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "zenhub_get_estimate_values",
+      "description": "List the estimate values (story point scale) allowed in each repository of a workspace, for example 1, 2, 3, 5, 8. Check before setting an estimate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id, from zenhub_search_workspaces or zenhub_list_organizations (a 24-character hex string such as 66f9da05d91f86002fbd3023)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, default 10, at most 20 (Zenhub caps query complexity at 200 points).",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query EstimateValues($workspaceId: ID!, $first: Int = 10) { workspace(id: $workspaceId) { id repositoriesConnection(first: $first) { nodes { id name estimateSet { values } } } } }",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "first": "$first"
+        }
+      }
+    },
+    {
+      "name": "zenhub_move_issue",
+      "description": "Move an issue to another pipeline (board column) of the workspace that owns the pipeline, at a position (0 = top). Returns the issue and its new pipeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "Zenhub issue id (id from an issue listing, not the issue number)."
+          },
+          "pipeline_id": {
+            "type": "string",
+            "description": "Target pipeline id from zenhub_list_pipelines."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Position in the pipeline, 0 for the top (default)."
+          }
+        },
+        "required": [
+          "issue_id",
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation MoveIssue($issueId: ID!, $pipelineId: ID!, $position: Int) { moveIssue(input: { issueId: $issueId, pipelineId: $pipelineId, position: $position }) { issue { id number title } pipeline { id name } } }",
+        "queryParams": {
+          "issueId": "$issue_id",
+          "pipelineId": "$pipeline_id",
+          "position": "$position"
+        }
+      }
+    },
+    {
+      "name": "zenhub_set_estimate",
+      "description": "Set the estimate (story points) of an issue, or clear it by leaving value out. The value should be one of the repository's estimate values (zenhub_get_estimate_values).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "Zenhub issue id."
+          },
+          "value": {
+            "type": "number",
+            "description": "Estimate value, for example 3. Leave out to remove the estimate."
+          }
+        },
+        "required": [
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation SetEstimate($issueId: ID!, $value: Float) { setEstimate(input: { issueId: $issueId, value: $value }) { issue { id number title estimate { value } } } }",
+        "queryParams": {
+          "issueId": "$issue_id",
+          "value": "$value"
+        }
+      }
+    },
+    {
+      "name": "zenhub_add_issues_to_sprints",
+      "description": "Add one or more issues to one or more sprints. Returns the created sprint-issue links. Use zenhub_list_sprints for sprint ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Zenhub issue ids."
+          },
+          "sprint_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sprint ids from zenhub_list_sprints."
+          }
+        },
+        "required": [
+          "issue_ids",
+          "sprint_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AddIssuesToSprints($issueIds: [ID!]!, $sprintIds: [ID!]!) { addIssuesToSprints(input: { issueIds: $issueIds, sprintIds: $sprintIds }) { sprintIssues { id } } }",
+        "queryParams": {
+          "issueIds": "$issue_ids",
+          "sprintIds": "$sprint_ids"
+        }
+      }
+    },
+    {
+      "name": "zenhub_create_issue",
+      "description": "Create an issue in a repository of the workspace (a GitHub repository, or the workspace's Zenhub repository for a Zenhub issue). Labels and assignees by name apply to GitHub issues only. Returns id, number and title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repository_id": {
+            "type": "string",
+            "description": "Zenhub repository id (id from zenhub_get_workspace)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Issue title."
+          },
+          "body": {
+            "type": "string",
+            "description": "Issue description in Markdown."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label names (GitHub issues only)."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "GitHub logins to assign (GitHub issues only)."
+          }
+        },
+        "required": [
+          "repository_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateIssue($repositoryId: ID!, $title: String!, $body: String, $labels: [String!], $assignees: [String!]) { createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labels: $labels, assignees: $assignees }) { issue { id number title htmlUrl } } }",
+        "queryParams": {
+          "repositoryId": "$repository_id",
+          "title": "$title",
+          "body": "$body",
+          "labels": "$labels",
+          "assignees": "$assignees"
+        }
+      }
+    },
+    {
+      "name": "zenhub_add_comment",
+      "description": "Post a comment on an issue or epic. The comment is visible to everyone with access, and for GitHub issues it is posted on GitHub too.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commentable_id": {
+            "type": "string",
+            "description": "Zenhub id of the issue or epic to comment on."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment text in Markdown."
+          }
+        },
+        "required": [
+          "commentable_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateComment($commentableId: ID!, $body: String!) { createComment(input: { commentableId: $commentableId, body: $body }) { clientMutationId } }",
+        "queryParams": {
+          "commentableId": "$commentable_id",
+          "body": "$body"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

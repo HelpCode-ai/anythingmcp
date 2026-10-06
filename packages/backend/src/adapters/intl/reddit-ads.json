@@ -1,0 +1,492 @@
+{
+  "slug": "reddit-ads",
+  "name": "Reddit Ads",
+  "description": "Read Reddit Ads accounts through the Ads API v3: businesses, ad accounts, campaigns, ad groups, ads, funding instruments, and performance reports with spend, impressions, clicks, conversions and video metrics broken down by day, campaign, ad, country or community.",
+  "instructions": "## Reddit Ads (Ads API v3)\nThis connector reads Reddit Ads accounts through the Ads API at `https://ads-api.reddit.com/api/v3`: businesses, ad accounts, campaigns, ad groups, ads, funding instruments and performance reports. It does not create or change campaigns.\n\n**Setup.** A business admin with a verified account creates a developer application in Reddit Ads: Business, Developer Portal, Add Apps, Create an app. Set its Redirect URL to the redirect URI shown on the connector page. Copy the app ID and secret into this connector, save, then click **Authorize with Provider** and sign in with the Reddit account that has access to the ad accounts (check the username on Reddit's consent page; log out first if it shows another account). The connector asks for the `adsread` scope with `duration=permanent`, so it receives a refresh token and renews the one-hour access token by itself. This is not the same as the general Reddit API app at reddit.com/prefs/apps used by the `reddit` connector.\n\n**Which tool first.** `reddit_ads_get_me` confirms the authorization. Then `reddit_ads_list_my_businesses` gives the business id, `reddit_ads_list_business_ad_accounts` the ad account ids, and from there campaigns, ad groups, ads and reports.\n\n**Ids.** Business ids are UUIDs; ad account, campaign, ad group and ad ids are strings as returned by the API. Pass them unchanged. A report row carries only ids: call `reddit_ads_get_ad` or `reddit_ads_get_campaign` to put names on them, or list the campaigns once and match.\n\n**Pagination.** List answers carry `pagination.next_url`; when it is present, call the tool again with `page_token` set to the `page.token` value from that URL. `page_size` goes up to 1000.\n\n**Reports.** `reddit_ads_get_report` answers at once (no polling). `starts_at` and `ends_at` must be on a full hour in UTC (`2026-09-01T00:00:00Z`); use `time_zone_id` for the account's local days. Up to 3 breakdowns (4 with COUNTRY and REGION); `HOUR` only for ranges up to 7 days, and from 8 December 2026 Reddit rejects combining more than one of KEYWORD, COMMUNITY, INTEREST and LANGUAGE. Money values are scaled: `SPEND`, `CPC`, `CPV`, `ECPM` and `CONVERSION*_ECPA` are in millionths of the account currency (divide by 1,000,000), `CONVERSION*TOTAL_VALUE` is in hundredths (divide by 100). Metrics can take up to 6 hours to settle; late conversions are added in the daily refresh.\n\n**Rate limits.** Limits are per authorized user and endpoint group, e.g. 400 requests a minute for campaign reads. A 429 means wait and retry with backoff; the `RateLimit` response header shows what is left.\n\n**Errors.** 401: authorize again. 403: the user lacks a role on that ad account or business. 404: wrong id, or the id belongs to an account the user cannot see.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "reddit",
+  "docsUrl": "https://ads-api.reddit.com/docs/v3/",
+  "requiredEnvVars": [
+    "REDDIT_ADS_CLIENT_ID",
+    "REDDIT_ADS_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "REDDIT_ADS_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "REDDIT_ADS_CLIENT_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Reddit Ads → Business → Developer Portal → your developer application → App ID.",
+      "link": "https://ads.reddit.com/"
+    },
+    "REDDIT_ADS_CLIENT_SECRET": {
+      "label": "App secret",
+      "kind": "credential",
+      "help": "The secret of the same developer application, shown in the Developer Portal.",
+      "link": "https://ads.reddit.com/"
+    },
+    "REDDIT_ADS_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty: Authorize with Provider fills it in.",
+      "advanced": true
+    }
+  },
+  "prerequisites": "A Reddit Ads business and a **developer application** created by a business admin in Business → Developer Portal, with the redirect URI below as its Redirect URL. The general Reddit API apps from reddit.com/prefs/apps do not work here.",
+  "verifyHints": {
+    "401": "Reddit refused the access token. Click Authorize with Provider again, and check that the App ID and secret belong to the developer application in the Ads Developer Portal.",
+    "403": "The authorized Reddit user has no role on this business or ad account. Ask a business admin to add the user, then authorize again.",
+    "rate_limited": "Reddit is rate limiting this user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "reddit_ads_get_me"
+  },
+  "connector": {
+    "name": "Reddit Ads API v3",
+    "type": "REST",
+    "baseUrl": "https://ads-api.reddit.com/api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{REDDIT_ADS_CLIENT_ID}}",
+      "clientSecret": "{{REDDIT_ADS_CLIENT_SECRET}}",
+      "refreshToken": "{{REDDIT_ADS_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://www.reddit.com/api/v1/authorize?duration=permanent",
+      "tokenUrl": "https://www.reddit.com/api/v1/access_token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "adsread",
+      "extraHeaders": {
+        "User-Agent": "web:anythingmcp:v1 (by /u/anythingmcp)"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "reddit_ads_get_me",
+      "description": "Return the Reddit user the connector is authorized as (id, username). Use it to confirm the authorization works and which account it belongs to; it is also the setup check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "reddit_ads_list_my_businesses",
+      "description": "List the Reddit Ads businesses the authorized user belongs to, with business id and name. Start here: ad accounts live under a business, so you need a business id to list them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Optional: only the business that owns this ad account."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "BUSINESS_ADMIN",
+              "CATALOG_ADMIN"
+            ],
+            "description": "Optional: only businesses where the user has this role."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/businesses",
+        "queryParams": {
+          "ad_account_id": "$ad_account_id",
+          "role": "$role",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_list_business_ad_accounts",
+      "description": "List the ad accounts of a business, with id, name, currency, time zone, attribution settings and status. The account id is what every campaign, ad and report tool needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "string",
+            "description": "Business id from reddit_ads_list_my_businesses."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Optional: only these ad account ids, comma-separated."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/businesses/{business_id}/ad_accounts",
+        "queryParams": {
+          "ids": "$ids",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_get_ad_account",
+      "description": "Get one ad account: name, currency, time zone, business id, attribution windows, admin approval and suspension status. Use it to read the currency and time zone before interpreting spend in a report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_accounts/{ad_account_id}"
+      }
+    },
+    {
+      "name": "reddit_ads_list_campaigns",
+      "description": "List the campaigns of an ad account with id, name, objective, configured_status, effective_status, spend cap, funding instrument and created and modified times. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Optional: only these campaign ids, comma-separated (up to 200)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_accounts/{ad_account_id}/campaigns",
+        "queryParams": {
+          "id": "$ids",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_get_campaign",
+      "description": "Get one campaign by id: objective, status, spend cap, budget optimization and funding instrument. Use it when you already have a campaign id from a list or a report row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id from reddit_ads_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}"
+      }
+    },
+    {
+      "name": "reddit_ads_list_ad_groups",
+      "description": "List the ad groups of an ad account with id, campaign_id, name, status, bid strategy and value, goal, schedule and targeting (communities, interests, keywords, geos, devices). Filter by campaign_id. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Optional: only ad groups of this campaign."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Optional: only these ad group ids, comma-separated (up to 200)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_accounts/{ad_account_id}/ad_groups",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "id": "$ids",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_get_ad_group",
+      "description": "Get one ad group by id with its bid, goal, schedule and full targeting. Use it to explain why an ad group delivers or not, or to review its audience settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_group_id": {
+            "type": "string",
+            "description": "Ad group id from reddit_ads_list_ad_groups."
+          }
+        },
+        "required": [
+          "ad_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_groups/{ad_group_id}"
+      }
+    },
+    {
+      "name": "reddit_ads_list_ads",
+      "description": "List the ads of an ad account with id, ad_group_id, campaign_id, name, post id, click URL, configured_status, effective_status and rejection reason. Filter by campaign, ad group or status. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Optional: only ads of these campaign ids, comma-separated."
+          },
+          "ad_group_id": {
+            "type": "string",
+            "description": "Optional: only ads of these ad group ids, comma-separated."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Optional: only these ad ids, comma-separated."
+          },
+          "configured_status": {
+            "type": "string",
+            "description": "Optional: status set by the advertiser, comma-separated: ACTIVE, PAUSED, ARCHIVED, DELETED."
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "Optional: computed status, comma-separated, e.g. ACTIVE, PENDING_APPROVAL, REJECTED, CAMPAIGN_PAUSED, AD_GROUP_PAUSED, PENDING_BILLING_INFO, COMPLETED."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_accounts/{ad_account_id}/ads",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "ad_group_id": "$ad_group_id",
+          "id": "$ids",
+          "configured_status": "$configured_status",
+          "effective_status": "$effective_status",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_get_ad",
+      "description": "Get one ad by id: name, post, click URL, status and review outcome. Use it to put names on the ad ids returned by reddit_ads_get_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_id": {
+            "type": "string",
+            "description": "Ad id from reddit_ads_list_ads or from the AD_ID breakdown of a report."
+          }
+        },
+        "required": [
+          "ad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ads/{ad_id}"
+      }
+    },
+    {
+      "name": "reddit_ads_list_funding_instruments",
+      "description": "List the funding instruments (credit cards, credit lines, insertion orders) of an ad account with id, type, credit limit, billable amount and validity dates. Use it to check why campaigns are pending billing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "UPCOMING",
+              "SELECTABLE",
+              "ALL"
+            ],
+            "description": "Optional status filter."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "ad_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ad_accounts/{ad_account_id}/funding_instruments",
+        "queryParams": {
+          "mode": "$mode",
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "reddit_ads_get_report",
+      "description": "Run a performance report for an ad account and get the rows back at once: metrics such as IMPRESSIONS, CLICKS, SPEND, CTR, CPC, ECPM, REACH, conversions and video views, split by up to 3 breakdowns (DATE, CAMPAIGN_ID, AD_GROUP_ID, AD_ID, COUNTRY, COMMUNITY, PLACEMENT...). Read-only, although it uses POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_account_id": {
+            "type": "string",
+            "description": "Ad account id from reddit_ads_list_business_ad_accounts (or the account id shown in Reddit Ads Manager)."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "Start, ISO 8601 on a full hour in UTC, e.g. 2026-09-01T00:00:00Z."
+          },
+          "ends_at": {
+            "type": "string",
+            "description": "End, ISO 8601 on a full hour, e.g. 2026-10-01T00:00:00Z."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Metrics, e.g. [\"IMPRESSIONS\",\"CLICKS\",\"SPEND\",\"CTR\",\"CPC\",\"ECPM\",\"REACH\",\"CONVERSION_PURCHASE_CLICKS\",\"CONVERSION_PURCHASE_TOTAL_VALUE\",\"VIDEO_STARTED\"]."
+          },
+          "breakdowns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 3 of AD_ACCOUNT_ID, CAMPAIGN_ID, AD_GROUP_ID, AD_ID, DATE, HOUR, COUNTRY, REGION, DMA, COMMUNITY, INTEREST, KEYWORD, PLACEMENT, OS_TYPE, GENDER, LANGUAGE. HOUR only for ranges up to 7 days."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. campaign:effective_status==ACTIVE. Several conditions are comma-separated."
+          },
+          "time_zone_id": {
+            "type": "string",
+            "description": "Optional IANA time zone for the day boundaries, e.g. Europe/Berlin. Default UTC."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 1000."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token from pagination.next_url of the previous answer (the page.token value in that URL), to read the next page."
+          }
+        },
+        "required": [
+          "ad_account_id",
+          "starts_at",
+          "ends_at",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ad_accounts/{ad_account_id}/reports",
+        "queryParams": {
+          "page.size": "$page_size",
+          "page.token": "$page_token"
+        },
+        "bodyMapping": {
+          "data": {
+            "starts_at": "$starts_at",
+            "ends_at": "$ends_at",
+            "fields": "$fields",
+            "breakdowns": "$breakdowns",
+            "filter": "$filter",
+            "time_zone_id": "$time_zone_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,793 @@
+{
+  "slug": "mangools",
+  "name": "Mangools",
+  "description": "SEO data from the Mangools suite through its official API: KWFinder keyword research and keyword difficulty, SERPChecker result pages, LinkMiner backlinks, SiteProfiler domain metrics, SERPWatcher rank tracking and AI Search Watcher brand visibility in AI answers.",
+  "instructions": "## Mangools (KWFinder, SERPChecker, SERPWatcher, LinkMiner, SiteProfiler, AI Search Watcher)\nThis connector calls the official Mangools REST API at `https://api.mangools.com/v3` with the account's API key in the `x-access-token` header. It reads keyword research, SERP analysis, backlinks, domain profiles, rank tracking and AI search visibility. It does not create or change anything in the account.\n\n**Setup.** Log in at mangools.com and copy the API key from mangools.com/api-token. Every plan includes API access; quotas follow the plan.\n\n**Quota first.** Most research tools spend the plan's lookups: related and competitor keywords and keyword metrics spend *keyword lookups*, keyword SERP and SERPChecker spend *SERP lookups*, backlinks spend *backlink rows* (one per returned link), URL metrics have their own daily pools. Repeating an identical lookup within 24 hours is free (except keyword metrics). `mangools_get_limits` shows what is left. Tools that read saved data (keyword lists, lookup history, trackings, tracked keywords, AI monitors, locations) do not spend quota.\n\n**Rate limits.** API-key clients may send 3 requests per 30 seconds per resource pool, so leave about 11 seconds between calls to the same tool family. A 429 with `error.type` `RateLimit` means wait `retry_after` seconds (30) and send the same request once; `CreditLimit` means the quota is spent and waiting does not help. Send calls one at a time, never in parallel (the gateway also refuses more than 4 requests a second per IP).\n\n**Locations and languages.** `location_id` is a Google geotarget id: 2840 United States, 2276 Germany, 2826 United Kingdom, 2380 Italy; 0 means anywhere. Find others with `mangools_search_locations`. `language_id` is a Google Ads language id (1000 English, 1001 German, 1004 Italian); 0 means any.\n\n**Order of calls.** Keyword research: `mangools_get_related_keywords`, then `mangools_get_keyword_serp` for the difficulty and top results of a chosen keyword. Competitors: `mangools_get_competitor_keywords` first, then `mangools_get_competitor_domains` (free, but only after it). Domains: `mangools_get_site_overview` first; backlink profile, top content, competitors and audience fail with 429 `Not in history` without an overview of the same URL in the last 24 hours. Rank tracking: `mangools_list_trackings`, then `mangools_get_tracking_detail` for keyword ids and `mangools_get_tracking_stats` for positions over a date range.\n\n**Reading values.** Keyword difficulty (`kd` / `rank`) is 0 to 100. `sv` is the average monthly search volume over 12 months, `msv` the monthly history. Dates are `YYYY-MM-DD`.\n\n**Errors.** 401: wrong or revoked API key. 402: valid request that Mangools could not complete. 403: the plan does not include this tool. 422: missing prerequisite lookup.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "mangools",
+  "docsUrl": "https://apidocs.mangools.com/",
+  "requiredEnvVars": [
+    "MANGOOLS_API_KEY"
+  ],
+  "envVarMeta": {
+    "MANGOOLS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Log in at mangools.com and open mangools.com/api-token: copy the API key shown there.",
+      "link": "https://mangools.com/api-token"
+    }
+  },
+  "verifyHints": {
+    "401": "Mangools refused the API key. Copy it again from mangools.com/api-token; it changes when you regenerate it.",
+    "403": "Your Mangools plan does not include this tool or API access. Check the plan at mangools.com.",
+    "rate_limited": "Mangools allows 3 requests per 30 seconds per tool family. Wait 30 seconds and try once more; if the answer says CreditLimit, the plan's quota is used up."
+  },
+  "probe": {
+    "tool": "mangools_list_keyword_lists"
+  },
+  "connector": {
+    "name": "Mangools API",
+    "type": "REST",
+    "baseUrl": "https://api.mangools.com/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-access-token",
+      "apiKey": "{{MANGOOLS_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mangools_get_limits",
+      "description": "Show the account's remaining quota in every Mangools pool (keyword lookups, SERP lookups, backlink rows, tracked keywords, URL metrics...) and when each resets. Call it before expensive lookups or after a 429 CreditLimit answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/limits"
+      }
+    },
+    {
+      "name": "mangools_search_locations",
+      "description": "Search geotargeting locations by name (country, region or city) and return up to 100 matches with location id, type and country code. The id is the location_id every KWFinder, SERPChecker and SERPWatcher tool takes. Does not use quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Location name, e.g. Germany, Bavaria or New York."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mangools/locations",
+        "queryParams": {
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_related_keywords",
+      "description": "KWFinder keyword research: related keywords for a seed keyword with search volume, monthly volume history, CPC, PPC competition and keyword difficulty. The seed keyword comes first. Costs one keyword lookup (repeating the same request within 24 hours is free).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "Seed keyword."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          },
+          "language_id": {
+            "type": "integer",
+            "description": "Language id (Google Ads language id, e.g. 1000 English, 1001 German). 0 means any language."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/related-keywords",
+        "queryParams": {
+          "kw": "$kw",
+          "location_id": "$location_id",
+          "language_id": "$language_id"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_competitor_keywords",
+      "description": "KWFinder competitor research: the keywords a domain or URL ranks for in Google in one location, with position, search volume, estimated visits, CPC and keyword difficulty. Costs one keyword lookup (repeat within 24 hours is free).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          }
+        },
+        "required": [
+          "url",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/competitor-keywords",
+        "queryParams": {
+          "url": "$url",
+          "location_id": "$location_id"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_competitor_domains",
+      "description": "Domains that compete with a domain for the same organic keywords, with the number of shared keywords. Free, but needs a mangools_get_competitor_keywords call for the same url and location in the last 24 hours (otherwise HTTP 422 No result).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          }
+        },
+        "required": [
+          "url",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/competitor-domain",
+        "queryParams": {
+          "url": "$url",
+          "location_id": "$location_id"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_keyword_serp",
+      "description": "KWFinder keyword detail: keyword difficulty, the organic Google results (top 10 per page) with their authority metrics, the result count and the click-through rate per position. Costs one SERP lookup (repeat within 24 hours is free).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "Keyword to analyse."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          },
+          "language_id": {
+            "type": "integer",
+            "description": "Language id (Google Ads language id, e.g. 1000 English, 1001 German). 0 means any language."
+          },
+          "platform_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 desktop (default), 2 mobile."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Results page, starting at 0."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/serps",
+        "queryParams": {
+          "kw": "$kw",
+          "location_id": "$location_id",
+          "language_id": "$language_id",
+          "platform_id": "$platform_id",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_keyword_metrics",
+      "description": "Get metrics for a list of keywords you already have (up to your plan's related-keywords-rows, at least 200): search volume and 12-month history, CPC, PPC, cached keyword difficulty and organic results. Read-only although it uses POST. Costs one keyword lookup per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords to look up, e.g. [\"seo agency\", \"seo specialist\"]."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          },
+          "language_id": {
+            "type": "integer",
+            "description": "Language id (Google Ads language id, e.g. 1000 English, 1001 German). 0 means any language."
+          }
+        },
+        "required": [
+          "keywords",
+          "location_id",
+          "language_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/kwfinder/keyword-imports",
+        "bodyMapping": {
+          "keywords": "$keywords",
+          "location_id": "$location_id",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mangools_get_keyword_gap",
+      "description": "Keyword gap analysis: keywords that up to 5 competitor domains rank for and your domain does not, per competitor, ordered by the competitor's position, with search volume and difficulty. Read-only although it uses POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Your domain, e.g. example.com."
+          },
+          "competitors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "1 to 5 competitor domains."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (only Premium, Agency, Custom and API Pro plans get more than page 1)."
+          }
+        },
+        "required": [
+          "domain",
+          "competitors",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/kwfinder/gap-analysis",
+        "bodyMapping": {
+          "domain": "$domain",
+          "competitors": "$competitors",
+          "location_id": "$location_id",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mangools_list_keyword_lists",
+      "description": "List the keyword lists saved in KWFinder with id, name and the ids of the keywords in each. Use mangools_get_keyword_list to load the keyword data of one list. Does not use quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/lists"
+      }
+    },
+    {
+      "name": "mangools_get_keyword_list",
+      "description": "Get one saved keyword list with full data for every keyword: search volume, monthly volumes, CPC, PPC, keyword difficulty and location. Does not use quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id from mangools_list_keyword_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/lists/{list_id}"
+      }
+    },
+    {
+      "name": "mangools_list_keyword_history",
+      "description": "The account's last 100 KWFinder lookups (related keywords, competitor keywords, keyword gap) with keyword or URL, location and time. Use it to repeat a recent lookup for free within 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/kwfinder/requests"
+      }
+    },
+    {
+      "name": "mangools_get_serp_analysis",
+      "description": "SERPChecker: the full Google result page for a keyword with organic and paid results, SERP features, above-the-fold coverage, CTR per result and authority metrics (Moz DA/PA, Majestic CF/TF) of every result URL. Costs one SERP lookup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "Keyword."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id from mangools_search_locations (Google geotarget id, e.g. 2840 United States, 2276 Germany). 0 means anywhere."
+          },
+          "platform_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 desktop (default), 2 mobile."
+          }
+        },
+        "required": [
+          "kw",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serpchecker/serps",
+        "queryParams": {
+          "kw": "$kw",
+          "location_id": "$location_id",
+          "platform_id": "$platform_id"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_url_metrics",
+      "description": "Authority metrics for one URL: Moz Domain Authority and Page Authority, Majestic Citation Flow and Trust Flow. Use it to size up a competitor page without a full SERP lookup. Counts toward the daily URL metrics pool (repeats within 24 hours are free).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serpchecker/url-metrics",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_backlinks",
+      "description": "LinkMiner: backlinks of a URL, domain or path, up to 500 per page, with source URL, anchor text, Citation and Trust Flow, link type and first/last seen dates. Each returned link counts toward the Backlink rows quota, so keep pages small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL, domain or path to get backlinks for."
+          },
+          "source": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 all backlinks, 1 new, 2 lost.",
+            "default": 0
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 0; each page holds up to 500 links.",
+            "default": 0
+          },
+          "links_per_domain": {
+            "type": "integer",
+            "description": "Backlinks per referring domain: 1 for one per domain, 0 for all.",
+            "default": 1
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/linkminer/links",
+        "queryParams": {
+          "url": "$url",
+          "source": "$source",
+          "page": "$page",
+          "links_per_domain": "$links_per_domain"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_link_metrics",
+      "description": "Link authority of a URL, domain or subdomain from Majestic: Citation Flow, Trust Flow, referring domains and backlink counts. A quick check before pulling backlinks. Counts toward the daily LinkMiner URL metrics pool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/linkminer/url-metrics",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_site_overview",
+      "description": "SiteProfiler overview of a domain or URL: Moz DA/PA, Majestic CF/TF, rank and referring-IP history since 2016 and social shares. Call it first: the other SiteProfiler tools need an overview of the same URL from the last 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/siteprofiler/overview",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_site_backlink_profile",
+      "description": "SiteProfiler backlink profile of a domain or URL: referring domains and IPs, link types, top anchors and link growth. Needs mangools_get_site_overview for the same URL within 24 hours (otherwise HTTP 429 Not in history).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/siteprofiler/backlink-profile",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_site_top_content",
+      "description": "SiteProfiler top content: the site's most linked and most shared pages with their metrics. Needs mangools_get_site_overview for the same URL within 24 hours (otherwise HTTP 429 Not in history).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/siteprofiler/top-content",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_site_competitors",
+      "description": "SiteProfiler competitors: domains competing with the site for organic keywords, with their authority metrics. Needs mangools_get_site_overview for the same URL within 24 hours (otherwise HTTP 429 Not in history).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/siteprofiler/competitors",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_site_audience",
+      "description": "SiteProfiler audience: estimated traffic by country and audience signals of the site. Needs mangools_get_site_overview for the same URL within 24 hours (otherwise HTTP 429 Not in history).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL, domain or subdomain, e.g. example.com or https://example.com/blog/."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/siteprofiler/audience",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "mangools_list_trackings",
+      "description": "SERPWatcher: list the rank tracking campaigns of the account, newest first, with tracking id, domain, location, platform and the number of tracked keywords. Start here for rank tracking questions. Does not use quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Optional: only trackings created from this date (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional: only trackings created up to this date (YYYY-MM-DD)."
+          },
+          "is_with_deleted": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true to include deleted trackings."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serpwatcher/trackings",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "is_with_deleted": "$is_with_deleted"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_tracking_detail",
+      "description": "SERPWatcher: one tracking with its keyword list, each keyword with id, text, currently ranking URL, tags and last check. No rank history; use mangools_get_tracking_stats for positions over time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "Tracking id from mangools_list_trackings."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional end date (YYYY-MM-DD)."
+          },
+          "is_with_deleted": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true to include deleted keywords."
+          }
+        },
+        "required": [
+          "tracking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serpwatcher/trackings/{tracking_id}/detail",
+        "queryParams": {
+          "to": "$to",
+          "is_with_deleted": "$is_with_deleted"
+        }
+      }
+    },
+    {
+      "name": "mangools_get_tracking_stats",
+      "description": "SERPWatcher statistics for a tracking over a date range: per keyword the current, best and average rank, rank change, estimated visits, rank history, Map Pack and Featured Snippet presence and SERP features, plus annotations. Read-only although it uses POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "Tracking id from mangools_list_trackings."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          },
+          "keyword_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: only these tracked keyword ids (from mangools_get_tracking_detail)."
+          }
+        },
+        "required": [
+          "tracking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/serpwatcher/trackings/{tracking_id}/stats",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        },
+        "bodyMapping": {
+          "kwIds": "$keyword_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mangools_list_tracked_keywords",
+      "description": "SERPWatcher: all tracked keywords of a tracking with current rank, search volume, monthly volumes and active flag. Trim the answer with fields. Does not use quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "Tracking id from mangools_list_trackings."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated attributes: tracking_id,keyword_id,kw,location_id,platform_id,rank,sv,active,history."
+          }
+        },
+        "required": [
+          "tracking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serpwatcher/trackings/{tracking_id}/tracked-keywords",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "mangools_list_ai_monitors",
+      "description": "AI Search Watcher: list the brand monitors of the account with id, brand name, domain, location, language and monitoring state. Use the id with mangools_get_ai_monitor.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/aiwatcher/monitors"
+      }
+    },
+    {
+      "name": "mangools_get_ai_monitor",
+      "description": "AI Search Watcher: how often a brand is mentioned and cited by AI answer engines (ChatGPT, Gemini, Claude, Google AI Overviews...) across the monitor's prompts, with citation sources and visibility over time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Monitor id from mangools_list_ai_monitors."
+          },
+          "models": {
+            "type": "string",
+            "description": "Optional comma-separated model ids from mangools_list_ai_models; 0 for an all-models overview."
+          },
+          "from": {
+            "type": "string",
+            "description": "Optional start date, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional end date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/aiwatcher/monitor/{id}",
+        "queryParams": {
+          "models": "$models",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "mangools_list_ai_models",
+      "description": "AI Search Watcher: the AI models available for brand monitoring, with numeric id, name and whether each can still be added to a monitor. Use the ids to filter mangools_get_ai_monitor.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/aiwatcher/models"
+      }
+    }
+  ]
+}
