@@ -1310,6 +1310,7 @@ export class ConnectorsController {
         authType: connector.authType,
         authConfig,
         headers: connector.headers as Record<string, string>,
+        connectorId: connector.id,
       });
 
       const parsedTools = remoteTools.map((rt) => ({
@@ -1590,6 +1591,7 @@ export class ConnectorsController {
             authConfig,
             headers: connector.headers as Record<string, string>,
             mcpPath: dto.url || '/mcp',
+            connectorId: connector.id,
           });
           for (const rt of remoteTools) {
             parsedTools.push({

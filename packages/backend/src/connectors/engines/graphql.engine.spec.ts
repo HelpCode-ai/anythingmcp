@@ -16,7 +16,8 @@ describe('GraphqlEngine', () => {
   beforeEach(() => {
     mockOAuth2TokenService = {
       getAccessToken: jest.fn().mockResolvedValue('oauth2-access-token'),
-      refreshToken: jest.fn().mockResolvedValue('new-access-token'),
+      renewAfterRejection: jest.fn().mockResolvedValue('new-access-token'),
+      renewalFailedError: jest.fn().mockReturnValue(undefined),
     } as any;
     mockLoginTokenService = {
       getToken: jest.fn().mockResolvedValue({
@@ -278,7 +279,7 @@ describe('GraphqlEngine', () => {
 
   it('should refresh OAuth2 token and retry on 401', async () => {
     mockOAuth2TokenService.getAccessToken.mockResolvedValue('expired-token');
-    mockOAuth2TokenService.refreshToken.mockResolvedValue('fresh-token');
+    mockOAuth2TokenService.renewAfterRejection.mockResolvedValue('fresh-token');
 
     // AxiosError is auto-mocked, so create instance and set properties manually
     const error401 = new AxiosError() as any;
@@ -299,9 +300,10 @@ describe('GraphqlEngine', () => {
     );
 
     expect(result).toEqual({ me: { id: '1' } });
-    expect(mockOAuth2TokenService.refreshToken).toHaveBeenCalledWith(
+    expect(mockOAuth2TokenService.renewAfterRejection).toHaveBeenCalledWith(
       expect.objectContaining({ refreshToken: 'rt', tokenUrl: 'https://auth/token' }),
       'conn-1',
+      expect.any(Number),
     );
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
   });

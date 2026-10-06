@@ -121,7 +121,8 @@ describe('outbound calls and redirects (real HTTP)', () => {
     });
     const oauth2 = {
       getAccessToken: jest.fn().mockResolvedValue('stale'),
-      refreshToken: jest.fn().mockResolvedValue('fresh'),
+      renewAfterRejection: jest.fn().mockResolvedValue('fresh'),
+      renewalFailedError: jest.fn().mockReturnValue(undefined),
     };
     const engine = new RestEngine(oauth2 as any, {} as any);
     const result = await engine.execute(
