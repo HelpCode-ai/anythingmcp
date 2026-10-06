@@ -24,7 +24,7 @@ import { TRANSLATION_SAFE_DOM_SCRIPT } from '@/lib/translation-safe-dom';
 export const metadata: Metadata = {
   title: 'AnythingMCP — Custom connectors for Claude, ChatGPT, Copilot & any AI agent',
   description:
-    'Create custom connectors for Claude, ChatGPT, Copilot and any AI agent. Turn any REST, SOAP, GraphQL or SQL system into AI tools — no code.',
+    'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent. Turn any REST, SOAP, GraphQL or SQL system into AI tools — no code.',
   // favicon.ico lives in src/app (Next serves it at /favicon.ico); it used
   // to be an empty file in public/, which is what anything asking for
   // "the site's icon" without parsing HTML — directory crawlers, chat

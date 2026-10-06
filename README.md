@@ -211,8 +211,9 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, RB
 
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
-- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. [Claude setup](docs/integrations/claude.md)
+- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](https://claude.ai/directory/anythingmcp). [Claude setup](docs/integrations/claude.md)
 - **ChatGPT.** Apps in ChatGPT are built on MCP. Add the server in ChatGPT's settings, or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md)
+- **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](docs/integrations/muse.md)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](docs/guides.md).
 
 ---

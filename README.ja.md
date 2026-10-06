@@ -223,8 +223,9 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 同じ MCP サーバーが MCP 対応のあらゆるクライアントで動くため、コネクターは一度作るだけで済みます。
 
-- **Claude。** *Customize → Connectors* でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。[Claude の設定](docs/integrations/claude.md)
+- **Claude。** *Customize → Connectors* でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。AnythingMCP Cloud なら [Claude ディレクトリ](https://claude.ai/directory/anythingmcp)からワンクリックで追加することもできます。[Claude の設定](docs/integrations/claude.md)
 - **ChatGPT。** ChatGPT のアプリは MCP の上に作られています。ChatGPT の設定でサーバーを追加するか、Apps SDK アプリのツール層として使います。[ChatGPT の設定](docs/integrations/chatgpt.md)
+- **Meta Muse。** Muse で *Settings → Connectors → Add custom connector* を開き、サーバーの URL を貼り付けて AnythingMCP にサインインします。[Muse の設定](docs/integrations/muse.md)
 - **Copilot、Gemini、Cursor** などの MCP クライアント：[クライアント設定ガイド](docs/guides.md)。
 
 ---
