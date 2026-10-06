@@ -1,0 +1,443 @@
+{
+  "slug": "sap-signavio",
+  "name": "SAP Signavio Process Manager",
+  "description": "Read the SAP Signavio Process Manager workspace: folders, process models and revisions, exports as Signavio JSON or BPMN 2.0 XML, full-text search and the process dictionary. Session login with a technical user.",
+  "region": "intl",
+  "category": "knowledge",
+  "icon": "sap-signavio",
+  "docsUrl": "https://help.sap.com/docs/signavio-process-manager",
+  "prerequisites": "A SAP Signavio user that can log in with email and password. With single sign-on, ask your administrator for a technical user with an **API Edition** licence.",
+  "instructions": "**What this connects to**: the SAP Signavio Process Manager API, the `/p/` interface of the Process Manager workspace host. It reads the process landscape: folders, process models and their revisions, model exports (Signavio JSON and BPMN 2.0 XML), full-text search and the dictionary. This first version only reads.\n\n**Start with `sap_signavio_list_root_directories`**, then `sap_signavio_get_directory` to walk folders, or `sap_signavio_search` to find a model by name or content. Read a model with `sap_signavio_get_model_info` and `sap_signavio_export_model_json`.\n\n**Host by region**: EU `https://editor.signavio.com`, US `https://app-us.signavio.com`, Australia `https://app-au.signavio.com`, Canada `https://app-ca.signavio.com`, Japan `https://app-jp.signavio.com`, Singapore `https://app-sgp.signavio.com`, South Korea `https://app-kr.signavio.com`. It is the host you see in the browser when you open Process Manager. The API gateway host `api.<region>.signavio.cloud.sap` serves other SAP Signavio APIs, not this one.\n\n**Authentication**: the API has no API keys. The connector logs in with `POST /p/login` (email, password, `tokenonly=true`, workspace id) and sends the returned token as `x-signavio-id` together with the session cookie on every call; it logs in again when the session ends. Use a technical user with an **API Edition** licence: it can log in with a password even when the workspace uses single sign-on. The user only sees what its folder permissions allow.\n\n**Ids**: every item comes as `{rel, href, rep}`. The id is the last segment of `href` (`/directory/<id>`, `/model/<id>`, `/revision/<id>`, `/glossary/<id>`). `rel` says what the item is: `dir` folder, `mod` model, `info` metadata, `rev` revision, `gitem` dictionary entry.\n\n**Paging**: search and dictionary lists take `limit` and `offset` (search returns at most 250 per call). Folder listings return the whole folder.\n\n**Pitfalls**: model JSON of large diagrams is big, so prefer `get_model_info` first and export only the models you need. A 401 means the login failed or the session ended twice in a row; a 403 means the user lacks access to that folder. Process Intelligence (SIGNAL OData) and Process Governance use separate APIs and tokens and are not covered.",
+  "requiredEnvVars": [
+    "SIGNAVIO_URL",
+    "SIGNAVIO_EMAIL",
+    "SIGNAVIO_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "SIGNAVIO_WORKSPACE_ID"
+  ],
+  "envVarMeta": {
+    "SIGNAVIO_URL": {
+      "label": "Process Manager address",
+      "kind": "address",
+      "help": "The host you open Process Manager on, with https:// and without a path: https://editor.signavio.com (EU) or https://app-us.signavio.com, app-au, app-ca, app-jp, app-sgp, app-kr for the other regions.",
+      "example": "https://editor.signavio.com",
+      "pattern": "^https://[a-z0-9.-]+\\.[a-z]{2,}$",
+      "patternMessage": "The https:// address of the Process Manager host, without a path or trailing slash.",
+      "link": "https://help.sap.com/docs/signavio-process-manager"
+    },
+    "SIGNAVIO_EMAIL": {
+      "label": "User email",
+      "kind": "credential",
+      "help": "Email address of the SAP Signavio user the connector logs in as. Prefer a technical user with an API Edition licence."
+    },
+    "SIGNAVIO_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "help": "That user's SAP Signavio password (not the single sign-on password of your company account)."
+    },
+    "SIGNAVIO_WORKSPACE_ID": {
+      "label": "Workspace ID",
+      "kind": "setting",
+      "help": "Only needed when the user belongs to more than one workspace; leave empty otherwise. The 32-character workspace (tenant) id; a workspace administrator can look it up in the workspace administration.",
+      "example": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    }
+  },
+  "verifyHints": {
+    "401": "SAP Signavio did not accept the login. Check email and password, that the user can log in without single sign-on (API Edition licence), and the workspace ID if the user is in several workspaces.",
+    "403": "The user has no access to this folder or model. Grant it read access in Process Manager.",
+    "not_found": "No SAP Signavio Process Manager at this address. Use the host you open Process Manager on, e.g. https://editor.signavio.com, not api.<region>.signavio.cloud.sap."
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "SAP Signavio Process Manager",
+    "type": "REST",
+    "baseUrl": "{{SIGNAVIO_URL}}/p",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{SIGNAVIO_URL}}/p/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "loginBody": {
+        "name": "${username}",
+        "password": "${password}",
+        "tokenonly": "true",
+        "tenant": "{{SIGNAVIO_WORKSPACE_ID}}"
+      },
+      "username": "{{SIGNAVIO_EMAIL}}",
+      "password": "{{SIGNAVIO_PASSWORD}}",
+      "tokenSource": "cookie",
+      "cookieName": "JSESSIONID",
+      "tokenJsonPath": ".",
+      "audJsonPath": ".",
+      "tokenTTLSeconds": 1200,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": "JSESSIONID=${token}",
+      "extraHeaders": {
+        "x-signavio-id": "${aud}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/directory"
+  },
+  "probe": {
+    "tool": "sap_signavio_list_root_directories"
+  },
+  "tools": [
+    {
+      "name": "sap_signavio_list_root_directories",
+      "description": "The root folders of the workspace (e.g. Shared documents, My documents) with their names and hrefs. Start here: pass the id at the end of a folder's href to get_directory to walk the folder tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory"
+      }
+    },
+    {
+      "name": "sap_signavio_get_directory",
+      "description": "The contents of one folder: its info, parent folders, subfolders (rel dir) and process models (rel mod) with name, type, last change and the href that holds the model id. Use it to browse the process landscape.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_id": {
+            "type": "string",
+            "description": "Folder id: the last segment of a folder's href from list_root_directories or a parent get_directory call (href /directory/<id>)."
+          }
+        },
+        "required": [
+          "directory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory/{directory_id}"
+      }
+    },
+    {
+      "name": "sap_signavio_get_model",
+      "description": "Overview of one process model as a list of links: its info, parent folder, revisions and available export formats. Use get_model_info for the metadata itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model id: the last segment of a `mod` item's href in get_directory or search results (href /model/<id>)."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{model_id}"
+      }
+    },
+    {
+      "name": "sap_signavio_get_model_info",
+      "description": "Metadata of one process model: name, description, type (BPMN, EPC, value chain...), parent folder, latest revision, author and last change. Use it before exporting the model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model id: the last segment of a `mod` item's href in get_directory or search results (href /model/<id>)."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{model_id}/info"
+      }
+    },
+    {
+      "name": "sap_signavio_list_model_revisions",
+      "description": "The revisions of one process model, newest first, with revision number, author, creation date and comment. Use the revision href id with get_revision_json or get_revision_bpmn to read an older version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model id: the last segment of a `mod` item's href in get_directory or search results (href /model/<id>)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of revisions to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of revisions to skip, for paging."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{model_id}/revisions",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sap_signavio_export_model_json",
+      "description": "The latest revision of a process model as Signavio JSON: every shape (tasks, events, gateways, lanes) with its properties and the connections between them. Use it to describe or analyse a process step by step.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model id: the last segment of a `mod` item's href in get_directory or search results (href /model/<id>)."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{model_id}/json"
+      }
+    },
+    {
+      "name": "sap_signavio_export_model_bpmn",
+      "description": "The latest revision of a process model as BPMN 2.0 XML, returned as text. Use it when a standard BPMN document is needed, e.g. to compare with another tool or to keep a copy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model id: the last segment of a `mod` item's href in get_directory or search results (href /model/<id>)."
+          },
+          "export_subprocesses": {
+            "type": "boolean",
+            "description": "Also export linked subprocesses (default false)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Content language to export as primary language, e.g. en or de. Default: the workspace's default language."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{model_id}/bpmn2_0_xml",
+        "queryParams": {
+          "exportSubprocesses": "$export_subprocesses",
+          "language": "$language"
+        },
+        "rawBody": true
+      }
+    },
+    {
+      "name": "sap_signavio_get_revision_json",
+      "description": "One specific revision of a process model as Signavio JSON (shapes, properties, connections). Use it with list_model_revisions to see how a process looked at an earlier point.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "description": "Revision id: from list_model_revisions (href /revision/<id>) or the `rev` field of get_model_info."
+          }
+        },
+        "required": [
+          "revision_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/revision/{revision_id}/json"
+      }
+    },
+    {
+      "name": "sap_signavio_get_revision_bpmn",
+      "description": "One specific revision of a process model as BPMN 2.0 XML, returned as text. Use it to export or compare an older version of a process.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "description": "Revision id: from list_model_revisions (href /revision/<id>) or the `rev` field of get_model_info."
+          },
+          "export_subprocesses": {
+            "type": "boolean",
+            "description": "Also export linked subprocesses (default false)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Content language to export as primary language, e.g. en or de. Default: the workspace's default language."
+          }
+        },
+        "required": [
+          "revision_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/revision/{revision_id}/bpmn2_0_xml",
+        "queryParams": {
+          "exportSubprocesses": "$export_subprocesses",
+          "language": "$language"
+        },
+        "rawBody": true
+      }
+    },
+    {
+      "name": "sap_signavio_search",
+      "description": "Full-text search across the workspace: process models, folders, shapes inside models, files and comments that match a term. Returns hrefs with the ids for get_model_info or get_directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "The search term."
+          },
+          "types": {
+            "type": "string",
+            "description": "Comma-separated content types to include: MODEL, MODEL_REVISION, SHAPE, FILE, FILE_REVISION, DIR, COMMENT. Default: all."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, up to 250."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first result, for paging."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "types": "$types",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sap_signavio_list_dictionary_entries",
+      "description": "Entries of the Process Manager dictionary (glossary): organizational units, documents, activities, events and IT systems with title, category and description. Filter by search term, first letter or category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Full-text search term (ignored when letter is set)."
+          },
+          "letter": {
+            "type": "string",
+            "description": "Only entries whose title starts with this letter."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category: ORG_UNIT, DOCUMENT, ACTIVITY, STATE (events) or IT_SYSTEM, or the id of a custom category from list_dictionary_categories."
+          },
+          "include": {
+            "type": "string",
+            "enum": [
+              "all"
+            ],
+            "description": "all: also list entries of the category's subcategories."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "title"
+            ],
+            "description": "title: sort by title. Default: by relevance."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of entries to return."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of entries to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossary",
+        "queryParams": {
+          "q": "$q",
+          "letter": "$letter",
+          "category": "$category",
+          "include": "$include",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sap_signavio_get_dictionary_entry",
+      "description": "One dictionary entry with its metadata: title, category, description, attachments, custom attributes and last change. Use the entry id from list_dictionary_entries (href /glossary/<id>).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Dictionary entry id: the last segment of an entry's href from list_dictionary_entries."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossary/{entry_id}/info"
+      }
+    },
+    {
+      "name": "sap_signavio_list_dictionary_categories",
+      "description": "The dictionary categories of the workspace (the five built-in ones and custom categories) with their ids, names, parent and number of entries. Use a category id to filter list_dictionary_entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "all_categories": {
+            "type": "boolean",
+            "description": "true: return every category, including subcategories, in one call."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true: include hidden categories."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/glossarycategory",
+        "queryParams": {
+          "allCategories": "$all_categories",
+          "showHidden": "$show_hidden"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1056 @@
+{
+  "slug": "atera",
+  "name": "Atera",
+  "description": "Atera RMM and help desk: customers, contacts, monitored agents with hardware and patches, agentless devices, alerts, tickets with comments and work hours, contracts and knowledge base. Atera REST API v3 with an API key.",
+  "instructions": "## Atera\nThis connector uses the Atera REST API v3 (`https://app.atera.com/api/v3`). Atera is a remote monitoring and management (RMM) and help desk (PSA) platform for IT departments and managed service providers.\n\n## Setup\nIn Atera open **Admin > Data management > API** (only Atera admins see it) and copy the API key into `ATERA_API_KEY`. The key is sent as the `X-API-KEY` header. It has the rights of the whole Atera account: anyone with this connector can read every customer, device and ticket. Regenerating the key in Atera invalidates the old one.\n\n## Start here\n- `atera_list_customers` gives the `CustomerID` used by most other tools.\n- `atera_list_tickets` (filter by `customer_id` or `ticket_status`) and `atera_get_ticket` for the help desk; `atera_list_ticket_comments` for the conversation.\n- `atera_list_customer_agents` or `atera_find_agents_by_machine` for devices; `atera_get_agent` for the full hardware inventory.\n- `atera_list_alerts` with `alert_status` Open for what needs attention now.\n\n## Ids\nCustomerID, EndUserID (contacts), AgentID, TicketID, AlertID and ContractID are integers. Patch tools take the agent's `DeviceGuid` (a GUID), not the AgentID. Agentless devices (ping, SNMP, HTTP, TCP) are separate from agents and use their own DeviceID with `atera_list_devices`. A technician is identified by `TechnicianContactID` (shown on tickets) or by email.\n\n## Pagination\nList answers have `items`, `totalItemCount`, `page`, `itemsInPage`, `totalPages` and `nextLink`. Pass `page` (from 1) and `items_in_page` (default 20; at most 50 for tickets and agents, 500 for contacts and devices) and stop when `page` equals `totalPages`. For changes since a date use `atera_list_modified_tickets` rather than paging all tickets.\n\n## Rate limit\nAtera allows about 700 requests per minute per account. Large accounts can have thousands of agents; page with a filter instead of listing everything.\n\n## Writes\n`atera_create_ticket`, `atera_update_ticket`, the two comment tools and `atera_resolve_alert` change data. A technician comment with `is_internal` false is emailed to the end user, so confirm the text first. Ticket status names are free text in Atera (Open, Pending, Resolved, Closed and any custom ones); read them from existing tickets. Deleting customers, contacts, agents or tickets is not offered.",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "atera",
+  "docsUrl": "https://app.atera.com/apidocs",
+  "requiredEnvVars": [
+    "ATERA_API_KEY"
+  ],
+  "envVarMeta": {
+    "ATERA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Atera → Admin → Data management → API. Only Atera admins see this page. Copy the key shown there.",
+      "link": "https://support.atera.com/hc/en-us/articles/219083397"
+    }
+  },
+  "verifyHints": {
+    "401": "Atera refused the API key. Copy it again from Admin → Data management → API; a regenerated key replaces the old one.",
+    "403": "The key has no access to this resource. Check that it was created by an Atera admin.",
+    "rate_limited": "Atera allows about 700 requests per minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "atera_list_customers",
+    "params": {
+      "items_in_page": 1
+    }
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "Atera",
+    "type": "REST",
+    "baseUrl": "https://app.atera.com/api/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{ATERA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "atera_list_customers",
+      "description": "List the customers (client companies) in Atera with id, name, domain, address and phone. Paged. Call this first to get the CustomerID used by the agent, ticket, contract and device tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_get_customer",
+      "description": "Get one customer by CustomerID: name, business number, domain, address, phone, notes and links. Use it after atera_list_customers to read the full record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "CustomerID from atera_list_customers."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "atera_list_contacts",
+      "description": "List end-user contacts with EndUserID, customer, name, email, phone, job title and department. Filter by exact email or phone to find who opened a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "email": {
+            "type": "string",
+            "description": "Return only the contact with this email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Return only contacts with this phone number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "searchOptions.email": "$email",
+          "searchOptions.phone": "$phone"
+        }
+      }
+    },
+    {
+      "name": "atera_get_contact",
+      "description": "Get one contact by EndUserID: customer, name, email, phones, job title, department and whether it is the customer's main contact person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "EndUserID from atera_list_contacts or a ticket."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "atera_list_agents",
+      "description": "List all monitored devices (agents) across customers: machine name, customer, online state, last seen, OS, IP and MAC addresses, hardware and logged-in user. Paged, at most 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_list_customer_agents",
+      "description": "List the agents (monitored devices) of one customer with online state, OS, hardware and last-seen time. Use it to answer which machines a customer has.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "CustomerID from atera_list_customers."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/customer/{customer_id}",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_get_agent",
+      "description": "Get one agent by AgentID with full hardware and OS inventory: processor, memory, disks, BIOS, serial number, Office version, last reboot and logged-in users.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "integer",
+            "description": "AgentID from atera_list_agents."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/{agent_id}"
+      }
+    },
+    {
+      "name": "atera_find_agents_by_machine",
+      "description": "Find agents by machine (computer) name, for example DESKTOP-4F2K. Returns the matching agents with customer, online state and inventory. Use it when a user names a computer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "machine_name": {
+            "type": "string",
+            "description": "Machine name as shown in Atera, for example DESKTOP-4F2K."
+          }
+        },
+        "required": [
+          "machine_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/machine/{machine_name}",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "atera_list_installed_patches",
+      "description": "List the patches (Windows updates) installed on one agent, identified by its DeviceGuid. Use it to check whether a specific update is present on a machine.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_guid": {
+            "type": "string",
+            "description": "DeviceGuid of the agent (field DeviceGuid in atera_list_agents), a GUID."
+          }
+        },
+        "required": [
+          "device_guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/{device_guid}/installed-patches"
+      }
+    },
+    {
+      "name": "atera_list_available_patches",
+      "description": "List the patches available but not yet installed on one agent, identified by its DeviceGuid. Use it to see what a machine is missing before a patch run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_guid": {
+            "type": "string",
+            "description": "DeviceGuid of the agent (field DeviceGuid in atera_list_agents), a GUID."
+          }
+        },
+        "required": [
+          "device_guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/{device_guid}/available-patches"
+      }
+    },
+    {
+      "name": "atera_list_devices",
+      "description": "List agentless monitored devices of one type (generic ping, SNMP, HTTP or TCP) with name, DeviceID, customer and monitoring agent. Optionally filter by customer or monitoring agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "device_type": {
+            "type": "string",
+            "description": "Device type: generic (ping), snmp, http or tcp.",
+            "enum": [
+              "generic",
+              "snmp",
+              "http",
+              "tcp"
+            ]
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only devices of this CustomerID."
+          },
+          "monitoring_agent_id": {
+            "type": "integer",
+            "description": "Only devices monitored by this AgentID."
+          }
+        },
+        "required": [
+          "device_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices/{device_type}devices",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "customerId": "$customer_id",
+          "monitoringAgentId": "$monitoring_agent_id"
+        }
+      }
+    },
+    {
+      "name": "atera_get_device",
+      "description": "Get one agentless monitored device (generic, SNMP, HTTP or TCP) by DeviceID with its monitoring settings, customer and monitoring agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_type": {
+            "type": "string",
+            "description": "Device type: generic (ping), snmp, http or tcp.",
+            "enum": [
+              "generic",
+              "snmp",
+              "http",
+              "tcp"
+            ]
+          },
+          "device_id": {
+            "type": "integer",
+            "description": "DeviceID from atera_list_devices."
+          }
+        },
+        "required": [
+          "device_type",
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices/{device_type}device/{device_id}"
+      }
+    },
+    {
+      "name": "atera_list_alerts",
+      "description": "List monitoring alerts with title, severity (Information, Warning, Critical), device, customer, creation time and linked ticket. Filter by status Open, Resolved or Snoozed. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "alert_status": {
+            "type": "string",
+            "description": "Only alerts in this state.",
+            "enum": [
+              "Open",
+              "Resolved",
+              "Snoozed"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/alerts",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "alertStatus": "$alert_status"
+        }
+      }
+    },
+    {
+      "name": "atera_get_alert",
+      "description": "Get one alert by AlertID: title, message, severity, category, thresholds, device, customer, snooze end date and linked ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "integer",
+            "description": "AlertID from atera_list_alerts."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/alerts/{alert_id}"
+      }
+    },
+    {
+      "name": "atera_resolve_alert",
+      "description": "Mark one open alert as resolved. Use after the underlying problem is fixed; the alert moves to Resolved and disappears from the open list. Returns no content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "integer",
+            "description": "AlertID of the alert to resolve."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/alerts/{alert_id}"
+      }
+    },
+    {
+      "name": "atera_list_tickets",
+      "description": "List help desk tickets with number, title, status, priority, type, customer, end user, technician, SLA dates and durations. Filter by customer or status. Paged, at most 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only tickets of this CustomerID."
+          },
+          "ticket_status": {
+            "type": "string",
+            "description": "Only tickets in this status, for example Open, Pending, Resolved or Closed (custom statuses are allowed)."
+          },
+          "include_relations": {
+            "type": "boolean",
+            "description": "Include parent/child ticket relations (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "customerId": "$customer_id",
+          "ticketStatus": "$ticket_status",
+          "includeRelations": "$include_relations"
+        }
+      }
+    },
+    {
+      "name": "atera_get_ticket",
+      "description": "Get one ticket by TicketID with status, priority, impact, type, customer, end user, technician, first and last comments, SLA due dates and on/off-site durations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID from atera_list_tickets."
+          },
+          "include_relations": {
+            "type": "boolean",
+            "description": "Include parent/child ticket relations (default false)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}",
+        "queryParams": {
+          "includeRelations": "$include_relations"
+        }
+      }
+    },
+    {
+      "name": "atera_list_modified_tickets",
+      "description": "List tickets modified since a date (UTC), optionally with their last comments. Use it to sync or review what changed recently instead of paging through every ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "date": {
+            "type": "string",
+            "description": "Modified on or after this UTC date-time, ISO 8601, for example 2026-10-01T00:00:00Z. Default today."
+          },
+          "include_comments": {
+            "type": "boolean",
+            "description": "Include the first and last comments (default false)."
+          },
+          "include_relations": {
+            "type": "boolean",
+            "description": "Include ticket relations (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/lastmodified",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "date": "$date",
+          "includeComments": "$include_comments",
+          "includeRelations": "$include_relations"
+        }
+      }
+    },
+    {
+      "name": "atera_list_closed_tickets",
+      "description": "List tickets whose status changed to resolved or closed, with their comments by default. Use it for reports on finished work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "include_comments": {
+            "type": "boolean",
+            "description": "Include first and last comments (default true)."
+          },
+          "include_relations": {
+            "type": "boolean",
+            "description": "Include ticket relations (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/statusmodified",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page",
+          "includeComments": "$include_comments",
+          "includeRelations": "$include_relations"
+        }
+      }
+    },
+    {
+      "name": "atera_list_ticket_comments",
+      "description": "List the comments of one ticket in order: text, date, author (end user or technician, with email and name) and whether the comment is internal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID from atera_list_tickets."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}/comments",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_list_ticket_work_hours",
+      "description": "List the work-hour records logged on one ticket: technician, start and end time, duration, billable flag and on-site or remote. Use it for time and billing questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID from atera_list_tickets."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}/workhoursrecords",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_get_ticket_billable_duration",
+      "description": "Get the billable time totals of one ticket (on-site and off-site) as Atera computes them for invoicing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID from atera_list_tickets."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}/billableduration"
+      }
+    },
+    {
+      "name": "atera_list_contracts",
+      "description": "List customer contracts with type (retainer, hourly, block hours, block money, remote monitoring, project), active and default flags and start and end dates. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contracts",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_list_customer_contracts",
+      "description": "List the contracts of one customer with type, rates, active flag and dates. Use it to check how work for that customer is billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "CustomerID from atera_list_customers."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contracts/customer/{customer_id}",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_get_contract",
+      "description": "Get one contract by ContractID with its type-specific details (hourly rates, block hours, retainer fee, monitored device rates) and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "ContractID from atera_list_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contracts/{contract_id}"
+      }
+    },
+    {
+      "name": "atera_list_knowledge_base",
+      "description": "List the knowledge base articles in Atera with title, content, keywords and visibility. Use it to find existing fixes before answering a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "items_in_page": {
+            "type": "integer",
+            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/knowledgebases",
+        "queryParams": {
+          "page": "$page",
+          "itemsInPage": "$items_in_page"
+        }
+      }
+    },
+    {
+      "name": "atera_create_ticket",
+      "description": "Create a help desk ticket. Give an existing EndUserID, or first name, last name and email to create the end user with it. Returns the new TicketID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Ticket title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Ticket description, the first comment."
+          },
+          "end_user_id": {
+            "type": "integer",
+            "description": "EndUserID of an existing contact (atera_list_contacts)."
+          },
+          "end_user_first_name": {
+            "type": "string",
+            "description": "First name, to create a new end user when end_user_id is not given."
+          },
+          "end_user_last_name": {
+            "type": "string",
+            "description": "Last name of the new end user."
+          },
+          "end_user_email": {
+            "type": "string",
+            "description": "Email of the new end user."
+          },
+          "end_user_phone": {
+            "type": "string",
+            "description": "Phone of the new end user."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Ticket priority.",
+            "enum": [
+              "Low",
+              "Medium",
+              "High",
+              "Critical"
+            ]
+          },
+          "impact": {
+            "type": "string",
+            "description": "Ticket impact.",
+            "enum": [
+              "NoImpact",
+              "SiteDown",
+              "ServerIssue",
+              "Minor",
+              "Major",
+              "Crisis"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Ticket type.",
+            "enum": [
+              "Incident",
+              "Problem",
+              "Request",
+              "Change"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Initial status, for example Open or Pending."
+          },
+          "technician_contact_id": {
+            "type": "integer",
+            "description": "Technician to assign (TechnicianContactID from a ticket)."
+          },
+          "technician_email": {
+            "type": "string",
+            "description": "Email of the technician to assign, instead of the id."
+          }
+        },
+        "required": [
+          "title",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets",
+        "bodyMapping": {
+          "TicketTitle": "$title",
+          "Description": "$description",
+          "EndUserID": "$end_user_id",
+          "EndUserFirstName": "$end_user_first_name",
+          "EndUserLastName": "$end_user_last_name",
+          "EndUserEmail": "$end_user_email",
+          "EndUserPhone": "$end_user_phone",
+          "TicketPriority": "$priority",
+          "TicketImpact": "$impact",
+          "TicketType": "$type",
+          "TicketStatus": "$status",
+          "TechnicianContactID": "$technician_contact_id",
+          "TechnicianEmail": "$technician_email"
+        }
+      }
+    },
+    {
+      "name": "atera_update_ticket",
+      "description": "Update a ticket's title, status, type, priority, impact or assigned technician. Only the fields passed are changed. Use it to close, reassign or reprioritise a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID to update."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status, for example Open, Pending, Resolved or Closed."
+          },
+          "type": {
+            "type": "string",
+            "description": "New type.",
+            "enum": [
+              "Incident",
+              "Problem",
+              "Request",
+              "Change"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "description": "New priority.",
+            "enum": [
+              "Low",
+              "Medium",
+              "High",
+              "Critical"
+            ]
+          },
+          "impact": {
+            "type": "string",
+            "description": "New impact.",
+            "enum": [
+              "NoImpact",
+              "SiteDown",
+              "ServerIssue",
+              "Minor",
+              "Major",
+              "Crisis"
+            ]
+          },
+          "technician_contact_id": {
+            "type": "integer",
+            "description": "TechnicianContactID to assign."
+          },
+          "technician_email": {
+            "type": "string",
+            "description": "Email of the technician to assign, instead of the id."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticket_id}",
+        "bodyMapping": {
+          "TicketTitle": "$title",
+          "TicketStatus": "$status",
+          "TicketType": "$type",
+          "TicketPriority": "$priority",
+          "TicketImpact": "$impact",
+          "TechnicianContactID": "$technician_contact_id",
+          "TechnicianEmail": "$technician_email"
+        }
+      }
+    },
+    {
+      "name": "atera_add_technician_comment",
+      "description": "Add a technician comment to a ticket. With is_internal true it is an internal note; with false the end user sees it and is notified by email. Returns the comment id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID to comment on."
+          },
+          "comment_text": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "technician_id": {
+            "type": "integer",
+            "description": "Technician's contact id (TechnicianContactID on tickets)."
+          },
+          "technician_email": {
+            "type": "string",
+            "description": "Technician's email, instead of the id."
+          },
+          "is_internal": {
+            "type": "boolean",
+            "description": "true for an internal note the end user does not see; false for a reply to the end user."
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "description": "Optional comment time in UTC, ISO 8601. Default now."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "comment_text",
+          "is_internal"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/comments",
+        "bodyMapping": {
+          "CommentText": "$comment_text",
+          "CommentTimestampUTC": "$timestamp_utc",
+          "TechnicianCommentDetails": {
+            "TechnicianId": "$technician_id",
+            "TechnicianEmail": "$technician_email",
+            "IsInternal": "$is_internal"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "atera_add_enduser_comment",
+      "description": "Add a comment to a ticket on behalf of the end-user contact, for example to log a reply that arrived by phone. Returns the comment id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "TicketID to comment on."
+          },
+          "comment_text": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "enduser_id": {
+            "type": "integer",
+            "description": "EndUserID of the contact who wrote it."
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "description": "Optional comment time in UTC, ISO 8601. Default now."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "comment_text",
+          "enduser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/comments",
+        "bodyMapping": {
+          "CommentText": "$comment_text",
+          "CommentTimestampUTC": "$timestamp_utc",
+          "EnduserCommentDetails": {
+            "EnduserId": "$enduser_id"
+          }
+        }
+      }
+    }
+  ]
+}

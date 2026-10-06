@@ -1,0 +1,620 @@
+{
+  "slug": "bill-com",
+  "name": "BILL",
+  "description": "BILL (Bill.com) accounts payable and receivable: vendors, bills, recurring bills, vendor credits, bill approvals and approval policies, AP payments, customers, invoices, credit memos and received payments. BILL v3 API with a developer key and user sign-in; approving bills is included but installed switched off.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "bill-com",
+  "docsUrl": "https://developer.bill.com/reference/api-reference-overview",
+  "prerequisites": "A BILL developer key and the organization id, both on Settings → Sync & Integrations → Manage Developer Keys in the BILL web app (an administrator generates the key), plus the e-mail and password of a BILL user of that organization.",
+  "instructions": "## BILL\nBILL (formerly Bill.com) runs accounts payable (vendors, bills, approvals, payments) and accounts receivable (customers, invoices, received payments) for US businesses. This connector uses the BILL v3 API, read-only by default.\n\n## Setup\n1. BILL API access needs a **developer key** (`devKey`). An administrator generates it in the BILL web app: **Settings → Sync & Integrations → Manage Developer Keys → Generate developer key** (production), or in a sandbox developer account from the BILL developer portal sign-up (https://developer.bill.com).\n2. `BILL_USERNAME` and `BILL_PASSWORD`: the e-mail and password of a BILL user of that organization. Use a dedicated API user; its role limits what the API can see and do.\n3. `BILL_ORGANIZATION_ID`: shown at the bottom of the same Manage Developer Keys page; it starts with `008`.\n4. `BILL_API_URL`: `https://gateway.prod.bill.com/connect` for production, `https://gateway.stage.bill.com/connect` for the sandbox. A sandbox devKey does not work on production and the reverse.\n\nThe connector signs in with `POST /v3/login` and sends the returned `sessionId` and the `devKey` as headers on every call. A session expires after 35 minutes without activity; the connector signs in again by itself. The login limit is 200 per developer key per hour.\n\n## Start here\n- `bill_com_get_session` checks the sign-in.\n- Payables: `bill_com_list_bills` with `filters=paymentStatus:in:\"UNPAID,PARTIAL\"` and `sort=dueDate:asc`; `bill_com_list_pending_approvals` for what waits for you.\n- Receivables: `bill_com_list_invoices` with `filters=status:in:\"OPEN,PARTIAL_PAYMENT\"`.\n\n## Filters, sort, pages\n`filters` is `field:operator:value`, several separated by commas (AND). Operators: eq, ne, gt, gte, lt, lte, in, nin, sw (starts with). Quote values that contain commas or times: `createdTime:gte:\"2026-09-01T00:00:00.000Z\"`, `paymentStatus:in:\"UNPAID,PARTIAL\"`. Not every field is filterable; common ones: vendors/customers `name` (eq, sw), `archived`, `createdTime`, `updatedTime`; bills `vendorId`, `dueDate`, `paymentStatus`; invoices `customerId`, `status`; payments `vendorId`, `processDate`, `status`. `sort` is `field:asc|desc`. `max` up to 100 (default 20). For the next page pass `page` = the `nextPage` value from the answer, without filters and sort.\n\n## Ids\nBILL ids have type prefixes: vendors `009`, bills `00n`, customers `0cu`, invoices `00e`, payments `stp`, organizations `008`.\n\n## Limits\n20,000 requests per developer key per hour and 3 concurrent requests per organization; errors BDC_1144 and BDC_1322 mean wait and retry.\n\n## Writes\nApproving or denying bills is included but installed switched off. Payments, bill and invoice creation are not part of this connector.",
+  "requiredEnvVars": [
+    "BILL_API_URL",
+    "BILL_DEV_KEY",
+    "BILL_ORGANIZATION_ID",
+    "BILL_USERNAME",
+    "BILL_PASSWORD"
+  ],
+  "envVarMeta": {
+    "BILL_API_URL": {
+      "label": "API environment",
+      "kind": "address",
+      "help": "https://gateway.prod.bill.com/connect for production, https://gateway.stage.bill.com/connect for the sandbox.",
+      "example": "https://gateway.prod.bill.com/connect",
+      "link": "https://developer.bill.com/docs/environmental-differences",
+      "pattern": "^https://gateway\\.(prod|stage)\\.bill\\.com/connect$",
+      "patternMessage": "Use https://gateway.prod.bill.com/connect or https://gateway.stage.bill.com/connect, without a trailing slash."
+    },
+    "BILL_DEV_KEY": {
+      "label": "Developer key (devKey)",
+      "kind": "credential",
+      "help": "BILL web app → Settings → Sync & Integrations → Manage Developer Keys → Generate developer key. Sandbox keys come with a sandbox developer account.",
+      "link": "https://developer.bill.com/docs/bill-keys-tokens"
+    },
+    "BILL_ORGANIZATION_ID": {
+      "label": "Organization id",
+      "kind": "setting",
+      "help": "Shown at the bottom of Settings → Sync & Integrations → Manage Developer Keys in the BILL web app. Starts with 008.",
+      "link": "https://developer.bill.com/docs/get-started-in-production",
+      "pattern": "^008\\w+$",
+      "patternMessage": "A BILL organization id starts with 008."
+    },
+    "BILL_USERNAME": {
+      "label": "BILL user e-mail",
+      "kind": "credential",
+      "help": "E-mail address of a BILL user in that organization. A dedicated API user is recommended.",
+      "link": "https://developer.bill.com/reference/login",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "The e-mail address you sign in to BILL with."
+    },
+    "BILL_PASSWORD": {
+      "label": "BILL password",
+      "kind": "credential",
+      "help": "Password of that BILL user.",
+      "link": "https://developer.bill.com/reference/login"
+    }
+  },
+  "verifyHints": {
+    "400": "BILL refused the sign-in. Check the e-mail, password, organization id and developer key, and that the developer key belongs to the same environment as the API URL.",
+    "401": "BILL rejected the session or developer key. Check the developer key and that the API URL matches its environment (production or sandbox).",
+    "403": "The BILL user's role does not allow this. Use a user with Administrator or Accountant rights.",
+    "rate_limited": "BILL limits 20,000 requests per developer key per hour, 200 sign-ins per hour and 3 concurrent requests. Wait and try again."
+  },
+  "probe": {
+    "tool": "bill_com_get_session"
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "BILL v3 API",
+    "type": "REST",
+    "baseUrl": "{{BILL_API_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{BILL_API_URL}}/v3/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}",
+        "organizationId": "{{BILL_ORGANIZATION_ID}}",
+        "devKey": "{{BILL_DEV_KEY}}"
+      },
+      "username": "{{BILL_USERNAME}}",
+      "password": "{{BILL_PASSWORD}}",
+      "tokenJsonPath": "sessionId",
+      "tokenTTLSeconds": 1800,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "sessionId",
+      "headerTemplate": "${token}",
+      "extraHeaders": {
+        "devKey": "{{BILL_DEV_KEY}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v3/health"
+  },
+  "tools": [
+    {
+      "name": "bill_com_get_session",
+      "description": "Get the current API session: organization id, user id and whether the session is MFA trusted. No parameters; use it to check the sign-in.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/login/session"
+      }
+    },
+    {
+      "name": "bill_com_list_organizations",
+      "description": "List the BILL organizations the signed-in user can access, with organization id and name, including Accountant Console organizations. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "nextPage value from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/login/organizations",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_list_vendors",
+      "description": "List vendors (payees) with id, name, contact, address, payment details status, bill currency and balance. Filter by name, archived, payment status or change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. name:sw:\"Acme\",archived:eq:false or updatedTime:gte:\"2026-09-01\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. name:asc or createdTime:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/vendors",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_vendor",
+      "description": "Get one vendor by id with contact data, address, payment method and network status, bill currency, balance and accounting links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "description": "Vendor id, starting with 009."
+          }
+        },
+        "required": [
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/vendors/{vendor_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_customers",
+      "description": "List customers (AR) with id, name, contact, address, invoice currency, balance and whether they can be charged. Filter by name, archived or change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. name:sw:\"Acme\",archived:eq:false. Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. name:asc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/customers",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_customer",
+      "description": "Get one customer by id with contact data, billing and shipping address, payment terms, invoice currency and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with 0cu."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_bills",
+      "description": "List bills (AP invoices from vendors) with id, vendor, invoice number and date, due date, amount, due amount, payment and approval status. Filter by vendor, due date, payment status or archived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\",paymentStatus:in:\"UNPAID,PARTIAL\",dueDate:lte:\"2026-10-31\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. dueDate:asc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/bills",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_bill",
+      "description": "Get one bill by id with vendor, invoice number, dates, line items with accounts and classifications, amounts, payment status and approval status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bill_id": {
+            "type": "string",
+            "description": "Bill id, starting with 00n."
+          }
+        },
+        "required": [
+          "bill_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/bills/{bill_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_recurring_bills",
+      "description": "List recurring bill templates with vendor, schedule, amount and next due date. Filter by vendor or archived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. createdTime:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/recurringbills",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_list_vendor_credits",
+      "description": "List vendor credits (amounts a vendor owes back) with vendor, credit date, amount, applied amount and status. Filter by vendor, date or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\",creditDate:gte:\"2026-01-01\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. creditDate:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/vendor-credits",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_list_invoices",
+      "description": "List AR invoices with id, customer, invoice number and date, due date, total, due amount and status. Filter by customer, status or change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. customerId:eq:\"0cu...\",status:in:\"OPEN,PARTIAL_PAYMENT\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. dueDate:asc or createdTime:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/invoices",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_invoice",
+      "description": "Get one AR invoice by id with customer, number, dates, line items, totals, amount due, status and payment link details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, starting with 00e."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_credit_memos",
+      "description": "List AR credit memos with customer, reference number, credit date, amount, applied amount and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. customerId:eq:\"0cu...\",status:eq:\"OPEN\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. creditDate:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/credit-memos",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_list_payments",
+      "description": "List AP payments made to vendors with id, vendor, amount, process date, disbursement type, status and the bills paid. Filter by vendor, process date, amount or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\",processDate:gte:\"2026-10-01\",status:eq:\"SCHEDULED\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. processDate:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/payments",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_payment",
+      "description": "Get one AP payment by id with vendor, amount, funding account, process and expected arrival dates, status, disbursement type and bills paid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Payment id, starting with stp."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/payments/{payment_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_received_payments",
+      "description": "List payments received from customers (AR) with customer, amount, payment date, type, status and the invoices they settle. Filter by customer, date or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated field:operator:value conditions, e.g. customerId:eq:\"0cu...\",paymentDate:gte:\"2026-10-01\". Quote values with commas or times."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:asc or field:desc, comma-separated, e.g. paymentDate:desc."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 20)."
+          },
+          "page": {
+            "type": "string",
+            "description": "nextPage or prevPage value from the previous answer. Send it without filters and sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/receivable-payments",
+        "queryParams": {
+          "filters": "$filters",
+          "sort": "$sort",
+          "max": "$max",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bill_com_get_received_payment",
+      "description": "Get one received payment by id with customer, amount, payment date, method, status and the invoices it was applied to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "received_payment_id": {
+            "type": "string",
+            "description": "Received payment id."
+          }
+        },
+        "required": [
+          "received_payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/receivable-payments/{received_payment_id}"
+      }
+    },
+    {
+      "name": "bill_com_list_pending_approvals",
+      "description": "List the bills waiting for approval by the signed-in user, with bill, vendor, amount and due date. Use it before approving or denying bills.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/bill-approvals/pending-user-approvals"
+      }
+    },
+    {
+      "name": "bill_com_list_approval_policies",
+      "description": "List the bill approval policies of the organization: rules (for example amount thresholds or vendors) and the approvers in order.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/bill-approvals/policies"
+      }
+    },
+    {
+      "name": "bill_com_approve_or_deny_bills",
+      "description": "Approve or deny bills waiting for the signed-in user's approval, with an optional comment per bill. Approved bills can then be paid. Returns the result per bill.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "description": "One entry per bill: [{\"billId\": \"00n...\", \"action\": \"APPROVE\" or \"DENY\", \"comment\": \"reason\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/bill-approvals/actions",
+        "bodyTemplate": "${actions}"
+      }
+    }
+  ]
+}

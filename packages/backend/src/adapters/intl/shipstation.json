@@ -1,0 +1,1341 @@
+{
+  "slug": "shipstation",
+  "name": "ShipStation",
+  "description": "ShipStation multi-carrier shipping: orders (shipments in API v2), labels, carriers and their services, rate quotes, tracking, warehouses, products, inventory, fulfillments, batches, manifests and pickups. ShipStation API v2 with an API-Key header; label purchase and void are included but installed switched off.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "shipstation",
+  "docsUrl": "https://docs.shipstation.com/",
+  "prerequisites": "A ShipStation plan with API access and a **V2** API key (Settings → Account → API Settings → Generate API Key). The older V1 key and secret do not work with this connector.",
+  "instructions": "## ShipStation API v2\nThis connector talks to ShipStation API v2 at `https://api.shipstation.com/v2`. ShipStation offers two APIs: the legacy V1 API (`ssapi.shipstation.com`, Basic auth with an API key and secret) and API v2. The V1 API is marked deprecated in ShipStation's documentation and will be removed; new accounts generate a V2 key on the API Settings page, and ShipStation API (formerly ShipEngine) keys work on v2 too. This connector therefore uses v2 only.\n\n## Setup\n1. In ShipStation open **Settings → Account → API Settings** (https://ship.shipstation.com/#/settings/api). Your plan must include API access.\n2. Click **Generate API Key** under the V2 section and copy the key; it is shown only once. One V2 key can be active at a time; generating a new one revokes the old one.\n3. Paste it into `SHIPSTATION_API_KEY`. It is sent in the `API-Key` header.\nShipStation API (formerly ShipEngine) customers use the key from https://api-portal.shipstation.com/; keys starting with `TEST_` reach the sandbox.\n\n## Orders are shipments in v2\nWhat the ShipStation web app calls an **order** is a **shipment** in API v2, and what the web app calls a shipment is a **label**. v1 `orderId` 12345678 is v2 `shipment_id` `se-12345678`; v1 `orderKey` is v2 `external_shipment_id`; the order number is `shipment_number`. Status: `pending` covers awaiting payment, awaiting shipment and on hold; `label_purchased` means shipped. All v2 ids start with `se-`.\n\n## Stores\nAPI v2 has no endpoint that lists stores. Every shipment carries the `store_id` of the store (order source) it came from; filter `shipstation_list_shipments` by `store_id` and `shipstation_list_fulfillments` by `order_source_id`.\n\n## Start here\n- `shipstation_list_carriers` first: carrier ids (`se-...`) are needed for rates, labels and services.\n- `shipstation_list_shipments` with `shipment_status=pending` lists the orders still to ship; add `created_at_start` or `modified_at_start` (ISO 8601, e.g. `2026-10-01T00:00:00Z`) to keep the list small.\n- `shipstation_calculate_rates` compares carrier prices for one shipment; `shipstation_estimate_rates` quotes from postal codes and weight alone.\n- `shipstation_list_warehouses` gives the ship-from locations (`warehouse_id`).\n\n## Pagination\nList tools take `page` (from 1) and `page_size`; answers carry `total`, `page` and `pages`. Keep fetching while `page` is lower than `pages`.\n\n## Rate limits\n200 requests per minute per account by default. A 429 carries a `Retry-After` header with the seconds to wait. Carrier errors carry `error_source` `carrier` rather than `shipstation`.\n\n## Writes cost money\nThe label tools (`shipstation_create_label_from_shipment`, `shipstation_create_label_from_rate`, `shipstation_void_label`) are installed switched off. ShipStation platform accounts have no sandbox, so a purchased label is charged to the carrier account; void unused labels promptly. Rate quotes and address validation change nothing.",
+  "requiredEnvVars": [
+    "SHIPSTATION_API_KEY"
+  ],
+  "envVarMeta": {
+    "SHIPSTATION_API_KEY": {
+      "label": "API key (V2)",
+      "kind": "credential",
+      "help": "ShipStation → Settings → Account → API Settings → V2 API key → Generate API Key. Copy it right away; it is shown once. Do not use the V1 key and secret.",
+      "link": "https://ship.shipstation.com/#/settings/api",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the V2 API key as one string, without spaces or the word API-Key."
+    }
+  },
+  "verifyHints": {
+    "401": "ShipStation refused the key. Use a V2 API key from Settings → Account → API Settings (the V1 key and secret do not work here), and check that it was not replaced by a newer one.",
+    "403": "The key is valid but the plan or user lacks API access to this resource. Check that your ShipStation plan includes API access.",
+    "rate_limited": "ShipStation allows 200 requests per minute by default. Wait for the number of seconds in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "shipstation_list_carriers",
+    "params": {
+      "page_size": 1,
+      "include_extended_details": false
+    }
+  },
+  "connector": {
+    "name": "ShipStation API v2",
+    "type": "REST",
+    "baseUrl": "https://api.shipstation.com/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "API-Key",
+      "apiKey": "{{SHIPSTATION_API_KEY}}"
+    },
+    "healthcheckPath": "/carriers"
+  },
+  "tools": [
+    {
+      "name": "shipstation_list_carriers",
+      "description": "List the carrier accounts connected to ShipStation with their carrier_id (se-...), carrier code, nickname, balance and, by default, their services and package types. Call it first: carrier ids are needed for rates and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_extended_details": {
+            "type": "boolean",
+            "description": "When true (the default), each carrier also lists its services and package types. Set false for a shorter answer."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Carriers per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers",
+        "queryParams": {
+          "include_extended_details": "$include_extended_details",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_get_carrier",
+      "description": "Get one connected carrier account by carrier_id: carrier code, account number, nickname, funding balance, services, packages and options. Use it to check a carrier's balance or what it supports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Carrier id from shipstation_list_carriers, e.g. se-123456."
+          }
+        },
+        "required": [
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers/{carrier_id}"
+      }
+    },
+    {
+      "name": "shipstation_list_carrier_services",
+      "description": "List the shipping services of one carrier (service_code such as usps_priority_mail or ups_ground, domestic or international, multi-package support). Use the service_code when quoting rates or buying labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Carrier id from shipstation_list_carriers, e.g. se-123456."
+          }
+        },
+        "required": [
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers/{carrier_id}/services"
+      }
+    },
+    {
+      "name": "shipstation_list_carrier_packages",
+      "description": "List the package types one carrier accepts (package_code such as package, flat_rate_envelope, with dimensions where fixed). Use the package_code to restrict a rate quote to a package type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Carrier id from shipstation_list_carriers, e.g. se-123456."
+          }
+        },
+        "required": [
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers/{carrier_id}/packages"
+      }
+    },
+    {
+      "name": "shipstation_list_shipments",
+      "description": "List shipments, which are the orders of the ShipStation web app: recipient, items, status, store_id, order number and dates. Filter by status, store, order number, recipient, item keyword, tag or date range. Use pending for orders still to ship.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "label_purchased",
+              "cancelled"
+            ],
+            "description": "pending (awaiting payment, awaiting shipment or on hold), processing (label being created), label_purchased (shipped) or cancelled."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Only shipments from this store (order source). The store_id is on every shipment."
+          },
+          "shipment_number": {
+            "type": "string",
+            "description": "Order number as shown in ShipStation or the sales channel."
+          },
+          "external_shipment_id": {
+            "type": "string",
+            "description": "Your own key for the order (the v1 orderKey)."
+          },
+          "sales_order_id": {
+            "type": "string",
+            "description": "Only shipments created from this sales order."
+          },
+          "ship_to_name": {
+            "type": "string",
+            "description": "Recipient name."
+          },
+          "item_keyword": {
+            "type": "string",
+            "description": "Match items by SKU, description or options."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only shipments carrying this tag name."
+          },
+          "batch_id": {
+            "type": "string",
+            "description": "Only shipments in this batch."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before this time, ISO 8601."
+          },
+          "modified_at_start": {
+            "type": "string",
+            "description": "Modified on or after this time, ISO 8601."
+          },
+          "modified_at_end": {
+            "type": "string",
+            "description": "Modified on or before this time, ISO 8601."
+          },
+          "payment_date_start": {
+            "type": "string",
+            "description": "Paid on or after this time, ISO 8601."
+          },
+          "payment_date_end": {
+            "type": "string",
+            "description": "Paid on or before this time, ISO 8601."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "modified_at",
+              "created_at"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Shipments per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "shipment_status": "$shipment_status",
+          "store_id": "$store_id",
+          "shipment_number": "$shipment_number",
+          "external_shipment_id": "$external_shipment_id",
+          "sales_order_id": "$sales_order_id",
+          "ship_to_name": "$ship_to_name",
+          "item_keyword": "$item_keyword",
+          "tag": "$tag",
+          "batch_id": "$batch_id",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "modified_at_start": "$modified_at_start",
+          "modified_at_end": "$modified_at_end",
+          "payment_date_start": "$payment_date_start",
+          "payment_date_end": "$payment_date_end",
+          "sort_by": "$sort_by",
+          "sort_dir": "$sort_dir",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_get_shipment",
+      "description": "Get one shipment (an order in the web app) by shipment_id: addresses, packages, weight, items, carrier and service, amounts paid, notes, tags and status. Use it for the full detail behind a list row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id, e.g. se-12345678. A v1 orderId becomes se-<orderId>."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}"
+      }
+    },
+    {
+      "name": "shipstation_get_shipment_by_external_id",
+      "description": "Get a shipment by its external_shipment_id, the key your own system or the sales channel gave the order (the v1 orderKey). Use it when you know the order reference but not the se- id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_shipment_id": {
+            "type": "string",
+            "description": "External shipment id (order key) as stored on the shipment."
+          }
+        },
+        "required": [
+          "external_shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/external_shipment_id/{external_shipment_id}"
+      }
+    },
+    {
+      "name": "shipstation_get_shipment_rates",
+      "description": "Get the rates already calculated for a shipment, with carrier, service, price, delivery days and rate_id. Use it to read earlier quotes; call shipstation_calculate_rates to quote again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id, e.g. se-12345678."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Only rates calculated on or after this time, ISO 8601."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/rates",
+        "queryParams": {
+          "created_at_start": "$created_at_start"
+        }
+      }
+    },
+    {
+      "name": "shipstation_calculate_rates",
+      "description": "Quote shipping rates for an existing shipment across the given carriers. Returns each rate with rate_id, carrier, service_code, amount, delivery days and errors. Nothing is bought; use a rate_id later to buy the label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id to rate, e.g. se-12345678."
+          },
+          "carrier_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Carrier ids to ask, from shipstation_list_carriers."
+          },
+          "service_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these service codes, e.g. usps_priority_mail."
+          },
+          "package_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these package codes, e.g. package."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "carrier_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rates",
+        "bodyMapping": {
+          "shipment_id": "$shipment_id",
+          "rate_options": {
+            "carrier_ids": "$carrier_ids",
+            "service_codes": "$service_codes",
+            "package_types": "$package_types"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shipstation_estimate_rates",
+      "description": "Estimate shipping prices from origin, destination, weight and optional dimensions, without a shipment. Returns rates per carrier and service with amounts and delivery days. Use it for quick price comparisons.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Carrier ids to ask, from shipstation_list_carriers."
+          },
+          "from_country_code": {
+            "type": "string",
+            "description": "Origin country, two-letter ISO code, e.g. US."
+          },
+          "from_postal_code": {
+            "type": "string",
+            "description": "Origin postal code."
+          },
+          "from_city_locality": {
+            "type": "string",
+            "description": "Origin city."
+          },
+          "from_state_province": {
+            "type": "string",
+            "description": "Origin state or province code, e.g. TX."
+          },
+          "to_country_code": {
+            "type": "string",
+            "description": "Destination country, two-letter ISO code."
+          },
+          "to_postal_code": {
+            "type": "string",
+            "description": "Destination postal code."
+          },
+          "to_city_locality": {
+            "type": "string",
+            "description": "Destination city."
+          },
+          "to_state_province": {
+            "type": "string",
+            "description": "Destination state or province code."
+          },
+          "weight_value": {
+            "type": "number",
+            "description": "Package weight, greater than 0."
+          },
+          "weight_unit": {
+            "type": "string",
+            "enum": [
+              "pound",
+              "ounce",
+              "gram",
+              "kilogram"
+            ],
+            "description": "Unit of weight_value."
+          },
+          "dimensions": {
+            "type": "object",
+            "description": "Optional package size: {\"unit\": \"inch\" or \"centimeter\", \"length\": n, \"width\": n, \"height\": n}."
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Planned ship date, ISO 8601, e.g. 2026-10-07T00:00:00Z."
+          },
+          "address_residential_indicator": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "yes",
+              "no"
+            ],
+            "description": "Whether the destination is residential."
+          }
+        },
+        "required": [
+          "carrier_ids",
+          "from_country_code",
+          "from_postal_code",
+          "from_city_locality",
+          "from_state_province",
+          "to_country_code",
+          "to_postal_code",
+          "to_city_locality",
+          "to_state_province",
+          "weight_value",
+          "weight_unit",
+          "ship_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rates/estimate",
+        "bodyMapping": {
+          "carrier_ids": "$carrier_ids",
+          "from_country_code": "$from_country_code",
+          "from_postal_code": "$from_postal_code",
+          "from_city_locality": "$from_city_locality",
+          "from_state_province": "$from_state_province",
+          "to_country_code": "$to_country_code",
+          "to_postal_code": "$to_postal_code",
+          "to_city_locality": "$to_city_locality",
+          "to_state_province": "$to_state_province",
+          "weight": {
+            "value": "$weight_value",
+            "unit": "$weight_unit"
+          },
+          "dimensions": "$dimensions",
+          "ship_date": "$ship_date",
+          "address_residential_indicator": "$address_residential_indicator"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shipstation_list_labels",
+      "description": "List purchased labels (the shipments of the web app) with tracking number, carrier, service, cost, status and download links. Filter by status, carrier, tracking number, shipment, warehouse or date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "completed",
+              "error",
+              "voided"
+            ],
+            "description": "Only labels in this status."
+          },
+          "carrier_id": {
+            "type": "string",
+            "description": "Only labels of this carrier account."
+          },
+          "service_code": {
+            "type": "string",
+            "description": "Only labels of this service, e.g. ups_ground."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Find the label with this tracking number."
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "Only labels of this shipment."
+          },
+          "external_shipment_id": {
+            "type": "string",
+            "description": "Only labels of the shipment with this external id."
+          },
+          "batch_id": {
+            "type": "string",
+            "description": "Only labels of this batch."
+          },
+          "rate_id": {
+            "type": "string",
+            "description": "Only the label bought with this rate."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Only labels shipped from this warehouse."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after this time, ISO 8601."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before this time, ISO 8601."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "modified_at",
+              "created_at",
+              "voided_at"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Labels per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels",
+        "queryParams": {
+          "label_status": "$label_status",
+          "carrier_id": "$carrier_id",
+          "service_code": "$service_code",
+          "tracking_number": "$tracking_number",
+          "shipment_id": "$shipment_id",
+          "external_shipment_id": "$external_shipment_id",
+          "batch_id": "$batch_id",
+          "rate_id": "$rate_id",
+          "warehouse_id": "$warehouse_id",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "sort_by": "$sort_by",
+          "sort_dir": "$sort_dir",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_get_label",
+      "description": "Get one label by label_id: tracking number, carrier, service, ship date, cost, status, voided flag and the label file as a URL or inline data. Use it to reprint or check a label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_id": {
+            "type": "string",
+            "description": "Label id, e.g. se-87654321. A v1 shipmentId becomes se-<shipmentId>."
+          },
+          "label_download_type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "inline"
+            ],
+            "description": "url (default) returns download links; inline returns the file as base64."
+          }
+        },
+        "required": [
+          "label_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels/{label_id}",
+        "queryParams": {
+          "label_download_type": "$label_download_type"
+        }
+      }
+    },
+    {
+      "name": "shipstation_track_label",
+      "description": "Get tracking for a label: current status, estimated delivery, carrier status description and the list of scan events. Use it to answer where a package is when you have the label_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_id": {
+            "type": "string",
+            "description": "Label id, e.g. se-87654321."
+          }
+        },
+        "required": [
+          "label_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels/{label_id}/track"
+      }
+    },
+    {
+      "name": "shipstation_get_tracking",
+      "description": "Get tracking by carrier code and tracking number, also for packages not labelled in ShipStation: status, estimated delivery and scan events. Use shipstation_track_label when you have the label_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_code": {
+            "type": "string",
+            "description": "Carrier code, e.g. fedex, ups, stamps_com, dhl_express."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The carrier's tracking number."
+          }
+        },
+        "required": [
+          "carrier_code",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking",
+        "queryParams": {
+          "carrier_code": "$carrier_code",
+          "tracking_number": "$tracking_number"
+        }
+      }
+    },
+    {
+      "name": "shipstation_create_label_from_shipment",
+      "description": "Buy a shipping label for an existing shipment, using the carrier and service set on it. Charges postage to the carrier account and marks the order shipped. Returns label_id, tracking number, cost and download links.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id with carrier_id and service_code set, e.g. se-12345678."
+          },
+          "label_format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "png",
+              "zpl"
+            ],
+            "description": "File format. pdf works with every carrier."
+          },
+          "label_layout": {
+            "type": "string",
+            "enum": [
+              "4x6",
+              "letter"
+            ],
+            "description": "Label size. letter only with pdf."
+          },
+          "label_download_type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "inline"
+            ],
+            "description": "url returns download links; inline returns base64 data."
+          },
+          "validate_address": {
+            "type": "string",
+            "enum": [
+              "no_validation",
+              "validate_only",
+              "validate_and_clean"
+            ],
+            "description": "Whether to validate the recipient address first."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/labels/shipment/{shipment_id}",
+        "bodyMapping": {
+          "label_format": "$label_format",
+          "label_layout": "$label_layout",
+          "label_download_type": "$label_download_type",
+          "validate_address": "$validate_address"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shipstation_create_label_from_rate",
+      "description": "Buy a shipping label from a rate_id returned by shipstation_calculate_rates. Charges postage to the carrier account. Returns label_id, tracking number, cost and download links.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate_id": {
+            "type": "string",
+            "description": "Rate id from a rate quote, e.g. se-1234567."
+          },
+          "label_format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "png",
+              "zpl"
+            ],
+            "description": "File format. pdf works with every carrier."
+          },
+          "label_layout": {
+            "type": "string",
+            "enum": [
+              "4x6",
+              "letter"
+            ],
+            "description": "Label size. letter only with pdf."
+          },
+          "label_download_type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "inline"
+            ],
+            "description": "url returns download links; inline returns base64 data."
+          },
+          "validate_address": {
+            "type": "string",
+            "enum": [
+              "no_validation",
+              "validate_only",
+              "validate_and_clean"
+            ],
+            "description": "Whether to validate the recipient address first."
+          }
+        },
+        "required": [
+          "rate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/labels/rates/{rate_id}",
+        "bodyMapping": {
+          "label_format": "$label_format",
+          "label_layout": "$label_layout",
+          "label_download_type": "$label_download_type",
+          "validate_address": "$validate_address"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shipstation_void_label",
+      "description": "Void a label that has not been used, so the carrier refunds the postage where it allows it. Returns whether the void was approved and the carrier's message. The label cannot be used afterwards.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_id": {
+            "type": "string",
+            "description": "Label id to void, e.g. se-87654321."
+          }
+        },
+        "required": [
+          "label_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/labels/{label_id}/void"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shipstation_list_warehouses",
+      "description": "List the ship-from locations (warehouses) with warehouse_id, name, origin address, return address and the default flag. Use the warehouse_id for rates, labels, pickups and manifests.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses"
+      }
+    },
+    {
+      "name": "shipstation_get_warehouse",
+      "description": "Get one ship-from warehouse by warehouse_id with its origin and return addresses and whether it is the default. Use it to check the sender address used on labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id from shipstation_list_warehouses, e.g. se-123."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/{warehouse_id}"
+      }
+    },
+    {
+      "name": "shipstation_list_products",
+      "description": "List the products in ShipStation's product catalog with SKU, name, price, weight, dimensions, customs data and active flag. Filter by SKU, name or active status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only the product with this SKU."
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by product name."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active products only, false for inactive ones."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "sku": "$sku",
+          "name": "$name",
+          "active": "$active",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_inventory",
+      "description": "List stock levels per SKU from ShipStation inventory: on hand, allocated and available, optionally per inventory warehouse or location. Use it to check stock before shipping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only this SKU."
+          },
+          "inventory_warehouse_id": {
+            "type": "string",
+            "description": "Only this inventory warehouse (not the same id as a ship-from warehouse)."
+          },
+          "inventory_location_id": {
+            "type": "string",
+            "description": "Only this inventory location."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "warehouse",
+              "location"
+            ],
+            "description": "Sum counts per warehouse or per location."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory",
+        "queryParams": {
+          "sku": "$sku",
+          "inventory_warehouse_id": "$inventory_warehouse_id",
+          "inventory_location_id": "$inventory_location_id",
+          "group_by": "$group_by",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_fulfillments",
+      "description": "List fulfillments, the shipping confirmations sent back to stores and marketplaces, with tracking number, carrier, ship date and notification status. Filter by store, order number, tracking number or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_source_id": {
+            "type": "string",
+            "description": "Only fulfillments of this store (the store_id on shipments)."
+          },
+          "shipment_number": {
+            "type": "string",
+            "description": "Order number."
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "Only fulfillments of this shipment."
+          },
+          "fulfillment_id": {
+            "type": "string",
+            "description": "One fulfillment by id."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number."
+          },
+          "ship_to_name": {
+            "type": "string",
+            "description": "Recipient name."
+          },
+          "ship_to_country_code": {
+            "type": "string",
+            "description": "Recipient country, two-letter ISO code."
+          },
+          "batch_id": {
+            "type": "string",
+            "description": "Only fulfillments of this batch."
+          },
+          "fulfillment_provider_code": {
+            "type": "string",
+            "description": "Only fulfillments of this fulfillment provider."
+          },
+          "ship_date_start": {
+            "type": "string",
+            "description": "Shipped on or after this date, ISO 8601."
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "Shipped on or before this date, ISO 8601."
+          },
+          "create_date_start": {
+            "type": "string",
+            "description": "Created on or after this date, ISO 8601."
+          },
+          "create_date_end": {
+            "type": "string",
+            "description": "Created on or before this date, ISO 8601."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "modified_at",
+              "shipped_at"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Fulfillments per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fulfillments",
+        "queryParams": {
+          "order_source_id": "$order_source_id",
+          "shipment_number": "$shipment_number",
+          "shipment_id": "$shipment_id",
+          "fulfillment_id": "$fulfillment_id",
+          "tracking_number": "$tracking_number",
+          "ship_to_name": "$ship_to_name",
+          "ship_to_country_code": "$ship_to_country_code",
+          "batch_id": "$batch_id",
+          "fulfillment_provider_code": "$fulfillment_provider_code",
+          "ship_date_start": "$ship_date_start",
+          "ship_date_end": "$ship_date_end",
+          "create_date_start": "$create_date_start",
+          "create_date_end": "$create_date_end",
+          "sort_by": "$sort_by",
+          "sort_dir": "$sort_dir",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_batches",
+      "description": "List label batches with batch number, status, label count, errors and download links for the combined labels. Use it to follow bulk label runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "queued",
+              "processing",
+              "completed",
+              "completed_with_errors",
+              "archived",
+              "notifying",
+              "invalid"
+            ],
+            "description": "Only batches in this status."
+          },
+          "batch_number": {
+            "type": "string",
+            "description": "Find a batch by its number."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "ship_date",
+              "processed_at",
+              "created_at"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Batches per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/batches",
+        "queryParams": {
+          "status": "$status",
+          "batch_number": "$batch_number",
+          "sort_by": "$sort_by",
+          "sort_dir": "$sort_dir",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_manifests",
+      "description": "List end-of-day manifests (carrier scan forms) with carrier, warehouse, ship date, label ids and the form download link. Filter by carrier, warehouse or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Only manifests of this carrier account."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Only manifests of this warehouse."
+          },
+          "ship_date_start": {
+            "type": "string",
+            "description": "Ship date on or after, ISO 8601."
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "Ship date on or before, ISO 8601."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after, ISO 8601."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Manifests per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manifests",
+        "queryParams": {
+          "carrier_id": "$carrier_id",
+          "warehouse_id": "$warehouse_id",
+          "ship_date_start": "$ship_date_start",
+          "ship_date_end": "$ship_date_end",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_pickups",
+      "description": "List scheduled carrier pickups with pickup window, confirmation number, carrier, warehouse and the labels included. Filter by carrier, warehouse or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Only pickups of this carrier account."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Only pickups at this warehouse."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after, ISO 8601."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Pickups per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickups",
+        "queryParams": {
+          "carrier_id": "$carrier_id",
+          "warehouse_id": "$warehouse_id",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_list_tags",
+      "description": "List the tags defined in the ShipStation account with their names and colours. Use a tag name to filter shipstation_list_shipments.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags"
+      }
+    },
+    {
+      "name": "shipstation_list_users",
+      "description": "List the users of the ShipStation account with their user id, name and status. Use it to see who shipments are assigned to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "locked_out",
+              "email_lock"
+            ],
+            "description": "Only users in this status."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Users per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "status": "$status",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "shipstation_validate_address",
+      "description": "Check a postal address against carrier data. Returns the status (verified, unverified, warning, error), the corrected address and messages. Nothing is stored; use it before buying a label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Contact name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company, for business addresses."
+          },
+          "address_line1": {
+            "type": "string",
+            "description": "First street line."
+          },
+          "address_line2": {
+            "type": "string",
+            "description": "Second street line."
+          },
+          "city_locality": {
+            "type": "string",
+            "description": "City."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "State or province code."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter ISO country code, e.g. US."
+          }
+        },
+        "required": [
+          "address_line1",
+          "city_locality",
+          "state_province",
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addresses/validate",
+        "bodyMapping": [
+          {
+            "name": "$name",
+            "company_name": "$company_name",
+            "address_line1": "$address_line1",
+            "address_line2": "$address_line2",
+            "city_locality": "$city_locality",
+            "state_province": "$state_province",
+            "postal_code": "$postal_code",
+            "country_code": "$country_code"
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

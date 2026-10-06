@@ -1,0 +1,756 @@
+{
+  "slug": "bing-webmaster",
+  "name": "Bing Webmaster Tools",
+  "description": "Bing Webmaster Tools: sites, search queries and pages with clicks, impressions and positions, crawl stats and issues, URL index details, inbound links, sitemaps, keyword research, URL and sitemap submission. Bing Webmaster API with an API key.",
+  "instructions": "## Bing Webmaster Tools\nThis connector uses the Bing Webmaster API (JSON endpoint `https://ssl.bing.com/webmaster/api.svc/json/<Method>`): sites, search performance (queries, pages, clicks, impressions, positions), crawl statistics and crawl issues, index details per URL, inbound links, sitemaps, keyword research and URL submission.\n\n## Setup\nIn Bing Webmaster Tools click **Settings** (top right), open **API Access**, accept the terms on first use, click **API Key** and then **Generate API Key**. Copy the key into `BING_WEBMASTER_API_KEY`. It is sent as the `apikey` query parameter on every call. There is one key per user, valid for all of that user's verified sites; deleting it and generating a new one breaks every integration using the old key. A site must be added and verified in Bing Webmaster Tools before its data is available (sites can be imported from Google Search Console there).\n\n## Start here\n`bing_webmaster_list_sites` returns the site URLs. Every site tool needs `site_url` exactly as listed, including scheme and trailing slash (`https://www.example.com/`); a different spelling fails with an error that names the site as not found or not verified. Then `bing_webmaster_get_rank_and_traffic_stats` for the trend, `bing_webmaster_get_query_stats` and `bing_webmaster_get_page_stats` for the top queries and pages, `bing_webmaster_get_crawl_issues` for problems.\n\n## Answers\nAnswers are wrapped in `{\"d\": ...}`. Dates use the Microsoft JSON form `/Date(1759276800000)/`, milliseconds since 1970 UTC. Positions are averages (1 = top). Search performance covers roughly the last six months; query and page lists hold the top entries, not every query.\n\n## Paging\nLink tools (`bing_webmaster_get_link_counts`, `bing_webmaster_get_url_links`) page with `page` starting at 0 and report `TotalPages`. The other tools return everything in one answer.\n\n## Errors\nA missing or wrong key answers HTTP 400 with `ErrorCode 3, InvalidApiKey`. Other faults come back as `ErrorCode` with a message, for example for an unknown or unverified site.\n\n## Writes\n`bing_webmaster_submit_url` and `bing_webmaster_submit_url_batch` (up to 500 URLs per call) ask Bing to crawl URLs and spend the daily submission quota; call `bing_webmaster_get_url_submission_quota` first. `bing_webmaster_submit_sitemap` registers a sitemap. Nothing is removed by this connector.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "bing-webmaster",
+  "docsUrl": "https://learn.microsoft.com/en-us/bingwebmaster/",
+  "requiredEnvVars": [
+    "BING_WEBMASTER_API_KEY"
+  ],
+  "envVarMeta": {
+    "BING_WEBMASTER_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Bing Webmaster Tools → Settings (top right) → API Access → accept the terms → API Key → Generate API Key. One key per user, valid for all your verified sites.",
+      "link": "https://learn.microsoft.com/en-us/bingwebmaster/getting-access",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "The API key is a string of letters and digits, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Bing refused the request. With ErrorCode 3 (InvalidApiKey) the key is wrong or was regenerated: copy it again from Settings → API access.",
+    "auth_failed": "Bing refused the API key. Copy it again from Settings → API access in Bing Webmaster Tools."
+  },
+  "probe": {
+    "tool": "bing_webmaster_list_sites"
+  },
+  "connector": {
+    "name": "Bing Webmaster Tools",
+    "type": "REST",
+    "baseUrl": "https://ssl.bing.com/webmaster/api.svc/json",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apikey": "{{BING_WEBMASTER_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  },
+  "tools": [
+    {
+      "name": "bing_webmaster_list_sites",
+      "description": "List the sites in the Bing Webmaster Tools account with their URL, verification state and verification codes. Call this first: every other tool needs the site URL exactly as listed here.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetUserSites"
+      }
+    },
+    {
+      "name": "bing_webmaster_get_rank_and_traffic_stats",
+      "description": "Get the daily clicks and impressions of a site in Bing search over the last months. Use it for the overall traffic trend before drilling into queries or pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetRankAndTrafficStats",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_query_stats",
+      "description": "Get the top search queries that showed the site in Bing, with impressions, clicks, average impression position and average click position per query and period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetQueryStats",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_page_stats",
+      "description": "Get the top pages of the site in Bing search with impressions, clicks and average positions. Use it to see which URLs bring Bing traffic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetPageStats",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_query_page_stats",
+      "description": "Get the pages of the site that appeared for one search query, with impressions, clicks and positions. Use it to find which URL ranks for a keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query exactly as returned by bing_webmaster_get_query_stats."
+          }
+        },
+        "required": [
+          "site_url",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetQueryPageStats",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_page_query_stats",
+      "description": "Get the search queries for which one page of the site appeared in Bing, with impressions, clicks and positions per query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "page_url": {
+            "type": "string",
+            "description": "Full page URL, for example https://www.example.com/pricing."
+          }
+        },
+        "required": [
+          "site_url",
+          "page_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetPageQueryStats",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "page": "$page_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_query_traffic_stats",
+      "description": "Get the daily clicks and impressions for one search query on the site. Use it to follow how a single keyword develops over time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query."
+          }
+        },
+        "required": [
+          "site_url",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetQueryTrafficStats",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_query_page_detail_stats",
+      "description": "Get the daily impressions, clicks and positions for one query on one page of the site. The most detailed level of the search performance data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query."
+          },
+          "page_url": {
+            "type": "string",
+            "description": "Full page URL."
+          }
+        },
+        "required": [
+          "site_url",
+          "query",
+          "page_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetQueryPageDetailStats",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "query": "$query",
+          "page": "$page_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_crawl_stats",
+      "description": "Get daily crawl statistics for the site: pages crawled, crawl errors, pages in index, blocked by robots.txt, HTTP 2xx/3xx/4xx/5xx counts, DNS and connection failures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCrawlStats",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_crawl_issues",
+      "description": "List URLs of the site with crawl issues found by Bingbot (for example 404, 500, blocked by robots.txt, DNS or timeout problems), with issue type and the HTTP code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCrawlIssues",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_url_info",
+      "description": "Get Bing's index details for one URL of the site: HTTP status, last crawl date, discovery date, document size, anchor count and whether it is a page or a directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full URL of the page to look up, for example https://www.example.com/blog/post."
+          }
+        },
+        "required": [
+          "site_url",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetUrlInfo",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_url_traffic_info",
+      "description": "Get the clicks and impressions Bing recorded for one URL of the site or for a directory. Use it to check the search traffic of a single page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full URL of the page or directory."
+          }
+        },
+        "required": [
+          "site_url",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetUrlTrafficInfo",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_link_counts",
+      "description": "List pages of the site that have inbound links from other sites, with the number of links for each. Paged with page starting at 0; TotalPages in the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, starting at 0.",
+            "default": 0
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetLinkCounts",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_url_links",
+      "description": "List the external pages that link to one URL of the site, with their URL and anchor text. Paged with page starting at 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "link": {
+            "type": "string",
+            "description": "URL on your site whose inbound links you want, from bing_webmaster_get_link_counts."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, starting at 0.",
+            "default": 0
+          }
+        },
+        "required": [
+          "site_url",
+          "link"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetUrlLinks",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "link": "$link",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_url_submission_quota",
+      "description": "Get how many URLs the site may still submit today and this month through the URL submission API. Check it before bing_webmaster_submit_url_batch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetUrlSubmissionQuota",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_list_sitemaps",
+      "description": "List the sitemaps and feeds submitted for the site with URL, type, status, last crawl date, submission date and number of URLs found.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetFeeds",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_sitemap_details",
+      "description": "Get the child sitemaps of a sitemap index with their status, last crawl and URL counts. Use it when a sitemap index shows errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "feed_url": {
+            "type": "string",
+            "description": "Sitemap index URL from bing_webmaster_list_sitemaps."
+          }
+        },
+        "required": [
+          "site_url",
+          "feed_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetFeedDetails",
+        "queryParams": {
+          "siteUrl": "$site_url",
+          "feedUrl": "$feed_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_crawl_settings",
+      "description": "Get the crawl settings of the site: crawl rate by hour of day and whether the crawl-delay in robots.txt is respected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetCrawlSettings",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_list_blocked_urls",
+      "description": "List the URLs and directories of the site that are blocked from Bing search results through the Block URLs tool, with type and expiry date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetBlockedUrls",
+        "queryParams": {
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_keyword_stats",
+      "description": "Get Bing's historical weekly search impressions for a keyword in a country and language. Use it for keyword research, independent of your sites.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword or phrase, for example running shoes."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code in lower case, for example us, gb, de. Empty for all countries."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language-market code, for example en-US, de-DE. Empty for all languages."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetKeywordStats",
+        "queryParams": {
+          "q": "$q",
+          "country": "$country",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_keyword",
+      "description": "Get the total Bing search impressions for a keyword in a country and language over a date range, with broad and exact match counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword or phrase, for example running shoes."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code in lower case, for example us, gb, de. Empty for all countries."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language-market code, for example en-US, de-DE. Empty for all languages."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, ISO 8601, for example 2026-07-01."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date, ISO 8601."
+          }
+        },
+        "required": [
+          "q",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetKeyword",
+        "queryParams": {
+          "q": "$q",
+          "country": "$country",
+          "language": "$language",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_get_related_keywords",
+      "description": "Get keywords related to a keyword, with their Bing search impressions in a country and language over a date range. Use it to widen a keyword list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword or phrase, for example running shoes."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code in lower case, for example us, gb, de. Empty for all countries."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language-market code, for example en-US, de-DE. Empty for all languages."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date, ISO 8601."
+          }
+        },
+        "required": [
+          "q",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/GetRelatedKeywords",
+        "queryParams": {
+          "q": "$q",
+          "country": "$country",
+          "language": "$language",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "bing_webmaster_submit_url",
+      "description": "Submit one URL of a verified site to Bing for crawling and indexing. Uses one unit of the daily URL submission quota. Returns nothing on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "url": {
+            "type": "string",
+            "description": "Full URL to submit, on the same site."
+          }
+        },
+        "required": [
+          "site_url",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/SubmitUrl",
+        "bodyMapping": {
+          "siteUrl": "$site_url",
+          "url": "$url"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "bing_webmaster_submit_url_batch",
+      "description": "Submit up to 500 URLs of a verified site to Bing in one call for crawling and indexing. Each URL uses one unit of the daily quota; check the quota first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "url_list": {
+            "type": "array",
+            "description": "URLs to submit, all on the same site, at most 500.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "site_url",
+          "url_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/SubmitUrlBatch",
+        "bodyMapping": {
+          "siteUrl": "$site_url",
+          "urlList": "$url_list"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "bing_webmaster_submit_sitemap",
+      "description": "Submit a sitemap or feed URL for a site so Bing crawls it regularly. Use it after adding a new sitemap; it then appears in bing_webmaster_list_sitemaps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Site URL exactly as registered in Bing Webmaster Tools, with scheme and trailing slash, for example https://www.example.com/. Get it from bing_webmaster_list_sites."
+          },
+          "feed_url": {
+            "type": "string",
+            "description": "Full URL of the sitemap, for example https://www.example.com/sitemap.xml."
+          }
+        },
+        "required": [
+          "site_url",
+          "feed_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/SubmitFeed",
+        "bodyMapping": {
+          "siteUrl": "$site_url",
+          "feedUrl": "$feed_url"
+        }
+      }
+    }
+  ]
+}
