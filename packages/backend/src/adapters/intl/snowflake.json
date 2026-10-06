@@ -1,0 +1,234 @@
+{
+  "slug": "snowflake",
+  "name": "Snowflake",
+  "description": "Ask your Snowflake data questions from Claude, ChatGPT or Copilot through Snowflake's official managed MCP server: Cortex Agents, Cortex Analyst semantic views, Cortex Search and your own functions, governed by your Snowflake roles.",
+  "instructions": "This connector bridges the **Snowflake-managed MCP server**, Snowflake's official MCP server that runs inside your Snowflake account. You create an MCP server object in a database and schema, and it serves the tools you define in it: Cortex Agents, Cortex Analyst semantic views, Cortex Search services, SQL execution, and your own UDFs and stored procedures. AnythingMCP connects with a programmatic access token (PAT) and puts those tools behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from your server object.** The tools are whatever your MCP server object defines (at most 50 per server), under the names you gave them. At install AnythingMCP asks the server for its list, so you get exactly your tools. The five tools shown in the store are the examples from Snowflake's documentation, one per tool type; they are only used if the server cannot be reached at install. After changing the server object (`CREATE OR REPLACE MCP SERVER` with a new specification), open the connector and click **Discover tools**.\n\n**Setup (about 15 minutes, needs a Snowflake admin)**:\n1. In a worksheet, create the server in the database and schema that should hold it. Snowflake recommends exposing a Cortex Agent for governed business questions:\n```sql\nCREATE OR REPLACE MCP SERVER analytics_db.mcp.business_mcp\n  FROM SPECIFICATION $$\n  tools:\n    - name: \"business_data_agent\"\n      type: \"CORTEX_AGENT_RUN\"\n      identifier: \"analytics_db.mcp.sales_agent\"\n      title: \"Governed business data agent\"\n      description: \"Use this agent for governed business data questions.\"\n  $$;\n```\n   The other tool types are `CORTEX_ANALYST_MESSAGE` (a semantic view), `CORTEX_SEARCH_SERVICE_QUERY` (a Cortex Search service), `SYSTEM_EXECUTE_SQL` (direct SQL, `read_only: true` by default) and `GENERIC` (a UDF or stored procedure, with an `input_schema`).\n2. Create a least-privileged role and grant it only what the tools need: `GRANT USAGE ON MCP SERVER analytics_db.mcp.business_mcp TO ROLE mcp_access;`, `USAGE` on the database, schema and warehouse, `USAGE` on each agent, Cortex Search service, function or procedure, and `SELECT` on each semantic view (plus `GRANT DATABASE ROLE SNOWFLAKE.CORTEX_AGENT_USER` for agents). Access to the server does not give access to its tools: each tool needs its own grant. Grant the role to the user AnythingMCP connects as, ideally a service user (`TYPE = SERVICE`), and give that user a default warehouse.\n3. Create the token, restricted to that role and with an expiry: `ALTER USER mcp_service ADD PROGRAMMATIC ACCESS TOKEN amcp_token ROLE_RESTRICTION = 'MCP_ACCESS' DAYS_TO_EXPIRY = 90;` and copy `token_secret` (Snowflake shows it once). In Snowsight the same is under **Governance & security > Users & roles >** the user **> Programmatic access tokens > Generate new token**, with **One specific role**.\n4. Fill in the variables and install:\n   - `SNOWFLAKE_ACCOUNT_HOST`: the account host name without `https://`, for example `myorg-myaccount.snowflakecomputing.com`. Use hyphens, not underscores: a host such as `myorg-my_account` fails to connect, write `myorg-my-account` instead.\n   - `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA` and `SNOWFLAKE_MCP_SERVER`: where the server object lives and its name.\n   - `SNOWFLAKE_PAT`: the token from step 3, stored encrypted and sent as a Bearer token with `X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN`.\n\n**Network**: by default a PAT only works for a user under a network policy, and that policy must allow the address AnythingMCP calls from (on AnythingMCP Cloud, ask support for the current egress IP): `CREATE NETWORK RULE amcp_ingress MODE = INGRESS TYPE = IPV4 VALUE_LIST = ('<egress IP>');` then `ALTER NETWORK POLICY <your_policy> ADD ALLOWED_NETWORK_RULE_LIST = ('amcp_ingress');`.\n\n**Safety**: the role is the real boundary, the AI sees whatever that role sees. Prefer a Cortex Agent or Cortex Analyst over raw SQL; Snowflake advises putting a `SYSTEM_EXECUTE_SQL` tool on a separate server with its own least-privileged role. The SQL execution example installs switched off here; if your server has such a tool, keep `read_only: true` in its config before you turn it on. Tools run on your warehouse and Cortex calls consume Snowflake credits. Revoke the token at any time with `ALTER USER mcp_service REMOVE PROGRAMMATIC ACCESS TOKEN amcp_token;`.\n\n**Working with it**: ask an agent or Analyst tool a plain question in `message` (Cortex Analyst returns the SQL it generated); give a Cortex Search tool a `query` and a `limit`. Responses of SQL execution and custom tools are cut at 250 KB, so select fewer columns or rows; agent responses can be large because they include reasoning steps and citations. A 401 means the token is wrong or expired, or the network policy blocks the call; tools missing from the list mean the role lacks `USAGE` on the MCP server; a listed tool that fails means the role lacks the grant on the underlying object, or the user has no default warehouse.",
+  "region": "intl",
+  "category": "database",
+  "icon": "snowflake",
+  "docsUrl": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp",
+  "requiredEnvVars": [
+    "SNOWFLAKE_ACCOUNT_HOST",
+    "SNOWFLAKE_DATABASE",
+    "SNOWFLAKE_SCHEMA",
+    "SNOWFLAKE_MCP_SERVER",
+    "SNOWFLAKE_PAT"
+  ],
+  "envVarMeta": {
+    "SNOWFLAKE_ACCOUNT_HOST": {
+      "label": "Account host",
+      "kind": "address",
+      "secret": false,
+      "help": "The host of your account URL (orgname-accountname.snowflakecomputing.com) without https://; use hyphens, not underscores.",
+      "link": "https://docs.snowflake.com/en/user-guide/admin-account-identifier",
+      "example": "myorg-myaccount.snowflakecomputing.com",
+      "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.snowflakecomputing\\.(com|cn)$",
+      "patternMessage": "Enter only the host, for example myorg-myaccount.snowflakecomputing.com: no https://, no path, and hyphens instead of underscores."
+    },
+    "SNOWFLAKE_DATABASE": {
+      "label": "Database",
+      "kind": "setting",
+      "secret": false,
+      "help": "The database that holds the MCP server object (SHOW MCP SERVERS IN ACCOUNT lists it).",
+      "link": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp",
+      "example": "ANALYTICS_DB",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_$]*$",
+      "patternMessage": "Use the unquoted object name: letters, digits, underscores and $, starting with a letter or underscore."
+    },
+    "SNOWFLAKE_SCHEMA": {
+      "label": "Schema",
+      "kind": "setting",
+      "secret": false,
+      "help": "The schema that holds the MCP server object.",
+      "link": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp",
+      "example": "MCP",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_$]*$",
+      "patternMessage": "Use the unquoted object name: letters, digits, underscores and $, starting with a letter or underscore."
+    },
+    "SNOWFLAKE_MCP_SERVER": {
+      "label": "MCP server name",
+      "kind": "setting",
+      "secret": false,
+      "help": "The name of the MCP server object you created with CREATE MCP SERVER.",
+      "link": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp",
+      "example": "BUSINESS_MCP",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_$]*$",
+      "patternMessage": "Use the unquoted object name: letters, digits, underscores and $, starting with a letter or underscore."
+    },
+    "SNOWFLAKE_PAT": {
+      "label": "Programmatic access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Snowsight > Governance & security > Users & roles > the user > Programmatic access tokens > Generate new token (restricted to one role), or ALTER USER ... ADD PROGRAMMATIC ACCESS TOKEN.",
+      "link": "https://docs.snowflake.com/en/user-guide/programmatic-access-tokens",
+      "example": "eyJraWQiOiI4NzY1NDMyMSIsImFsZyI6IkVTMjU2In0.eyJwIjoiMTIzNDU2Nzg6OTg3NjU0MzIiLCJpc3MiOiJTRjozMDAxIn0.Zm9vYmFyYmF6cXV4",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the token_secret value alone, without \"Bearer\" and without spaces."
+    }
+  },
+  "prerequisites": "- A Snowflake account where you can create an MCP server object, a role and a programmatic access token (ACCOUNTADMIN or a delegated admin).\n- An MCP server object (CREATE MCP SERVER) exposing the Cortex Agents, Cortex Analyst semantic views, Cortex Search services or functions the AI should use.\n- A network policy for the connecting user that allows the address AnythingMCP calls from.",
+  "connector": {
+    "name": "Snowflake",
+    "type": "MCP",
+    "baseUrl": "https://{{SNOWFLAKE_ACCOUNT_HOST}}/api/v2/databases/{{SNOWFLAKE_DATABASE}}/schemas/{{SNOWFLAKE_SCHEMA}}/mcp-servers/{{SNOWFLAKE_MCP_SERVER}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SNOWFLAKE_PAT}}"
+    },
+    "headers": {
+      "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN"
+    },
+    "config": {
+      "mcpToolPrefix": "snowflake_"
+    }
+  },
+  "tools": [
+    {
+      "name": "snowflake_business_data_agent",
+      "description": "Example of the CORTEX_AGENT_RUN tool type (a Cortex Agent): \"Answers governed business data questions by using configured Cortex Analyst and Cortex Search resources.\" The agent picks and orchestrates its own tools and returns its answer with reasoning steps and citations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The question or instruction for the agent, in natural language."
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "business_data_agent",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "snowflake_revenue_semantic_view",
+      "description": "Example of the CORTEX_ANALYST_MESSAGE tool type (Cortex Analyst over a semantic view): \"Semantic view for all revenue tables.\" Turns a question in natural language into SQL over the semantic view and returns the SQL statement.",
+      "parameters": {
+        "type": "object",
+        "description": "A message and additional parameters for Cortex Analyst.",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The user's question."
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "revenue-semantic-view",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "snowflake_product_search",
+      "description": "Example of the CORTEX_SEARCH_SERVICE_QUERY tool type (a Cortex Search service): \"cortex search service for all products.\" Keyword and vector search over unstructured text, returning the matching rows and a request ID.",
+      "parameters": {
+        "type": "object",
+        "description": "A search query and additional parameters for search.",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Unstructured text query."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of columns to return."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Filter query on the ATTRIBUTES columns of the search service, built from the matching operators @eq (text or numeric equality), @contains (array contains), @gte and @lte (numeric or date greater/less than or equal), combined with @and, @or and @not. Example: {\"@and\": [{\"@gte\": {\"numeric_col\": 10.5}}, {\"@lte\": {\"numeric_col\": 12.5}}]}."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10,
+            "description": "Max number of results to return."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "product-search",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "snowflake_sql_exec_tool",
+      "description": "Example of the SYSTEM_EXECUTE_SQL tool type: \"A tool to execute SQL queries against the connected Snowflake database.\" Runs one SQL statement with the role's privileges (read-only unless the server sets read_only: false); results over 250 KB are truncated. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "description": "Tool to execute a SQL query.",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "Single SQL query to execute."
+          }
+        },
+        "required": [
+          "sql"
+        ]
+      },
+      "endpointMapping": {
+        "method": "sql_exec_tool",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "snowflake_my_custom_tool",
+      "description": "Example of the GENERIC tool type (a UDF or stored procedure exposed as a tool): \"Custom tool description.\" Its inputs are the input_schema declared in the server specification, here a single string named query; results over 250 KB are truncated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The function argument declared in the tool's input_schema."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "my_custom_tool",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

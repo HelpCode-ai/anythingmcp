@@ -1,0 +1,1238 @@
+{
+  "slug": "notion",
+  "name": "Notion",
+  "description": "Search, read and update your Notion workspace from Claude, ChatGPT or Copilot through Notion's official MCP server: find pages and databases, create and edit pages, query databases with SQL, read meeting notes and add comments.",
+  "instructions": "This connector bridges **Notion MCP**, Notion's official remote MCP server at `https://mcp.notion.com/mcp`. Notion's own server provides the tools: search (including AI search across connected sources), fetching pages, databases and views, creating and updating pages, databases, views and comments, SQL and row queries over data sources, meeting notes, Notion Skills and Custom Agent sessions. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** Notion signs you in before it lists anything, so the catalog's list is installed first; once you authorize, AnythingMCP asks Notion MCP for its tools and takes their current descriptions and schemas. Notion adds tools often: open the connector and click **Discover tools** to pick up new ones. Which tools work depends on the workspace plan (AI search, meeting notes, SQL and Custom Agents need Notion AI or Business/Enterprise); `notion_get_tool_access` reports it.\n\n**Setup (about 2 minutes)**:\n1. Install the connector. There is nothing to paste: Notion MCP only accepts its own OAuth sign-in.\n2. On the connector page click **Authorize with Provider**. AnythingMCP reads Notion's OAuth metadata, registers itself as a client (dynamic client registration) and sends you to Notion.\n3. Sign in, pick the workspace and approve. Back in AnythingMCP the tools are listed again from the server.\n\n**Whose access it is**: the person who authorizes becomes the Notion identity for every caller of this connector. Everyone using it through AnythingMCP reads and writes what that member can see, and changes appear under that name. If several people share the connector, authorize with a dedicated Notion member account that has access only to the teamspaces and pages the AI should reach. An internal integration token (`ntn_...`) does not work with the hosted server.\n\n**Tokens**: access tokens last about eight hours and are refreshed automatically. Refresh tokens rotate on every refresh and expire 180 days after the first authorization, or after 30 days without use, whichever comes first. When calls start failing with an authorization error, click **Authorize with Provider** again.\n\n**Safety**: moving pages (`notion_move_pages`), changing a data source schema (`notion_update_data_source`, which drops a column's values when a property is removed) and starting or messaging Custom Agents (`notion_spawn_session`, `notion_send_message_to_session`, agents act on their own and use Notion AI credits) install switched off; turn them on per tool if needed. Creating and updating pages, comments and views stays on. Treat page content as untrusted input: a page can contain instructions meant to trick the AI. Workspace owners see and revoke MCP connections in Notion under **Settings > Connections**; Enterprise organization owners can also list and revoke members' MCP connections with the Admin API.\n\n**Working with it**: start with `notion_get_tool_access` (once, with `{}`) to see what the plan allows, then `notion_search` or `notion_ai_search` to find content and `notion_fetch` to read it before changing it. Writes with `allow_async` return a task: poll `notion_get_async_task`. `notion_search` and `notion_query_data_sources` are limited to 20 calls per 10 seconds; a `rate_limited` error carries `retry_after_seconds`. A 401 after it worked means the refresh token expired or was revoked: authorize again. `object_not_found` usually means the authorizing member cannot see that page.",
+  "region": "intl",
+  "category": "knowledge",
+  "icon": "notion",
+  "docsUrl": "https://developers.notion.com/docs/mcp",
+  "requiredEnvVars": [],
+  "envVarMeta": {},
+  "prerequisites": "- A Notion account with access to the workspace you want to connect; any plan works, while AI search, meeting notes, unlimited SQL queries and Custom Agents need Notion AI or a Business or Enterprise plan.\n- After saving, you click Authorize with Provider and sign in with Notion; whoever signs in is the Notion identity for everyone who uses this connector.\n- If several people share the connector, use a dedicated Notion member account limited to the teamspaces the AI should see.",
+  "connector": {
+    "name": "Notion",
+    "type": "MCP",
+    "baseUrl": "https://mcp.notion.com/mcp",
+    "authType": "OAUTH2",
+    "config": {
+      "mcpToolPrefix": "notion_",
+      "mcpOAuth": {
+        "registration": "dcr"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "notion_search",
+      "description": "Search the Notion workspace with short keywords, by location (page, data source or teamspace), creator or editor, date, title and content status, with sorting and up to 50 results. When the connection can use AI search, a plain keyword search runs AI search instead; with query_type \"user\" it looks up a workspace user. Fetch important matches before relying on them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Short, specific keywords, a page title or a concise question (keep it under about 50 words). Empty only when a filter is given."
+          },
+          "query_type": {
+            "type": "string",
+            "description": "\"internal\" (default) for a content search, \"user\" to look up a workspace user by name or email.",
+            "enum": [
+              "internal",
+              "user"
+            ]
+          },
+          "page_url": {
+            "type": "string",
+            "description": "Limit the search to this page and its descendants (URL or ID)."
+          },
+          "data_source_url": {
+            "type": "string",
+            "description": "Limit the search to one data source, e.g. collection://<id> from a fetched database."
+          },
+          "teamspace_id": {
+            "type": "string",
+            "description": "Limit the search to one teamspace (ID from notion-get-teams)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Exact filters: creator, editor, created or last-edited date range, teamspace_ids, title_only, content status. Editor, last-edited date, several teamspaces, title only and content status need Business or Enterprise; unavailable options are dropped with a notice."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order. \"relevance\" (default) or a date sort (date sorts need Business or Enterprise)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-search",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_ai_search",
+      "description": "Search Notion and the sources connected to the workspace (Slack, Mail, Calendar, Google Drive, Jira and others) with keywords, a page title or a concise natural-language question. Can be narrowed to a page and its descendants, a data source or a teamspace, up to 50 results. Searching connected sources requires Notion AI; without it the tool falls back to a Notion-only keyword search with a notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Short, specific keywords, a page title or a concise question (keep it under about 50 words). Empty only when a filter is given."
+          },
+          "query_type": {
+            "type": "string",
+            "description": "\"internal\" (default) for a content search, \"user\" to look up a workspace user by name or email.",
+            "enum": [
+              "internal",
+              "user"
+            ]
+          },
+          "page_url": {
+            "type": "string",
+            "description": "Limit the search to this page and its descendants (URL or ID)."
+          },
+          "data_source_url": {
+            "type": "string",
+            "description": "Limit the search to one data source, e.g. collection://<id> from a fetched database."
+          },
+          "teamspace_id": {
+            "type": "string",
+            "description": "Limit the search to one teamspace (ID from notion-get-teams)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Exact filters: creator, editor, created or last-edited date range, teamspace_ids, title_only, content status. Editor, last-edited date, several teamspaces, title only and content status need Business or Enterprise; unavailable options are dropped with a notice."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order. \"relevance\" (default) or a date sort (date sorts need Business or Enterprise)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-ai-search",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "notion_get_tool_access",
+      "description": "Report which Notion MCP tools run on the connected workspace's plan, which of their parameters are restricted, and where to upgrade. Call it once with {} and reuse the returned current_tool_access map before using a tool whose availability depends on the plan. It reads connection metadata only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tool_names": {
+            "type": "array",
+            "description": "Narrow the response to these tool base names, e.g. [\"search\", \"ai_search\"]. Omit for every tool the connection can see.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-tool-access",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_download_skill",
+      "description": "Download a complete Notion Skill: pass the Skill page id and get its id, version_id and a signed URL (valid one hour) to a tar.gz archive with SKILL.md and its supporting files. Requires the Skills API to be enabled for the workspace.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID of the Skill page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-download-skill",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_fetch",
+      "description": "Retrieve a Notion page, database, data source or saved database view by URL or ID. Pages come back as Notion-flavoured Markdown with path, last-edited time, verification, icon and cover; databases include their data sources, schema and templates; a view:// URL returns a view's filters, sorts and display settings. Large pages report truncated subtrees you can fetch by ID.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "URL or ID of the page, database, data source (collection://...) or view (view://...) to fetch."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-fetch",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_file_upload",
+      "description": "Create a short-lived URL for uploading one local file (up to 20 MiB) directly to Notion. The client then POSTs the file as multipart/form-data to that URL; the upload response includes suggested_markdown to place the file in a page or comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Name of the file to upload, with its extension."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME type of the file, e.g. image/png or application/pdf."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-file-upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_attachment",
+      "description": "Create a Notion attachment from exactly one source: inline UTF-8 text (HTML, Markdown, CSV, JSON, SVG, up to 200 KiB), a file at a direct public HTTPS URL, or a completed file upload. Returns suggested_markdown to place the attachment in a page or comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Inline UTF-8 text content of the attachment (up to 200 KiB)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Direct public HTTPS URL of the file to download (no redirects, no private addresses)."
+          },
+          "source_file_id": {
+            "type": "string",
+            "description": "ID of a completed file upload created by this connection."
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name to give the attachment, with its extension."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-attachment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "notion_download_attachment",
+      "description": "Download the complete UTF-8 text content of an attachment created with notion-create-attachment, up to 200 KiB. Supports text formats such as HTML, Markdown, plain text, CSV, JSON, XML, YAML and SVG; it does not fetch arbitrary URLs or binary files.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "file_upload_id"
+        ],
+        "properties": {
+          "file_upload_id": {
+            "type": "string",
+            "description": "The file_upload_id returned when the attachment was created."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-download-attachment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_pages",
+      "description": "Create one or more Notion pages with properties and Markdown content, optionally from a database template, with an icon, a cover, or as a Notion Skill. Without a parent a private page is created; creation_mode \"draft\" creates a workspace-level private draft. allow_async returns a task to poll with notion-get-async-task.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "pages"
+        ],
+        "properties": {
+          "pages": {
+            "type": "array",
+            "description": "The pages to create. Each has properties (title and database properties), content (Notion-flavoured Markdown), and optionally template_id, icon, cover and is_skill.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "parent": {
+            "type": "object",
+            "description": "Where to create the pages: { page_id }, { database_id } or { data_source_id }. Omit for a private page."
+          },
+          "creation_mode": {
+            "type": "string",
+            "description": "\"draft\" for a private workspace-level draft when no destination was named. Cannot be combined with parent.",
+            "enum": [
+              "draft"
+            ]
+          },
+          "allow_async": {
+            "type": "boolean",
+            "description": "Queue the write and return an async_task to poll with notion-get-async-task (recommended for most creates)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-pages",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_update_page",
+      "description": "Update a Notion page's properties, content, icon or cover, apply a database template, or change whether the page is a Skill. Commands include update_properties, update_content (batched search-and-replace on the page content) and replace_content. allow_async returns a task to poll with notion-get-async-task.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_id",
+          "command"
+        ],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "ID or URL of the page to update."
+          },
+          "command": {
+            "type": "string",
+            "description": "What to change: update_properties, update_content or replace_content (and the template command documented by the server)."
+          },
+          "properties": {
+            "type": "object",
+            "description": "Property values to set, keyed by property name (update_properties)."
+          },
+          "content_updates": {
+            "type": "array",
+            "description": "Search-and-replace operations for update_content: each has old_str (must match exactly one place unless replace_all_matches is true), new_str and optional replace_all_matches.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "new_str": {
+            "type": "string",
+            "description": "New Markdown content for replace_content."
+          },
+          "icon": {
+            "type": "string",
+            "description": "Emoji, custom emoji name (\":rocket_ship:\"), Notion icon id (\"icons/pizza_blue\") or external image URL."
+          },
+          "cover": {
+            "type": "string",
+            "description": "External image URL for the page cover."
+          },
+          "is_skill": {
+            "type": "boolean",
+            "description": "true to make the page a Notion Skill, false to stop treating it as one."
+          },
+          "allow_async": {
+            "type": "boolean",
+            "description": "Queue the write and return an async_task to poll with notion-get-async-task."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-update-page",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_convert_page_to_skill",
+      "description": "Mark a Notion page as a Notion Skill without changing its content. Pass the page's full Notion URL; the page must be in the connected workspace and the connected user must be able to edit it.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_url"
+        ],
+        "properties": {
+          "page_url": {
+            "type": "string",
+            "description": "Full Notion URL of the page to convert."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-convert-page-to-skill",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_move_pages",
+      "description": "Move one or more Notion pages or databases to a new parent page, database or teamspace. Moving changes where the content lives and who can see it through the new parent, so it ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_or_database_ids",
+          "new_parent"
+        ],
+        "properties": {
+          "page_or_database_ids": {
+            "type": "array",
+            "description": "IDs of the pages or databases to move.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "new_parent": {
+            "type": "object",
+            "description": "The new parent: { page_id }, { database_id }, { data_source_id } or { teamspace_id }."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-move-pages",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "notion_duplicate_page",
+      "description": "Duplicate a Notion page within the workspace. The copy is made asynchronously: poll notion-get-async-task with the returned task id until it has succeeded.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_id"
+        ],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "ID or URL of the page to duplicate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-duplicate-page",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_database",
+      "description": "Create a new Notion database with its initial data source and initial view, using the property schema you specify (for example name, type, priority and status columns).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "object",
+            "description": "Where to create the database: { page_id }. Omit for a private database."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the new database."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description of the database."
+          },
+          "properties": {
+            "type": "object",
+            "description": "Property schema of the initial data source, keyed by property name with the property type and options."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-database",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_folder",
+      "description": "Create an empty Folder under a parent Notion page, for example \"Project files\" under a project page, to group related pages and files.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "parent_page_id",
+          "title"
+        ],
+        "properties": {
+          "parent_page_id": {
+            "type": "string",
+            "description": "ID or URL of the parent page."
+          },
+          "title": {
+            "type": "string",
+            "description": "Name of the folder."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_update_data_source",
+      "description": "Update a Notion data source's properties (columns), name, description or other attributes. Removing or retyping a property drops its values in every row, so this ships switched off: turn it on when the AI should change database schemas.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "data_source_id"
+        ],
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "ID of the data source (collection://<id> from a fetched database)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New name of the data source."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description of the data source."
+          },
+          "properties": {
+            "type": "object",
+            "description": "Properties to add, rename, change or remove, keyed by property name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-update-data-source",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "notion_create_view",
+      "description": "Create a new view on a Notion database: table, board, list, calendar, timeline, gallery, form, chart, map or dashboard, with an optional configuration in the view DSL for filters, sorts, grouping and display options (see the notion://docs/view-dsl-spec resource).",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "database_id",
+          "type"
+        ],
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "ID or URL of the database to add the view to."
+          },
+          "data_source_id": {
+            "type": "string",
+            "description": "Data source the view shows, when the database has several."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the view."
+          },
+          "type": {
+            "type": "string",
+            "description": "View type.",
+            "enum": [
+              "table",
+              "board",
+              "list",
+              "calendar",
+              "timeline",
+              "gallery",
+              "form",
+              "chart",
+              "map",
+              "dashboard"
+            ]
+          },
+          "configuration": {
+            "type": "string",
+            "description": "Optional view DSL for filters, sorts, grouping and display options. Use page URLs/IDs and user IDs (or \"me\") in filters, not names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-view",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_update_view",
+      "description": "Update a Notion view's name, filters, sorts or display configuration. Only the fields you specify change; existing filters, sorts and grouping can be cleared. Uses the same configuration DSL as notion-create-view.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "view_id"
+        ],
+        "properties": {
+          "view_id": {
+            "type": "string",
+            "description": "ID or view:// URL of the view to update."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name of the view."
+          },
+          "configuration": {
+            "type": "string",
+            "description": "View DSL with the filters, sorts, grouping or display options to set or clear."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-update-view",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_query_data_sources",
+      "description": "Query Notion data sources with SQL (across one or more data sources), read rows from one data source with filter and sort (mode \"rows\", limit up to 100), or run a saved view (mode \"view\"). View mode is available on every plan; SQL and rows mode are unlimited on Business and Enterprise with Notion AI and metered on other plans.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "\"sql\", \"rows\" or \"view\".",
+            "enum": [
+              "sql",
+              "rows",
+              "view"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "SQL query (mode \"sql\")."
+          },
+          "data_source_url": {
+            "type": "string",
+            "description": "Data source to read (mode \"rows\"), e.g. collection://<id>."
+          },
+          "view_url": {
+            "type": "string",
+            "description": "Saved view to run (mode \"view\"), e.g. view://<id>."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Row filter for mode \"rows\", up to two levels of and/or groups."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sorts for mode \"rows\", applied in order.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows for mode \"rows\" (default 50, maximum 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-query-data-sources",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_query_meeting_notes",
+      "description": "Query the current user's Notion meeting notes, filtering by meeting properties such as a title keyword. Returns meetings where the user is an attendee or creator. Needs a Business plan or higher with Notion AI; other plans get an upgrade prompt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keyword to match in meeting titles."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Meeting property filters, such as a date range or attendees."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-query-meeting-notes",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_list_agents",
+      "description": "List the Notion Custom Agents available to the connected user, to choose one before searching for it or starting a session. Requires Notion AI and access to Custom Agents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response, to read the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-list-agents",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_search_agents",
+      "description": "Search Notion Custom Agents by name and get the Custom Agent URL needed to start a session. Without a query it pages through all agents (follow the cursor until none is returned).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name or keywords of the agent."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (only without a query)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-search-agents",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_query_sessions",
+      "description": "List Notion Custom Agent sessions the connected user can access. Pages can be empty and still carry a cursor: keep following it until the response stops returning one. Use it when session search is unavailable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_url": {
+            "type": "string",
+            "description": "Only sessions of this Custom Agent."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-query-sessions",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_search_sessions",
+      "description": "Search past Notion Custom Agent sessions by text, up to 20 matches with titles and matching text spans. Returns a warning and no matches when the workspace search index is not ready.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search for in sessions."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-search-sessions",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_spawn_session",
+      "description": "Start a new session with a Notion Custom Agent and send it a first message. The agent then works on its own with its own permissions and Notion AI credits, so this ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "agent_url",
+          "message"
+        ],
+        "properties": {
+          "agent_url": {
+            "type": "string",
+            "description": "Custom Agent URL from notion-search-agents."
+          },
+          "message": {
+            "type": "string",
+            "description": "The first message to the agent."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-spawn-session",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "notion_get_session_status",
+      "description": "Get the status of a Notion Custom Agent session (running, waiting, finished) by its session:// URL, as returned by the other session tools.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session://<spaceId>/<sessionId> (or the session://<sessionId> shorthand)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-session-status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_wait_session",
+      "description": "Wait for the current run of a Notion Custom Agent session to finish and return its reply. Use it before sending a follow-up message, which fails while a run is in progress.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session:// URL of the session to wait for."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-wait-session",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_stop_session",
+      "description": "Stop the run in progress in a Notion Custom Agent session. The session and its events stay; only the current run is cancelled.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session:// URL of the session to stop."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-stop-session",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_send_message_to_session",
+      "description": "Send a follow-up message to an existing Notion Custom Agent session, which makes the agent run again on its own. Returns a conflict error while a run is in progress. Ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url",
+          "message"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session:// URL of the session."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to send."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-send-message-to-session",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "notion_list_session_events",
+      "description": "List the events (messages, tool calls, results) of a Notion Custom Agent session, page by page.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session:// URL of the session."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-list-session-events",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_read_session_event",
+      "description": "Read one event of a Notion Custom Agent session in full, for example a long agent reply listed by notion-list-session-events.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "session_url",
+          "event_id"
+        ],
+        "properties": {
+          "session_url": {
+            "type": "string",
+            "description": "session:// URL of the session."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "ID of the event to read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-read-session-event",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_create_comment",
+      "description": "Add a comment to a Notion page: a page-level comment, a comment on specific content (block-level, by selection), or a reply to an existing discussion. The comment is Markdown and can include an uploaded file on its own line.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_id",
+          "content"
+        ],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "ID or URL of the page to comment on."
+          },
+          "content": {
+            "type": "string",
+            "description": "The comment text in Markdown."
+          },
+          "discussion_id": {
+            "type": "string",
+            "description": "Reply to this existing discussion instead of starting a new one."
+          },
+          "selection_with_ellipsis": {
+            "type": "string",
+            "description": "The content to comment on: its first and last few words joined with \"...\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-create-comment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_get_comments",
+      "description": "List all comments and discussions on a Notion page, optionally including block-level and inline discussions, resolved threads and full comment content.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "page_id"
+        ],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "ID or URL of the page."
+          },
+          "discussion_id": {
+            "type": "string",
+            "description": "Only this discussion."
+          },
+          "include_all_blocks": {
+            "type": "boolean",
+            "description": "Include block-level and inline discussions, not only page-level ones."
+          },
+          "include_resolved": {
+            "type": "boolean",
+            "description": "Include resolved discussions."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-comments",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_get_teams",
+      "description": "Retrieve the teams (teamspaces) in the current Notion workspace with your membership status in each, for example to get a teamspace ID to filter a search by.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filter teamspaces by name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-teams",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_get_users",
+      "description": "List Notion workspace members and guests with their IDs, names, emails (when available) and types (person or bot). Supports pagination and search by name or email, a specific user by ID, or the current user with \"self\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name or email to search for."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "A specific user ID, or \"self\" for the connected user."
+          },
+          "start_cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Number of users per page.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-users",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "notion_get_async_task",
+      "description": "Get the status of an async task started by notion-duplicate-page, notion-create-pages or notion-update-page: queued, running, retrying, succeeded (with the result) or failed (with the error). Wait the suggested poll_after_seconds between polls.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "The id from the async_task returned by the originating tool."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "notion-get-async-task",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

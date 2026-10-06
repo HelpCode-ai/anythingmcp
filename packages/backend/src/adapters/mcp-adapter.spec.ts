@@ -1,5 +1,8 @@
 import { AdaptersService } from './adapters.service';
-import { getAdapter } from './catalog';
+import { getAdapter, listAdapters } from './catalog';
+import { setupKind } from './env-var-meta';
+import { computeSetupState } from '../connectors/connector-setup-status.util';
+import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { catalogMcpToolsFor, describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import type { DiscoveredMcpTool } from '../connectors/connectors.service';
 
@@ -181,5 +184,74 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
     const out = await fallback.service.importAdapter('splunk', 'u1', 'o1', creds);
     expect(fallback.prisma.mcpTool.create).toHaveBeenCalledTimes(2);
     expect(out.toolsCreated).toBe(2);
+  });
+
+  it('prefixes the tools of a bridge that sets a tool prefix (linear), calling them by the remote name', async () => {
+    const discover = jest.fn().mockResolvedValue([remote('list_issues'), remote('delete_comment'), remote('brand_new')]);
+    const { service, prisma, created } = build(discover);
+    await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_x' });
+
+    expect(prisma.connector.create.mock.calls[0][0].data.config).toMatchObject({ mcpToolPrefix: 'linear_' });
+    expect(created.map((t) => [t.name, t.endpointMapping.method, t.isEnabled])).toEqual([
+      ['linear_list_issues', 'list_issues', true],
+      ['linear_delete_comment', 'delete_comment', false],
+      ['linear_brand_new', 'brand_new', true],
+    ]);
+  });
+
+  it('installs the snapshot of a bridge that needs a sign-in without trying to list it (notion)', async () => {
+    const discover = jest.fn();
+    const { service, prisma, created } = build(discover);
+    const out = await service.importAdapter('notion', 'u1', 'o1', {});
+
+    expect(discover).not.toHaveBeenCalled();
+    expect(out.probe).toBeNull();
+    expect(created).toHaveLength(getAdapter('notion')!.tools.length);
+    expect(prisma.connector.create.mock.calls[0][0].data).toMatchObject({
+      authType: 'OAUTH2',
+      config: { mcpOAuth: { registration: 'dcr' } },
+    });
+  });
+});
+
+describe('MCP bridge adapters in the catalog', () => {
+  const bridges = listAdapters()
+    .map((a) => getAdapter(a.slug)!)
+    .filter((a) => a.connector.type === 'MCP');
+
+  it('includes the vendor bridges', () => {
+    expect(bridges.map((a) => a.slug).sort()).toEqual(
+      expect.arrayContaining(['apify', 'atlassian', 'firecrawl', 'github', 'helium10', 'linear', 'notion', 'snowflake', 'splunk', 'stripe']),
+    );
+  });
+
+  it.each(bridges.filter((a) => a.slug !== 'splunk').map((a) => [a.slug, a]))(
+    '%s sets a tool prefix, lists prerequisites and ships no tool named twice',
+    (_slug, a) => {
+      const prefix = mcpToolPrefixOf(a.connector.config);
+      expect(prefix).toBe(`${a.slug.replace(/-/g, '_')}_`);
+      expect(a.prerequisites?.length).toBeGreaterThan(0);
+      const names = a.tools.map((t) => t.name);
+      expect(new Set(names).size).toBe(names.length);
+    },
+  );
+
+  it('keeps Stripe in payments, so the shared /mcp never offers it', () => {
+    expect(getAdapter('stripe')!.category).toBe('payments');
+    expect(getAdapter('stripe')!.tools.find((t) => t.endpointMapping.method === 'stripe_api_write')?.enabled).toBe(false);
+  });
+
+  it('counts the OAuth bridges as a sign-in at the provider, and the key ones as credentials', () => {
+    expect(setupKind(getAdapter('notion')!)).toBe('oauth_browser');
+    expect(setupKind(getAdapter('helium10')!)).toBe('oauth_browser');
+    expect(setupKind(getAdapter('linear')!)).toBe('credentials');
+  });
+
+  it('holds an installed OAuth bridge back from MCP until it is authorized', () => {
+    const base = { authType: 'OAUTH2', baseUrl: 'https://mcp.notion.com/mcp', config: { adapterSlug: 'notion' } };
+    expect(computeSetupState({ ...base, authConfig: {} }).status).toBe('needs_authorization');
+    expect(computeSetupState({ ...base, authConfig: { accessToken: 'at' } }).status).toBe('ready');
+    // A hand-made MCP connector with a pasted token is left as it was.
+    expect(computeSetupState({ ...base, config: null, authConfig: {} }).status).toBe('ready');
   });
 });

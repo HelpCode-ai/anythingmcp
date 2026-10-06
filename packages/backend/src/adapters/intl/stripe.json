@@ -1,0 +1,325 @@
+{
+  "slug": "stripe",
+  "name": "Stripe",
+  "description": "Look up customers, payments, invoices and subscriptions, ask for MRR and churn, and (when you allow it) create invoices, payment links or refunds in Stripe from Claude, ChatGPT or Copilot through Stripe's official MCP server.",
+  "instructions": "This connector bridges **Stripe's official remote MCP server** (`https://mcp.stripe.com`). Stripe's own server provides the tools: a generic way to search, inspect, read and write almost any Stripe API method (`stripe_api_search`, `stripe_api_details`, `stripe_api_read`, `stripe_api_write`), account info, analytics and reports, a balance summary, the Stripe documentation search and an implementation planner. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** At install AnythingMCP asks Stripe's server which tools it has, so you get exactly the set Stripe offers today. When Stripe adds tools, open the connector and click **Discover tools** to pick them up.\n\n**Setup (about 5 minutes)**:\n1. Decide on the environment first. A **sandbox** returns simulated objects and moves no money; **live mode** works on real customers and payments. Each has its own keys, and objects in one are invisible to the other. Start in a sandbox.\n2. In the Stripe Dashboard open **Developers > API keys** (https://dashboard.stripe.com/apikeys) in that environment and click **Create restricted key**. When Stripe asks what the key is for, choose **Authorizing agent access to your account**: this makes it an **agent API key** (it shows the **Agent** badge).\n3. Give it the least privilege the AI needs: set each resource to **None**, **Read** or **Write**, and leave everything else at None. For reporting only, Read on the resources you want to analyse is enough (analytics need **Data > Metrics: Read** and **Reporting: Read**). Complete the two-factor check and copy the key; Stripe shows it once.\n4. Paste it into `STRIPE_AGENT_KEY` and install. The key is sent as a Bearer token and stored encrypted.\n5. Check **Settings > MCP and CLI access** (https://dashboard.stripe.com/settings/mcp-and-cli-access): an administrator can switch MCP access off for the whole team, separately for live mode and sandboxes. It must be on for the environment of your key.\n\n**Keys Stripe accepts**: from **31 October 2026** Stripe's MCP server refuses full secret keys (`sk_live_`, `sk_test_`) and restricted keys without the Agent tag, answering 401. Use an agent key (`rk_live_...` or `rk_test_...`) created as above.\n\n**Safety**:\n- `stripe_api_write` installs **switched off**: it can call any write method the key permits, including refunds, subscription cancellations, invoice voids and deletions. Turn it on per workspace when the AI should change data, and keep the key's permissions narrow so that the key, not the prompt, is the real boundary.\n- **Approval rules**: agent keys are subject to Stripe's approval rules (**Settings > Approvals**). For sensitive actions such as refunds, payouts and account changes Stripe does not execute the call; it returns an **approval URL**. AnythingMCP passes that URL through untouched. A person opens it, reviews the request and clicks **Approve** in the Dashboard within **24 hours**, then tells the agent to retry; the retry goes through without another confirmation.\n- `send_stripe_feedback` installs switched off, because its text goes to Stripe.\n- Outputs contain customer personal data (names, emails, addresses). Card numbers never pass through: Stripe returns at most the brand and last four digits. Limit who can use this connector with roles.\n\n**Connect platforms**: to act on a connected account instead of your platform account, open the connector editor and add the header `Stripe-Account: acct_...` with the connected account ID, and give the agent key only the connected-account permissions it needs. Analytics and reports read your own account only.\n\n**Working with it**: start with `get_stripe_account_info` to confirm the account and mode, then `stripe_api_search` to find a method, `stripe_api_details` for its parameters and `stripe_api_read` to run it. Ask `stripe_analytics` for MRR, churn or subscriber counts rather than letting the AI compute them from raw objects. A **401** means a missing, expired or non-agent key; a **403** or permission error means the key lacks a permission for that resource (edit the key in the Dashboard); if nothing connects at all, check that MCP access is on for that environment and that your network allows `mcp.stripe.com`.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "stripe",
+  "docsUrl": "https://docs.stripe.com/mcp",
+  "requiredEnvVars": [
+    "STRIPE_AGENT_KEY"
+  ],
+  "envVarMeta": {
+    "STRIPE_AGENT_KEY": {
+      "label": "Stripe agent API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In the Stripe Dashboard under Developers > API keys, create a restricted key, choose \"Authorizing agent access to your account\" and give it only the permissions the AI needs.",
+      "link": "https://dashboard.stripe.com/apikeys",
+      "example": "rk_test_...",
+      "pattern": "^rk_(live|test)_[A-Za-z0-9_]+$",
+      "patternMessage": "Use an agent API key: a restricted key that starts with rk_live_ or rk_test_. Secret keys (sk_...) are refused by Stripe's MCP server from 31 October 2026."
+    }
+  },
+  "prerequisites": "- A Stripe account; start with a sandbox before connecting live mode.\n- Permission to create restricted API keys in the Stripe Dashboard (Developers > API keys), to create an agent key with least-privilege permissions.\n- MCP access switched on under Settings > MCP and CLI access for the environment (sandbox or live mode) of your key.",
+  "connector": {
+    "name": "Stripe",
+    "type": "MCP",
+    "baseUrl": "https://mcp.stripe.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{STRIPE_AGENT_KEY}}"
+    },
+    "config": {
+      "mcpToolPrefix": "stripe_",
+      "mcpPath": "/"
+    }
+  },
+  "tools": [
+    {
+      "name": "stripe_api_search",
+      "description": "Search for Stripe API methods by keyword, for example \"list invoices\" or \"create refund\". Returns matching operations with the operation IDs that stripe_api_details, stripe_api_read and stripe_api_write take.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keywords describing the API method you need, for example \"create refund\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_api_search",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_api_details",
+      "description": "Get detailed parameter information for a specific Stripe API method: its path, query and body parameters with their types, descriptions and whether they are required. Call it before stripe_api_read or stripe_api_write when you are unsure of the parameters.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "stripe_api_operation_id"
+        ],
+        "properties": {
+          "stripe_api_operation_id": {
+            "type": "string",
+            "description": "The Stripe API operation ID, as returned by stripe_api_search."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_api_details",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_api_read",
+      "description": "Read data with any Stripe API GET method: list and retrieve customers, charges, PaymentIntents, invoices, subscriptions, products, prices, payouts, balance transactions, disputes and more. The agent key's permissions decide what it can see.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "stripe_api_operation_id"
+        ],
+        "properties": {
+          "stripe_api_operation_id": {
+            "type": "string",
+            "description": "The Stripe API operation ID, as returned by stripe_api_search."
+          },
+          "parameters": {
+            "type": "object",
+            "description": "The path and query parameters of the method, as described by stripe_api_details (for example {\"limit\": 10}). Send {} when the method takes none."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_api_read",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_api_write",
+      "description": "Write data with any Stripe API POST, PATCH, PUT and DELETE method: create and update customers, products, prices, invoices, payment links and coupons, cancel subscriptions, create refunds and more. Sensitive actions such as refunds return an approval URL that a person approves in the Stripe Dashboard before the agent retries the call.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "stripe_api_operation_id"
+        ],
+        "properties": {
+          "stripe_api_operation_id": {
+            "type": "string",
+            "description": "The Stripe API operation ID, as returned by stripe_api_search."
+          },
+          "parameters": {
+            "type": "object",
+            "description": "The path and body parameters of the method, as described by stripe_api_details."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_api_write",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "stripe_get_stripe_account_info",
+      "description": "Retrieve the Stripe account the key belongs to (the Retrieve account API). Use it first to confirm which account, and whether a sandbox or live mode, the connector is working on.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_stripe_account_info",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_analytics",
+      "description": "Query Stripe-defined metrics such as MRR, churn rate, active subscribers and gross volume (preview), run subscription and billing metric templates broken down by product or price, and run SQL queries against your reporting tables (SQL needs Sigma). Reads your own account only, not connected accounts.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "intent"
+        ],
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "What to do: list_analytics and execute_analytics for metrics, execute_query_template and retrieve_query_template for subscription and billing templates, search_query_tables, retrieve_query_table, execute_query_run and retrieve_query_run for SQL. Other arguments depend on the intent; the live server lists them at install.",
+            "enum": [
+              "list_analytics",
+              "execute_analytics",
+              "execute_query_template",
+              "retrieve_query_template",
+              "search_query_tables",
+              "retrieve_query_table",
+              "execute_query_run",
+              "retrieve_query_run"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_analytics",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_reports",
+      "description": "Search the available financial report types (balance, payouts, activity, tax, Revenue Recognition) and create report runs that produce downloadable CSV files. Report runs are asynchronous, so a result can take a moment.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "intent"
+        ],
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "What to do: search_report_type and retrieve_report_type to find a report, create_report_run and retrieve_report_run to generate it. Other arguments depend on the intent; the live server lists them at install.",
+            "enum": [
+              "search_report_type",
+              "retrieve_report_type",
+              "create_report_run",
+              "retrieve_report_run"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "stripe_reports",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_get_balance_summary",
+      "description": "Display an interactive balance summary across the Stripe balance and Treasury financial accounts (Treasury public preview): available and pending funds per currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_balance_summary",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_search_stripe_documentation",
+      "description": "Search Stripe's knowledge base, the documentation and support articles, for the given question and programming language, and return the relevant passages.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question to search the Stripe documentation for."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional programming language the answer should use, for example node, python or ruby."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_stripe_documentation",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_implementation_planner",
+      "description": "Guide the user through Stripe products to accept payments, sell products online, set up billing, or build any other Stripe integration, and plan the implementation step by step.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "stripe_implementation_planner",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "stripe_send_stripe_feedback",
+      "description": "Share feedback about Stripe's products with Stripe. The text leaves your workspace and goes to Stripe, so the tool installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "send_stripe_feedback",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
