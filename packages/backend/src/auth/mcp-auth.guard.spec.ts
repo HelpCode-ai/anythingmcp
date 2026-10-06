@@ -145,4 +145,13 @@ describe('McpAuthGuard', () => {
       );
     });
   });
+
+  describe('per-user MCP API key as Authorization: Bearer', () => {
+    it('authenticates a valid mcp_ key sent as a bearer token', async () => {
+      mockApiKeys.resolveUserByKey.mockResolvedValue({ id: 'u1', email: 'a@b.com', role: 'USER', mcpRoleId: 'r1' });
+      const ctx = mockContext({ authorization: 'Bearer mcp_abc123' });
+      expect(await guard.canActivate(ctx)).toBe(true);
+      expect(mockApiKeys.resolveUserByKey).toHaveBeenCalledWith('mcp_abc123');
+    });
+  });
 });
