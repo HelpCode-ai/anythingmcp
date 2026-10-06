@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
+import { presentedMcpApiKey } from './mcp-api-key.util';
 
 /**
  * Middleware for authenticating MCP endpoint requests (/mcp).
@@ -11,7 +12,8 @@ import { McpApiKeysService } from '../roles/mcp-api-keys.service';
  * the /mcp route directly and guards can't easily be applied to it.
  *
  * Auth methods (checked in order):
- *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY
+ *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY;
+ *      a per-user key is also accepted as `Authorization: Bearer mcp_...`
  *   2. Bearer token → matches MCP_BEARER_TOKEN env (static) or JWT
  *
  * If no auth is configured, allows all requests (development mode).
@@ -34,9 +36,11 @@ export class McpAuthMiddleware implements NestMiddleware {
     const apiKey = req.headers['x-api-key'] as string | undefined;
     const authHeader = req.headers['authorization'] as string | undefined;
 
-    // Check per-user MCP API key first (mcp_... prefix)
-    if (apiKey?.startsWith('mcp_')) {
-      const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
+    // Check per-user MCP API key first (mcp_... prefix), from X-API-Key or
+    // Authorization: Bearer (see presentedMcpApiKey).
+    const presentedKey = presentedMcpApiKey(req.headers, mcpBearerToken);
+    if (presentedKey) {
+      const user = await this.mcpApiKeysService.resolveUserByKey(presentedKey);
       if (user) {
         (req as any).user = {
           sub: user.id, email: user.email, role: user.role,

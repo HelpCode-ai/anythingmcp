@@ -137,6 +137,19 @@ X-API-Key: mcp_your_key
 Content-Type: application/json
 ```
 
+Clients that can only send a bearer token can send the same key as `Authorization: Bearer mcp_your_key`. AnythingMCP tells it apart from an OAuth access token by the `mcp_` prefix, and it gets the same permissions as with `X-API-Key`. The MCP connector of Anthropic's Messages API works this way:
+
+```json
+"mcp_servers": [
+  {
+    "type": "url",
+    "url": "https://cloud.anythingmcp.com/mcp/<server-id>",
+    "name": "anythingmcp",
+    "authorization_token": "mcp_your_key"
+  }
+]
+```
+
 In `legacy` or `both` mode, the static `MCP_BEARER_TOKEN` / `MCP_API_KEY` from `.env` are accepted as well:
 
 ```http
