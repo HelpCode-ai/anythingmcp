@@ -27,6 +27,7 @@ import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -62,7 +63,12 @@ interface ConsentContext {
   redirectUri: string;
   redirectHost: string;
   scopeText: string;
+  /** When the paused authorization expires (epoch ms), if the store says. */
+  expiresAt?: number;
 }
+
+/** The longest an authorization may stay paused on the first-connector page. */
+const FIRST_CONNECTOR_PAUSE_MAX_MS = 30 * 60 * 1000;
 
 @Controller('auth')
 export class LoginController {
@@ -77,6 +83,7 @@ export class LoginController {
     private readonly deployment: DeploymentService,
     private readonly grants: McpConnectionGrantService,
     @Optional() private readonly productEvents?: ProductEventService,
+    @Optional() private readonly licenseGuard?: LicenseGuardService,
   ) {}
 
   @Get('login')
@@ -347,20 +354,37 @@ export class LoginController {
     ]);
     if (connectors > 0 || (member?.role !== 'ADMIN' && member?.role !== 'EDITOR')) return false;
 
+    // The login cookie lives as long as the authorization it finishes (30
+    // minutes from /authorize), so "Continue" still works after a detour to
+    // add an app or a card in another tab. Longer would not help: the
+    // authorization itself would be gone.
     const isSecure = this.isSecureRequest(req);
+    const pauseMs = consent.expiresAt
+      ? Math.min(FIRST_CONNECTOR_PAUSE_MAX_MS, Math.max(60 * 1000, consent.expiresAt - Date.now()))
+      : 15 * 60 * 1000;
     res.cookie('login_user', encodedProfile, {
       httpOnly: true,
       secure: isSecure,
-      maxAge: 15 * 60 * 1000,
+      maxAge: pauseMs,
       sameSite: isSecure ? 'none' : 'lax',
       signed: true,
     });
+
+    // An admin on the free trial is told when it ends and that a card keeps
+    // the workspace running, as a small line under "Continue". Never before
+    // Approve: a payment step there halved the connections (#842, #843).
+    const trial =
+      member?.role === 'ADMIN'
+        ? await this.licenseGuard?.getTrialState(organizationId).catch(() => null)
+        : null;
+    const trialEndsAt = trial?.active && trial.cardTrialAvailable ? trial.endsAt : null;
+
     await this.productEvents
       ?.log({
         event: ProductEvents.EMPTY_WORKSPACE_PROMPT,
         userId,
         organizationId,
-        metadata: { client: consent.clientName },
+        metadata: { client: consent.clientName, ...(trialEndsAt ? { cardTrialOffered: true } : {}) },
       })
       .catch(() => undefined);
 
@@ -371,6 +395,7 @@ export class LoginController {
         clientName: consent.clientName,
         callbackUrl,
         welcomeUrl: `${dashboard}/welcome`,
+        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: `${dashboard}/start-trial` } } : {}),
       }),
     );
     return true;
@@ -380,8 +405,15 @@ export class LoginController {
     clientName: string;
     callbackUrl: string;
     welcomeUrl: string;
+    cardTrial?: { endsAt: Date; url: string };
   }): string {
     const client = this.escapeHtml(params.clientName);
+    // "October 13", kept on one line.
+    const trialEnd = params.cardTrial
+      ? this.escapeHtml(
+          params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
+        ).replace(' ', '&nbsp;')
+      : '';
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -401,6 +433,8 @@ export class LoginController {
                color: #fff; background: #2563eb; border-radius: 8px; text-decoration: none; margin-top: 18px; }
     a.button:hover { background: #1d4ed8; }
     a.secondary { display: block; text-align: center; font-size: 14px; color: #2563eb; margin-top: 12px; }
+    p.trial { font-size: 13px; color: #666; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #eee; }
+    p.trial a { color: #2563eb; }
   </style>
 </head>
 <body>
@@ -410,7 +444,12 @@ export class LoginController {
     <p class="example">“Connect my Etsy shop to AnythingMCP.”</p>
     <p>${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
     <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
-    <a class="secondary" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a>
+    <a class="secondary" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a>${
+      params.cardTrial
+        ? `
+    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
+        : ''
+    }
   </div>
 </body>
 </html>`;
@@ -672,6 +711,7 @@ export class LoginController {
         redirectUri: session.redirectUri,
         redirectHost,
         scopeText,
+        ...(typeof session.expiresAt === 'number' ? { expiresAt: session.expiresAt } : {}),
       };
     } catch (e) {
       this.logger.warn('Failed to load OAuth consent context', e as Error);
