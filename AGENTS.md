@@ -73,7 +73,6 @@ Use Jest `*.spec.ts` beside the backend source, including adapter static specs.
 Record baseline failures separately from regressions; never claim a failed run passes.
 Avoid root `npm test`: it runs tests in all workspaces and fails because the
 frontend has no `test` script. Use the backend command above for catalog tests.
-Avoid backend `test:e2e`: its `test/jest-e2e.json` configuration does not exist.
 
 Run frontend checks in `packages/frontend`:
 
