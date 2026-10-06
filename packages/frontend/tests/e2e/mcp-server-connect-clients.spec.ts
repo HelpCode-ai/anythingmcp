@@ -56,7 +56,8 @@ async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted
 
 // Each Quick Connect button is named by its initials badge plus the client name.
 async function openClient(page: Page, name: string) {
-  await page.getByRole('button', { name: new RegExp(`^\\w+ ${name.replace(/[()]/g, '\\$&')}$`) }).click();
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.getByRole('button', { name: new RegExp(`^\\w+ ${escaped}$`) }).click();
   await expect(page.getByRole('heading', { name: `Connect to ${name}` })).toBeVisible();
 }
 
