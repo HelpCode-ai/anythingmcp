@@ -106,8 +106,8 @@ export default function ConnectionsPage() {
       {connections.length === 0 ? (
         <Card className="p-[22px]">
           <p className="text-[13px] text-[var(--text-3)]">
-            Nothing is connected yet. Add your MCP endpoint in Claude, ChatGPT
-            or Cursor, and it will appear here once you authorize it.
+            Nothing is connected yet. Add your MCP endpoint in Claude, ChatGPT,
+            Meta Muse or Cursor, and it will appear here once you authorize it.
           </p>
         </Card>
       ) : (

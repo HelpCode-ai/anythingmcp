@@ -1,18 +1,19 @@
 name: Onboarding reminders cron
 
-# Pings the cloud backend every 6 hours to send drip emails to users
-# who registered 24h+ ago but never created a connector. The endpoint
+# Pings the cloud backend every hour. The endpoint
 # (`/api/cron/onboarding-reminders`) is idempotent — re-running within
-# a window won't double-send because per-user counters and timing
-# checks are persisted in the users table.
+# a window won't double-send because per-user counters, flags and timing
+# checks are persisted.
 #
-# Schedule: */6 means 00:00, 06:00, 12:00, 18:00 UTC. We don't tie this
-# to local business hours because the email itself isn't time-sensitive
-# (users register globally and the drip lands ~ a day later anyway).
+# Hourly because the first nudge goes out an hour after sign-up, to people
+# whose workspace is still empty (how to connect an app from the chat or the
+# dashboard). The other passes (trial lifecycle, win-back, licence
+# re-verification, release of deleted workspaces' licences) are gated by their
+# own windows and flags, so running them more often sends nothing twice.
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       target_url:

@@ -85,6 +85,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .filter((s): s is string => !!s),
     );
 
+    // Query words no connector mentions anywhere: the app that is missing.
+    const unmatched = new Set(words);
     const scored = this.adapters
       .listAll()
       .filter((a) => !isExcludedAdapterSlug(a.slug))
@@ -96,12 +98,31 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           if (a.slug === w || name === w) score += 10;
           else if (a.slug.startsWith(w) || name.split(/\s+/).some((n) => n.startsWith(w))) score += 5;
           else if (text.includes(w)) score += 1;
+          if (text.includes(w)) unmatched.delete(w);
         }
         return { a, score: words.length ? score : (a.priority ?? 0) };
       })
       .filter((x) => !words.length || x.score > 0)
       .sort((x, y) => y.score - x.score || (y.a.priority ?? 0) - (x.a.priority ?? 0))
       .slice(0, limit);
+
+    if (words.length) {
+      // `results` alone overstates coverage: "printify shop" returns every
+      // connector whose description says "shop". `missing` keeps the words no
+      // connector mentions at all, here "printify".
+      void this.productEvents.log({
+        event: ProductEvents.CATALOG_SEARCH,
+        userId: ctx.userId,
+        organizationId: ctx.organizationId,
+        metadata: {
+          query: String(args.query),
+          results: scored.length,
+          via: 'mcp',
+          ...(unmatched.size ? { missing: [...unmatched].join(' ') } : {}),
+          ...(scored.length ? { adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
+        },
+      });
+    }
 
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
     return {

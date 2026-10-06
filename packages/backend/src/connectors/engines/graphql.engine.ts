@@ -8,7 +8,7 @@ import {
 } from './login-token.service';
 import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 
 /**
  * GraphqlEngine — executes GraphQL queries/mutations.
@@ -88,6 +88,9 @@ export class GraphqlEngine {
       }
     }
 
+    // Headers that stay behind when a redirect leaves the origin: the
+    // connector's own (they often hold a key) and whatever auth adds.
+    const headersBeforeAuth = new Set(Object.keys(headers));
     // Inject auth
     if (config.authConfig) {
       switch (config.authType) {
@@ -171,10 +174,14 @@ export class GraphqlEngine {
     // request (incl. the 401-refresh retries below) through the
     // proxy / web-unblocker. The unblocker agent disables upstream TLS
     // verification (e.g. Zyte intercepts TLS) — see createUnblockerProxyAgent.
+    const credentialHeaders = [
+      ...Object.keys(config.headers ?? {}),
+      ...Object.keys(headers).filter((h) => !headersBeforeAuth.has(h)),
+    ];
     const axiosOpts: Record<string, unknown> = {
       headers,
       timeout: 30000,
-      ...ssrfGuardedAxiosOptions(),
+      ...outboundAxiosOptions({ credentialHeaders }),
     };
     if (config.proxyUrl) {
       const agent = createUnblockerProxyAgent(config.proxyUrl);

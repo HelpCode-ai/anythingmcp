@@ -41,3 +41,44 @@ describe('assertSafeOutboundHost on a name that does not resolve', () => {
     ).rejects.toThrow(/^Host not found: 'no-such-host\.invalid' could not be resolved \(ENOTFOUND\)/);
   });
 });
+
+describe('the public-address rule', () => {
+  const env = { SSRF_GUARD: 'enabled' } as NodeJS.ProcessEnv;
+
+  it.each([
+    'http://127.0.0.1/',
+    'http://169.254.169.254/latest/meta-data/',
+    'http://10.1.2.3/',
+    'http://[::1]/',
+    'http://[::]/',
+    'http://[::ffff:127.0.0.1]/',
+    'http://[::ffff:a9fe:a9fe]/',
+    'http://[0:0:0:0:0:ffff:a00:1]/',
+    'http://[::a9fe:a9fe]/',
+    'http://[64:ff9b::a9fe:a9fe]/',
+    'http://[2002:a9fe:a9fe::1]/',
+    'http://[fe80::1]/',
+    'http://[febf::1]/',
+    'http://[fd00::1]/',
+    'http://[ff02::1]/',
+  ])('blocks %s', async (url) => {
+    const { assertSafeOutboundUrl, SsrfBlockedError } = await import('./ssrf.util');
+    await expect(assertSafeOutboundUrl(url, env)).rejects.toBeInstanceOf(SsrfBlockedError);
+    await expect(assertSafeOutboundUrl(url, env)).rejects.toThrow(/is not a public IP/);
+  });
+
+  it.each(['http://93.184.216.34/', 'http://[2606:2800:220:1:248:1893:25c8:1946]/'])(
+    'allows %s',
+    async (url) => {
+      const { assertSafeOutboundUrl } = await import('./ssrf.util');
+      await expect(assertSafeOutboundUrl(url, env)).resolves.toBeUndefined();
+    },
+  );
+
+  it('lets the allowlist through for an IPv6 literal', async () => {
+    const { assertSafeOutboundUrl } = await import('./ssrf.util');
+    await expect(
+      assertSafeOutboundUrl('http://[fd00::1]/', { ...env, SSRF_ALLOWED_HOSTS: 'fd00::1' }),
+    ).resolves.toBeUndefined();
+  });
+});

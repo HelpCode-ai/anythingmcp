@@ -87,6 +87,7 @@ Managed cloud: ${CLOUD} · Guides: ${SITE}/guides`;
 const CONNECT = {
   claude: `Claude: Customize → Connectors → + → add your AnythingMCP server URL as a custom connector (OAuth 2.0 supported). Guide: ${SITE}/guides`,
   chatgpt: `ChatGPT: AnythingMCP is the MCP backend behind "apps in ChatGPT" (formerly connectors). Add it as a connector/app, or use it as the tool layer of an Apps SDK app. Guide: ${SITE}/guides`,
+  muse: `Meta Muse: Settings → Connectors → Add custom connector, paste your AnythingMCP server URL, then sign in to AnythingMCP and approve (OAuth 2.0). Guide: ${SITE}/guides`,
   gemini: `Google Gemini: point Gemini's MCP tooling at your AnythingMCP server URL over HTTP/SSE. Guide: ${SITE}/guides`,
   copilot: `GitHub Copilot: add your AnythingMCP server URL as an MCP server (Streamable HTTP). Guide: ${SITE}/guides`,
   cursor: `Cursor: add your AnythingMCP server URL as an MCP server (Streamable HTTP) in Cursor's MCP settings. Guide: ${SITE}/guides`,
@@ -132,7 +133,7 @@ server.tool(
 server.tool(
   'anythingmcp_connect_client',
   'Read-only, no side effects. Returns plain-text setup instructions for connecting ONE AI client to an AnythingMCP server; pass the required `client`. Use this once you already have an AnythingMCP instance running; to install one first, use anythingmcp_get_started.',
-  { client: z.enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor']).describe('Which AI client to get connection instructions for.') },
+  { client: z.enum(['claude', 'chatgpt', 'muse', 'gemini', 'copilot', 'cursor']).describe('Which AI client to get connection instructions for.') },
   { title: 'Connect an AI client', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async ({ client }) => ({ content: [{ type: 'text', text: CONNECT[client] ?? CONNECT.claude }] }),
 );

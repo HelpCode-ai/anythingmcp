@@ -10,6 +10,7 @@ import { LogoIcon } from '@/components/logo-icon';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { StarterPack } from '@/components/starter-pack';
 import { matchesSearch } from '@/lib/marketplace-search';
+import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
 
 // Shown when the ranking can't be loaded: what the cloud ranked in October
 // 2026. The live list comes from /api/adapters/popular-connectors.
@@ -42,6 +43,16 @@ export default function WelcomePage() {
       .then((res) => setStarters(Array.isArray(res?.items) ? res.items : []))
       .catch(() => setStarters([]));
   }, [token]);
+
+  const matches = query.trim()
+    ? catalog.filter((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query))
+    : [];
+  const reportPicked = useCatalogSearchReport(
+    token,
+    'welcome',
+    query,
+    catalog.length > 0 && query.trim() ? matches.length : null,
+  );
 
   const popular =
     starters.length > 0
@@ -126,13 +137,11 @@ export default function WelcomePage() {
               </p>
             )}
             <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
-              {(query.trim()
-                ? catalog.filter((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query)).slice(0, 8)
-                : popular
-              ).map((a) => (
+              {(query.trim() ? matches.slice(0, 8) : popular).map((a) => (
                 <Link
                   key={a.slug}
                   href={`/connectors/setup/${encodeURIComponent(a.slug)}`}
+                  onClick={() => reportPicked(a.slug)}
                   className="flex items-center gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
                 >
                   <ConnectorLogo icon={a.icon} name={a.name} small />
@@ -145,8 +154,7 @@ export default function WelcomePage() {
                 </Link>
               ))}
             </div>
-            {query.trim() && catalog.length > 0 &&
-              !catalog.some((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query)) && (
+            {query.trim() && catalog.length > 0 && matches.length === 0 && (
                 <p className="mt-3 text-sm text-[var(--text-2)]">
                   Nothing in the catalog matches. You can still{' '}
                   <Link href="/connectors/new?from=welcome" className="text-[var(--brand)] underline">add your own API</Link>.
