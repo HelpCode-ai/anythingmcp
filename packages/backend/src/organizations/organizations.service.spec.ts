@@ -36,7 +36,7 @@ describe('OrganizationsService', () => {
       },
       $transaction: jest.fn((fn: any) => fn(prisma)),
     };
-    licenseRelease = { releaseInBackground: jest.fn() };
+    licenseRelease = { releaseInBackground: jest.fn(), assertNoLiveSubscription: jest.fn() };
     service = new OrganizationsService(
       prisma,
       new SecurityEventService(prisma as unknown as PrismaService),
@@ -308,6 +308,22 @@ describe('OrganizationsService', () => {
 
       expect(prisma.organization.delete).toHaveBeenCalledWith({ where: { id: ORG } });
       expect(licenseRelease.releaseInBackground).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes nothing while the workspace has a live subscription', async () => {
+      prisma.organization = {
+        findUnique: jest.fn(async () => ({ id: ORG, name: 'Acme' })),
+        delete: jest.fn(),
+      };
+      prisma.user.findMany = jest.fn(async () => []);
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      licenseRelease.assertNoLiveSubscription.mockRejectedValue(new Error('active subscription'));
+
+      await expect(service.deleteOrganization('admin-1', ORG, 'Acme')).rejects.toThrow('active subscription');
+
+      expect(licenseRelease.assertNoLiveSubscription).toHaveBeenCalledWith([ORG]);
+      expect(prisma.organization.delete).not.toHaveBeenCalled();
+      expect(licenseRelease.releaseInBackground).not.toHaveBeenCalled();
     });
 
     it('releases nothing when the deletion is refused', async () => {

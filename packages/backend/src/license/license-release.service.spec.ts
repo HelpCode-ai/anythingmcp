@@ -18,11 +18,13 @@ function httpError(status?: number, error?: string) {
   };
 }
 
-function makeService(opts: { isCloud?: boolean; orphans?: any[] } = {}) {
+function makeService(opts: { isCloud?: boolean; orphans?: any[]; paid?: any[] } = {}) {
   const isCloud = opts.isCloud ?? true;
   const prisma = {
     license: {
-      findMany: jest.fn(async () => opts.orphans ?? []),
+      findMany: jest.fn(async (args: any) =>
+        args?.where?.organizationId === null ? (opts.orphans ?? []) : (opts.paid ?? []),
+      ),
       deleteMany: jest.fn(async () => ({ count: 1 })),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
@@ -144,5 +146,66 @@ describe('LicenseReleaseService', () => {
     await a;
 
     expect(prisma.license.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  describe('assertNoLiveSubscription', () => {
+    const paid = [{ licenseKey: 'AMCP-PAID-0000-0000-0001', billing: null }];
+    const verified = (billing: any, valid = true) => ({ data: { valid, billing } });
+
+    it('refuses while Stripe would charge again: trialing, active, past due', async () => {
+      for (const status of ['trialing', 'active', 'past_due', 'unpaid']) {
+        mockedAxios.get.mockResolvedValueOnce(verified({ status, cancelling: false }));
+        const { svc } = makeService({ paid });
+        await expect(svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/active subscription/);
+      }
+    });
+
+    it('asks the licence site for the current state, with the service token', async () => {
+      mockedAxios.get.mockResolvedValueOnce(verified({ status: 'active', cancelling: false }));
+      const { svc, prisma } = makeService({ paid });
+      await expect(svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow();
+      const where = (prisma.license.findMany.mock.calls[0] as any[])[0].where;
+      expect(where).toEqual({ organizationId: { in: ['org-1'] }, status: 'active', plan: { not: 'trial' } });
+      const [url, config] = mockedAxios.get.mock.calls[0] as any[];
+      expect(url).toMatch(/\/api\/license\/verify$/);
+      expect(config.params).toEqual({ key: 'AMCP-PAID-0000-0000-0001', billing: '1' });
+      expect(config.headers['x-amcp-service-token']).toBe(process.env.LICENSE_SERVICE_TOKEN);
+    });
+
+    it('lets the workspace go once the customer has cancelled in Stripe, or the licence has ended', async () => {
+      const cases = [
+        verified({ status: 'active', cancelling: true }),
+        verified({ status: 'canceled', cancelling: false }),
+        verified(null),
+        verified(null, false),
+      ];
+      for (const answer of cases) {
+        mockedAxios.get.mockResolvedValueOnce(answer);
+        const { svc } = makeService({ paid });
+        await expect(svc.assertNoLiveSubscription(['org-1'])).resolves.toBeUndefined();
+      }
+    });
+
+    it('does not block a workspace on a trial (no paid licence)', async () => {
+      const { svc } = makeService({ paid: [] });
+      await expect(svc.assertNoLiveSubscription(['org-1'])).resolves.toBeUndefined();
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it('when the site cannot be reached, decides from the last known state or refuses', async () => {
+      mockedAxios.get.mockRejectedValueOnce(httpError(undefined));
+      const known = makeService({ paid: [{ ...paid[0], billing: { status: 'trialing', cancelling: false } }] });
+      await expect(known.svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/active subscription/);
+
+      mockedAxios.get.mockRejectedValueOnce(httpError(undefined));
+      const unknown = makeService({ paid });
+      await expect(unknown.svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/try again/);
+    });
+
+    it('checks nothing on a self-hosted install', async () => {
+      const { svc, prisma } = makeService({ isCloud: false, paid });
+      await svc.assertNoLiveSubscription(['org-1']);
+      expect(prisma.license.findMany).not.toHaveBeenCalled();
+    });
   });
 });

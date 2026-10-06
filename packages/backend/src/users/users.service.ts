@@ -261,6 +261,9 @@ export class UsersService {
       });
     }
 
+    // A subscription is cancelled in Stripe, not by deleting the account.
+    await this.licenseRelease.assertNoLiveSubscription(cascadableOrgIds);
+
     await this.prisma.$transaction([
       ...cascadableOrgIds.map((orgId) =>
         this.prisma.organization.delete({ where: { id: orgId } }),
@@ -270,7 +273,7 @@ export class UsersService {
     ]);
 
     // The deleted workspaces' licences are left without one; end them on the
-    // licence site (trial emails, card-trial charge).
+    // licence site, which stops the trial emails.
     if (cascadableOrgIds.length > 0) this.licenseRelease.releaseInBackground();
   }
 

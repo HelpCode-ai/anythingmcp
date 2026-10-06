@@ -1,20 +1,27 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
-import { LICENSE_API_URL, licenseServiceHeaders } from './license.service';
+import { LICENSE_API_URL, licenseServiceHeaders, parseLicenseBilling } from './license.service';
+
+/** Subscription states Stripe will charge again (unless set to cancel). */
+const LIVE_SUBSCRIPTION = new Set(['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused']);
 
 /**
  * Tells the licence site that a Cloud workspace was deleted, so the licence it
- * held stops for good: the site cancels its Stripe subscription and revokes it.
+ * held stops for good: the site revokes it, and the trial reminder and
+ * win-back emails stop.
  *
  * Deleting a workspace removes it from this database only. Its licence row
  * survives with organization_id NULL (ON DELETE SET NULL), and the site, which
- * never heard of the deletion, kept the licence active: the trial went on
- * getting reminder and win-back emails, and a card trial went on to its first
- * charge. In Cloud every licence is created for a workspace, so a row without
- * one is a deleted workspace's.
+ * never heard of the deletion, kept the licence active. In Cloud every licence
+ * is created for a workspace, so a row without one is a deleted workspace's.
+ *
+ * Subscriptions are cancelled by their customer in the Stripe billing portal
+ * and nowhere else: a workspace whose subscription is still live cannot be
+ * deleted (assertNoLiveSubscription), and the site refuses to release such a
+ * licence.
  *
  * releaseOrphanedLicenses runs right after a deletion and again from the
  * onboarding cron, which retries what the site did not confirm and covers the
@@ -31,6 +38,48 @@ export class LicenseReleaseService {
     private readonly deployment: DeploymentService,
     private readonly siteSettings: SiteSettingsService,
   ) {}
+
+  /**
+   * Refuse to delete a workspace whose subscription Stripe would go on
+   * charging. The customer cancels it in the billing portal first; one that
+   * is already set to cancel, ended, or a trial without a card does not block.
+   * Asks the licence site for the subscription's current state, and refuses
+   * when it cannot tell rather than risk a charge for a deleted workspace.
+   */
+  async assertNoLiveSubscription(organizationIds: string[]): Promise<void> {
+    if (!this.deployment.isCloud() || organizationIds.length === 0) return;
+    const paid = await this.prisma.license.findMany({
+      where: { organizationId: { in: organizationIds }, status: 'active', plan: { not: 'trial' } },
+      select: { licenseKey: true, billing: true },
+    });
+
+    for (const licence of paid) {
+      let billing = parseLicenseBilling(licence.billing);
+      try {
+        const { data } = await axios.get(`${LICENSE_API_URL}/api/license/verify`, {
+          params: { key: licence.licenseKey, billing: '1' },
+          timeout: 10000,
+          headers: licenseServiceHeaders(),
+        });
+        billing = data?.valid ? parseLicenseBilling(data.billing) : null;
+      } catch (err: any) {
+        this.logger.warn(
+          `Could not check the subscription of licence …${licence.licenseKey.slice(-4)} before a deletion: ${err?.message ?? err}`,
+        );
+        if (!billing) {
+          throw new ServiceUnavailableException(
+            'We could not check the subscription of this workspace. Please try again in a few minutes.',
+          );
+        }
+      }
+      if (billing && LIVE_SUBSCRIPTION.has(billing.status) && !billing.cancelling) {
+        throw new ConflictException(
+          'This workspace has an active subscription. Cancel it first under Settings → License → ' +
+            'Manage subscription & billing; the workspace can be deleted once it is cancelled.',
+        );
+      }
+    }
+  }
 
   /** Fire and forget, for the deletion paths: the user is not kept waiting. */
   releaseInBackground(): void {

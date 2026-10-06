@@ -9,8 +9,7 @@ import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
 
 export default function OrganizationSettingsPage() {
-  const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, logout, deploymentMode } = useAuth();
-  const isCloud = deploymentMode === 'cloud';
+  const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, logout } = useAuth();
   const [name, setName] = useState('');
   const [orgId, setOrgId] = useState('');
   const [createdAt, setCreatedAt] = useState('');
@@ -396,8 +395,6 @@ export default function OrganizationSettingsPage() {
             Permanently delete this organization, including all members, connectors, MCP servers,
             API keys, custom roles, pending invitations, and settings. Other members will be
             migrated to their next-oldest workspace if they have one. This action cannot be undone.
-            {isCloud &&
-              " The workspace's plan ends with it: a trial stops, a subscription is cancelled at once and is not charged again."}
           </p>
           <Button variant="danger" onClick={() => setDeleteOpen(true)}>
             Delete this organization

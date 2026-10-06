@@ -19,8 +19,7 @@ const AUTH_MODE_LABELS: Record<string, string> = {
 export default function SettingsPage() {
   const toast = useToast();
 
-  const { token, user, updateUser, logout, deploymentMode } = useAuth();
-  const isCloud = deploymentMode === 'cloud';
+  const { token, user, updateUser, logout } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
   // Change password
@@ -400,8 +399,6 @@ export default function SettingsPage() {
           Permanently delete your account. This will remove your profile, password reset tokens,
           email verification tokens, MCP API keys, connectors, and MCP server configurations.
           Audit logs are retained without your identifying information.
-          {isCloud &&
-            ' Workspaces deleted with your account end their plan: a trial stops, a subscription is cancelled at once and is not charged again.'}
         </p>
         <Button variant="danger" onClick={() => setDeleteOpen(true)}>
           Delete my account

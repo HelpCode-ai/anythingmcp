@@ -403,6 +403,9 @@ export class OrganizationsService {
       throw new ForbiddenException('Only org admins can delete the organization');
     }
 
+    // A subscription is cancelled in Stripe, not by deleting the workspace.
+    await this.licenseRelease.assertNoLiveSubscription([organizationId]);
+
     // Snapshot users (other than the deleter) whose CACHED active org is this one
     const orphans = await this.prisma.user.findMany({
       where: { organizationId, id: { not: userId } },

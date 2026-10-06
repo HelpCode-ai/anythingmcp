@@ -42,7 +42,7 @@ describe('UsersService', () => {
     organizations = { assertNotLastAdmin: jest.fn() };
     lifecycle = { deactivateInOrganization: jest.fn(async () => ({ status: 'deactivated' })) };
     securityEvents = { log: jest.fn() };
-    licenseRelease = { releaseInBackground: jest.fn() };
+    licenseRelease = { releaseInBackground: jest.fn(), assertNoLiveSubscription: jest.fn() };
     service = new UsersService(mockPrisma, organizations, lifecycle, securityEvents, licenseRelease);
   });
 
@@ -219,6 +219,22 @@ describe('UsersService', () => {
 
       expect(mockPrisma.organization.delete).not.toHaveBeenCalled();
       expect(licenseRelease.releaseInBackground).not.toHaveBeenCalled();
+    });
+
+    it('deletes nothing while a workspace going with the account has a live subscription', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([
+        {
+          organizationId: 'org-1',
+          organization: { id: 'org-1', name: 'Solo', _count: { members: 1 } },
+        },
+      ]);
+      licenseRelease.assertNoLiveSubscription.mockRejectedValue(new Error('active subscription'));
+
+      await expect(service.deleteSelf('user-1')).rejects.toThrow('active subscription');
+
+      expect(licenseRelease.assertNoLiveSubscription).toHaveBeenCalledWith(['org-1']);
+      expect(mockPrisma.organization.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
     });
   });
 });
