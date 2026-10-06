@@ -38,3 +38,51 @@ describe('LicenseGuardService.checkLicenseActive (cloud)', () => {
     await expect(make(null).checkLicenseActive('o1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
+
+describe('LicenseGuardService.getTrialState', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = new Date('2026-10-06T12:00:00Z');
+
+  function make(current: any, lastInactive: any = null, cloud = true) {
+    const licenseService = {
+      getCurrentLicense: jest.fn().mockResolvedValue(current),
+      getLatestInactiveLicense: jest.fn().mockResolvedValue(lastInactive),
+    };
+    return new LicenseGuardService({} as any, licenseService as any, { isCloud: () => cloud } as any);
+  }
+
+  it('reports a running trial, with the card trial while 48 hours remain', async () => {
+    const ends = new Date(now.getTime() + 5 * day);
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: ends }).getTrialState('o1', now)).resolves.toEqual({
+      endsAt: ends,
+      active: true,
+      cardTrialAvailable: true,
+    });
+    const soon = new Date(now.getTime() + day);
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: soon }).getTrialState('o1', now)).resolves.toMatchObject({
+      active: true,
+      cardTrialAvailable: false,
+    });
+  });
+
+  it('reports a trial past its end, and one whose licence is no longer active', async () => {
+    const past = new Date(now.getTime() - day);
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: past }).getTrialState('o1', now)).resolves.toMatchObject({
+      active: false,
+    });
+    await expect(make(null, { plan: 'trial', status: 'expired', expiresAt: past }).getTrialState('o1', now)).resolves.toEqual({
+      endsAt: past,
+      active: false,
+      cardTrialAvailable: false,
+    });
+  });
+
+  it('is null on a paid plan, with no licence, without a workspace, and on self-hosted', async () => {
+    const ends = new Date(now.getTime() + 5 * day);
+    await expect(make({ plan: 'starter', status: 'active', expiresAt: null }).getTrialState('o1', now)).resolves.toBeNull();
+    await expect(make(null, { plan: 'starter', status: 'revoked', expiresAt: null }).getTrialState('o1', now)).resolves.toBeNull();
+    await expect(make(null).getTrialState('o1', now)).resolves.toBeNull();
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: ends }).getTrialState(undefined, now)).resolves.toBeNull();
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: ends }, null, false).getTrialState('o1', now)).resolves.toBeNull();
+  });
+});

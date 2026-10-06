@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { LicenseService } from './license.service';
 import { DeploymentService } from '../common/deployment.service';
+import { cardTrialEnd } from './license-checkout';
 
 export interface UsageCap {
   current: number;
@@ -18,6 +19,15 @@ export interface LicenseUsage {
   // soft-warn upgrade banner. Caps on paid tiers are advisory only — we no
   // longer throw 403 when exceeded (per product decision May 2026).
   isOverAny: boolean;
+}
+
+/** A Cloud workspace's free trial, as the setup tools report it. */
+export interface TrialState {
+  endsAt: Date;
+  /** False once the end has passed or the licence is no longer active. */
+  active: boolean;
+  /** Enough of the trial left (48 h) for a card trial ending at the same time. */
+  cardTrialAvailable: boolean;
 }
 
 @Injectable()
@@ -136,5 +146,27 @@ export class LicenseGuardService {
       users,
       isOverAny: connectors.isOver || mcpServers.isOver || users.isOver,
     };
+  }
+
+  /**
+   * Cloud only: the workspace's free trial, running or ended. Null on a paid
+   * plan, with no licence at all, and on self-hosted (whose trial is the
+   * instance's, handled in the app).
+   */
+  async getTrialState(organizationId?: string, now: Date = new Date()): Promise<TrialState | null> {
+    if (!this.deployment.isCloud() || !organizationId) return null;
+    const current = await this.licenseService.getCurrentLicense(organizationId);
+    if (current) {
+      if (current.plan !== 'trial' || !current.expiresAt) return null;
+      const endsAt = new Date(current.expiresAt);
+      return {
+        endsAt,
+        active: current.status === 'active' && endsAt.getTime() > now.getTime(),
+        cardTrialAvailable: cardTrialEnd(current, now) !== null,
+      };
+    }
+    const last = await this.licenseService.getLatestInactiveLicense(organizationId);
+    if (last?.plan !== 'trial' || !last.expiresAt) return null;
+    return { endsAt: new Date(last.expiresAt), active: false, cardTrialAvailable: false };
   }
 }
