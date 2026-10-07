@@ -28,6 +28,7 @@ import * as haufeX360 from './de/haufe-x360.json';
 import * as hereGeocoding from './de/here-geocoding.json';
 import * as hrworks from './de/hrworks.json';
 import * as immobilienscout24 from './de/immobilienscout24.json';
+import * as jtlFfn from './de/jtl-ffn.json';
 import * as jtlWawi from './de/jtl-wawi.json';
 import * as kaufland from './de/kaufland.json';
 import * as kenjo from './de/kenjo.json';
@@ -527,6 +528,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   hereGeocoding as unknown as AdapterDefinition,
   hrworks as unknown as AdapterDefinition,
   immobilienscout24 as unknown as AdapterDefinition,
+  jtlFfn as unknown as AdapterDefinition,
   jtlWawi as unknown as AdapterDefinition,
   kaufland as unknown as AdapterDefinition,
   kenjo as unknown as AdapterDefinition,
