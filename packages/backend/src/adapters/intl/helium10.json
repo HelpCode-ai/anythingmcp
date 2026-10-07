@@ -1,0 +1,4885 @@
+{
+  "slug": "helium10",
+  "name": "Helium 10",
+  "description": "Research Amazon keywords and products, track rankings, analyse listings and check profits and ad performance from Claude, ChatGPT or Copilot through Helium 10's official MCP server.",
+  "instructions": "This connector bridges **Helium 10 MCP**, Helium 10's official remote MCP server at `https://mcp.helium10.com/mcp`. Helium 10's own server provides the tools: keyword research (Magnet, Cerebro reverse ASIN), product research (Black Box), Brand Analytics and search query performance, Keyword Tracker rank history, listing analysis and the Listing Builder, Profits (Amazon and Walmart P&L, COGS and indirect costs), inventory and sales velocity, account health and alerts, Buy Box, reviews, TikTok Shop and Amazon influencer research, Market Tracker 360 and Helium 10 Ads (query, campaign management, bid rules, change log). Amazon marketplaces: US, UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE and MX; Walmart and TikTok Shop: US. AnythingMCP puts the tools behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** Helium 10 signs you in before it lists anything, so the catalog's list is installed first; once you authorize, AnythingMCP asks Helium 10 MCP for its tools and takes their current descriptions and schemas. The server only lists the tools your plan and add-ons entitle you to (Market Tracker 360, Ads, Walmart). Click **Discover tools** on the connector to pick up new ones.\n\n**Setup (about 2 minutes)**:\n1. Install the connector. There is nothing to paste: you do not need a Helium 10 API token (`h10_mcp_...`).\n2. On the connector page click **Authorize with Provider**. AnythingMCP reads Helium 10's OAuth metadata, registers itself as a client (dynamic client registration) and sends you to the Helium 10 sign-in.\n3. Sign in, choose the account (sub-users choose the primary account they were granted) and click **Authorize**. Back in AnythingMCP the tools are listed again from the server.\n\n**Whose access it is**: the person who authorizes is the Helium 10 user for every caller of this connector, with that user's plan, seller accounts and permissions. Sub-users need the **MCP** permission from the primary account owner (Access Management > User Accounts). After a long period without use Helium 10 asks you to sign in again: click **Authorize with Provider** once more. Connections are listed and revoked in Helium 10 under **Settings > MCP > Authorized AI Clients Management**.\n\n**Costs**: every tool call (and every extra page) uses one of the 1,000 MCP calls a month included with Diamond; the quota is shared with sub-users, and top-ups are 500 calls for $50. `helium10_get_mcp_usage_info` shows what is left. Ask for specific ASINs, marketplaces and date ranges instead of broad sweeps.\n\n**Safety**: everything that changes Amazon or your ads installs switched off: `helium10_sync_listing_to_amazon` (overwrites the live listing), `helium10_execute_ads_campaign_mgmt_actions` (pauses, creates campaigns, changes bids and budgets) and `helium10_manage_ads_rule` (bid automation), plus every delete (COGS, indirect costs, tracked keywords and products, keyword notes). Research, reporting, generating listing drafts and keeping tracker tags and notes stay on. Ads tools need the Ads profile in Managed mode in Helium 10, which carries a 2% fee on ad spend.\n\n**Working with it**: start with `helium10_get_my_amazon_seller_accounts` or `helium10_list_my_products` when you have no ASIN, then `helium10_get_keywords_by_asin`, `helium10_search_products` or the P&L tools. Always pass ASINs (10 characters) and the marketplace (default US). Ads Query runs in five steps, platforms, list, schema, materials, then `helium10_execute_ads_query`. A 401 after it worked means the sign-in expired: authorize again. `FEATURE.ADS_ACCESS_DISABLED` means the Ads profile is not in Managed mode; an empty tool list or missing tools means the plan or add-on does not include them.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "helium10",
+  "docsUrl": "https://kb.helium10.com/hc/en-us/articles/51580564409883-Getting-Started-with-Helium-10-MCP",
+  "requiredEnvVars": [],
+  "envVarMeta": {},
+  "prerequisites": "- A Helium 10 Diamond plan or higher (Elite included); MCP comes with 1,000 tool calls a month, and Market Tracker 360, Ads and Walmart tools need those features on the account.\n- After saving, you click Authorize with Provider and sign in with Helium 10; whoever signs in is the Helium 10 user for everyone who uses this connector.\n- A sub-user needs the MCP permission from the primary account owner in Access Management.",
+  "unlisted": true,
+  "connector": {
+    "name": "Helium 10",
+    "type": "MCP",
+    "baseUrl": "https://mcp.helium10.com/mcp",
+    "authType": "OAUTH2",
+    "config": {
+      "mcpToolPrefix": "helium10_",
+      "mcpOAuth": {
+        "registration": "dcr"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "helium10_get_keywords_by_keyword",
+      "description": "Expand a seed keyword into a full list of related long-tail phrases (Magnet). Returns search volume, CPC, IQ score, CPR, title density and Amazon Brand Analytics data, to build keyword banks for listings and PPC campaigns.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keyword"
+        ],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Seed keyword or search phrase."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on volume, CPC, competition or word count. The server publishes the exact filter fields in its live tool schema."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keywords_by_keyword",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_keywords_by_asin",
+      "description": "Reverse-lookup an ASIN (Cerebro) to see every keyword it ranks for organically (with rank position), through sponsored ads and through Amazon's recommendation engine, to understand a competitor's keyword strategy and find gaps.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on volume, rank position or match type. The server publishes the exact filter fields in its live tool schema."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keywords_by_asin",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_compare_asin_keywords",
+      "description": "Compare the keyword strategy of 2 to 3 competitor ASINs side by side to identify overlaps, gaps and unique keyword opportunities.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asins"
+        ],
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), 2 to 3.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "compare_asin_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_analyze_keywords",
+      "description": "Batch-score and enrich up to 200 keywords at once with search volume, CPC, IQ score, CPR and Amazon Brand Analytics data (keyword research and reverse-ASIN analysis, formerly Cerebro). Split larger lists into batches of 200.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords"
+        ],
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "description": "Keywords (up to 200).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "analyze_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_find_keywords_with_multi_source",
+      "description": "Build a keyword bank by pulling keywords from multiple sources (Magnet seed expansion, Cerebro ASIN lookup, category research) into one deduplicated list, for example as the input of generate_listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "description": "The sources to combine, e.g. seed keywords, competitor ASINs, category research.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Seed keyword for Magnet expansion."
+          },
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), for Cerebro lookup.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "find_keywords_with_multi_source",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_keywords_search_volume_history",
+      "description": "Get keyword search volume history over time: how search volume for specific keywords changes day by day, week by week or month by month, to spot seasonality and trends.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords"
+        ],
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keywords_search_volume_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_amazon_keywords",
+      "description": "Search the Helium 10 Amazon keyword database (formerly Black Box, Search Keywords) by criteria such as volume, competition and word count, to discover keyword opportunities and research keyword metrics at scale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Phrase the keywords should contain (optional)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on search volume, CPC, competing products, word count or category. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_amazon_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_products",
+      "description": "Search active Amazon products (formerly Black Box, Products) with filters like category, price range, BSR, review count, revenue and profit margin, to find sourcing opportunities and validate market demand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on category, price, BSR, reviews, monthly revenue, sales or margin. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_inactive_products",
+      "description": "Search inactive or delisted Amazon products with the same filters as search_products, to understand which products failed in the market and why.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on category, price, BSR, reviews or revenue. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_inactive_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_niche_by_keyword",
+      "description": "Use a keyword to discover the whole product niche it belongs to: market size, competition level, average price, review density and other niche metrics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keyword"
+        ],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Seed keyword or search phrase."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_niche_by_keyword",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_competitors_by_asin",
+      "description": "Find the direct competitors of an ASIN within the same category, price range and review range, as the starting set for listing and keyword comparisons.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_competitors_by_asin",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_my_products",
+      "description": "Query your own seller-owned Amazon products by brand, product name, ASIN or SKU. Use it first when you do not have an ASIN at hand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Brand, product name, ASIN or SKU to look for."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_my_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_listing_details",
+      "description": "Pull the full listing content and metadata for any ASIN (Listing Analyzer): title, bullets, description, A+ content, images, pricing, reviews, BSR and FBA status.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_listing_details",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_listing_score",
+      "description": "Get the Helium 10 listing quality audit score for any ASIN, with detailed feedback on title, bullets, description and keyword coverage.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_listing_score",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_compare_listings",
+      "description": "Compare 2 to 3 ASINs side by side to identify content gaps and weaknesses in keyword coverage between your listing and its competitors.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asins"
+        ],
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), 2 to 3.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "compare_listings",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_competitor_overview",
+      "description": "Competitor benchmark overview for a listing (Listing Analyzer): how your ASIN compares with its competitors on content, keywords, price, reviews and rank.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "competitor_asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), to benchmark against (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_competitor_overview",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_product_targets_by_asin",
+      "description": "Find the products suitable for product targeting in Sponsored Products ads, based on a seed ASIN.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_product_targets_by_asin",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_product_live_status",
+      "description": "Get a real-time snapshot of an ASIN's current status: price, FBA fee, Buy Box price, stock level, review count and BSR.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_product_live_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_generate_listing",
+      "description": "AI-generate a complete Amazon listing (title, item highlight, bullets, description, enhanced content, backend keywords) from a keyword bank or a single keyword, in Helium 10. Nothing is published until sync_listing_to_amazon.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Single keyword, when no keyword bank is given."
+          },
+          "product_info": {
+            "type": "object",
+            "description": "Facts about the product: name, brand, key features, target audience, analyzed images."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "generate_listing",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_rewrite_listing_section",
+      "description": "Rewrite one section of an existing listing (title, one bullet, description and so on) while keeping keyword optimization and Amazon compliance. The rest of the listing is left as it is.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "section"
+        ],
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "The section to rewrite, e.g. title, item_highlight, a bullet or description."
+          },
+          "content": {
+            "type": "string",
+            "description": "Current text of the section."
+          },
+          "user_feedback": {
+            "type": "string",
+            "description": "What should change."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "rewrite_listing_section",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_retrieve_listing_by_asin",
+      "description": "Fetch the current Amazon catalog listing images, content and metadata for an ASIN to prepare it for optimization with the Listing Builder.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "retrieve_listing_by_asin",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_analyze_product_images",
+      "description": "Analyze product images to extract structured attributes (color, material, size, use case, brand elements) for listing generation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_urls": {
+            "type": "array",
+            "description": "Public URLs of the product images.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "image_refs": {
+            "type": "array",
+            "description": "References of images uploaded with request_image_upload_url.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "analyze_product_images",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_request_image_upload_url",
+      "description": "Request presigned upload credentials to upload local image files to Helium 10, for analyze_product_images. The upload URL expires after a short time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Name of the image file."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME type, e.g. image/jpeg."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "request_image_upload_url",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_sync_listing_to_amazon",
+      "description": "Destructive: push listing content (title, bullets, description, A+ content) from Helium 10 directly to your Amazon seller account, overwriting the live listing. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "description": "ID of the generated or rewritten listing to publish."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "sync_listing_to_amazon",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_get_keyword_performance_with_competitors",
+      "description": "Score how well a keyword set is written into listings, based on competitor analysis: which keywords your listing covers compared with competing ASINs.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "competitor_asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), to compare with.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keyword_performance_with_competitors",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_keywords_rank_history",
+      "description": "Pull rank history for keywords you track in Keyword Tracker: position over time (daily or weekly), rank changes and trends.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keywords_rank_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_keywords_new_suggestion",
+      "description": "Get new keyword suggestions to add to tracking, based on your current Keyword Tracker list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_keywords_new_suggestion",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_tracked_keywords",
+      "description": "Get a paginated list of all keywords you track for an ASIN or brand, with current rank, BSR and search volume.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand name, instead of an ASIN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_tracked_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_tracked_competitor_keywords",
+      "description": "View all keywords you track for competitors, with their current rank positions and tracking history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Competitor ASIN (optional)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_tracked_competitor_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_account_profit_and_loss_summary",
+      "description": "Get a summary of your whole Amazon account P&L for a period (point in time): revenue, COGS, fees, shipping, advertising spend and net profit.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_account_profit_and_loss_summary",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_account_profit_and_loss_summary_series",
+      "description": "Get Amazon account P&L trend data over time (daily, weekly or monthly): revenue, costs and net profit per period.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_account_profit_and_loss_summary_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_account_profit_and_loss_breakdown",
+      "description": "Get a detailed P&L breakdown for the whole Amazon account: revenue, costs and profit broken down by category, source or other dimensions.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_account_profit_and_loss_breakdown",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_account_profit_and_loss_breakdown_series",
+      "description": "Get Amazon account P&L breakdown trends over time: each revenue and cost component per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_account_profit_and_loss_breakdown_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_product_profit_and_loss_summary",
+      "description": "Get the P&L summary for one Amazon product (ASIN) over a period: revenue, COGS, fees, advertising and net profit.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_product_profit_and_loss_summary",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_product_profit_and_loss_summary_series",
+      "description": "Get P&L trend data for one Amazon product (ASIN) over time, per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_product_profit_and_loss_summary_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_product_profit_and_loss_breakdown",
+      "description": "Get a detailed P&L breakdown for one Amazon product (ASIN): every cost and profit component for the period.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_product_profit_and_loss_breakdown",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_product_profit_and_loss_breakdown_series",
+      "description": "Get P&L breakdown trends for one Amazon product (ASIN) over time: each cost and profit component per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_product_profit_and_loss_breakdown_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_account_profit_and_loss_summary",
+      "description": "Get a summary of your whole Walmart account P&L for a period: revenue, COGS, fees, advertising spend, indirect costs and net profit.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_account_profit_and_loss_summary",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_account_profit_and_loss_summary_series",
+      "description": "Get Walmart account P&L trend data over time (daily, weekly or monthly): revenue, costs and net profit per period.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_account_profit_and_loss_summary_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_account_profit_and_loss_breakdown",
+      "description": "Get a detailed P&L breakdown for the whole Walmart account: revenue, costs (including advertising and indirect costs) and profit by component.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_account_profit_and_loss_breakdown",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_account_profit_and_loss_breakdown_series",
+      "description": "Get Walmart account P&L breakdown trends over time: each revenue and cost component per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_account_profit_and_loss_breakdown_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_product_profit_and_loss_summary",
+      "description": "Get the P&L summary for one Walmart product over a period: revenue, COGS, fees, advertising and net profit.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_product_profit_and_loss_summary",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_product_profit_and_loss_summary_series",
+      "description": "Get P&L trend data for one Walmart product over time, per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_product_profit_and_loss_summary_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_product_profit_and_loss_breakdown",
+      "description": "Get a detailed P&L breakdown for one Walmart product: every cost and profit component for the period.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_product_profit_and_loss_breakdown",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_product_profit_and_loss_breakdown_series",
+      "description": "Get Walmart P&L breakdown trends for one product over time: each cost and profit component per day, week or month.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_product_profit_and_loss_breakdown_series",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_sales_velocity",
+      "description": "Get units sold over time for one or more Amazon products, bucketed by day, week or month, to see sales velocity trends and forecast restock needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_sales_velocity",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_inventory_values",
+      "description": "Get current inventory quantity metrics for Amazon products: units in stock, fulfillment type (FBA or FBM), warehouse location, age of inventory and estimated value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional, all products when omitted).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_inventory_values",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_fba_inventory_health_status",
+      "description": "Get FBA inventory health per product: days of supply, IPI score, excess, stranded and aged inventory, and stock-out risk.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_fba_inventory_health_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_inventory_values",
+      "description": "Get current Walmart inventory quantity metrics: units in stock by fulfillment type (WFS, Walmart Fulfillment Services, and seller fulfilled).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "skus": {
+            "type": "array",
+            "description": "Walmart SKUs (optional).",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_inventory_values",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_wmt_sales_velocity",
+      "description": "Get units sold over time for Walmart products, bucketed by day, week or month, to follow sales velocity and plan restocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "skus": {
+            "type": "array",
+            "description": "Walmart SKUs (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Time bucket of the series.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_wmt_sales_velocity",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_my_wmt_seller_accounts",
+      "description": "Discover which Walmart seller accounts are connected to your Helium 10 account. Use it before the Walmart P&L and inventory tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_my_wmt_seller_accounts",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_search_query_performance",
+      "description": "See how your listings perform for real Amazon search queries: impressions, clicks, click-through rate and conversions per query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_search_query_performance",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_amazon_brand_analytics",
+      "description": "Query Amazon Brand Analytics (formerly Black Box, ABA): top search terms, market basket analysis, repeat purchase behaviour and demographics. Requires Brand Registry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Search term to look up (optional)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on search frequency rank, click share or conversion share. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_amazon_brand_analytics",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_brand_seller_profiles",
+      "description": "Discover and disambiguate a Brand-Registered Amazon seller account: its shop page, catalog size, seller rating and Sponsored Brands metrics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "brand"
+        ],
+        "properties": {
+          "brand": {
+            "type": "string",
+            "description": "Brand name to look up."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_brand_seller_profiles",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_query_platforms",
+      "description": "Step 1 of Ads Query: list the ad platforms (Amazon, Walmart) and connected profiles available to you for querying ad data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_ads_query_platforms",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_query_list",
+      "description": "Step 2 of Ads Query: explore the data hierarchy for a platform (account, campaigns, ad groups, keywords or targets, performance metrics).",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_query_list",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_query_schema",
+      "description": "Step 3 of Ads Query: get the self-describing schema for the chosen level: dimensions, measures, filters and granularities you can query.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "level": {
+            "type": "string",
+            "description": "Level of the hierarchy chosen in step 2, e.g. campaign or keyword."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_query_schema",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_query_materials",
+      "description": "Step 4 of Ads Query: resolve names of profiles, campaigns, ad groups, keywords or targets into the IDs the query expects.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          },
+          "level": {
+            "type": "string",
+            "description": "Kind of object to look up."
+          },
+          "query": {
+            "type": "string",
+            "description": "Name or part of a name to resolve."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_query_materials",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_execute_ads_query",
+      "description": "Step 5 (terminal) of Ads Query: run the ad data query with filters and aggregations and return columns and rows inline: spend, clicks, impressions, conversions, ACoS, ROAS and more.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform",
+          "query"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          },
+          "query": {
+            "type": "object",
+            "description": "The query built from the schema of step 3: dimensions, measures, filters, granularity and date range."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "execute_ads_query",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_campaign_mgmt_platforms",
+      "description": "Step 1 of campaign management: list the platforms and ad profiles available for managing campaigns. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_ads_campaign_mgmt_platforms",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_campaign_mgmt_schema",
+      "description": "Step 2 of campaign management: get the schema of available actions, fields and constraints for managing campaigns. Read-only.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_campaign_mgmt_schema",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_execute_ads_campaign_mgmt_actions",
+      "description": "Step 3 (terminal) of campaign management: execute actions on live ad accounts (pause, resume, create campaigns, adjust bids and budgets). Changes real ad spend, so it ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform",
+          "actions"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          },
+          "actions": {
+            "type": "array",
+            "description": "The actions to execute, as described by get_ads_campaign_mgmt_schema.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "execute_ads_campaign_mgmt_actions",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_get_ads_rule_platforms",
+      "description": "Step 1 of Ads Rules: list the ad platforms and profiles available for building bid automation rules. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_ads_rule_platforms",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_rule_schema",
+      "description": "Step 2 of Ads Rules: get the schema for building automation rules: metrics, bid actions, guardrails and schedules. Read-only.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_rule_schema",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_manage_ads_rule",
+      "description": "Step 3 (terminal) of Ads Rules: build, edit and manage Amazon Bid Rules automation in plain English. Draft first and approval-gated in Helium 10, but an approved rule changes bids on its own, so it ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "instruction"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "The rule in plain English, or the change to an existing rule."
+          },
+          "rule_id": {
+            "type": "string",
+            "description": "ID of an existing rule to edit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "manage_ads_rule",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_get_ads_changelog_platforms",
+      "description": "Step 1 of Change Log: list the ad platforms (Amazon, Walmart) available for querying campaign change history.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_ads_changelog_platforms",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_ads_changelog_schema",
+      "description": "Step 2 of Change Log: get the schema for change log queries, including the available change types and filters.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_ads_changelog_schema",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_execute_ads_changelog_query",
+      "description": "Step 3 (terminal) of Change Log: query bid, budget, keyword, negative, campaign status and placement changes with old value, new value, who made it and when, filterable by actor (rules, schedules, AI bidding, MCP agent, manual Helium 10 edits, Seller Central).",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Ad platform, e.g. Amazon or Walmart, as returned by the matching *_platforms tool."
+          },
+          "profile_id": {
+            "type": "string",
+            "description": "Ads profile ID, as returned by the matching *_platforms tool."
+          },
+          "query": {
+            "type": "object",
+            "description": "Filters from the change log schema: change types, actors, date range."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "execute_ads_changelog_query",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_seller_account_health",
+      "description": "Get account-level health metrics for connected Amazon seller accounts: account standing, feedback rating, suspension risks and overall health status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_account_id": {
+            "type": "string",
+            "description": "Amazon seller account ID, from get_my_amazon_seller_accounts (defaults to the account you authorized)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_seller_account_health",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_alert_events",
+      "description": "Query listing change alert events for your seller account: price, review count, ranking, Buy Box and other product changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "event_types": {
+            "type": "array",
+            "description": "Kinds of alert events to include (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_alert_events",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_monitoring_status",
+      "description": "Get your account's monitoring setup: which products are monitored, which alert rules are configured and the notification settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_monitoring_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_b2b_offer_change_notifications",
+      "description": "Search Amazon B2B Any Offer Changed notification events, to track when B2B offers on your products change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_b2b_offer_change_notifications",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_fee_promotion_notifications",
+      "description": "Search Amazon fee and promotion notification events: fee changes, promotion eligibility and other cost-related updates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_fee_promotion_notifications",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_asin_price_history",
+      "description": "Pull the price history of any ASIN over time: how your price and competitor prices changed.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_asin_price_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_asin_bsr_history",
+      "description": "Pull the BSR (Best Seller Rank) history of any ASIN, to see how its rank changed over time.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_asin_bsr_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_asin_reviews_history",
+      "description": "Get the review count history of any ASIN over time, to follow review velocity and spot sudden drops.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_asin_reviews_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_change_rollup",
+      "description": "Get an account-level rollup of what changed in the last 24 hours or 7 days across your portfolio: price changes, review changes, rank movements and Buy Box changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "Period to summarize.",
+            "enum": [
+              "24h",
+              "7d"
+            ]
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_change_rollup",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_asin_review_analysis",
+      "description": "Get detailed review insights for any ASIN: rating distribution, sentiment analysis, keywords extracted from reviews and common complaint themes.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_asin_review_analysis",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_category_review_analysis",
+      "description": "Get category-level and niche-level review insights: common complaint themes, sentiment trends and improvement priorities across a whole category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Category name or browse node ID (see search_browse_nodes)."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Niche keyword, instead of a category."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_category_review_analysis",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_browse_nodes",
+      "description": "Search Amazon browse nodes (the category hierarchy) by category name or node ID, for category-level research and filtering.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Category name or browse node ID."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_browse_nodes",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_buybox_summary",
+      "description": "Get your current Buy Box standing across all monitored ASINs: where you hold the Buy Box, where you are losing it, and who holds it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_buybox_summary",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_buybox_history",
+      "description": "Get the Buy Box ownership history of any ASIN over a date range: who owned the Buy Box when, including your account and competitors.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_buybox_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_seller_feedback",
+      "description": "Get your brand or seller feedback rating and a summary of recent negative feedback, to track seller reputation across your account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_account_id": {
+            "type": "string",
+            "description": "Amazon seller account ID, from get_my_amazon_seller_accounts (defaults to the account you authorized)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_seller_feedback",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_size_tier_suggestions",
+      "description": "Get FBA size tier optimization suggestions: products that could move to a different size tier to reduce FBA fees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asins": {
+            "type": "array",
+            "description": "Amazon ASINs (10 characters each), (optional).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_size_tier_suggestions",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_amazon_cogs",
+      "description": "Get a paginated list of all COGS (Cost of Goods Sold) records configured for your Amazon account, as used by Profits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Only COGS of this ASIN (optional)."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_amazon_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_create_amazon_cogs",
+      "description": "Create a new COGS entry for an Amazon product or SKU: unit cost and effective date. Changes the profit figures from that date on.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "unit_cost"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Seller SKU."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unit_cost": {
+            "type": "number",
+            "description": "Unit cost in the marketplace currency."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Date the cost applies from, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "create_amazon_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_edit_amazon_cogs",
+      "description": "Update an existing Amazon COGS entry: unit cost, effective date or other COGS parameters.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cogs_id"
+        ],
+        "properties": {
+          "cogs_id": {
+            "type": "string",
+            "description": "ID of the COGS record, from list_amazon_cogs."
+          },
+          "unit_cost": {
+            "type": "number",
+            "description": "New unit cost."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "New effective date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "edit_amazon_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_delete_amazon_cogs",
+      "description": "Delete one or more Amazon COGS records by cogs_id (batch delete, up to 100). Removes the costs from Profits, so it ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cogs_ids"
+        ],
+        "properties": {
+          "cogs_ids": {
+            "type": "array",
+            "description": "IDs of the COGS records to delete (up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_amazon_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_list_amazon_indirect_cost_settings",
+      "description": "Get a paginated list of all indirect cost settings (the configuration rules for recurring costs such as payroll, software or photography) for your Amazon account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_amazon_indirect_cost_settings",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_create_amazon_indirect_cost",
+      "description": "Create a new indirect cost setting (a configuration rule) for automated cost tracking in Amazon Profits.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "name",
+          "amount"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the cost."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the account currency."
+          },
+          "frequency": {
+            "type": "string",
+            "description": "How often the cost occurs, e.g. one-time or monthly."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "create_amazon_indirect_cost",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_edit_amazon_indirect_cost",
+      "description": "Update an existing Amazon indirect cost setting: cost formula, effective date or calculation parameters.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cost_id"
+        ],
+        "properties": {
+          "cost_id": {
+            "type": "string",
+            "description": "ID of the setting, from list_amazon_indirect_cost_settings."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New amount."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "edit_amazon_indirect_cost",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_delete_amazon_indirect_costs",
+      "description": "Delete one or more Amazon indirect cost settings by cost_id (batch delete, up to 100). Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cost_ids"
+        ],
+        "properties": {
+          "cost_ids": {
+            "type": "array",
+            "description": "IDs of the settings to delete (up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_amazon_indirect_costs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_list_amazon_indirect_costs",
+      "description": "Get a paginated list of expanded (materialized) Amazon indirect costs: the actual charges calculated from the settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_amazon_indirect_costs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_wmt_cogs",
+      "description": "Get a paginated list of all COGS (Cost of Goods Sold) records configured for your Walmart account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_wmt_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_edit_wmt_cogs",
+      "description": "Update an existing Walmart COGS entry: unit cost or effective date, which changes the Walmart profit figures.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cogs_id"
+        ],
+        "properties": {
+          "cogs_id": {
+            "type": "string",
+            "description": "ID of the COGS record, from list_wmt_cogs."
+          },
+          "unit_cost": {
+            "type": "number",
+            "description": "New unit cost."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "New effective date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "edit_wmt_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_delete_wmt_cogs",
+      "description": "Delete one or more Walmart COGS records by cogs_id (batch delete, up to 100). Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cogs_ids"
+        ],
+        "properties": {
+          "cogs_ids": {
+            "type": "array",
+            "description": "IDs of the COGS records to delete (up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_wmt_cogs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_list_wmt_indirect_cost_settings",
+      "description": "Get a paginated list of all indirect cost settings (configuration rules) for your Walmart account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_wmt_indirect_cost_settings",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_wmt_indirect_costs",
+      "description": "Get a paginated list of expanded (materialized) Walmart indirect costs: the actual charges calculated from the settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_wmt_indirect_costs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_create_wmt_indirect_cost",
+      "description": "Create a new Walmart indirect cost setting (a configuration rule), e.g. payroll, brand fees, photography or offline promotion.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "name",
+          "amount"
+        ],
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Walmart seller account ID, from get_my_wmt_seller_accounts."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the cost."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the account currency."
+          },
+          "frequency": {
+            "type": "string",
+            "description": "How often the cost occurs, e.g. one-time or monthly."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "create_wmt_indirect_cost",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_edit_wmt_indirect_cost",
+      "description": "Update an existing Walmart indirect cost setting: amount, formula, effective date or calculation parameters.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cost_id"
+        ],
+        "properties": {
+          "cost_id": {
+            "type": "string",
+            "description": "ID of the setting, from list_wmt_indirect_cost_settings."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New amount."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "edit_wmt_indirect_cost",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_delete_wmt_indirect_costs",
+      "description": "Delete one or more Walmart indirect cost settings by cost_id (batch delete, up to 100). Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "cost_ids"
+        ],
+        "properties": {
+          "cost_ids": {
+            "type": "array",
+            "description": "IDs of the settings to delete (up to 100).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_wmt_indirect_costs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_get_mcp_usage_info",
+      "description": "Get your current Helium 10 MCP usage for this month: API calls used out of the monthly limit (1,000 on Diamond), reset date, remaining quota and top-up status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_mcp_usage_info",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_my_amazon_seller_accounts",
+      "description": "Get the list of authenticated Amazon seller accounts linked to your Helium 10 account, with their IDs and marketplaces.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get_my_amazon_seller_accounts",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_top_keywords",
+      "description": "Get the top keywords for a specific listing: which keywords drive the most traffic, ranked by search volume and relevance.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_top_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_check_asin_keyword_index",
+      "description": "Check whether an ASIN is indexed on Amazon for specific keywords. Returns indexed or not-indexed status per keyword.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin",
+          "keywords"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "check_asin_keyword_index",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_google_trends_history",
+      "description": "Get Google Trends search interest history for a keyword over time, to identify seasonal demand and validate the market viability of keywords.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keyword"
+        ],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Seed keyword or search phrase."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "geo": {
+            "type": "string",
+            "description": "Country code for the trend, e.g. US (optional)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_google_trends_history",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_tiktok_products",
+      "description": "Search TikTok Shop products (US) by keyword, brand, category, price, rating, shipping, listing recency, units sold, GMV, GMV trend and commission rate. Returns sales metrics, affiliate share and creator counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Keyword (optional)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category in plain words, e.g. \"beauty\" or \"fashion\" (mapped to the TikTok Shop taxonomy)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on price, rating, units sold, GMV, GMV trend or commission rate. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_tiktok_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_tiktok_influencers",
+      "description": "Search TikTok creators (US) by keyword, category, follower count, video and live engagement rates, GMV band and units-sold band. Returns follower data and performance metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Keyword (optional)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category in plain words, e.g. \"beauty\" or \"fashion\" (mapped to the TikTok Shop taxonomy)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on followers, engagement rate, GMV band or units-sold band. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_tiktok_influencers",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_tiktok_product_influencers",
+      "description": "Given a TikTok Shop product ID, get all creators promoting or selling that product, with their GMV, units sold and video count for it.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "product_id"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "TikTok Shop product ID, from search_tiktok_products."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_tiktok_product_influencers",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_tiktok_hot_videos",
+      "description": "Search trending TikTok Shop videos (US) by keyword, category and time window (7, 14 or 30 days). Returns each video with the product it promotes, the creator and engagement metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Keyword (optional)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category in plain words, e.g. \"beauty\" or \"fashion\" (mapped to the TikTok Shop taxonomy)."
+          },
+          "time_window": {
+            "type": "integer",
+            "description": "Look-back window in days: 7, 14 or 30.",
+            "enum": [
+              7,
+              14,
+              30
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, e.g. by GMV or views."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_tiktok_hot_videos",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_tracked_products",
+      "description": "Get a paginated list of all products you track in Keyword Tracker, with their current metrics and tracking status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_tracked_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_add_untracked_product_keywords",
+      "description": "Add new keywords to Keyword Tracker for a product (ASIN). Several keywords can be added in one call.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin",
+          "keywords"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "add_untracked_product_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_delete_tracked_keywords",
+      "description": "Remove keywords from Keyword Tracker for a product (batch, up to 100). Their rank history stops; switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin",
+          "keywords"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords (up to 100).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_tracked_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_delete_tracked_product",
+      "description": "Remove an entire product from Keyword Tracker, which stops all rank tracking for that ASIN. Switched off by default.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "asin"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "delete_tracked_product",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_link_keyword_tag",
+      "description": "Attach tags to tracked keywords for organization and categorization, for example \"high-priority\". Batch operations supported.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords",
+          "tags"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to attach.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "link_keyword_tag",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_unlink_keyword_tag",
+      "description": "Remove tags from tracked keywords. The keywords and their tracking stay; only the tag link is removed. Batch operations supported.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords",
+          "tags"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to remove.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "unlink_keyword_tag",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_add_keyword_note",
+      "description": "Add a note to tracked keywords for observations, strategy notes or follow-up items in Keyword Tracker.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords",
+          "note"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "Text of the note."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "add_keyword_note",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_update_keyword_note",
+      "description": "Update the existing note on tracked keywords in Keyword Tracker with new text.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords",
+          "note"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "New text of the note."
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "update_keyword_note",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_remove_keyword_note",
+      "description": "Remove the note from tracked keywords in Keyword Tracker. The note text is deleted, so it ships switched off.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "keywords"
+        ],
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "Amazon ASIN, the 10-character product identifier (e.g. B0XXXXXXXX), not a SKU, UPC or EAN."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "marketplace": {
+            "type": "array",
+            "description": "Amazon marketplace code: US (default), UK, DE, JP, CA, AU, FR, ES, IT, NL, PL, SE or MX. A single value is accepted as well as a list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "remove_keyword_note",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "helium10_list_keyword_folders",
+      "description": "Browse your keyword folders in My List (Keyword Manager), with their folder structure and organization.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "list_keyword_folders",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_folder_keywords",
+      "description": "Get all keywords inside one folder of Keyword Manager (My List), with their saved metrics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "folder_id"
+        ],
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "ID of the folder, from list_keyword_folders."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_folder_keywords",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_add_keywords_to_folder",
+      "description": "Add keywords to a folder in Keyword Manager (My List). Several keywords can be added in one call.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "folder_id",
+          "keywords"
+        ],
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "ID of the folder, from list_keyword_folders."
+          },
+          "keywords": {
+            "type": "array",
+            "description": "Keywords.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "add_keywords_to_folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_saved_products",
+      "description": "Get all products saved in My List (Black Box saved products), your saved product library with current metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_saved_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_amazon_influencers",
+      "description": "Search Amazon influencers by niche, follower count, engagement metrics and content type, to find creators relevant to your products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Niche or keyword (optional)."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters on followers, engagement or content type. The server publishes the exact filter fields in its live tool schema."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_amazon_influencers",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_amazon_influencer_profile",
+      "description": "Get the detailed profile of one Amazon influencer: followers, engagement rates, content categories, past promotions and contact info.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "influencer_id"
+        ],
+        "properties": {
+          "influencer_id": {
+            "type": "string",
+            "description": "Influencer ID, from search_amazon_influencers."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_amazon_influencer_profile",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_search_amazon_influencer_videos",
+      "description": "Get the videos of one Amazon influencer: topics, engagement metrics, product mentions and audience demographics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "influencer_id"
+        ],
+        "properties": {
+          "influencer_id": {
+            "type": "string",
+            "description": "Influencer ID, from search_amazon_influencers."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search_amazon_influencer_videos",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_amazon_influencer_folders",
+      "description": "Browse the folders in your Amazon Influencer Finder My List, where saved creators are organized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "list_amazon_influencer_folders",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_amazon_influencers_in_folder",
+      "description": "Get all Amazon influencers saved in one Influencer Finder folder, with their key metrics.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "folder_id"
+        ],
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "ID of the folder, from list_amazon_influencer_folders."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_amazon_influencers_in_folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_add_amazon_influencers_to_folder",
+      "description": "Add Amazon influencers to an Influencer Finder folder for organization. Several influencers can be added in one call.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "folder_id",
+          "influencer_ids"
+        ],
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "ID of the folder."
+          },
+          "influencer_ids": {
+            "type": "array",
+            "description": "Influencer IDs to add.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "add_amazon_influencers_to_folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_list_user_markets",
+      "description": "List the Market Tracker 360 (MT360) markets of your account. Only available with the MT360 add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "list_user_markets",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_market_overall",
+      "description": "Get the overall Market Tracker 360 historical series for one MT360 market (optionally compared): market size, growth trends and changes in the competitive landscape.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "market_id"
+        ],
+        "properties": {
+          "market_id": {
+            "type": "string",
+            "description": "MT360 market ID, from list_user_markets."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          },
+          "compare": {
+            "type": "boolean",
+            "description": "Include the comparison period."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_market_overall",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_market_statistics",
+      "description": "Get headline Market Performance statistics for one MT360 market: your share, market share by category, competitive metrics and performance indicators.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "market_id"
+        ],
+        "properties": {
+          "market_id": {
+            "type": "string",
+            "description": "MT360 market ID, from list_user_markets."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD (dates after today are clamped to today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_market_statistics",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_market_leaderboard",
+      "description": "Get the ranked leaderboard of one MT360 market: top categories, brands or sellers by the chosen metric.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "market_id"
+        ],
+        "properties": {
+          "market_id": {
+            "type": "string",
+            "description": "MT360 market ID, from list_user_markets."
+          },
+          "dimension": {
+            "type": "string",
+            "description": "What to rank: categories, brands or sellers."
+          },
+          "metric": {
+            "type": "string",
+            "description": "Metric to rank by, e.g. revenue or units."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_market_leaderboard",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "helium10_get_market_products",
+      "description": "Get paginated current product rows for one MT360 market: ASIN attributes, BSR, pricing, reviews and sales data.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "market_id"
+        ],
+        "properties": {
+          "market_id": {
+            "type": "string",
+            "description": "MT360 market ID, from list_user_markets."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for paginated results (each extra page counts as one API call).",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get_market_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

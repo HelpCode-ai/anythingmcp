@@ -276,6 +276,11 @@ export class OAuth2TokenService {
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
         };
+        // RFC 8707: an MCP connector authorized with a resource indicator
+        // asks for tokens for that same resource on every refresh.
+        if (typeof authConfig.resource === 'string' && authConfig.resource) {
+          body.resource = authConfig.resource;
+        }
         const useBasic =
           authConfig.tokenAuthMethod === 'basic' ||
           authConfig.tokenAuthMethod === 'client_secret_basic';
@@ -297,7 +302,10 @@ export class OAuth2TokenService {
           headers.Authorization = `Basic ${basic}`;
         } else {
           if (clientId) body.client_id = clientId;
-          if (clientSecret) body.client_secret = clientSecret;
+          // A public client ('none') never sends a secret.
+          if (clientSecret && authConfig.tokenAuthMethod !== 'none') {
+            body.client_secret = clientSecret;
+          }
         }
       }
 

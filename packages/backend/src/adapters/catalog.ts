@@ -79,11 +79,13 @@ import * as airtable from './intl/airtable.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as apiFootball from './intl/api-football.json';
+import * as apify from './intl/apify.json';
 import * as apollo from './intl/apollo.json';
 import * as archer from './intl/archer.json';
 import * as asana from './intl/asana.json';
 import * as asite from './intl/asite.json';
 import * as atera from './intl/atera.json';
+import * as atlassian from './intl/atlassian.json';
 import * as attio from './intl/attio.json';
 import * as autotask from './intl/autotask.json';
 import * as bamboohr from './intl/bamboohr.json';
@@ -129,6 +131,7 @@ import * as exerciseCom from './intl/exercise-com.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as fillout from './intl/fillout.json';
+import * as firecrawl from './intl/firecrawl.json';
 import * as firma from './intl/firma.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
@@ -145,6 +148,7 @@ import * as gelato from './intl/gelato.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
+import * as github from './intl/github.json';
 import * as glpi from './intl/glpi.json';
 import * as gocardless from './intl/gocardless.json';
 import * as googleAds from './intl/google-ads.json';
@@ -157,6 +161,7 @@ import * as hackernews from './intl/hackernews.json';
 import * as harvest from './intl/harvest.json';
 import * as heap from './intl/heap.json';
 import * as height from './intl/height.json';
+import * as helium10 from './intl/helium10.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as hunter from './intl/hunter.json';
@@ -177,6 +182,7 @@ import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as lessAnnoyingCrm from './intl/less-annoying-crm.json';
 import * as lever from './intl/lever.json';
+import * as linear from './intl/linear.json';
 import * as linkedin from './intl/linkedin.json';
 import * as linkedinAds from './intl/linkedin-ads.json';
 import * as loops from './intl/loops.json';
@@ -205,6 +211,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
+import * as notion from './intl/notion.json';
 import * as novaPoshta from './intl/nova-poshta.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as oddsApi from './intl/odds-api.json';
@@ -256,10 +263,12 @@ import * as shipstation from './intl/shipstation.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as snov from './intl/snov.json';
+import * as snowflake from './intl/snowflake.json';
 import * as sorare from './intl/sorare.json';
 import * as splunk from './intl/splunk.json';
 import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
+import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
@@ -598,11 +607,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
+  apify as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   archer as unknown as AdapterDefinition,
   asana as unknown as AdapterDefinition,
   asite as unknown as AdapterDefinition,
   atera as unknown as AdapterDefinition,
+  atlassian as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
   autotask as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
@@ -648,6 +659,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
+  firecrawl as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
@@ -664,6 +676,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
+  github as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
@@ -676,6 +689,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   harvest as unknown as AdapterDefinition,
   heap as unknown as AdapterDefinition,
   height as unknown as AdapterDefinition,
+  helium10 as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
@@ -696,6 +710,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lemonsqueezy as unknown as AdapterDefinition,
   lessAnnoyingCrm as unknown as AdapterDefinition,
   lever as unknown as AdapterDefinition,
+  linear as unknown as AdapterDefinition,
   linkedin as unknown as AdapterDefinition,
   linkedinAds as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
@@ -724,6 +739,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
+  notion as unknown as AdapterDefinition,
   novaPoshta as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
   oddsApi as unknown as AdapterDefinition,
@@ -775,10 +791,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
+  snowflake as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
+  stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
@@ -878,6 +896,7 @@ export function listAdapters(): AdapterMeta[] {
     unlisted: adapter.unlisted,
     probe: adapter.probe,
     envVarMeta: adapter.envVarMeta,
+    prerequisites: adapter.prerequisites,
   }));
 }
 

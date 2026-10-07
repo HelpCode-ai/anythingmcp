@@ -110,10 +110,99 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
 
 | Auth Type | Use Case |
 |-----------|----------|
-| **Bearer Token** | Static token for the remote MCP server |
-| **OAuth2** | Auto-refreshing tokens with client credentials |
-| **API Key** | API key header authentication |
+| **Bearer Token** | Static token for the remote MCP server (Linear, GitHub, Stripe, Firecrawl, Apify keys) |
+| **Basic Auth** | `Authorization: Basic base64(username:password)`, e.g. an Atlassian personal API token as `email:token` |
+| **OAuth2** | Sign in at the provider ("Authorize with Provider"); tokens refresh automatically |
+| **API Key** | API key in a header of your choice |
 | **None** | For unprotected local MCP servers |
+
+### OAuth2 against a remote MCP server
+
+"Authorize with Provider" on an MCP connector:
+
+1. **Discovers** the server's OAuth metadata: the RFC 9728 protected-resource document
+   (path-inserted, then at the root of the host), the authorization server it names (RFC 8414,
+   then OpenID Connect discovery), and finally the origin-level
+   `/.well-known/oauth-authorization-server` of older servers.
+2. **Takes the endpoints as published.** An authorization server on another host is legitimate
+   (Stripe's is `access.stripe.com`, Apify's `console.apify.com`). Only an endpoint on a host
+   that cannot be reached from outside (loopback, private address, `.local`, a single-label
+   Docker name) is moved onto the MCP server's own origin: that is what a self-hosted server with
+   a wrong `OAUTH_SERVER_URL` advertises. Token and registration requests go through the SSRF
+   guard; the authorization endpoint must be `http(s)`.
+3. **Picks the client**: a pre-registered one (see `mcpOAuth` below), else one obtained by
+   dynamic client registration (RFC 7591), else the client ID/secret stored in the connector's
+   OAuth settings. A registered client is kept in the connector's encrypted auth config and
+   reused on the next authorization; it is registered again only when the server, the callback
+   URL or the secret's expiry changes, or the provider refuses it (`invalid_client`).
+   Registration asks for the token endpoint auth method the server supports: `none` (a public
+   client, no secret) where that is all it offers.
+4. **Sends** PKCE S256, the `scope` (the protected resource's `scopes_supported`, else the
+   authorization server's) and the RFC 8707 `resource` indicator on the authorization request,
+   the code exchange and every refresh, whenever the server publishes a protected-resource
+   document.
+5. **Imports the tools** the server lists once the token is stored. A connector installed from
+   a catalog adapter goes through the same policy as the install: tools the catalog switches off
+   arrive switched off, catalog annotations fill what the server leaves out, the tool prefix
+   applies.
+
+The redirect URI to register with a provider is `<SERVER_URL>/api/mcp-oauth/callback`
+(`GET /api/connectors/oauth/redirect-uri` returns it).
+
+### Connector settings (`connector.config`)
+
+A catalog adapter sets these under `connector.config`; they are copied into the connector at
+install. Through the API they can be set on any MCP connector.
+
+| Key | Meaning |
+|-----|---------|
+| `mcpPath` | Endpoint path when the base URL cannot say it. A base URL without a path means `<origin>/mcp`, so a server at the root of its host (Stripe, Apify) sets `"/"`. |
+| `mcpToolPrefix` | Prepended to the remote tool names (`linear_` turns `list_issues` into `linear_list_issues`), so two bridges with tools of the same name can share an MCP server. Characters outside `[A-Za-z0-9_]` become `_`, and a name that already starts with the prefix keeps it once. Calls still use the remote name. |
+| `mcpOAuth` | How "Authorize with Provider" works for this connector, below. |
+
+`mcpOAuth` (every field optional):
+
+```json
+"mcpOAuth": {
+  "registration": "auto",
+  "clientId": "{{ACME_CLIENT_ID}}",
+  "clientSecret": "{{ACME_CLIENT_SECRET}}",
+  "scope": "mcp_api refresh_token",
+  "tokenAuthMethod": "client_secret_post",
+  "resource": true
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `registration` | `auto` (default): the pre-registered client when `clientId` resolves to a value, else dynamic registration, else the client stored in the OAuth settings. `dcr`: always dynamic registration. `preregistered`: never dynamic registration, even if the server advertises it (Salesforce does, and refuses it for MCP). |
+| `clientId`, `clientSecret` | A client the user registered with the provider, normally `{{VAR}}` placeholders. They are resolved from the connector's environment variables when the user clicks Authorize, so values typed after install are used. With empty variables the error names them and the redirect URI to register. |
+| `scope` | The scope to request. `""` sends no scope at all (Asana asks for that). Absent: the protected resource's scopes, else the authorization server's. A scope typed in the connector's OAuth settings wins. |
+| `tokenAuthMethod` | `none`, `client_secret_post` or `client_secret_basic`: for a pre-registered client, how it authenticates at the token endpoint; for dynamic registration, the method to register with. |
+| `resource` | RFC 8707 indicator. Default: sent when the server publishes a protected-resource document, with that document's `resource` (else the MCP URL). `true` always sends it, `false` never, a string sends that value. |
+
+### Vendor MCP servers in the catalog
+
+These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
+the tools of the server (the catalog keeps a snapshot for the store and as the fallback when the
+server cannot be reached). Click **Discover tools** on the connector after the vendor adds tools.
+
+| Adapter | Endpoint | Auth |
+|---------|----------|------|
+| Splunk | `https://<host>:8089/services/mcp` | Bearer (encrypted MCP token) |
+| Linear | `https://mcp.linear.app/mcp` | Bearer (API key) |
+| GitHub | `https://api.githubcopilot.com/mcp/` | Bearer (personal access token) |
+| Stripe | `https://mcp.stripe.com` (root, `mcpPath: "/"`) | Bearer (agent restricted key) |
+| Atlassian (Jira, Confluence) | `https://mcp.atlassian.com/v2/mcp` | Basic (email + API token), or Bearer for a service account key |
+| Snowflake | `https://<account>/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<name>` | Bearer (programmatic access token) |
+| Firecrawl | `https://mcp.firecrawl.dev/v2/mcp` | Bearer (API key) |
+| Apify | `https://mcp.apify.com` (root, `mcpPath: "/"`) | Bearer (API token) |
+| Notion | `https://mcp.notion.com/mcp` | OAuth2, dynamic registration |
+| Helium 10 | `https://mcp.helium10.com/mcp` | OAuth2, dynamic registration |
+
+One authorization serves every caller of a connector: whoever clicks "Authorize" is the identity
+the tools act as. For per-user tools (Notion, Slack, Salesforce) use a dedicated account until
+per-user tokens exist.
 
 ---
 

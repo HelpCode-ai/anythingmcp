@@ -54,7 +54,16 @@ import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
-import { interpolateDeep } from '../common/env-interpolation.util';
+import {
+  DYNAMIC_CLIENT_KEY,
+  planMcpAuthorization,
+  readMcpOAuthSettings,
+  type StoredDynamicClient,
+} from './mcp-oauth-settings';
+import { mcpPathOf } from './mcp-connector-config.util';
+import { catalogMcpToolsFor } from '../adapters/mcp-adapter.util';
+import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
+import { resolveMcpEndpointUrl } from '../common/url.util';
 import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
   mergeMaskedEnvVars,
@@ -1201,26 +1210,74 @@ export class ConnectorsController {
       // REST/GraphQL only: the auth config fields to write on success in place
       // of the historical "client settings as stored" (see PendingOAuthFlow).
       let persistAuthConfig: Record<string, unknown> | undefined;
+      // MCP only: RFC 8707 resource indicator, and whether the client came
+      // from dynamic registration.
+      let resource: string | undefined;
+      let dynamicClient = false;
 
       if (connector.type === 'MCP') {
-        // MCP: discover OAuth metadata from remote server
-        const metadata = await this.mcpOAuthService.discoverMetadata(connector.baseUrl);
-        this.logger.log(`OAuth metadata discovered from ${connector.baseUrl}: issuer=${metadata.issuer}`);
+        // MCP: discover OAuth metadata from the remote server, then pick the
+        // client (pre-registered, registered earlier, or register now), the
+        // scope and the resource indicator. See mcp-oauth-settings.ts.
+        const envVars = (connector.envVars as Record<string, string> | null) ?? {};
+        const rowConfig = connector.config as Record<string, unknown> | null;
+        const adapterSlug = (rowConfig as { adapterSlug?: string } | null)?.adapterSlug;
+        const settings = readMcpOAuthSettings(
+          rowConfig,
+          adapterSlug ? getAdapter(adapterSlug)?.connector.config : undefined,
+        );
+        const baseUrl = interpolateString(connector.baseUrl, envVars);
+        const metadata = await this.mcpOAuthService.discoverMetadata(baseUrl);
+        this.logger.log(`OAuth metadata discovered from ${baseUrl}: issuer=${metadata.issuer}`);
+
+        const plan = planMcpAuthorization({
+          metadata,
+          settings,
+          // {{VAR}} in a client typed into the OAuth settings resolves from
+          // the env vars at this point too, as it does for REST connectors.
+          authConfig: interpolateDeep(authConfig, envVars),
+          envVars,
+          callbackUrl,
+          mcpUrl: resolveMcpEndpointUrl(baseUrl, mcpPathOf(rowConfig)).toString(),
+        });
+        if (!plan.ok) return { error: plan.error };
 
         authorizationEndpoint = metadata.authorization_endpoint;
         tokenEndpoint = metadata.token_endpoint;
-        scope = metadata.scopes_supported?.join(' ');
+        scope = plan.scope;
+        resource = plan.resource;
 
-        if (metadata.registration_endpoint) {
+        if (plan.client.source === 'register') {
           const registration = await this.mcpOAuthService.registerClient(
-            metadata.registration_endpoint,
+            plan.client.registrationEndpoint,
             callbackUrl,
+            { tokenAuthMethod: plan.client.registerAuthMethod },
           );
           clientId = registration.clientId;
           clientSecret = registration.clientSecret;
+          tokenAuthMethod = registration.tokenAuthMethod;
+          dynamicClient = true;
+          // Kept so the next "Authorize" reuses this client instead of
+          // registering another one at the provider on every click.
+          const stored: StoredDynamicClient = {
+            registrationEndpoint: plan.client.registrationEndpoint,
+            redirectUri: callbackUrl,
+            clientId: registration.clientId,
+            ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
+            tokenAuthMethod: registration.tokenAuthMethod,
+            ...(registration.clientSecretExpiresAt
+              ? { clientSecretExpiresAt: registration.clientSecretExpiresAt }
+              : {}),
+            registeredAt: new Date().toISOString(),
+          };
+          await this.connectorsService.updateAuthConfigMerge(connector.id, {
+            [DYNAMIC_CLIENT_KEY]: stored,
+          });
         } else {
-          clientId = String(authConfig.clientId || '');
-          clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
+          clientId = plan.client.clientId;
+          clientSecret = plan.client.clientSecret;
+          tokenAuthMethod = plan.client.tokenAuthMethod;
+          dynamicClient = plan.client.source === 'stored';
         }
       } else {
         // REST/GraphQL: the stored authConfig, with {{VAR}} resolved from the
@@ -1290,6 +1347,8 @@ export class ConnectorsController {
         clientAssertion,
         persistAuthConfig,
         ...(userAgent ? { userAgent } : {}),
+        ...(resource ? { resource } : {}),
+        ...(dynamicClient ? { dynamicClient } : {}),
         createdAt: Date.now(),
       }, { returnTo: body?.returnTo });
 
@@ -1301,6 +1360,7 @@ export class ConnectorsController {
         codeChallenge,
         state,
         scope,
+        resource,
       });
 
       return { authorizationUrl };
@@ -1330,30 +1390,38 @@ export class ConnectorsController {
         ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
         : undefined;
 
+      const mcpPath = mcpPathOf(connector.config);
       const remoteTools = await this.mcpClientEngine.listTools({
         baseUrl: connector.baseUrl,
         authType: connector.authType,
         authConfig,
         headers: connector.headers as Record<string, string>,
         connectorId: connector.id,
+        mcpPath,
       });
 
-      const parsedTools = remoteTools.map((rt) => ({
+      const discovered = remoteTools.map((rt) => ({
         name: rt.name,
         description: rt.description || `MCP tool: ${rt.name}`,
-        parameters: rt.inputSchema || { type: 'object', properties: {} },
+        parameters: (rt.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} },
         // '/mcp' here is the historical *default*, not a user choice: when the
         // connector's base URL carries a path of its own, resolveMcpEndpointUrl()
         // treats this value as unset and calls the base URL directly (#501).
         endpointMapping: {
           method: rt.name,
-          path: '/mcp',
+          path: mcpPath ?? '/mcp',
         },
         outputSchema: rt.outputSchema ?? null,
         annotations: rt.annotations ?? null,
       }));
 
-      return this.createToolsFromParsed(connector.id, parsedTools);
+      // A connector installed from an MCP catalog adapter keeps the
+      // catalog's policy (tool prefix, tools switched off by default,
+      // annotations) when its tools are discovered again.
+      return this.createToolsFromParsed(
+        connector.id,
+        catalogMcpToolsFor(connector.config, discovered),
+      );
     } catch (error: any) {
       this.logger.error(`Tool discovery failed for connector ${id}: ${error.message}`);
       return { error: `Tool discovery failed: ${error.message}` };
@@ -2006,6 +2074,10 @@ export class ConnectorsController {
             responseMapping: tool.responseMapping as any,
             outputSchema: (tool.outputSchema ?? null) as any,
             annotations: (tool.annotations ?? null) as any,
+            // Only catalog MCP tools carry these (catalogMcpToolsFor): a
+            // write the catalog ships switched off arrives switched off.
+            ...(tool.enabled === false ? { isEnabled: false } : {}),
+            ...(tool.origin === 'catalog' ? { origin: 'catalog' } : {}),
           },
         });
         tools.push(created);

@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
+import { isIP } from 'net';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt, encrypt } from '../common/crypto/encryption.util';
 import axios from 'axios';
@@ -11,13 +12,21 @@ import {
 } from './engines/client-assertion.util';
 import { outboundAxiosOptions } from '../common/outbound-http';
 
-interface OAuthMetadata {
+export interface OAuthMetadata {
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;
   registration_endpoint?: string;
   scopes_supported?: string[];
   code_challenge_methods_supported?: string[];
+  token_endpoint_auth_methods_supported?: string[];
+  /**
+   * Set when the server published an RFC 9728 protected-resource document:
+   * its `resource` identifier (what an RFC 8707 `resource` parameter must
+   * carry) and the scopes it says a client needs. Not part of the
+   * authorization server's own document.
+   */
+  protectedResource?: { resource?: string; scopesSupported?: string[] };
 }
 
 export interface PendingOAuthFlow {
@@ -55,6 +64,17 @@ export interface PendingOAuthFlow {
    * as well (see tokenEndpointUserAgent). Unset leaves the default.
    */
   userAgent?: string;
+  /**
+   * RFC 8707 resource indicator of the MCP server, sent with the code
+   * exchange and stored for the refreshes. MCP connectors only.
+   */
+  resource?: string;
+  /**
+   * The client came from dynamic registration (MCP connectors): when the
+   * token endpoint refuses it, the stored registration is dropped so the
+   * next authorization registers a fresh one.
+   */
+  dynamicClient?: boolean;
   createdAt: number;
 }
 
@@ -106,10 +126,20 @@ export class McpOAuthService {
         },
       );
     }
-    candidates.push({
-      url: `${actualOrigin}/.well-known/oauth-authorization-server`,
-      protectedResource: false,
-    });
+    // A server at the root of its host (Stripe, Apify) publishes its
+    // protected-resource document there, and so may a path-hosted one whose
+    // path-inserted URL is missing. Checked before the origin-level
+    // authorization-server document, which is what older servers have.
+    candidates.push(
+      {
+        url: `${actualOrigin}/.well-known/oauth-protected-resource`,
+        protectedResource: true,
+      },
+      {
+        url: `${actualOrigin}/.well-known/oauth-authorization-server`,
+        protectedResource: false,
+      },
+    );
 
     const failures: string[] = [];
 
@@ -138,7 +168,18 @@ export class McpOAuthService {
           );
           // No rebasing here: the resource explicitly named an external
           // authorization server, so its origin is intentional.
-          return metadata;
+          return {
+            ...metadata,
+            protectedResource: {
+              resource:
+                typeof document.resource === 'string' ? document.resource : undefined,
+              scopesSupported: Array.isArray(document.scopes_supported)
+                ? document.scopes_supported.filter(
+                    (v: unknown): v is string => typeof v === 'string',
+                  )
+                : undefined,
+            },
+          };
         } catch (err: any) {
           failures.push(`${issuer}: ${err.message}`);
           continue;
@@ -153,7 +194,7 @@ export class McpOAuthService {
       this.logger.debug(
         `OAuth metadata for ${baseUrl} discovered at ${candidate.url}`,
       );
-      return this.rebaseToOrigin(document as OAuthMetadata, actualOrigin);
+      return this.rebaseUnreachableEndpoints(document as OAuthMetadata, base);
     }
 
     throw new Error(
@@ -204,22 +245,40 @@ export class McpOAuthService {
   }
 
   /**
-   * Rebase endpoint URLs onto the MCP server's own origin when the metadata
-   * reports a different one (e.g. a self-hosted server whose OAUTH_SERVER_URL
-   * env var is misconfigured). Only applied to same-origin AS metadata — a
-   * protected-resource document naming an external authorization server is
-   * taken at face value.
+   * Pull endpoints that cannot be reached from here back onto the MCP
+   * server's origin.
+   *
+   * This exists for a self-hosted server whose public address is not what
+   * it advertises: an MCP server behind a proxy with OAUTH_SERVER_URL left
+   * at `http://localhost:4000` publishes endpoints nobody outside that
+   * machine can open, while the same paths answer on the address we reached
+   * it at.
+   *
+   * It used to rewrite *every* endpoint on another origin, which broke the
+   * servers whose authorization server legitimately lives elsewhere and is
+   * published at the origin level: Stripe (`access.stripe.com`), Apify
+   * (`console.apify.com`), Slack (`slack.com`). Users were sent to
+   * `https://mcp.stripe.com/mcp/oauth2/authorize`, which does not exist. Now
+   * only an endpoint on a loopback, private or single-label host is moved,
+   * and only when the MCP server itself is not on one (a local test setup
+   * with the two on different local ports is left alone). Everything else
+   * is taken as published: the token and registration requests go through
+   * the SSRF guard like any other outbound call, and the authorization
+   * endpoint, which only the user's browser opens, must be http(s) (see
+   * buildAuthorizationUrl).
    */
-  private rebaseToOrigin(
+  private rebaseUnreachableEndpoints(
     metadata: OAuthMetadata,
-    actualOrigin: string,
+    mcpUrl: URL,
   ): OAuthMetadata {
+    if (isLocalOnlyHost(mcpUrl.hostname)) return metadata;
+    const actualOrigin = mcpUrl.origin;
     const rebase = (endpoint: string): string => {
       try {
         const parsed = new URL(endpoint);
-        if (parsed.origin !== actualOrigin) {
+        if (parsed.origin !== actualOrigin && isLocalOnlyHost(parsed.hostname)) {
           this.logger.warn(
-            `Rebasing OAuth endpoint from ${parsed.origin} → ${actualOrigin} (${parsed.pathname})`,
+            `Rebasing OAuth endpoint from ${parsed.origin} → ${actualOrigin} (${parsed.pathname}): the server advertises a host that is not reachable from here`,
           );
           return `${actualOrigin}${parsed.pathname}${parsed.search}`;
         }
@@ -241,14 +300,22 @@ export class McpOAuthService {
 
   /**
    * Register as an OAuth client via RFC 7591 Dynamic Client Registration.
+   *
+   * `tokenAuthMethod` is how the client will authenticate at the token
+   * endpoint (see chooseTokenAuthMethod): Stripe, Bright Data and Firecrawl
+   * only take public clients (`none`), and asking them for
+   * `client_secret_post` may be refused. What the server grants wins over
+   * what was asked for.
    */
   async registerClient(
     registrationEndpoint: string,
     callbackUrl: string,
-  ): Promise<{ clientId: string; clientSecret?: string }> {
+    opts: { tokenAuthMethod?: string; scope?: string } = {},
+  ): Promise<RegisteredClient> {
     this.logger.debug(
       `Registering OAuth client at ${registrationEndpoint}`,
     );
+    const requested = opts.tokenAuthMethod || 'client_secret_post';
 
     await assertSafeOutboundUrl(registrationEndpoint);
     const response = await axios.post(
@@ -258,7 +325,8 @@ export class McpOAuthService {
         redirect_uris: [callbackUrl],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        token_endpoint_auth_method: 'client_secret_post',
+        token_endpoint_auth_method: requested,
+        ...(opts.scope ? { scope: opts.scope } : {}),
       },
       { timeout: 10000, ...outboundAxiosOptions() },
     );
@@ -269,10 +337,20 @@ export class McpOAuthService {
         'Dynamic client registration failed: server did not return a client_id',
       );
     }
+    const granted =
+      typeof response.data.token_endpoint_auth_method === 'string'
+        ? response.data.token_endpoint_auth_method
+        : requested;
+    const expiresAt = Number(response.data.client_secret_expires_at);
 
     return {
       clientId,
-      clientSecret: response.data.client_secret,
+      // A public client has no secret to send, even if one came back.
+      clientSecret: granted === 'none' ? undefined : response.data.client_secret,
+      tokenAuthMethod: granted,
+      ...(Number.isFinite(expiresAt) && expiresAt > 0
+        ? { clientSecretExpiresAt: expiresAt }
+        : {}),
     };
   }
 
@@ -286,8 +364,17 @@ export class McpOAuthService {
     codeChallenge: string;
     state: string;
     scope?: string;
+    /** RFC 8707 resource indicator (MCP servers). */
+    resource?: string;
   }): string {
     const url = new URL(params.authorizationEndpoint);
+    // The browser is sent here, and the address may come from a remote
+    // server's metadata: nothing but a web page (no javascript:, data:, …).
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new Error(
+        `The authorization endpoint ${url.protocol}// is not a web address`,
+      );
+    }
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', params.clientId);
     url.searchParams.set('redirect_uri', params.redirectUri);
@@ -296,6 +383,9 @@ export class McpOAuthService {
     url.searchParams.set('state', params.state);
     if (params.scope) {
       url.searchParams.set('scope', params.scope);
+    }
+    if (params.resource) {
+      url.searchParams.set('resource', params.resource);
     }
     return url.toString();
   }
@@ -314,6 +404,8 @@ export class McpOAuthService {
     clientAssertion?: ClientAssertionSettings;
     /** Sent as User-Agent; Reddit throttles generic agents at its token endpoint. */
     userAgent?: string;
+    /** RFC 8707 resource indicator (MCP servers). */
+    resource?: string;
   }): Promise<{
     accessToken: string;
     refreshToken?: string;
@@ -331,6 +423,7 @@ export class McpOAuthService {
       client_id: params.clientId,
       code_verifier: params.codeVerifier,
     };
+    if (params.resource) body.resource = params.resource;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -357,13 +450,14 @@ export class McpOAuthService {
         `${params.clientId}:${params.clientSecret}`,
       ).toString('base64');
       headers.Authorization = `Basic ${basic}`;
-    } else if (params.clientSecret) {
-      // client_secret_post (default): credentials in the body.
+    } else if (params.clientSecret && params.tokenAuthMethod !== 'none') {
+      // client_secret_post (default): credentials in the body. A public
+      // client ('none') sends its client_id only.
       body.client_secret = params.clientSecret;
     }
 
     this.logger.debug(
-      `Exchanging auth code at ${params.tokenUrl} (auth=${privateKeyJwt ? 'private_key_jwt' : useBasic ? 'basic' : 'post'})`,
+      `Exchanging auth code at ${params.tokenUrl} (auth=${privateKeyJwt ? 'private_key_jwt' : useBasic ? 'basic' : params.tokenAuthMethod === 'none' ? 'none' : 'post'})`,
     );
 
     await assertSafeOutboundUrl(params.tokenUrl);
@@ -516,6 +610,70 @@ export class McpOAuthService {
       return undefined;
     }
   }
+}
+
+export interface RegisteredClient {
+  clientId: string;
+  clientSecret?: string;
+  /** What the server granted: `none`, `client_secret_post`, `client_secret_basic`. */
+  tokenAuthMethod: string;
+  /** Unix seconds; absent or 0 means the secret does not expire. */
+  clientSecretExpiresAt?: number;
+}
+
+/**
+ * How a dynamically registered client should authenticate at the token
+ * endpoint, from what the authorization server advertises.
+ *
+ * `client_secret_post` stays the first choice when offered (what this always
+ * asked for); a server that offers only public clients gets `none`.
+ * RFC 8414 says an absent list means `client_secret_basic`, but servers that
+ * omit it have always been registered with `client_secret_post` here, so that
+ * stays.
+ */
+export function chooseTokenAuthMethod(supported: unknown): string {
+  const list = Array.isArray(supported)
+    ? supported.filter((v): v is string => typeof v === 'string')
+    : [];
+  if (list.length === 0 || list.includes('client_secret_post')) return 'client_secret_post';
+  if (list.includes('client_secret_basic')) return 'client_secret_basic';
+  if (list.includes('none')) return 'none';
+  return 'client_secret_post';
+}
+
+/**
+ * A host only reachable from the machine or network it lives on: loopback,
+ * private and link-local addresses, `localhost`, `.local` / `.internal`
+ * names and single-label names such as a Docker service (`backend`).
+ */
+export function isLocalOnlyHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host.endsWith('.local') || host.endsWith('.internal')) return true;
+  if (isIP(host) === 4) {
+    const [a, b] = host.split('.').map((p) => parseInt(p, 10));
+    return (
+      a === 127 ||
+      a === 10 ||
+      a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  if (isIP(host) === 6) {
+    return (
+      host === '::1' ||
+      host === '::' ||
+      host.startsWith('fe80:') ||
+      host.startsWith('fc') ||
+      host.startsWith('fd') ||
+      /^::ffff:(127|10|192\.168)\./.test(host)
+    );
+  }
+  return !host.includes('.');
 }
 
 /** How long a started authorization waits for the user to come back. */

@@ -160,10 +160,22 @@ catalog shows, the fallback installed when the server cannot be reached at
 install, and the place for policy. A snapshot tool with `"enabled": false`
 installs switched off, and `annotations` set there fill the hints the server
 leaves out (the server's own hints win).
-Each tool's `endpointMapping` is `{ "method": "<tool name>", "path": "/mcp" }`.
+Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
+(`"/"` for a server at the root of its host, together with
+`connector.config.mcpPath: "/"`).
 Listing the tools is also the install check, so no `probe` is needed, and a
 catalog update never rewrites or retires the tools of an MCP adapter: the
-server owns them. See `intl/splunk.json`.
+server owns them. See `intl/splunk.json` and `intl/linear.json`.
+
+Set `connector.config.mcpToolPrefix` (e.g. `"linear_"`) so the tools do not
+collide with another bridge's on the same MCP server: the snapshot's `name` is
+then the prefixed local name and `endpointMapping.method` the remote one. An
+adapter that signs in at the provider uses `authType: "OAUTH2"` with no
+`authConfig`; `connector.config.mcpOAuth` says how (dynamic registration,
+a client of the user's own from `{{VAR}}`s, scope, RFC 8707 resource). Both
+are described in [MCP Bridge](connectors/mcp-bridge.md#connector-settings-connectorconfig).
+`prerequisites` (an array of short sentences) lists what the user needs at
+the vendor first; the setup page shows it above the form.
 
 ### DATABASE adapters
 

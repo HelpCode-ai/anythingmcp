@@ -1,5 +1,6 @@
 import { listAdapters, getAdapter } from './catalog';
 import { REQUEST_BODY_METHODS } from '../connectors/engines/rest.engine';
+import { localMcpToolName, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 
 const VALID_AUTH_TYPES = new Set([
   'NONE',
@@ -426,8 +427,11 @@ describe('adapter catalog', () => {
         // A tool of a vendor's MCP server is called by name on the remote
         // server: `method` is that name and `path` the MCP endpoint, not an
         // HTTP verb and URL.
+        // With a tool prefix the local name is the prefixed remote name.
         if (adapter.connector.type === 'MCP') {
-          expect(em.method).toBe(tool.name);
+          expect(tool.name).toBe(
+            localMcpToolName(String(em.method), mcpToolPrefixOf(adapter.connector.config)),
+          );
           expect(typeof em.path).toBe('string');
           return;
         }

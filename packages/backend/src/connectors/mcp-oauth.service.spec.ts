@@ -1,4 +1,4 @@
-import { McpOAuthService } from './mcp-oauth.service';
+import { McpOAuthService, chooseTokenAuthMethod, isLocalOnlyHost } from './mcp-oauth.service';
 import axios from 'axios';
 import { generateKeyPairSync, verify } from 'crypto';
 
@@ -227,7 +227,7 @@ describe('McpOAuthService.discoverMetadata', () => {
     expect(metadata.token_endpoint).toBe('https://mcp.example.com/oauth/token');
   });
 
-  it('only probes the origin-level document for a bare-origin base URL', async () => {
+  it('probes the root protected-resource document, then the origin-level one, for a bare-origin base URL', async () => {
     serve({
       'https://mcp.example.com/.well-known/oauth-authorization-server': {
         issuer: 'https://mcp.example.com',
@@ -238,7 +238,71 @@ describe('McpOAuthService.discoverMetadata', () => {
 
     await service.discoverMetadata('https://mcp.example.com');
 
-    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    expect(mockedAxios.get.mock.calls.map((c) => c[0])).toEqual([
+      'https://mcp.example.com/.well-known/oauth-protected-resource',
+      'https://mcp.example.com/.well-known/oauth-authorization-server',
+    ]);
+  });
+
+  // Live shape of mcp.stripe.com and access.stripe.com (6 Oct 2026).
+  const STRIPE_AS = {
+    issuer: 'https://access.stripe.com/mcp',
+    authorization_endpoint: 'https://access.stripe.com/mcp/oauth2/authorize',
+    token_endpoint: 'https://access.stripe.com/mcp/oauth2/token',
+    registration_endpoint: 'https://access.stripe.com/mcp/oauth2/register',
+    scopes_supported: ['mcp'],
+    token_endpoint_auth_methods_supported: ['none'],
+  };
+
+  it('follows a server-root protected-resource document (Stripe) and keeps its resource', async () => {
+    serve({
+      'https://mcp.stripe.com/.well-known/oauth-protected-resource': {
+        resource: 'https://mcp.stripe.com',
+        authorization_servers: ['https://access.stripe.com/mcp'],
+      },
+      'https://access.stripe.com/.well-known/oauth-authorization-server/mcp': STRIPE_AS,
+    });
+
+    const metadata = await service.discoverMetadata('https://mcp.stripe.com');
+
+    expect(metadata.authorization_endpoint).toBe('https://access.stripe.com/mcp/oauth2/authorize');
+    expect(metadata.protectedResource).toEqual({ resource: 'https://mcp.stripe.com', scopesSupported: undefined });
+  });
+
+  it('no longer rewrites a legitimate external authorization server published at the origin level (G1)', async () => {
+    // Before: users were sent to https://mcp.stripe.com/mcp/oauth2/authorize, which does not exist.
+    serve({ 'https://mcp.stripe.com/.well-known/oauth-authorization-server': STRIPE_AS });
+
+    const metadata = await service.discoverMetadata('https://mcp.stripe.com/mcp');
+
+    expect(metadata.authorization_endpoint).toBe('https://access.stripe.com/mcp/oauth2/authorize');
+    expect(metadata.token_endpoint).toBe('https://access.stripe.com/mcp/oauth2/token');
+    expect(metadata.registration_endpoint).toBe('https://access.stripe.com/mcp/oauth2/register');
+  });
+
+  it('leaves a local test setup alone: MCP server and authorization server on two local ports', async () => {
+    serve({
+      'http://localhost:3000/.well-known/oauth-authorization-server': {
+        issuer: 'http://localhost:4000',
+        authorization_endpoint: 'http://localhost:4000/oauth/authorize',
+        token_endpoint: 'http://localhost:4000/oauth/token',
+      },
+    });
+    const metadata = await service.discoverMetadata('http://localhost:3000/mcp');
+    expect(metadata.token_endpoint).toBe('http://localhost:4000/oauth/token');
+  });
+
+  it('rebases an endpoint on a Docker service name or private address', async () => {
+    serve({
+      'https://amcp.example.com/.well-known/oauth-authorization-server': {
+        issuer: 'http://backend:4000',
+        authorization_endpoint: 'http://backend:4000/oauth/authorize',
+        token_endpoint: 'http://10.0.0.5:4000/oauth/token',
+      },
+    });
+    const metadata = await service.discoverMetadata('https://amcp.example.com/mcp/srv_1');
+    expect(metadata.authorization_endpoint).toBe('https://amcp.example.com/oauth/authorize');
+    expect(metadata.token_endpoint).toBe('https://amcp.example.com/oauth/token');
   });
 
   it('reports every URL it tried when nothing is discoverable', async () => {
@@ -438,4 +502,115 @@ describe('McpOAuthService pending flows in the database', () => {
       expect((await s.getPendingFlow(`st-${bad}`))?.returnTo).toBeUndefined();
     }
   });
+});
+
+/**
+ * Hardening of the MCP OAuth client for vendors' official MCP servers:
+ * RFC 8707 resource indicators, public clients, and what may be put in front
+ * of the user's browser.
+ */
+describe('McpOAuthService for remote MCP servers', () => {
+  let service: McpOAuthService;
+
+  beforeEach(() => {
+    service = new McpOAuthService();
+    mockedAxios.post.mockReset();
+  });
+
+  it('registers a public client where the server only takes those, and keeps no secret (G3)', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { client_id: 'pub-1', client_secret: 'ignored', token_endpoint_auth_method: 'none' },
+    } as any);
+
+    const reg = await service.registerClient(
+      'https://access.stripe.com/mcp/oauth2/register',
+      'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+      { tokenAuthMethod: 'none' },
+    );
+
+    expect(mockedAxios.post.mock.calls[0][1]).toMatchObject({ token_endpoint_auth_method: 'none' });
+    expect(reg).toEqual({ clientId: 'pub-1', clientSecret: undefined, tokenAuthMethod: 'none' });
+  });
+
+  it('still registers a confidential client by default, and takes what the server granted', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { client_id: 'c-1', client_secret: 's-1', token_endpoint_auth_method: 'client_secret_basic', client_secret_expires_at: 0 },
+    } as any);
+
+    const reg = await service.registerClient('https://as.example.com/register', 'https://x/cb');
+
+    expect(mockedAxios.post.mock.calls[0][1]).toMatchObject({ token_endpoint_auth_method: 'client_secret_post' });
+    expect(reg).toEqual({ clientId: 'c-1', clientSecret: 's-1', tokenAuthMethod: 'client_secret_basic' });
+  });
+
+  it('chooses the token endpoint auth method from what the server advertises', () => {
+    expect(chooseTokenAuthMethod(['none'])).toBe('none');
+    expect(chooseTokenAuthMethod(['client_secret_basic', 'none'])).toBe('client_secret_basic');
+    expect(chooseTokenAuthMethod(['client_secret_basic', 'client_secret_post', 'none'])).toBe('client_secret_post');
+    expect(chooseTokenAuthMethod(undefined)).toBe('client_secret_post');
+    expect(chooseTokenAuthMethod(['private_key_jwt'])).toBe('client_secret_post');
+  });
+
+  it('puts the resource indicator on the authorization URL (G2)', () => {
+    const url = new URL(
+      service.buildAuthorizationUrl({
+        authorizationEndpoint: 'https://mcp.notion.com/authorize',
+        clientId: 'cid',
+        redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+        codeChallenge: 'challenge',
+        state: 'st',
+        scope: 'default',
+        resource: 'https://mcp.notion.com/mcp',
+      }),
+    );
+    expect(url.searchParams.get('resource')).toBe('https://mcp.notion.com/mcp');
+  });
+
+  it('refuses to send the browser to anything but a web page', () => {
+    expect(() =>
+      service.buildAuthorizationUrl({
+        authorizationEndpoint: 'javascript:alert(1)',
+        clientId: 'cid',
+        redirectUri: 'https://x/cb',
+        codeChallenge: 'c',
+        state: 's',
+      }),
+    ).toThrow(/not a web address/);
+  });
+
+  it('sends the resource with the code, and no secret for a public client', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { access_token: 'at' } } as any);
+
+    await service.exchangeCodeForTokens({
+      tokenUrl: 'https://access.stripe.com/mcp/oauth2/token',
+      code: 'code',
+      redirectUri: 'https://x/cb',
+      clientId: 'pub-1',
+      clientSecret: 'leftover',
+      codeVerifier: 'v',
+      tokenAuthMethod: 'none',
+      resource: 'https://mcp.stripe.com',
+    });
+
+    const form = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+    expect(form.get('resource')).toBe('https://mcp.stripe.com');
+    expect(form.get('client_id')).toBe('pub-1');
+    expect(form.get('client_secret')).toBeNull();
+  });
+});
+
+describe('isLocalOnlyHost', () => {
+  it.each([
+    'localhost', 'api.localhost', '127.0.0.1', '10.1.2.3', '172.20.0.4', '192.168.1.10',
+    '169.254.169.254', 'backend', 'printer.local', 'svc.internal', '::1', '[::1]', 'fd00::1',
+  ])('%s is only reachable locally', (host) => {
+    expect(isLocalOnlyHost(host)).toBe(true);
+  });
+
+  it.each(['access.stripe.com', 'console.apify.com', '8.8.8.8', '172.32.0.1', 'slack.com'])(
+    '%s is public',
+    (host) => {
+      expect(isLocalOnlyHost(host)).toBe(false);
+    },
+  );
 });

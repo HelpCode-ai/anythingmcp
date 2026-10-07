@@ -65,7 +65,9 @@ export function needsBrowserAuthorization(adapter: Pick<AdapterDefinition, 'conn
   const auth = (adapter.connector.authConfig ?? {}) as Record<string, unknown>;
   return (
     adapter.connector.authType === 'OAUTH2' &&
-    !!auth.authorizationUrl &&
+    // An MCP bridge has no authorization URL of its own: the server's OAuth
+    // metadata names it when the user clicks "Authorize with Provider".
+    (!!auth.authorizationUrl || adapter.connector.type === 'MCP') &&
     String(auth.grant ?? '') !== 'client_credentials'
   );
 }

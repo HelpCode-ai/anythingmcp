@@ -874,6 +874,148 @@ describe('POST :id/oauth/authorize (REST)', () => {
   });
 });
 
+/**
+ * "Authorize with Provider" on MCP bridges: the endpoints come from the
+ * server's metadata, the client from dynamic registration (kept for next
+ * time) or from the adapter's env vars.
+ */
+describe('POST :id/oauth/authorize (MCP)', () => {
+  const SERVER = 'https://cloud.anythingmcp.com';
+  const CALLBACK = `${SERVER}/api/mcp-oauth/callback`;
+  const STRIPE_METADATA = {
+    issuer: 'https://access.stripe.com/mcp',
+    authorization_endpoint: 'https://access.stripe.com/mcp/oauth2/authorize',
+    token_endpoint: 'https://access.stripe.com/mcp/oauth2/token',
+    registration_endpoint: 'https://access.stripe.com/mcp/oauth2/register',
+    scopes_supported: ['mcp'],
+    token_endpoint_auth_methods_supported: ['none'],
+    protectedResource: { resource: 'https://mcp.stripe.com' },
+  };
+
+  const setup = (connector: Record<string, unknown>, metadata: Record<string, unknown> = STRIPE_METADATA) => {
+    const mcpOAuthService = new McpOAuthService();
+    const store = jest.spyOn(mcpOAuthService, 'storePendingFlow');
+    const discover = jest.spyOn(mcpOAuthService, 'discoverMetadata').mockResolvedValue(metadata as any);
+    const register = jest.spyOn(mcpOAuthService, 'registerClient').mockResolvedValue({
+      clientId: 'dcr-1',
+      tokenAuthMethod: 'none',
+    });
+    const updateAuthConfigMerge = jest.fn().mockResolvedValue(undefined);
+    const { controller } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(connector), updateAuthConfigMerge },
+      mcpOAuthService,
+      serverUrl: SERVER,
+    });
+    return { controller, store, discover, register, updateAuthConfigMerge };
+  };
+
+  const row = (authConfig: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
+    id: 'c1',
+    type: 'MCP',
+    authType: 'OAUTH2',
+    userId: 'u1',
+    organizationId: 'org1',
+    baseUrl: 'https://mcp.stripe.com',
+    config: { mcpPath: '/' },
+    envVars: null,
+    authConfig: encrypt(JSON.stringify(authConfig), VALID_ENCRYPTION_KEY),
+    ...over,
+  });
+
+  it('registers a public client, keeps it, and sends resource and scope to the real authorization server', async () => {
+    const { controller, store, register, updateAuthConfigMerge } = setup(row({}));
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    expect(register).toHaveBeenCalledWith(
+      'https://access.stripe.com/mcp/oauth2/register',
+      CALLBACK,
+      { tokenAuthMethod: 'none' },
+    );
+    const url = new URL(result.authorizationUrl);
+    expect(url.origin + url.pathname).toBe('https://access.stripe.com/mcp/oauth2/authorize');
+    expect(url.searchParams.get('client_id')).toBe('dcr-1');
+    expect(url.searchParams.get('resource')).toBe('https://mcp.stripe.com');
+    expect(url.searchParams.get('scope')).toBe('mcp');
+    expect(updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+      mcpOAuthClient: expect.objectContaining({
+        registrationEndpoint: 'https://access.stripe.com/mcp/oauth2/register',
+        redirectUri: CALLBACK,
+        clientId: 'dcr-1',
+        tokenAuthMethod: 'none',
+      }),
+    });
+    expect(store.mock.calls[0][1]).toMatchObject({
+      clientId: 'dcr-1',
+      clientSecret: undefined,
+      tokenAuthMethod: 'none',
+      tokenUrl: 'https://access.stripe.com/mcp/oauth2/token',
+      resource: 'https://mcp.stripe.com',
+      dynamicClient: true,
+    });
+  });
+
+  it('reuses the stored client on the next click instead of registering another', async () => {
+    const { controller, register, updateAuthConfigMerge } = setup(
+      row({
+        mcpOAuthClient: {
+          registrationEndpoint: 'https://access.stripe.com/mcp/oauth2/register',
+          redirectUri: CALLBACK,
+          clientId: 'dcr-old',
+          tokenAuthMethod: 'none',
+          registeredAt: '2026-10-01T00:00:00Z',
+        },
+      }),
+    );
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    expect(register).not.toHaveBeenCalled();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(new URL(result.authorizationUrl).searchParams.get('client_id')).toBe('dcr-old');
+  });
+
+  it('resolves a pre-registered client from env vars typed after install, and never registers', async () => {
+    const { controller, register, store } = setup(
+      row(
+        {},
+        {
+          baseUrl: 'https://mcp.example.com/mcp',
+          config: {
+            mcpOAuth: {
+              registration: 'preregistered',
+              clientId: '{{ACME_CLIENT_ID}}',
+              clientSecret: '{{ACME_CLIENT_SECRET}}',
+              scope: '',
+            },
+          },
+          envVars: { ACME_CLIENT_ID: 'app-id', ACME_CLIENT_SECRET: 'app-secret' },
+        },
+      ),
+      { ...STRIPE_METADATA, token_endpoint_auth_methods_supported: ['client_secret_post'] },
+    );
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    expect(register).not.toHaveBeenCalled();
+    const url = new URL(result.authorizationUrl);
+    expect(url.searchParams.get('client_id')).toBe('app-id');
+    expect(url.searchParams.has('scope')).toBe(false);
+    expect(store.mock.calls[0][1]).toMatchObject({ clientId: 'app-id', clientSecret: 'app-secret' });
+    expect(store.mock.calls[0][1].dynamicClient).toBeUndefined();
+  });
+
+  it('explains what to set, with the redirect URI, when the client variables are empty', async () => {
+    const { controller, store } = setup(
+      row({}, { config: { mcpOAuth: { registration: 'preregistered', clientId: '{{ACME_CLIENT_ID}}' } } }),
+    );
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+    expect(result.error).toContain('ACME_CLIENT_ID');
+    expect(result.error).toContain(CALLBACK);
+    expect(store).not.toHaveBeenCalled();
+  });
+});
+
 describe('Connector secrets are never returned', () => {
   const { encrypt } = require('../common/crypto/encryption.util');
   const TOKEN = 'test-access-token-value';

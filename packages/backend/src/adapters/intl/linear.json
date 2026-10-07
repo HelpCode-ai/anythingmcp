@@ -1,0 +1,5002 @@
+{
+  "slug": "linear",
+  "name": "Linear",
+  "description": "Work with Linear from Claude, ChatGPT or Copilot through Linear's official MCP server: find and update issues, plan projects, cycles and milestones, write comments and documents, and post status updates.",
+  "instructions": "This connector bridges **Linear's official remote MCP server** (`https://mcp.linear.app/mcp`), run by Linear. Linear's own server provides the tools: issues, projects, initiatives, milestones, cycles, documents, comments, labels, templates, status updates, releases, notifications and Linear diffs (code review). AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems. Every tool gets the prefix `linear_`, so Linear's `list_issues` becomes `linear_list_issues` and never collides with another connector's tool of the same name.\n\n**The tools come from the server.** At install AnythingMCP asks Linear's server which tools it has, so you get the set Linear serves today. Linear adds tools regularly: open the connector and click **Discover tools** to pick up new ones.\n\n**Setup (about 2 minutes)**:\n1. In Linear, open **Settings > Account > Security & access** and, under **Personal API keys**, create a new key. Name it after its use, for example \"AnythingMCP\".\n2. Choose the key's permissions and team access. A key limited to read access gives a read-only connector; add write access (or only issue and comment creation) if the AI should change things.\n3. Copy the key (Linear shows it once; it starts with `lin_api_`), paste it into `LINEAR_API_KEY` and install. It is stored encrypted and sent as `Authorization: Bearer`, which Linear's server accepts in place of its interactive sign-in.\n\n**Safety**: the API key acts as the Linear user who created it. Everything the AI creates or changes appears in Linear under that person's name, and it reaches exactly what that person and the key's permissions reach. For a connector shared by a team, create the key from a dedicated Linear member with access to the right teams only. Switched off at install: the deletions (`delete_attachment`, `delete_comment`, `delete_diff_comment`, `delete_status_update`), `merge_diff` (merges a pull request or adds it to the merge queue), the `retire_*_label` tools (they change labels for the whole workspace) and `share_issue` / `unshare_issue` (they change who can see an issue). Turn one on per tool if the AI really needs it. For a strictly read-only connector, change the base URL in the connector editor to `https://mcp.linear.app/mcp/readonly`, which only ever exposes read tools, and click **Discover tools**.\n\n**Working with it**: start with `linear_list_teams`, `linear_list_issues` (assignee \"me\" for your own issues) or `linear_get_issue` with an identifier such as ENG-123. Call `linear_list_issue_statuses` and `linear_list_issue_labels` before `linear_save_issue`, so status and label names match the team's. `linear_search_documentation` answers questions about Linear itself. A 401 at install means the key is wrong, expired or revoked; a 403 or a permission error on one tool means the key's permissions or team access do not cover it. Linear needs no IP allow list: the AnythingMCP server only has to reach `mcp.linear.app` over HTTPS.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "linear",
+  "docsUrl": "https://linear.app/docs/mcp",
+  "requiredEnvVars": [
+    "LINEAR_API_KEY"
+  ],
+  "envVarMeta": {
+    "LINEAR_API_KEY": {
+      "label": "Personal API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Linear: Settings > Account > Security & access > Personal API keys > New API key. It acts as you.",
+      "link": "https://linear.app/settings/account/security",
+      "example": "lin_api_...",
+      "pattern": "^lin_api_[A-Za-z0-9]{20,}$",
+      "patternMessage": "A Linear personal API key starts with lin_api_ followed by letters and digits. Paste the key alone, without \"Bearer\"."
+    }
+  },
+  "prerequisites": "- A Linear account in the workspace you want to reach; the key works with whatever that account can see.\n- Personal API keys must be allowed in the workspace (admins can restrict them under Settings > Security).\n- Network access from the AnythingMCP server to mcp.linear.app over HTTPS.",
+  "unlisted": true,
+  "connector": {
+    "name": "Linear",
+    "type": "MCP",
+    "baseUrl": "https://mcp.linear.app/mcp",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LINEAR_API_KEY}}"
+    },
+    "config": {
+      "mcpToolPrefix": "linear_"
+    }
+  },
+  "tools": [
+    {
+      "name": "linear_create_attachment",
+      "description": "Deprecated fallback for tiny files only. Accepts base64 file content, verifies SHA-256 checksum, and uploads it through the MCP worker.\nPrefer `prepare_attachment_upload` plus direct PUT plus `create_attachment_from_upload`.\n\nCRITICAL: Do not print base64Content and then copy it into this tool call.\nOpaque base64 copied through model-visible text is easy to corrupt.\n\nGenerate base64Content mechanically from the source bytes and pass it through a programmatic argument construction path whenever available. Before calling this tool, verify the values are consistent:\n\nUnix-like shells:\nfile=\"/path/to/file\"\nbase64Content=$(base64 < \"$file\" | tr -d '\\n\\r')\nsha256=$(shasum -a 256 \"$file\" | awk '{print $1}')\ndecodedSha256=$(printf '%s' \"$base64Content\" | base64 -d | shasum -a 256 | awk '{print $1}')\nsize=$(wc -c < \"$file\" | tr -d ' ') # optional; stat can also get file byte size\ndecodedSize=$(printf '%s' \"$base64Content\" | base64 -d | wc -c | tr -d ' ')\n\nPowerShell:\n$file = 'C:\\path\\to\\file'\n$bytes = [IO.File]::ReadAllBytes($file)\n$base64Content = [Convert]::ToBase64String($bytes)\n$sha256 = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLower()\n$size = $bytes.Length # optional\n$decoded = [Convert]::FromBase64String($base64Content)\n$decodedStream = [IO.MemoryStream]::new($decoded)\n$decodedSha256 = (Get-FileHash -Algorithm SHA256 -InputStream $decodedStream).Hash.ToLower()\n$decodedSize = $decoded.Length\n\ndecodedSha256 must equal sha256. If you pass size, decodedSize must equal size.\nPass `sha256`. Passing `size` is optional, but recommended for clearer mismatch errors.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base64Content": {
+            "description": "Deprecated base64-encoded file content to upload",
+            "type": "string"
+          },
+          "contentType": {
+            "description": "MIME type for the upload (e.g., 'image/png', 'application/pdf')",
+            "type": "string"
+          },
+          "filename": {
+            "description": "Filename for the upload (e.g., 'screenshot.png')",
+            "type": "string"
+          },
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Expected SHA-256 hex digest of the decoded file bytes.",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "type": "string"
+          },
+          "size": {
+            "description": "Optional expected decoded file size in bytes. Rejects the upload if it does not match.",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "subtitle": {
+            "description": "Optional subtitle for the attachment",
+            "type": "string"
+          },
+          "title": {
+            "description": "Optional title for the attachment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue",
+          "base64Content",
+          "filename",
+          "contentType",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "create_attachment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_create_attachment_from_upload",
+      "description": "Link an already-uploaded Linear assetUrl to an existing issue as an attachment.\n\nUse this only after:\n1. prepare_attachment_upload returned an assetUrl and uploadRequest.\n2. The client successfully PUT raw file bytes to uploadRequest.url.\n\nThis tool does not upload file content. It only creates the Linear attachment row.\nIf the direct upload failed or the signed URL expired, rerun prepare_attachment_upload and upload again.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "assetUrl": {
+            "description": "Linear upload assetUrl returned by prepare_attachment_upload",
+            "format": "uri",
+            "type": "string"
+          },
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "subtitle": {
+            "description": "Optional attachment subtitle",
+            "type": "string"
+          },
+          "title": {
+            "description": "Attachment title. Defaults to filename or asset URL",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue",
+          "assetUrl"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "create_attachment_from_upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_create_initiative_label",
+      "description": "Create a new Linear initiative label. Deprecated: use `save_initiative_label`, which can also update labels.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color code",
+            "type": "string"
+          },
+          "description": {
+            "description": "Label description",
+            "type": "string"
+          },
+          "isGroup": {
+            "default": false,
+            "description": "Whether the label is a group",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Label name",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent label group name or ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "create_initiative_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_create_issue_label",
+      "description": "Create a new Linear issue label. Deprecated: use `save_issue_label`, which can also update labels.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color code",
+            "type": "string"
+          },
+          "description": {
+            "description": "Label description",
+            "type": "string"
+          },
+          "isGroup": {
+            "default": false,
+            "description": "Whether the label is a group",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Label name",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent label group name or ID",
+            "type": "string"
+          },
+          "teamId": {
+            "description": "Team UUID (omit for workspace label)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "create_issue_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_delete_attachment",
+      "description": "Delete an attachment by ID. The file or link is removed from the Linear issue it was attached to.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Attachment ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "delete_attachment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_delete_comment",
+      "description": "Delete a Linear comment. Inline description comments (those with non-null `quotedText`) anchor a mark in the editor, so their root cannot be deleted; delete the replies individually or resolve the thread instead.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Comment ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "delete_comment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_delete_diff_comment",
+      "description": "Delete a comment or persisted draft from a Linear diff. Pass commentId for a submitted comment or draftId for a draft.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "commentId": {
+            "description": "Submitted diff comment ID to delete",
+            "minLength": 1,
+            "type": "string"
+          },
+          "draftId": {
+            "description": "Persisted diff comment draft ID to delete",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "delete_diff_comment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_delete_status_update",
+      "description": "Delete (archive) a project or initiative status update. Pass the update ID and whether it belongs to a project or an initiative.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Status update ID",
+            "type": "string"
+          },
+          "type": {
+            "description": "Type of status update",
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "delete_status_update",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_extract_images",
+      "description": "Extract and fetch images from markdown content. Use this to view screenshots, diagrams, or other images embedded in Linear issues, comments, or documents. Pass the markdown content (e.g., issue description) and receive the images as viewable data.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "markdown": {
+            "description": "Markdown content containing image references (e.g., issue description, comment body)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "extract_images",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "linear_get_agent_skill",
+      "description": "Retrieve a Linear Agent skill by ID, including its full markdown instructions.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Agent skill ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_agent_skill",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_attachment",
+      "description": "Retrieve an issue attachment by ID. Use format=url to get its title and download URL without fetching the file content. Linear upload URLs are signed for five minutes; call again to refresh. External URLs are returned unchanged. Files embedded in comments have no issue attachment ID; use the URLs in list_comments attachments instead. Download and process documents with your own file tools.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "description": "Response format. Defaults to content.",
+            "enum": [
+              "content",
+              "url"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Attachment ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_attachment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_diff",
+      "description": "Exact lookup for a Linear diff. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "urlOrId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_diff",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_diff_threads",
+      "description": "Exact lookup for diff threads and the authenticated user's drafts. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "resolved": {
+            "description": "Filter returned threads by resolved state",
+            "type": "boolean"
+          },
+          "threadId": {
+            "description": "Optional Linear comment UUID of any comment in the thread (not its `externalThreadId`); a reply's UUID resolves to its thread root",
+            "type": "string"
+          },
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "urlOrId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_diff_threads",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_document",
+      "description": "Retrieve a Linear document by ID or slug, including its title and markdown content.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Document ID or slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_document",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_initiative",
+      "description": "Retrieve detailed information about a specific initiative in Linear",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "includeProjects": {
+            "default": false,
+            "description": "Include projects",
+            "type": "boolean"
+          },
+          "includeSubInitiatives": {
+            "default": false,
+            "description": "Include sub-initiatives",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_initiative",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_issue",
+      "description": "Retrieve detailed information about an issue by ID, including attachments, git branch name, and active Triage Intelligence suggestions when the issue is in triage. A nonempty fields selection overrides the include options; request optional fields directly in fields.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "description": "Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.",
+            "items": {
+              "enum": [
+                "id",
+                "uuid",
+                "title",
+                "description",
+                "projectMilestone",
+                "priority",
+                "estimate",
+                "url",
+                "gitBranchName",
+                "createdAt",
+                "updatedAt",
+                "archivedAt",
+                "completedAt",
+                "startedAt",
+                "canceledAt",
+                "startedTriageAt",
+                "triagedAt",
+                "dueDate",
+                "slaStartedAt",
+                "slaMediumRiskAt",
+                "slaHighRiskAt",
+                "slaBreachesAt",
+                "slaType",
+                "status",
+                "statusType",
+                "labels",
+                "triageIntel",
+                "createdBy",
+                "createdById",
+                "assignee",
+                "assigneeId",
+                "delegate",
+                "delegateId",
+                "project",
+                "projectId",
+                "parentId",
+                "team",
+                "teamId",
+                "cycleId",
+                "attachments",
+                "documents",
+                "stateHistory",
+                "relations",
+                "customerNeeds",
+                "releases"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "includeCustomerNeeds": {
+            "default": false,
+            "description": "Include associated customer needs",
+            "type": "boolean"
+          },
+          "includeRelations": {
+            "default": false,
+            "description": "Include blocking/related/duplicate relations",
+            "type": "boolean"
+          },
+          "includeReleases": {
+            "default": false,
+            "description": "Include associated releases",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_issue",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_issue_status",
+      "description": "Retrieve detailed information about an issue status in Linear by name or ID",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Status ID",
+            "type": "string"
+          },
+          "name": {
+            "description": "Status name",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "team"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_issue_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_milestone",
+      "description": "Retrieve details of a specific milestone by ID or name, within the project given by name, ID, identifier or slug.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "query": {
+            "description": "Milestone name or ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_milestone",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_notifications",
+      "description": "Get a page of notifications from the authenticated user's Linear inbox.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "unreadOnly": {
+            "default": false,
+            "description": "Only return unread notifications",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_notifications",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_project",
+      "description": "Retrieve details of a specific project in Linear by name, ID, identifier or slug; optionally with members, milestones, resources and customer needs.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "customerNeedsCursor": {
+            "description": "Next customer-needs page: pass customerNeedsPageInfo.endCursor with includeCustomerNeeds true",
+            "type": "string"
+          },
+          "customerNeedsLimit": {
+            "default": 10,
+            "description": "Customer needs per page when includeCustomerNeeds is true (default 10, max 50)",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "includeCustomerNeeds": {
+            "default": false,
+            "description": "Include one page of customer needs attached directly to the project",
+            "type": "boolean"
+          },
+          "includeMembers": {
+            "default": false,
+            "description": "Include project members",
+            "type": "boolean"
+          },
+          "includeMilestones": {
+            "default": false,
+            "description": "Include milestones",
+            "type": "boolean"
+          },
+          "includeResources": {
+            "default": false,
+            "description": "Include resources (documents, links, attachments)",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_project",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_release",
+      "description": "Retrieve details of a release by ID or slug, optionally with its associated release notes.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Release ID or slug",
+            "type": "string"
+          },
+          "includeReleaseNotes": {
+            "default": false,
+            "description": "Include associated release notes",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_release",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_release_note",
+      "description": "Retrieve release notes by ID or slug, including markdown content.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Release notes ID or slug",
+            "type": "string"
+          },
+          "includeReleases": {
+            "default": false,
+            "description": "Include associated releases",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_release_note",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_status_updates",
+      "description": "List or get project/initiative status updates. Pass `id` to get a specific update, or filter to list.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "id": {
+            "description": "Status update ID - if provided, returns this specific update",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "initiative": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "type": {
+            "description": "Type of status update",
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "user": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_status_updates",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_team",
+      "description": "Retrieve details of a specific Linear team by its UUID, key (e.g. ENG) or name.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "Team UUID, key, or name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_team",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_template",
+      "description": "Retrieve a Linear template by ID or name: the content it pre-fills, the ids it applies, its sub-issues, and its form fields. Pass the template to save_issue or save_project to apply it. References come back as ids, so read a name with the matching tool when you need one. A form template collects its answers through a form, so applying one here creates an issue with the form unanswered.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Template ID or name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_template",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_triage_responsibility",
+      "description": "Retrieve who is responsible for a team's triage: the person on triage now, what happens when an issue enters triage, and the upcoming shifts of the team's triage rotation. Pass `user` to get only that person's shifts, for example to find when their next triage duty starts, even when it is weeks away.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Max upcoming shifts to return (default 10, max 50)",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          },
+          "user": {
+            "description": "Only return shifts of this user: User ID, name, email, or \"me\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_triage_responsibility",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_user",
+      "description": "Retrieve details of a specific Linear user by ID, name or email; pass \"me\" for the user the API key belongs to.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_user",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_get_workspace",
+      "description": "Retrieve the connected Linear workspace: the organization the API key belongs to, with its name and URL key.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "get_workspace",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_agent_skills",
+      "description": "List Linear Agent skills available to the authenticated user.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_agent_skills",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_comments",
+      "description": "List comments on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. Provide exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId`. For issues, projects, and initiatives this returns both top-level discussion threads and inline description comments. Inline (anchored) comments carry a non-null `quotedText` set to the snippet of description text they reference. Returned comments include `author` and nullable `onBehalfOf`; when set, `onBehalfOf` identifies the user the agent author acted for. Files uploaded in comment bodies are returned in `attachments` with titles and download URLs, not issue attachment IDs. Signed upload URLs expire after five minutes; call list_comments again to refresh them. Download documents using these URLs and process them with your own file tools.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "documentId": {
+            "description": "Document ID or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "initiativeId": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "issueId": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues (provide exactly one parent)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "milestoneId": {
+            "description": "Milestone UUID (provide exactly one parent). Resolve milestone names via `list_milestones` first.",
+            "type": "string"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "statusUpdateId": {
+            "description": "Status update UUID (provide exactly one parent). Resolve status updates via `get_status_updates` first.",
+            "type": "string"
+          },
+          "statusUpdateType": {
+            "description": "Type of status update named by `statusUpdateId`, as returned by `get_status_updates`. Only valid together with `statusUpdateId`; omit to check both project and initiative status updates.",
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_comments",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_custom_views",
+      "description": "Find saved issue, project, and initiative views accessible to the user, including personal, workspace, and team views. Excludes archived views and views scoped to a project or initiative. Returns view metadata, not the records matching its filters.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search custom view names",
+            "type": "string"
+          },
+          "shared": {
+            "description": "True for shared views, false for personal views",
+            "type": "boolean"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          },
+          "type": {
+            "description": "Entity type displayed by the view",
+            "enum": [
+              "Issue",
+              "Project",
+              "Initiative"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_custom_views",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_cycles",
+      "description": "Retrieve cycles for a specific Linear team; filter to the current, previous or next cycle, or omit the filter for all.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "teamId": {
+            "description": "Team ID",
+            "type": "string"
+          },
+          "type": {
+            "description": "Filter: current, previous, next, or all",
+            "enum": [
+              "current",
+              "previous",
+              "next"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "teamId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_cycles",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_diffs",
+      "description": "List Linear diff pull requests visible to the authenticated user",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "description": "Filter by author ID, name, email, or \"me\"",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "Filter returned diffs by repository owner",
+            "type": "string"
+          },
+          "query": {
+            "description": "Broad search by title, branch, PR number, or bare slug",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Filter returned diffs by repository name",
+            "type": "string"
+          },
+          "reviewState": {
+            "description": "Reviewer state; requires reviewer and defaults to pending when reviewer is set",
+            "enum": [
+              "pending",
+              "approved",
+              "changesRequested",
+              "commented",
+              "dismissed"
+            ],
+            "type": "string"
+          },
+          "reviewer": {
+            "description": "Filter by reviewer ID, name, email, or \"me\"",
+            "type": "string"
+          },
+          "status": {
+            "description": "Filter returned diffs by pull request status",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_diffs",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_documents",
+      "description": "List documents in the user's Linear workspace, with search, creator, project, initiative and team filters and cursor paging.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "creatorId": {
+            "description": "Filter by creator ID",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.",
+            "items": {
+              "enum": [
+                "id",
+                "title",
+                "content",
+                "url",
+                "createdAt",
+                "updatedAt",
+                "archivedAt",
+                "creator",
+                "updatedBy",
+                "project",
+                "initiative",
+                "team",
+                "issue"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "initiativeId": {
+            "description": "Filter by initiative ID, identifier (e.g., 'I-123'), or slug",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Filter by project ID, identifier (e.g., 'P-ENG-123'), or slug",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search query",
+            "type": "string"
+          },
+          "teamId": {
+            "description": "Filter by team ID",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_documents",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_initiative_labels",
+      "description": "List available initiative labels in the Linear workspace. A retired label carries `retiredAt` and cannot be applied to new initiatives.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeGroups": {
+            "default": false,
+            "description": "Include label groups in the results, marked with `isGroup`. A group cannot be applied directly; retiring or restoring one cascades to its child labels",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "name": {
+            "description": "Filter by name",
+            "type": "string"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_initiative_labels",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_initiatives",
+      "description": "List initiatives in the user's Linear workspace, filtered by owner, status, label, lead team, parent initiative or saved view.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "customView": {
+            "description": "Saved view ID, URL, slug, or exact name. Use list_custom_views to discover views. Applies saved filters and scope; other filters narrow the results. Uses list ordering, not saved display settings",
+            "minLength": 1,
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.",
+            "items": {
+              "enum": [
+                "id",
+                "uuid",
+                "name",
+                "summary",
+                "description",
+                "url",
+                "status",
+                "priority",
+                "targetDate",
+                "health",
+                "createdAt",
+                "updatedAt",
+                "owner",
+                "creator",
+                "leadTeam",
+                "parentInitiatives",
+                "labels",
+                "projects",
+                "subInitiatives"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeProjects": {
+            "default": false,
+            "description": "Include projects",
+            "type": "boolean"
+          },
+          "includeSubInitiatives": {
+            "default": false,
+            "description": "Include sub-initiatives",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "Label name or ID",
+            "type": "string"
+          },
+          "leadTeam": {
+            "description": "Lead team name, key, or ID",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": "string"
+          },
+          "parentInitiative": {
+            "description": "Parent initiative. Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search initiative name",
+            "type": "string"
+          },
+          "status": {
+            "description": "Status of the initiative",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_initiatives",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_issue_labels",
+      "description": "List available issue labels in a Linear workspace or team. A retired label carries `retiredAt` and cannot be applied to new issues.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeGroups": {
+            "default": false,
+            "description": "Include label groups in the results, marked with `isGroup`. A group cannot be applied directly; retiring or restoring one cascades to its child labels",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "name": {
+            "description": "Filter by name",
+            "type": "string"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_issue_labels",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_issue_statuses",
+      "description": "List available issue statuses in a Linear team (for example Backlog, Todo, In Progress, Done), with their IDs and types.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_issue_statuses",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_issues",
+      "description": "List issues in the user's Linear workspace, including active Triage Intelligence suggestions for issues in triage. For issues assigned to me, use \"me\" as the assignee. For issues created by me, use \"me\" as the creator. Use \"null\" for no assignee.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "assignee": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "creator": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "customView": {
+            "description": "Saved view ID, URL, slug, or exact name. Use list_custom_views to discover views. Applies saved filters and scope; other filters narrow the results. Uses list ordering, not saved display settings",
+            "minLength": 1,
+            "type": "string"
+          },
+          "cycle": {
+            "description": "Cycle name, number, or ID",
+            "type": "string"
+          },
+          "delegate": {
+            "description": "Agent name or ID. When the user asks to delegate to \"Linear\" or \"the Linear agent\", this refers to the \"Linear\" app user specifically",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.",
+            "items": {
+              "enum": [
+                "id",
+                "uuid",
+                "title",
+                "description",
+                "projectMilestone",
+                "priority",
+                "estimate",
+                "url",
+                "gitBranchName",
+                "createdAt",
+                "updatedAt",
+                "archivedAt",
+                "completedAt",
+                "startedAt",
+                "canceledAt",
+                "startedTriageAt",
+                "triagedAt",
+                "dueDate",
+                "slaStartedAt",
+                "slaMediumRiskAt",
+                "slaHighRiskAt",
+                "slaBreachesAt",
+                "slaType",
+                "status",
+                "statusType",
+                "labels",
+                "triageIntel",
+                "createdBy",
+                "createdById",
+                "assignee",
+                "assigneeId",
+                "delegate",
+                "delegateId",
+                "project",
+                "projectId",
+                "parentId",
+                "team",
+                "teamId",
+                "cycleId"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "Label name or ID",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "parentId": {
+            "description": "Parent issue ID or identifier (e.g., LIN-123)",
+            "type": "string"
+          },
+          "priority": {
+            "description": "0=None, 1=Urgent, 2=High, 3=Medium, 4=Low",
+            "type": "number"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search issue title or description. Cannot be combined with customView",
+            "type": "string"
+          },
+          "release": {
+            "description": "Release ID or slug",
+            "type": "string"
+          },
+          "state": {
+            "description": "State type, name, or ID",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          },
+          "triagedAt": {
+            "description": "Left triage after: ISO-8601 date/duration (e.g., -P1D). Issues still in triage have no triagedAt; list them with state \"triage\"",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_issues",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_milestones",
+      "description": "List all milestones in a Linear project, given by project name, ID, identifier or slug.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_milestones",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_project_labels",
+      "description": "List available project labels in a Linear workspace or team. Returns workspace labels by default; pass `team` to also include that team's labels. A team-scoped label carries a `team` field; different teams can hold same-named labels, so check it before acting on an ID. A retired label carries `retiredAt` and cannot be applied to new projects.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeGroups": {
+            "default": false,
+            "description": "Include label groups in the results, marked with `isGroup`. A group cannot be applied directly; retiring or restoring one cascades to its child labels",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "name": {
+            "description": "Filter by name",
+            "type": "string"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_project_labels",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_projects",
+      "description": "List projects in the user's Linear workspace, filtered by team, member, initiative, label, state or saved view, with cursor paging.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "customView": {
+            "description": "Saved view ID, URL, slug, or exact name. Use list_custom_views to discover views. Applies saved filters and scope; other filters narrow the results. Uses list ordering, not saved display settings",
+            "minLength": 1,
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.",
+            "items": {
+              "enum": [
+                "id",
+                "uuid",
+                "name",
+                "summary",
+                "description",
+                "url",
+                "trashed",
+                "createdAt",
+                "updatedAt",
+                "startedAt",
+                "completedAt",
+                "canceledAt",
+                "startDate",
+                "startDateResolution",
+                "targetDate",
+                "targetDateResolution",
+                "priority",
+                "sortOrder",
+                "labels",
+                "initiatives",
+                "lead",
+                "leadTeam",
+                "status",
+                "teams",
+                "members",
+                "milestones"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeMembers": {
+            "default": false,
+            "description": "Include project members",
+            "type": "boolean"
+          },
+          "includeMilestones": {
+            "default": false,
+            "description": "Include milestones",
+            "type": "boolean"
+          },
+          "initiative": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          },
+          "label": {
+            "description": "Label name or ID",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 50)",
+            "maximum": 50,
+            "type": "number"
+          },
+          "member": {
+            "description": "User ID, name, email, or \"me\"",
+            "type": "string"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search project name",
+            "type": "string"
+          },
+          "state": {
+            "description": "State type, name, or ID",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_projects",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_release_notes",
+      "description": "List release notes in the workspace, optionally filtered by pipeline or covered release.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeContent": {
+            "default": false,
+            "description": "Include markdown release notes content",
+            "type": "boolean"
+          },
+          "includeReleases": {
+            "default": false,
+            "description": "Include associated releases",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "pipeline": {
+            "description": "Release pipeline ID, slug, or exact name",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search release notes title",
+            "type": "string"
+          },
+          "release": {
+            "description": "Release ID or slug",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_release_notes",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_release_pipelines",
+      "description": "List release pipelines in the workspace, optionally with their stages and teams, filtered by name, team or type.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeStages": {
+            "default": false,
+            "description": "Include each pipeline's stages",
+            "type": "boolean"
+          },
+          "includeTeams": {
+            "default": false,
+            "description": "Include each pipeline's teams",
+            "type": "boolean"
+          },
+          "isProduction": {
+            "description": "Filter by production pipeline flag",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search pipeline name",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          },
+          "type": {
+            "description": "Pipeline type: continuous | scheduled",
+            "enum": [
+              "continuous",
+              "scheduled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_release_pipelines",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_releases",
+      "description": "List releases in the workspace, with optional filtering by pipeline, stage, version, and text.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "hasReleaseNotes": {
+            "description": "Filter to releases that do (true) or do not (false) have release notes",
+            "type": "boolean"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "includeReleaseNotes": {
+            "default": false,
+            "description": "Include associated release notes",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "pipeline": {
+            "description": "Release pipeline ID, slug, or exact name",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search release name or version",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Release stage ID or exact name",
+            "type": "string"
+          },
+          "stageType": {
+            "description": "Filter by stage lifecycle type",
+            "enum": [
+              "planned",
+              "started",
+              "completed",
+              "canceled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "version": {
+            "description": "Exact version match",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_releases",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_teams",
+      "description": "List teams in the user's Linear workspace, with their IDs and keys; supports search, archived teams and cursor paging.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "description": "Created after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "includeArchived": {
+            "default": false,
+            "description": "Include archived items",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search query",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Updated after: ISO-8601 date/duration (e.g., -P1D)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_teams",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_templates",
+      "description": "List the Linear issue, project, and document templates available to the authenticated user. Use this to find the template a team expects, then call get_template for its content.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "team": {
+            "description": "Team name or ID. Returns that team's templates plus workspace-level ones",
+            "type": "string"
+          },
+          "type": {
+            "description": "Filter by template type. Omit to return every type",
+            "enum": [
+              "issue",
+              "project",
+              "document"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_templates",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_list_users",
+      "description": "Retrieve users in the Linear workspace, filtered by name, email or team, with cursor paging.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page cursor",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max results (default 50, max 250)",
+            "maximum": 250,
+            "type": "number"
+          },
+          "orderBy": {
+            "default": "updatedAt",
+            "description": "Sort: createdAt | updatedAt",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Filter by name or email",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "list_users",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_mark_notification",
+      "description": "Mark a Linear inbox notification as read or unread, or snooze or unsnooze it.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Notification ID",
+            "type": "string"
+          },
+          "read": {
+            "description": "Whether the notification should be marked as read",
+            "type": "boolean"
+          },
+          "snoozedUntilAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO-8601 time to snooze until, or null to unsnooze"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "mark_notification",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_merge_diff",
+      "description": "Merge a Linear diff or add it to the repository's merge queue",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "mergeMethod": {
+            "description": "Merge method; omit to use the repository default",
+            "enum": [
+              "MERGE",
+              "REBASE",
+              "SQUASH"
+            ],
+            "type": "string"
+          },
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "urlOrId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "merge_diff",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_prepare_attachment_upload",
+      "description": "Prepare a direct Linear file upload for an existing issue.\n\nWorkflow:\n1. Call this tool with issue, filename, contentType, and size.\n2. Upload raw bytes with PUT to uploadRequest.url outside MCP.\n3. All headers in uploadRequest.headers are part of the signed request, so send them verbatim.\n4. After PUT succeeds, call create_attachment_from_upload with assetUrl to link it to the issue.\n\nDo not base64-encode or transform the file. Use curl --data-binary @path or fetch(url, { method: 'PUT', body: blob }).\nOmitting or modifying any signed header, including casing, will return HTTP 403.\nThe signed URL must be used within 60 seconds or it will expire.\n\nUpload sequencing:\nPrepare, PUT, and finalize one file before calling this tool for another file.\nDo not batch multiple prepare_attachment_upload calls before starting the PUTs because earlier signed URLs can expire while later files are prepared.\n\nExample:\ncurl -X PUT --data-binary @file.png \\\n  -H \"content-type: image/png\" \\\n  -H \"x-goog-content-length-range: N,N\" \\\n  -H \"cache-control: public, max-age=31536000\" \\\n  -H 'Content-Disposition: attachment; filename=\"file.png\"' \\\n  \"<uploadRequest.url>\"",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "description": "MIME type, e.g. image/png or application/pdf",
+            "type": "string"
+          },
+          "filename": {
+            "description": "Filename for the upload, e.g. screenshot.png",
+            "type": "string"
+          },
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "size": {
+            "description": "Exact file size in bytes. Must be smaller than 2 GB.",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "subtitle": {
+            "description": "Suggested attachment subtitle for the finalize step",
+            "type": "string"
+          },
+          "title": {
+            "description": "Suggested attachment title for the finalize step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue",
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "prepare_attachment_upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_resolve_diff_thread",
+      "description": "Resolve or reopen a top-level comment thread on a Linear diff",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "resolved": {
+            "default": true,
+            "description": "True to resolve the thread; false to reopen it",
+            "type": "boolean"
+          },
+          "threadId": {
+            "description": "Top-level diff thread/comment ID",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "resolve_diff_thread",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_restore_initiative_label",
+      "description": "Restore a retired Linear initiative label, making it available for use on initiatives again. Restoring a label group also restores every child label, including any that were retired separately.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "restore_initiative_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_restore_issue_label",
+      "description": "Restore a retired Linear issue label, making it available for use on issues again. Restoring a label group also restores every child label, including any that were retired separately.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "restore_issue_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_restore_project_label",
+      "description": "Restore a retired Linear project label, making it available for use on projects again. Restoring a label group also restores every child label, including any that were retired separately.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "restore_project_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_retire_initiative_label",
+      "description": "Retire a Linear initiative label so it cannot be applied to new initiatives. The label stays visible on initiatives that already have it. Retiring a label group also retires its child labels. Undo with `restore_initiative_label`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "retire_initiative_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_retire_issue_label",
+      "description": "Retire a Linear issue label so it cannot be applied to new issues. The label stays visible on issues that already have it. Retiring a label group also retires its child labels. Undo with `restore_issue_label`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "retire_issue_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_retire_project_label",
+      "description": "Retire a Linear project label so it cannot be applied to new projects. The label stays visible on projects that already have it. Retiring a label group also retires its child labels. Undo with `restore_project_label`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Label or label group ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "retire_project_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_save_comment",
+      "description": "Create or update a comment on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. If `id` is provided, updates the existing comment; otherwise creates a new one. To start a new thread, pass `body` and exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId`; comments on issues/projects/initiatives become top-level discussion threads; comments on documents/milestones become description comments. A status update holds a single thread, so a comment on an update that already has one is added to it as a reply. To reply to an existing thread, pass `parentId` and `body`; the reply inherits the parent's thread type, so no entity reference is needed. Parent reference fields are ignored when `id` or `parentId` is provided (`statusUpdateType` is rejected instead).",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "documentId": {
+            "description": "Document ID or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Comment ID. If provided, updates the existing comment",
+            "type": "string"
+          },
+          "initiativeId": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "issueId": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues (provide exactly one parent)",
+            "type": "string"
+          },
+          "milestoneId": {
+            "description": "Milestone UUID (provide exactly one parent). Resolve milestone names via `list_milestones` first.",
+            "type": "string"
+          },
+          "parentId": {
+            "description": "Parent comment ID (for replies, only when creating)",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug (provide exactly one parent)",
+            "type": "string"
+          },
+          "statusUpdateId": {
+            "description": "Status update UUID (provide exactly one parent). Resolve status updates via `get_status_updates` first.",
+            "type": "string"
+          },
+          "statusUpdateType": {
+            "description": "Type of status update named by `statusUpdateId`, as returned by `get_status_updates`. Only valid together with `statusUpdateId`; omit to check both project and initiative status updates.",
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_comment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_diff_comment",
+      "description": "Create, reply to, or edit a comment or persisted draft on a Linear diff. Set draft to true to save without submitting. Provide draftId to edit or submit a persisted draft, and commentId only to edit a submitted comment. Submitting an inline draft reuses its saved anchor; submitting a reply draft requires parentId again.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "additionalProperties": {},
+            "description": "Optional comment anchor copied from a diff thread or built for a file or diff hunk",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "anchorContent": {
+            "description": "Exact source text of the anchor's end line; stored with an inline draft so it can be re-anchored after the diff receives new revisions",
+            "type": "string"
+          },
+          "body": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences",
+            "minLength": 1,
+            "type": "string"
+          },
+          "commentId": {
+            "description": "Existing comment ID to edit",
+            "type": "string"
+          },
+          "draft": {
+            "default": false,
+            "description": "Save as a private persisted draft without submitting",
+            "type": "boolean"
+          },
+          "draftId": {
+            "description": "Existing persisted draft ID to edit or submit",
+            "type": "string"
+          },
+          "parentId": {
+            "description": "Top-level comment ID to reply to; also required when submitting a persisted reply draft",
+            "type": "string"
+          },
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_diff_comment",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_document",
+      "description": "Create or update a Linear document. If `id` is provided, edits the existing document; otherwise creates a new one. When creating, `title` is required and exactly one parent (`project`, `issue`, `initiative`, `cycle`, or `team`) must be specified. On update, passing a parent reparents the document. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color",
+            "type": "string"
+          },
+          "content": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "cycle": {
+            "description": "Cycle name, number, or ID. When passing a name or number, also pass `team` to disambiguate.",
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon name or emoji code (e.g. \"Rocket\" or \":eagle:\"), not a raw Unicode emoji",
+            "type": "string"
+          },
+          "id": {
+            "description": "Document ID or slug to update. Omit to create a new document.",
+            "type": "string"
+          },
+          "initiative": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          },
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "patch": {
+            "description": "Partial edits applied to the current content, in order and atomically (one failing operation aborts the whole save). Every anchor string must match the current content exactly once. Only valid on update, in place of the full content/description field",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "new_string": {
+                      "description": "Replacement text. Empty string deletes the match",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "description": "Exact text to replace. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace",
+                      "type": "string"
+                    },
+                    "replace_all": {
+                      "description": "Replace every occurrence instead of requiring a unique match",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "old_string",
+                    "new_string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert before. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_before",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly before the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert after. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_after",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly after the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "prepend",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very start of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "append",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very end of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "from": {
+                      "description": "Exact text where the range starts (inclusive). Must match exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "description": "Text replacing the range. Empty string deletes it",
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace_range",
+                      "type": "string"
+                    },
+                    "to": {
+                      "description": "Exact text where the range ends (exclusive, stays in place). Must match exactly once after `from`",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "from",
+                    "to",
+                    "new_string"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID. Attaches the document to the team, unless `cycle` is also passed, in which case it disambiguates the cycle.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Document title (required when creating)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_document",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_initiative",
+      "description": "Create or update a Linear initiative. If `id` is provided, updates the existing initiative; otherwise creates a new one. When creating, `name` is required. To change parts of the description without resending all of it, pass `patch` instead of `description`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color",
+            "type": "string"
+          },
+          "description": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon name or emoji code (e.g. \"Rocket\" or \":eagle:\"), not a raw Unicode emoji",
+            "type": "string"
+          },
+          "id": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug. If provided, updates the existing initiative",
+            "type": "string"
+          },
+          "labels": {
+            "description": "Label names or IDs as a JSON array of strings (e.g. [\"Bug\", \"Urgent\"]). Replaces the full label set; existing labels not included are removed. Omit to leave labels unchanged",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "leadTeam": {
+            "description": "Lead team name, key, or ID. Null to remove the lead team",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Initiative name (required when creating)",
+            "type": "string"
+          },
+          "owner": {
+            "description": "User ID, name, email, or \"me\". Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentInitiatives": {
+            "description": "Parent initiatives to add. Initiative name, ID, identifier (e.g., I-123), or slug. Appended to existing parents",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "patch": {
+            "description": "Partial edits applied to the current content, in order and atomically (one failing operation aborts the whole save). Every anchor string must match the current content exactly once. Only valid on update, in place of the full content/description field",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "new_string": {
+                      "description": "Replacement text. Empty string deletes the match",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "description": "Exact text to replace. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace",
+                      "type": "string"
+                    },
+                    "replace_all": {
+                      "description": "Replace every occurrence instead of requiring a unique match",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "old_string",
+                    "new_string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert before. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_before",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly before the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert after. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_after",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly after the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "prepend",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very start of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "append",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very end of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "from": {
+                      "description": "Exact text where the range starts (inclusive). Must match exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "description": "Text replacing the range. Empty string deletes it",
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace_range",
+                      "type": "string"
+                    },
+                    "to": {
+                      "description": "Exact text where the range ends (exclusive, stays in place). Must match exactly once after `from`",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "from",
+                    "to",
+                    "new_string"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "priority": {
+            "description": "0=None, 1=Urgent, 2=High, 3=Medium, 4=Low",
+            "maximum": 4,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "description": "Initiative status (Proposed, Planned, Active, Completed, Canceled)",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Short summary (max 255 chars)",
+            "type": "string"
+          },
+          "targetDate": {
+            "description": "Target date (ISO format)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_initiative",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_initiative_label",
+      "description": "Create or update a Linear initiative label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color code",
+            "type": "string"
+          },
+          "description": {
+            "description": "Label description. Null to clear it",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Label name or ID. If provided, updates the existing label",
+            "type": "string"
+          },
+          "isGroup": {
+            "description": "Whether the label is a group",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Label name (required when creating)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent label group name or ID. Null to remove from its group",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_initiative_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_issue",
+      "description": "Create or update a Linear issue. If `id` is provided, updates the existing issue; otherwise creates a new one. When creating, `team` is required, and `title` is required unless `template` is set. Note: use `assignee` (not `assigneeId`) to set the assignee; it accepts a user ID, name, email, or \"me\".",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "addLabels": {
+            "description": "Label names or IDs as a JSON array of strings (e.g. [\"Bug\", \"Urgent\"]) to add. Append-only; existing labels are never removed. Cannot be combined with a team change",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "addReleases": {
+            "description": "Release IDs or slugs to add. Append-only; existing releases are never removed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assignee": {
+            "description": "User ID, name, email, or \"me\". Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockedBy": {
+            "description": "Issue IDs/identifiers blocking this. Append-only; existing relations are never removed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blocks": {
+            "description": "Issue IDs/identifiers this blocks. Append-only; existing relations are never removed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cycle": {
+            "description": "Cycle name, number, or ID. Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delegate": {
+            "description": "Agent name or ID. When the user asks to delegate to \"Linear\" or \"the Linear agent\", this refers to the \"Linear\" app user specifically. Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "dueDate": {
+            "description": "Due date (ISO format). On update, pass null to remove the due date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duplicateOf": {
+            "description": "Duplicate of issue ID/identifier. Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "estimate": {
+            "description": "Issue estimate value. On create, pass null or omit for no estimate. On update, pass null to clear the estimate; omitting leaves it unchanged. 0 is a real estimate only on teams that allow zero estimates.",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Only for updating an existing issue. Pass the issue ID or identifier (e.g., LIN-123). Do NOT pass this parameter when creating a new issue.",
+            "type": "string"
+          },
+          "labels": {
+            "description": "Label names or IDs as a JSON array of strings (e.g. [\"Bug\", \"Urgent\"]). Replaces the full label set; existing labels not included are removed. Omit to leave labels unchanged. Cannot be combined with addLabels/removeLabels; prefer those for incremental changes",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "links": {
+            "description": "Link attachments to add [{url, title}]. Append-only; existing links are never removed",
+            "items": {
+              "properties": {
+                "title": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "url": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "milestone": {
+            "description": "Milestone name or ID",
+            "type": "string"
+          },
+          "parentId": {
+            "description": "Parent issue ID or identifier (e.g., LIN-123). Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patch": {
+            "description": "Partial edits applied to the current content, in order and atomically (one failing operation aborts the whole save). Every anchor string must match the current content exactly once. Only valid on update, in place of the full content/description field",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "new_string": {
+                      "description": "Replacement text. Empty string deletes the match",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "description": "Exact text to replace. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace",
+                      "type": "string"
+                    },
+                    "replace_all": {
+                      "description": "Replace every occurrence instead of requiring a unique match",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "old_string",
+                    "new_string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert before. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_before",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly before the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert after. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_after",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly after the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "prepend",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very start of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "append",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very end of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "from": {
+                      "description": "Exact text where the range starts (inclusive). Must match exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "description": "Text replacing the range. Empty string deletes it",
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace_range",
+                      "type": "string"
+                    },
+                    "to": {
+                      "description": "Exact text where the range ends (exclusive, stays in place). Must match exactly once after `from`",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "from",
+                    "to",
+                    "new_string"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "priority": {
+            "description": "0=None, 1=Urgent, 2=High, 3=Medium, 4=Low",
+            "type": "number"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug. Null to remove",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relatedTo": {
+            "description": "Related issue IDs/identifiers. Append-only; existing relations are never removed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeBlockedBy": {
+            "description": "Issue IDs/identifiers to remove as blockers of this issue",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeBlocks": {
+            "description": "Issue IDs/identifiers to stop blocking",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeLabels": {
+            "description": "Label names or IDs as a JSON array of strings (e.g. [\"Bug\", \"Urgent\"]) to remove. Only valid when updating an existing issue. Cannot be combined with a team change",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeRelatedTo": {
+            "description": "Related issue IDs/identifiers to remove",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeReleases": {
+            "description": "Release IDs or slugs to remove. Only valid when updating an existing issue",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "setReleases": {
+            "description": "Replace all releases on the issue with these. Cannot be combined with addReleases/removeReleases",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slaBreachesAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO-8601 timestamp when the SLA will breach. On update, pass null to remove the SLA"
+          },
+          "slaType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "onlyBusinessDays"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "SLA day counting type: \"all\" or \"onlyBusinessDays\". Only use with slaBreachesAt; null means unset"
+          },
+          "state": {
+            "description": "State type, name, or ID",
+            "type": "string"
+          },
+          "team": {
+            "description": "Team name or ID (required when creating)",
+            "type": "string"
+          },
+          "template": {
+            "description": "Template name or ID. Applied on create only. The template fills in the content, fields, and sub-issues server-side. A `description` replaces the template body rather than merging with it, but an empty `description` keeps the template body. Labels merge with the template's own",
+            "type": "string"
+          },
+          "title": {
+            "description": "Issue title (required when creating, unless template is set)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_issue",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_issue_label",
+      "description": "Create or update a Linear issue label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color code",
+            "type": "string"
+          },
+          "description": {
+            "description": "Label description. Null to clear it",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groupType": {
+            "description": "Selection mode for label groups. Defaults to singleSelect when creating; omit to keep it unchanged when updating",
+            "enum": [
+              "singleSelect",
+              "multiSelect"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Label name or ID. If provided, updates the existing label",
+            "type": "string"
+          },
+          "isGroup": {
+            "description": "Whether the label is a group",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Label name (required when creating)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent label group name or ID. Null to remove from its group",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "teamId": {
+            "description": "Team UUID (omit for workspace label). When updating, only disambiguates `id` by name; a label's team cannot be changed",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_issue_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_milestone",
+      "description": "Create or update a milestone in a Linear project. If `id` is provided, updates the existing milestone; otherwise creates a new one. When creating, `name` is required.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "Milestone description",
+            "type": "string"
+          },
+          "id": {
+            "description": "Milestone name or ID",
+            "type": "string"
+          },
+          "name": {
+            "description": "Milestone name (required when creating)",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "targetDate": {
+            "description": "Target completion date (ISO format, null to remove)",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_milestone",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_project",
+      "description": "Create or update a Linear project. If `id` is provided, updates the existing project; otherwise creates a new one. When creating, `name` and at least one team (via `addTeams` or `setTeams`) are required. Pass `template` to create the project from a project template. To change parts of the description without resending all of it, pass `patch` instead of `description`. `state` resolves against the project statuses of the lead team, so pass `leadTeam` when creating a multi-team project whose teams use different statuses.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "addInitiatives": {
+            "description": "Initiatives to add. Initiative name, ID, identifier (e.g., I-123), or slug",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "addTeams": {
+            "description": "Team name or ID to add",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "color": {
+            "description": "Hex color",
+            "type": "string"
+          },
+          "description": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon name or emoji code (e.g. \"Rocket\" or \":eagle:\"), not a raw Unicode emoji",
+            "type": "string"
+          },
+          "id": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug. If provided, updates the existing project",
+            "type": "string"
+          },
+          "labels": {
+            "description": "Label names or IDs as a JSON array of strings (e.g. [\"Bug\", \"Urgent\"]). Replaces the full label set; existing labels not included are removed. Omit to leave labels unchanged",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lead": {
+            "description": "User ID, name, email, or \"me\". Null to remove, except on create with a template that names a lead",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "leadTeam": {
+            "description": "Team that leads the project. Team name or ID. Overrides the default lead team; added to the project's teams when not among them",
+            "type": "string"
+          },
+          "links": {
+            "description": "External resource links to add [{url, title}]. Append-only; existing links are never removed",
+            "items": {
+              "properties": {
+                "title": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "url": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Project name (required when creating)",
+            "type": "string"
+          },
+          "patch": {
+            "description": "Partial edits applied to the current content, in order and atomically (one failing operation aborts the whole save). Every anchor string must match the current content exactly once. Only valid on update, in place of the full content/description field",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "new_string": {
+                      "description": "Replacement text. Empty string deletes the match",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "description": "Exact text to replace. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace",
+                      "type": "string"
+                    },
+                    "replace_all": {
+                      "description": "Replace every occurrence instead of requiring a unique match",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "old_string",
+                    "new_string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert before. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_before",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly before the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert after. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_after",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly after the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "prepend",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very start of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "append",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very end of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "from": {
+                      "description": "Exact text where the range starts (inclusive). Must match exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "description": "Text replacing the range. Empty string deletes it",
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace_range",
+                      "type": "string"
+                    },
+                    "to": {
+                      "description": "Exact text where the range ends (exclusive, stays in place). Must match exactly once after `from`",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "from",
+                    "to",
+                    "new_string"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "priority": {
+            "description": "0=None, 1=Urgent, 2=High, 3=Medium, 4=Low",
+            "maximum": 4,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removeInitiatives": {
+            "description": "Initiatives to remove. Initiative name, ID, identifier (e.g., I-123), or slug",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeTeams": {
+            "description": "Team name or ID to remove",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "setInitiatives": {
+            "description": "Replace all initiatives with these. Initiative name, ID, identifier (e.g., I-123), or slug. Cannot combine with addInitiatives/removeInitiatives",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "setTeams": {
+            "description": "Replace all teams with these. Cannot combine with addTeams/removeTeams",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "startDate": {
+            "description": "Start date (ISO format). Pair with startDateResolution to indicate precision (e.g. month, quarter)",
+            "type": "string"
+          },
+          "startDateResolution": {
+            "description": "Start date resolution",
+            "enum": [
+              "halfYear",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "Project status name, type, or ID. Names resolve within the lead team's project statuses. If the lead team is unknown, standard labels resolve as status types; custom names require a status ID or leadTeam",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Short summary (max 255 chars)",
+            "type": "string"
+          },
+          "targetDate": {
+            "description": "Target date (ISO format). Pair with targetDateResolution to indicate precision (e.g. month, quarter)",
+            "type": "string"
+          },
+          "targetDateResolution": {
+            "description": "Target date resolution",
+            "enum": [
+              "halfYear",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "type": "string"
+          },
+          "template": {
+            "description": "Template name or ID. Applied on create only. The template fills in the content, fields, and sub-issues server-side. A `description` replaces the template body rather than merging with it, but an empty `description` keeps the template body. Labels merge with the template's own",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_project",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_project_label",
+      "description": "Create or update a Linear project label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Hex color code",
+            "type": "string"
+          },
+          "description": {
+            "description": "Label description. Null to clear it",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Label name or ID. If provided, updates the existing label",
+            "type": "string"
+          },
+          "isGroup": {
+            "description": "Whether the label is a group",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Label name (required when creating)",
+            "type": "string"
+          },
+          "parent": {
+            "description": "Parent label group name or ID. Null to remove from its group",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "teamId": {
+            "description": "Team UUID (omit for workspace label). When updating, only disambiguates `id` by name; a label's team cannot be changed",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_project_label",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_release",
+      "description": "Create or update a release. If `id` is provided, updates the existing release; otherwise creates a new one. When creating, `name` and `pipeline` are required. Release status is modeled as the release pipeline stage.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "commitSha": {
+            "description": "Commit SHA associated with the release",
+            "type": "string"
+          },
+          "completedAt": {
+            "description": "Completed timestamp (ISO DateTime, null to remove)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "description": "Import/create timestamp (ISO DateTime)",
+            "type": "string"
+          },
+          "description": {
+            "description": "Release description",
+            "type": "string"
+          },
+          "id": {
+            "description": "Release ID or slug to update. Omit to create a new release.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Release name (required when creating)",
+            "type": "string"
+          },
+          "pipeline": {
+            "description": "Release pipeline ID, slug, or exact name (required when creating)",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Release stage ID, exact name, or lifecycle type within the release pipeline",
+            "type": "string"
+          },
+          "startDate": {
+            "description": "Estimated start date (ISO YYYY-MM-DD, null to remove)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "description": "Started timestamp (ISO DateTime, null to remove)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetDate": {
+            "description": "Estimated completion date (ISO YYYY-MM-DD, null to remove)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "description": "Version identifier",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_release",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_release_note",
+      "description": "Create or update release notes. If `id` is provided, updates the existing release notes; otherwise creates a new one. When creating, `pipeline` and either `releases` or a release range are required. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Release notes ID or slug to update. Omit to create new release notes.",
+            "type": "string"
+          },
+          "patch": {
+            "description": "Partial edits applied to the current content, in order and atomically (one failing operation aborts the whole save). Every anchor string must match the current content exactly once. Only valid on update, in place of the full content/description field",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "new_string": {
+                      "description": "Replacement text. Empty string deletes the match",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "description": "Exact text to replace. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace",
+                      "type": "string"
+                    },
+                    "replace_all": {
+                      "description": "Replace every occurrence instead of requiring a unique match",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "old_string",
+                    "new_string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert before. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_before",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly before the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "anchor": {
+                      "description": "Exact text to insert after. Must match the current content exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "insert_after",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert directly after the anchor. Include separators (e.g. \"\\n\\n\")",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "anchor",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "prepend",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very start of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "op": {
+                      "const": "append",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to insert at the very end of the content",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "from": {
+                      "description": "Exact text where the range starts (inclusive). Must match exactly once",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "description": "Text replacing the range. Empty string deletes it",
+                      "type": "string"
+                    },
+                    "op": {
+                      "const": "replace_range",
+                      "type": "string"
+                    },
+                    "to": {
+                      "description": "Exact text where the range ends (exclusive, stays in place). Must match exactly once after `from`",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "from",
+                    "to",
+                    "new_string"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "pipeline": {
+            "description": "Release pipeline ID, slug, or exact name (required when creating)",
+            "type": "string"
+          },
+          "rangeFromRelease": {
+            "description": "Oldest release ID or slug in the note range",
+            "type": "string"
+          },
+          "rangeToRelease": {
+            "description": "Newest release ID or slug in the note range",
+            "type": "string"
+          },
+          "releases": {
+            "description": "Release IDs or slugs to include in the note",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Release notes title",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_release_note",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_save_status_update",
+      "description": "Create or update a project/initiative status update. Omit `id` to create, provide `id` to update.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            "type": "string"
+          },
+          "health": {
+            "description": "onTrack | atRisk | offTrack",
+            "enum": [
+              "onTrack",
+              "atRisk",
+              "offTrack"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Status update ID - if provided, updates this existing update",
+            "type": "string"
+          },
+          "initiative": {
+            "description": "Initiative name, ID, identifier (e.g., I-123), or slug",
+            "type": "string"
+          },
+          "isDiffHidden": {
+            "description": "Deprecated. Hide diff with previous update (create only)",
+            "type": "boolean"
+          },
+          "project": {
+            "description": "Project name, ID, identifier (e.g., P-ENG-123), or slug",
+            "type": "string"
+          },
+          "type": {
+            "description": "Type of status update",
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "save_status_update",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_search_documentation",
+      "description": "Search Linear's documentation to learn about features and usage",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "default": 0,
+            "description": "Page number",
+            "type": "number"
+          },
+          "query": {
+            "description": "Search query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "search_documentation",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_share_issue",
+      "description": "Share an issue with a workspace user who cannot otherwise access it. Use this tool only when the user explicitly asks to share the issue.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "user": {
+            "description": "User ID, name, email, or \"me\" Must be an email address or UUID.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue",
+          "user"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "share_issue",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_submit_diff_review",
+      "description": "Approve a Linear diff, request changes, or submit a review comment",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "Content as Markdown. Do not escape the string; use literal newlines and special characters, not escape sequences. Required when requesting changes or commenting",
+            "minLength": 1,
+            "type": "string"
+          },
+          "decision": {
+            "description": "Review decision: approved, changesRequested, or commented",
+            "enum": [
+              "approved",
+              "changesRequested",
+              "commented"
+            ],
+            "type": "string"
+          },
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "urlOrId",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "submit_diff_review",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "linear_unshare_issue",
+      "description": "Remove a workspace user's shared access to an issue. Use this tool only when the user explicitly asks to stop sharing the issue.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "issue": {
+            "description": "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
+            "type": "string"
+          },
+          "user": {
+            "description": "User ID, name, email, or \"me\" Must be an email address or UUID.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue",
+          "user"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "unshare_issue",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "linear_update_diff",
+      "description": "Update a Linear diff's title, description, reviewer requests, issue links, or status. Provide at least one update. Combined updates can partially succeed; inspect the result before retrying. Use merge_diff to merge and submit_diff_review to approve or request changes.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "addedIssueLinks": {
+            "description": "Add issue links or change the relationship of an existing link",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "issue": {
+                  "description": "Linear issue identifier or UUID",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "description": "Relationship: closes, contributes, links, or reopens",
+                  "enum": [
+                    "closes",
+                    "contributes",
+                    "links",
+                    "reopens"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "issue",
+                "type"
+              ],
+              "type": "object"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "addedReviewRequests": {
+            "description": "Request or re-request reviews; existing pending requests are unchanged",
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "user": {
+                      "description": "Workspace user ID, name, email, or \"me\"",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "externalUserId": {
+                      "description": "External user ID from get_diff reviewer metadata",
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "externalUserId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "githubTeamId": {
+                      "description": "GitHub team ID from get_diff reviewer metadata",
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "githubTeamId"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "description": {
+            "description": "New description as Markdown; an empty string clears it",
+            "type": "string"
+          },
+          "removedIssueLinks": {
+            "description": "Linear issue identifiers or UUIDs to unlink",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "removedReviewRequests": {
+            "description": "Withdraw pending review requests; submitted reviews are preserved",
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "user": {
+                      "description": "Workspace user ID, name, email, or \"me\"",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "externalUserId": {
+                      "description": "External user ID from get_diff reviewer metadata",
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "externalUserId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "githubTeamId": {
+                      "description": "GitHub team ID from get_diff reviewer metadata",
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "githubTeamId"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "statusAction": {
+            "description": "Status transition to perform after metadata is updated",
+            "enum": [
+              "markReadyForReview",
+              "convertToDraft",
+              "close",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "description": "New diff title",
+            "minLength": 1,
+            "type": "string"
+          },
+          "urlOrId": {
+            "description": "Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "urlOrId"
+        ],
+        "type": "object"
+      },
+      "endpointMapping": {
+        "method": "update_diff",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

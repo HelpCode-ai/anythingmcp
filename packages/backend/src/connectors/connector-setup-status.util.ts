@@ -90,6 +90,18 @@ function browserAuthorizationUrl(
   return catalog?.authorizationUrl ? String(catalog.authorizationUrl) : undefined;
 }
 
+/**
+ * Installed from a catalog adapter that bridges a vendor's MCP server. With
+ * OAUTH2 such a connector gets its endpoints from the server's metadata when
+ * the user authorizes, so there is no authorization URL to look for; until
+ * then it has no token and every call would fail. (A user-created MCP
+ * connector is left as it was: it may carry a token typed in by hand.)
+ */
+function isCatalogMcpBridge(config: unknown): boolean {
+  const slug = (config as { adapterSlug?: unknown } | null)?.adapterSlug;
+  return typeof slug === 'string' && getAdapter(slug)?.connector.type === 'MCP';
+}
+
 export function computeSetupState(input: SetupStatusInput): SetupState {
   const envVars = asStringMap(input.envVars);
   const options = { reservedPrefix: CALLER_CONTEXT_PREFIX };
@@ -97,7 +109,7 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
   const isBrowserOAuth =
     input.authType === 'OAUTH2' &&
     String(authConfig.grant ?? '') !== 'client_credentials' &&
-    !!browserAuthorizationUrl(authConfig, input.config);
+    (!!browserAuthorizationUrl(authConfig, input.config) || isCatalogMcpBridge(input.config));
 
   // Tokens of a browser OAuth connector are written by the authorization; a
   // placeholder there means "not authorized yet", not "fill in this field".
