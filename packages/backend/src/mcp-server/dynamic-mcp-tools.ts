@@ -36,6 +36,8 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
+import { connectorErrorWhen } from '../connectors/error-when.util';
+import { ResponseBodyError } from '../connectors/engines/response-error.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -338,6 +340,7 @@ export class DynamicMcpTools {
         authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
+        errorWhen: connectorErrorWhen(tool.connectorConfig.config),
         ...(proxyUrl ? { proxyUrl } : {}),
       };
 
@@ -715,6 +718,12 @@ export class DynamicMcpTools {
     // SOAP errors enriched by SoapEngine
     if (error.soapDetail) {
       return error.soapDetail as Record<string, unknown>;
+    }
+
+    // A 200 whose body the connector's errorWhen rules read as an error: the
+    // body is what the model needs, as with an HTTP error.
+    if (error instanceof ResponseBodyError) {
+      return { error: error.message, responseBody: error.responseBody };
     }
 
     // Generic errors (database, etc.)

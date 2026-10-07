@@ -6,7 +6,7 @@
   "category": "government",
   "icon": "korea-law",
   "docsUrl": "https://open.law.go.kr/LSO/openApi/guideList.do",
-  "instructions": "## Korea Law (National Law Information Center)\nThis connector reads the official Open API of the Korean National Law Information Center (국가법령정보센터), run by the Ministry of Government Legislation (법제처): current statutes and their articles, court precedents, Constitutional Court decisions, statutory interpretations, administrative rules, local ordinances, legal term definitions and the official English translations.\n\n## Setup (free, approval takes 1 to 2 days)\n1. Create an account at https://open.law.go.kr and apply for the OPEN API (OPEN API > OPEN API 신청). Tick every API you want to use: laws (법령), precedents (판례), interpretations (법령해석례), administrative rules (행정규칙), local laws (자치법규), Constitutional Court decisions (헌재결정례), legal terms (법령용어) and English laws (영문법령). Calls to an API that was not ticked are refused.\n2. In the application, register the public IP address and domain of the server that calls the API. The API checks them on every call. On a self-hosted AnythingMCP that is your server's public IP; on AnythingMCP Cloud, contact support for the outbound address to register.\n3. After approval, put your OC value in `KOREA_LAW_OC`: the ID part of the e-mail address you registered (for `g4c@korea.kr` it is `g4c`). It is sent as the `OC` query parameter.\n\n## Errors arrive with HTTP 200\nThe API answers errors in the body, not with a status code:\n- `사용자 정보 검증에 실패하였습니다` (user verification failed): the OC is wrong, the application is not approved yet, or the calling server's IP or domain is not registered.\n- `필수입력요소 검증에 실패하였습니다` (required input missing): a required value (OC, or the ID of a get tool) is missing.\nRead `result` and `msg` in the answer before treating it as data.\n\n## Ids\n- Statutes have a stable **law ID** (법령ID, 6 digits with leading zeros, e.g. `001706` Civil Act) and a **serial number** (법령일련번호 / MST) per version. `korea_law_get_law` takes either; `law_id` returns the current version.\n- Precedents, interpretations, Constitutional Court decisions and administrative rules use their own serial numbers (`판례일련번호`, `법령해석례일련번호`, `헌재결정례일련번호`, `행정규칙일련번호`) from the matching search tool.\n- Articles are 6 digits: article number (4) + branch (2). Article 3 is `000300`, Article 10-2 is `001002`.\n\n## Tips\n- Search words are Korean. The English laws search also accepts English words.\n- `search` = 2 searches the full text instead of names; useful for concepts that are not in any title.\n- Full statutes are large (the Civil Act is over 700 KB): read the articles you need with `article`.\n- Dates are YYYYMMDD; ranges are `YYYYMMDD~YYYYMMDD`.\n- The Korean text is the binding one; English translations are for reference and can be outdated.\n- The source must be credited as 법제처 국가법령정보센터 when the content is published.\n\n## Where to start\n`korea_law_search_laws` with a law name, then `korea_law_get_law` with its law ID and an article. For case law, `korea_law_search_precedents` then `korea_law_get_precedent`.",
+  "instructions": "## Korea Law (National Law Information Center)\nThis connector reads the official Open API of the Korean National Law Information Center (국가법령정보센터), run by the Ministry of Government Legislation (법제처): current statutes and their articles, court precedents, Constitutional Court decisions, statutory interpretations, administrative rules, local ordinances, legal term definitions and the official English translations.\n\n## Setup (free, approval takes 1 to 2 days)\n1. Create an account at https://open.law.go.kr and apply for the OPEN API (OPEN API > OPEN API 신청). Tick every API you want to use: laws (법령), precedents (판례), interpretations (법령해석례), administrative rules (행정규칙), local laws (자치법규), Constitutional Court decisions (헌재결정례), legal terms (법령용어) and English laws (영문법령). Calls to an API that was not ticked are refused.\n2. In the application, register the public IP address and domain of the server that calls the API. The API checks them on every call. On a self-hosted AnythingMCP that is your server's public IP; on AnythingMCP Cloud, contact support for the outbound address to register.\n3. After approval, put your OC value in `KOREA_LAW_OC`: the ID part of the e-mail address you registered (for `g4c@korea.kr` it is `g4c`). It is sent as the `OC` query parameter.\n\n## Errors arrive with HTTP 200\nThe API answers errors in the body, not with a status code. The connector recognises them and reports the call as failed, with the API's own `result` and `msg`:\n- `사용자 정보 검증에 실패하였습니다` (user verification failed): the OC is wrong, the application is not approved yet, or the calling server's IP or domain is not registered.\n- `필수입력요소 검증에 실패하였습니다` (required input missing): a required value (OC, or the ID of a get tool) is missing.\n\n## Ids\n- Statutes have a stable **law ID** (법령ID, 6 digits with leading zeros, e.g. `001706` Civil Act) and a **serial number** (법령일련번호 / MST) per version. `korea_law_get_law` takes either; `law_id` returns the current version.\n- Precedents, interpretations, Constitutional Court decisions and administrative rules use their own serial numbers (`판례일련번호`, `법령해석례일련번호`, `헌재결정례일련번호`, `행정규칙일련번호`) from the matching search tool.\n- Articles are 6 digits: article number (4) + branch (2). Article 3 is `000300`, Article 10-2 is `001002`.\n\n## Tips\n- Search words are Korean. The English laws search also accepts English words.\n- `search` = 2 searches the full text instead of names; useful for concepts that are not in any title.\n- Full statutes are large (the Civil Act is over 700 KB): read the articles you need with `article`.\n- Dates are YYYYMMDD; ranges are `YYYYMMDD~YYYYMMDD`.\n- The Korean text is the binding one; English translations are for reference and can be outdated.\n- The source must be credited as 법제처 국가법령정보센터 when the content is published.\n\n## Where to start\n`korea_law_search_laws` with a law name, then `korea_law_get_law` with its law ID and an article. For case law, `korea_law_search_precedents` then `korea_law_get_precedent`.",
   "prerequisites": "Apply for the free OPEN API at [open.law.go.kr](https://open.law.go.kr) (approval takes 1 to 2 days), tick the APIs you need, and register the public IP address and domain of the server that runs AnythingMCP: the API refuses calls from other addresses.",
   "requiredEnvVars": [
     "KOREA_LAW_OC"
@@ -22,7 +22,8 @@
     }
   },
   "verifyHints": {
-    "unreachable": "www.law.go.kr could not be reached. It is a public government site; try again later."
+    "unreachable": "www.law.go.kr could not be reached. It is a public government site; try again later.",
+    "auth_failed": "law.go.kr refused the OC. Check the value in KOREA_LAW_OC, that the OPEN API application is approved, and that the public IP address and domain of this server are registered in it."
   },
   "probe": {
     "tool": "korea_law_search_laws",
@@ -38,6 +39,28 @@
     "authType": "QUERY_AUTH",
     "authConfig": {
       "OC": "{{KOREA_LAW_OC}}"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "result",
+          "matches": "사용자 정보 검증",
+          "messagePath": [
+            "result",
+            "msg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "result",
+          "matches": "실패",
+          "messagePath": [
+            "result",
+            "msg"
+          ],
+          "status": 400
+        }
+      ]
     }
   },
   "tools": [

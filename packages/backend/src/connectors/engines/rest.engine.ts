@@ -21,6 +21,7 @@ import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
+import { assertNoResponseBodyError } from './response-error.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -116,6 +117,10 @@ export class RestEngine {
       // (env present, tool opted in, license + rate-limit ok) and passes
       // the URL here, or omits it for a direct request.
       proxyUrl?: string;
+      // The connector's `errorWhen` rules: how this API reports an error in
+      // a 2xx body. Absent for almost every connector, which then behaves as
+      // it always has. See response-error.util.ts.
+      errorWhen?: unknown;
     },
     endpointMapping: {
       method: string;
@@ -145,6 +150,7 @@ export class RestEngine {
     const withMeta = (response: AxiosResponse) => {
       const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
       assertNotJsonRpcError(body);
+      assertNoResponseBodyError(body, config.errorWhen);
       return {
         body,
         headers: pickExposedHeaders(

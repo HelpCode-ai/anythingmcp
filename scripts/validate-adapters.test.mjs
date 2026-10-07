@@ -179,6 +179,7 @@ test('diagnostic docs use ordinary GitHub heading slugs', () => {
     ['Adapter envelope', 'adapter-envelope'], ['Adapter fields', 'adapter-fields'],
     ['Tools', 'tools'], ['Connector', 'connector'], ['Authentication', 'authentication'],
     ['Adapter file errors', 'adapter-file-errors'], ['GraphQL variables', 'graphql-variables'],
+    ['Errors inside a 200 response', 'errors-inside-a-200-response'],
   ]) {
     assert.match(docs, new RegExp(`^#{2,3} ${heading}$`, 'm'));
     const diagnostic = renderReport([{
@@ -296,4 +297,27 @@ test('envVarMeta describes declared variables with known fields only', () => {
   const bad = validateAdapter(adapter({ envVarMeta: { GOOD_KEY: { kind: 'password', pattern: '(', link: 'http://x', colour: 'red' } } }), 'good.json', 'de');
   const rules = bad.errors.map((e) => e.rule).sort();
   assert.deepEqual(rules, ['env-meta-field', 'env-meta-kind', 'env-meta-link', 'env-meta-pattern']);
+});
+
+test('connector.config.errorWhen rules are checked', () => {
+  const good = validateAdapter(adapter({
+    connector: { type: 'REST', authType: 'API_KEY', config: { errorWhen: [
+      { path: 'Status', in: [1, 2], messagePath: 'Message', status: 401 },
+      { path: 'result', matches: 'failed', messagePath: ['result', 'msg'] },
+    ] } },
+  }), 'good.json', 'de');
+  assert.deepEqual(good.errors, []);
+
+  const bad = validateAdapter(adapter({
+    connector: { type: 'REST', authType: 'API_KEY', config: { errorWhen: [
+      { equals: 1 }, { path: 'a', matches: '(' }, { path: 'a', status: 200 }, { path: 'a', typo: 1 },
+    ] } },
+  }), 'good.json', 'de');
+  assert.deepEqual(bad.errors.map((e) => e.message), [
+    'errorWhen[0].path must be a non-empty string',
+    'errorWhen[1].matches is not a valid regular expression',
+    'errorWhen[2].status must be an HTTP error status (400-599)',
+    'errorWhen[3].typo is not a known field',
+  ]);
+  assert.ok(bad.errors.every((e) => e.rule === 'error-when' && e.docs === 'errors-inside-a-200-response'));
 });

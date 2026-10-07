@@ -6,7 +6,7 @@
   "category": "hr",
   "icon": "peoplehr",
   "docsUrl": "https://apidocs.peoplehr.com/",
-  "instructions": "**Getting the API key**: in PeopleHR open **Settings > API** and create a key (a GUID such as 1a2b3c4d-...). When you create it you choose which resources (schemas) and which actions it may call: tick at least Employee, Holiday, Absence, Holiday Entitlements, Salary, Query Builder, Appraisal, Training and ATS for the read tools here, and add the Add Holiday / Add Absence actions only if you want the write tools. Put the key in `PEOPLEHR_API_KEY`. If the key has an IP allow-list, calls from AnythingMCP are refused unless its address is on it.\n\n**How the API works**: every call is a POST to `https://api.peoplehr.net/<Resource>` (`/Employee`, `/Holiday`, `/Absence`, `/Salary`, `/Query` ...) with a JSON body holding `APIKey`, `Action` and the action's fields. The tools fill in the key and the action for you, so every read tool is a POST that only reads.\n\n**Errors come back as HTTP 200.** Always read `Status` in the answer, not the HTTP code: 0 success, 10 no records found, 5 validation error or `Access Denied.`, 6 server error. `Access Denied.` means the key is not granted that action or schema (an unknown action name gives the same answer); ask the PeopleHR admin to add the grant. `isError` is unreliable; ignore it.\n\n**Ids**: employees are addressed by their PeopleHR EmployeeId (e.g. `PW15`, max 15 characters). Start with `peoplehr_get_employee_directory` to find someone by name, then call the per-employee tools. Vacancies use their `Reference` (from `peoplehr_list_vacancies`), appraisals their `AppraisalId`.\n\n**Dates** are `yyyy-MM-dd`. Other formats are either rejected or read day-first, so never send `MM/dd/yyyy` or an ISO date-time.\n\n**Volumes and paging**: only `peoplehr_list_employees` pages (`limit` up to 500, `offset` in rows, `Result.Pagination.TotalRows`). The `peoplehr_list_*` tools for absences, holidays and salaries return the whole company in one answer, keyed by EmployeeId; narrow them with a date window.\n\n**Employee fields** are wrapped: `\"FirstName\": {\"DisplayValue\": \"Jane\", \"FieldHistory\": []}`. `EmployeeStatus` is \"1\" for current staff and \"2\" for leavers.\n\n**Tenant settings decide some answers**: `peoplehr_list_leavers` needs a separate GetAllLeavers grant even on a key with every other Employee action, and the vacancy and applicant tools need the recruitment (ATS) module to be active; otherwise both answer Status 5.\n\n**Query Builder**: `peoplehr_run_query` runs a saved query by its exact name; the API cannot list queries, so ask the user for the name as it appears under Reports > Query Builder.\n\n**Rate limit**: set per company by Access, not per key. A throttled call is Status 5 with a message like \"API calls will be limited to a N per minute\"; wait a minute and retry.",
+  "instructions": "**Getting the API key**: in PeopleHR open **Settings > API** and create a key (a GUID such as 1a2b3c4d-...). When you create it you choose which resources (schemas) and which actions it may call: tick at least Employee, Holiday, Absence, Holiday Entitlements, Salary, Query Builder, Appraisal, Training and ATS for the read tools here, and add the Add Holiday / Add Absence actions only if you want the write tools. Put the key in `PEOPLEHR_API_KEY`. If the key has an IP allow-list, calls from AnythingMCP are refused unless its address is on it.\n\n**How the API works**: every call is a POST to `https://api.peoplehr.net/<Resource>` (`/Employee`, `/Holiday`, `/Absence`, `/Salary`, `/Query` ...) with a JSON body holding `APIKey`, `Action` and the action's fields. The tools fill in the key and the action for you, so every read tool is a POST that only reads.\n\n**Errors come back as HTTP 200** with a `Status` code in the body (0 success, 10 no records found, 5 validation error or `Access Denied.`, 6 server error). The connector reads `Status` and reports every code other than 0 and 10 as a failed call with PeopleHR's `Message`, so a wrong key or a missing grant shows up as an error rather than as data. Status 10 stays a normal answer: nothing matched. `Access Denied.` means the key is not granted that action or schema (an unknown action name gives the same answer); ask the PeopleHR admin to add the grant.\n\n**Ids**: employees are addressed by their PeopleHR EmployeeId (e.g. `PW15`, max 15 characters). Start with `peoplehr_get_employee_directory` to find someone by name, then call the per-employee tools. Vacancies use their `Reference` (from `peoplehr_list_vacancies`), appraisals their `AppraisalId`.\n\n**Dates** are `yyyy-MM-dd`. Other formats are either rejected or read day-first, so never send `MM/dd/yyyy` or an ISO date-time.\n\n**Volumes and paging**: only `peoplehr_list_employees` pages (`limit` up to 500, `offset` in rows, `Result.Pagination.TotalRows`). The `peoplehr_list_*` tools for absences, holidays and salaries return the whole company in one answer, keyed by EmployeeId; narrow them with a date window.\n\n**Employee fields** are wrapped: `\"FirstName\": {\"DisplayValue\": \"Jane\", \"FieldHistory\": []}`. `EmployeeStatus` is \"1\" for current staff and \"2\" for leavers.\n\n**Tenant settings decide some answers**: `peoplehr_list_leavers` needs a separate GetAllLeavers grant even on a key with every other Employee action, and the vacancy and applicant tools need the recruitment (ATS) module to be active; otherwise both answer Status 5.\n\n**Query Builder**: `peoplehr_run_query` runs a saved query by its exact name; the API cannot list queries, so ask the user for the name as it appears under Reports > Query Builder.\n\n**Rate limit**: set per company by Access, not per key. A throttled call is Status 5 with a message like \"API calls will be limited to a N per minute\"; wait a minute and retry.",
   "prerequisites": "An administrator creates the API key in PeopleHR under **Settings > API** and ticks the resources and actions it may use; a key without a grant answers `Access Denied.`",
   "requiredEnvVars": [
     "PEOPLEHR_API_KEY"
@@ -34,6 +34,52 @@
     "headers": {
       "Content-Type": "application/json",
       "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Status",
+          "in": [
+            1,
+            2
+          ],
+          "messagePath": "Message",
+          "status": 401
+        },
+        {
+          "path": "Status",
+          "equals": 5,
+          "messagePath": "Message",
+          "messageMatches": "API Key does not exist|Invalid API Key|Access Denied",
+          "status": 401
+        },
+        {
+          "path": "Status",
+          "equals": 5,
+          "messagePath": "Message",
+          "messageMatches": "limited to",
+          "status": 429
+        },
+        {
+          "path": "Status",
+          "in": [
+            3,
+            4,
+            5,
+            7,
+            8,
+            9
+          ],
+          "messagePath": "Message",
+          "status": 400
+        },
+        {
+          "path": "Status",
+          "equals": 6,
+          "messagePath": "Message",
+          "status": 502
+        }
+      ]
     }
   },
   "probe": {

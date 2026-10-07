@@ -208,6 +208,33 @@ function graphqlVariableErrors(adapter, tool, base) {
   return errors;
 }
 
+/**
+ * Problems with `connector.config.errorWhen`, the rules that turn an error
+ * reported inside a 2xx body into a failed call. Mirrors
+ * describeErrorWhenProblems in packages/backend/src/connectors/engines/response-error.util.ts.
+ */
+export function errorWhenProblems(value) {
+  if (value === undefined) return [];
+  const list = Array.isArray(value) ? value : [value];
+  const known = new Set(['path', 'equals', 'in', 'matches', 'messagePath', 'messageMatches', 'status']);
+  const problems = [];
+  list.forEach((rule, i) => {
+    const at = Array.isArray(value) ? `errorWhen[${i}]` : 'errorWhen';
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) { problems.push(`${at} must be an object`); return; }
+    if (typeof rule.path !== 'string' || !rule.path) problems.push(`${at}.path must be a non-empty string`);
+    if (rule.in !== undefined && !Array.isArray(rule.in)) problems.push(`${at}.in must be an array`);
+    for (const key of ['matches', 'messageMatches']) {
+      if (rule[key] === undefined) continue;
+      try { new RegExp(String(rule[key]), 'i'); } catch { problems.push(`${at}.${key} is not a valid regular expression`); }
+    }
+    if (rule.status !== undefined && !(Number.isInteger(rule.status) && rule.status >= 400 && rule.status <= 599)) {
+      problems.push(`${at}.status must be an HTTP error status (400-599)`);
+    }
+    for (const key of Object.keys(rule)) if (!known.has(key)) problems.push(`${at}.${key} is not a known field`);
+  });
+  return problems;
+}
+
 export function validateAdapter(adapter, file, region) {
   const errors = [];
   const warnings = [];
@@ -294,6 +321,10 @@ export function validateAdapter(adapter, file, region) {
         if (!/^(\d{3}|[a-z_]+)$/.test(key)) errors.push(error('verify-hints-key', `verifyHints.${key}`, `"${key}" is neither an HTTP status nor a failure kind`, 'Key by "401", "404", … or by a kind such as "auth_failed".', 'adapter-fields'));
       }
     }
+  }
+
+  for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {
+    errors.push(error('error-when', 'connector.config.errorWhen', problem, 'Each rule needs a path and may set equals, in, matches, messagePath, messageMatches and an error status (400-599).', 'errors-inside-a-200-response'));
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
