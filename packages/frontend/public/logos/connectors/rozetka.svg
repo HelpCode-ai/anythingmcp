@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Rozetka connector">
+  <rect width="128" height="128" rx="24" fill="#00A046"/>
+  <path d="M40 100V28h29c15 0 25 8 25 21 0 10-5 17-14 20l17 31H81L66 72H54v28Zm14-40h14c7 0 11-4 11-10s-4-10-11-10H54Z" fill="#fff"/>
+</svg>

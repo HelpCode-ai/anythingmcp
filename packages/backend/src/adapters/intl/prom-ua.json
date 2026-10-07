@@ -1,0 +1,412 @@
+{
+  "slug": "prom-ua",
+  "name": "Prom.ua",
+  "description": "Prom.ua seller API for Ukrainian marketplace stores: orders with buyer and delivery details, order status changes, products and product groups, clients and buyer messages. Bearer token from the seller cabinet.",
+  "instructions": "Prom.ua is a Ukrainian marketplace where sellers run their store from the seller cabinet (Кабінет компанії). This adapter uses the Prom.ua public API (`https://my.prom.ua/api/v1`) to read orders, products, product groups, clients and buyer messages, and to change order status.\n\n**Getting credentials**\nIn the Prom.ua seller cabinet open Settings → API token management (Налаштування → Управління API-токенами), create a token, give it access to the sections you want the assistant to use (orders, products, clients, messages) and copy it into `PROM_UA_API_TOKEN`. It is sent as `Authorization: Bearer <token>`. A token only sees the company it was created for; a wrong or revoked token is answered with HTTP 401.\n\n**Workflow**\n1. `prom_ua_list_orders` for recent orders (filter by status or creation/modification dates), then `prom_ua_get_order` for one order with buyer, delivery and items.\n2. `prom_ua_list_order_statuses` shows the status options of this company, including custom ones (`custom-<id>` in order data).\n3. `prom_ua_set_order_status` changes the status of real orders and the buyer can see it. Always show the user the order ids and the new status and wait for an explicit yes before calling it. Cancelling needs a `cancellation_reason`; `another` also needs `cancellation_text`.\n4. Products: `prom_ua_list_products` (optionally per group from `prom_ua_list_groups`), then `prom_ua_get_product` or `prom_ua_get_product_by_external_id` when you know the SKU id from the seller's own system.\n\n**Formats**: all dates are UTC in the form `2026-10-01T12:00:00`. Order status filter values are `pending`, `received`, `delivered`, `canceled`, `draft` and `paid`.\n\n**Pagination and limits**: lists are newest first and take `limit` plus `last_id`. For the next page pass the lowest id you received as `last_id` and drop that record if it is repeated. Stop when a page comes back with fewer records than `limit`. No rate limit is published; keep pages moderate.\n\n**Cloud reachability**: my.prom.ua is public over HTTPS, reachable from AnythingMCP Cloud and from self-hosted installs.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "prom-ua",
+  "docsUrl": "https://public-api.docs.prom.ua/",
+  "requiredEnvVars": [
+    "PROM_UA_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "PROM_UA_API_TOKEN": {
+      "label": "Prom.ua API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller cabinet → Settings → API token management (Налаштування → Управління API-токенами): create a token with access to orders, products, clients and messages.",
+      "link": "https://my.prom.ua/"
+    }
+  },
+  "connector": {
+    "name": "Prom.ua public API v1",
+    "type": "REST",
+    "baseUrl": "https://my.prom.ua/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PROM_UA_API_TOKEN}}"
+    }
+  },
+  "probe": {
+    "tool": "prom_ua_list_orders",
+    "params": {
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "prom_ua_list_orders",
+      "description": "List Prom.ua orders of the company, newest first, with buyer, contact, delivery and payment details and the ordered products. Filter by status and by creation or last-change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order status: pending, received, delivered, canceled, draft or paid."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Orders created after this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Orders created before this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "last_modified_from": {
+            "type": "string",
+            "description": "Orders changed after this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "last_modified_to": {
+            "type": "string",
+            "description": "Orders changed before this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records in the response, e.g. 50.",
+            "default": 50
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Paging cursor: return only orders whose id is not higher than this. Pass the lowest id of the previous page and skip that record if it comes back."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction, desc (newest first) by default."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/list",
+        "queryParams": {
+          "status": "$status",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "last_modified_from": "$last_modified_from",
+          "last_modified_to": "$last_modified_to",
+          "limit": "$limit",
+          "last_id": "$last_id",
+          "sort_dir": "$sort_dir"
+        }
+      }
+    },
+    {
+      "name": "prom_ua_get_order",
+      "description": "Get one Prom.ua order by its numeric id: buyer and contact data, delivery method and address, payment, status and the products with quantities and prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Order id from prom_ua_list_orders."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{id}"
+      }
+    },
+    {
+      "name": "prom_ua_list_order_statuses",
+      "description": "List the order statuses available to this Prom.ua company, including custom statuses and their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_status_options/list"
+      }
+    },
+    {
+      "name": "prom_ua_set_order_status",
+      "description": "Change the status of one or more Prom.ua orders (received, delivered, canceled, paid) or set a custom status. This changes real orders that the buyer can see: show the order ids and the new status to the user and get an explicit confirmation before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Order ids to update, e.g. [123456789]."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "delivered",
+              "canceled",
+              "paid"
+            ],
+            "description": "New status. Leave out when setting custom_status_id."
+          },
+          "cancellation_reason": {
+            "type": "string",
+            "enum": [
+              "not_available",
+              "buyers_request",
+              "duplicate",
+              "invalid_phone_number",
+              "another",
+              "payment_not_received",
+              "no_product_variants"
+            ],
+            "description": "Required when status is canceled."
+          },
+          "cancellation_text": {
+            "type": "string",
+            "description": "Explanation for the buyer; required when cancellation_reason is another."
+          },
+          "custom_status_id": {
+            "type": "integer",
+            "description": "Id of a custom status from prom_ua_list_order_statuses, sent together with ids instead of status."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/set_status",
+        "bodyMapping": {
+          "ids": "$ids",
+          "status": "$status",
+          "cancellation_reason": "$cancellation_reason",
+          "cancellation_text": "$cancellation_text",
+          "custom_status_id": "$custom_status_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "prom_ua_list_products",
+      "description": "List products of the Prom.ua store with name, SKU, price, availability, group and images. Narrow to one product group or to products changed in a time window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "description": "Only products of this group, id from prom_ua_list_groups."
+          },
+          "last_modified_from": {
+            "type": "string",
+            "description": "Products changed after this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "last_modified_to": {
+            "type": "string",
+            "description": "Products changed before this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records in the response, e.g. 50.",
+            "default": 50
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Paging cursor: return only products whose id is not higher than this. Pass the lowest id of the previous page and skip that record if it comes back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/list",
+        "queryParams": {
+          "group_id": "$group_id",
+          "last_modified_from": "$last_modified_from",
+          "last_modified_to": "$last_modified_to",
+          "limit": "$limit",
+          "last_id": "$last_id"
+        }
+      }
+    },
+    {
+      "name": "prom_ua_get_product",
+      "description": "Get one Prom.ua product by its numeric Prom id, with description, prices, stock state, group and images.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Product id from prom_ua_list_products."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}"
+      }
+    },
+    {
+      "name": "prom_ua_get_product_by_external_id",
+      "description": "Get one Prom.ua product by the id it has in the seller's own accounting or ERP system (external_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The product's external_id as set by the seller's system, e.g. SKU-1042."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/by_external_id/{external_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "prom_ua_list_groups",
+      "description": "List the product groups (store categories) of the Prom.ua company with ids, names and parent groups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_modified_from": {
+            "type": "string",
+            "description": "Groups changed after this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "last_modified_to": {
+            "type": "string",
+            "description": "Groups changed before this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records in the response, e.g. 50.",
+            "default": 50
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Paging cursor: return only groups whose id is not higher than this. Pass the lowest id of the previous page and skip that record if it comes back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/list",
+        "queryParams": {
+          "last_modified_from": "$last_modified_from",
+          "last_modified_to": "$last_modified_to",
+          "limit": "$limit",
+          "last_id": "$last_id"
+        }
+      }
+    },
+    {
+      "name": "prom_ua_list_clients",
+      "description": "List the store's Prom.ua clients (buyers) with contact data, or search them by name, phone number or e-mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Name, phone number or e-mail to search for."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records in the response, e.g. 50.",
+            "default": 50
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Paging cursor: return only clients whose id is not higher than this. Pass the lowest id of the previous page and skip that record if it comes back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/list",
+        "queryParams": {
+          "search_term": "$search_term",
+          "limit": "$limit",
+          "last_id": "$last_id"
+        }
+      }
+    },
+    {
+      "name": "prom_ua_get_client",
+      "description": "Get one Prom.ua client by numeric id, with contact details and order statistics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Client id from prom_ua_list_clients or from an order."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/{id}"
+      }
+    },
+    {
+      "name": "prom_ua_list_messages",
+      "description": "List messages that buyers sent to the store through Prom.ua (questions about products and orders), filtered by read status or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unread",
+              "read",
+              "deleted"
+            ],
+            "description": "Message status."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Messages created after this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Messages created before this time. UTC date and time, e.g. 2026-10-01T00:00:00."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records in the response, e.g. 50.",
+            "default": 50
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Paging cursor: return only messages whose id is not higher than this. Pass the lowest id of the previous page and skip that record if it comes back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/list",
+        "queryParams": {
+          "status": "$status",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "last_id": "$last_id"
+        }
+      }
+    }
+  ]
+}

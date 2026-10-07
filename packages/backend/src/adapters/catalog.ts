@@ -203,6 +203,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
+import * as novaPoshta from './intl/nova-poshta.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
@@ -225,6 +226,7 @@ import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
 import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
+import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
@@ -232,6 +234,7 @@ import * as redditAds from './intl/reddit-ads.json';
 import * as redmine from './intl/redmine.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
+import * as rozetka from './intl/rozetka.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
@@ -708,6 +711,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
+  novaPoshta as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
   oddsApi as unknown as AdapterDefinition,
   odoo as unknown as AdapterDefinition,
@@ -730,6 +734,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   postgres as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
   procore as unknown as AdapterDefinition,
+  promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
@@ -737,6 +742,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   redmine as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
+  rozetka as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,

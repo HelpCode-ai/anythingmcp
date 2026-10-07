@@ -1,0 +1,341 @@
+{
+  "slug": "nova-poshta",
+  "name": "Nova Poshta",
+  "description": "Nova Poshta (Нова Пошта), Ukraine's parcel carrier: track up to 100 waybills at once, find cities and branches or parcel lockers, calculate delivery price and date, and list your own shipments. Tracking and lookups work without an API key.",
+  "instructions": "Nova Poshta is Ukraine's largest parcel carrier. This adapter calls its public API 2.0, a single JSON endpoint (`https://api.novaposhta.ua/v2.0/json/`) where every call names a model and a method in the request body.\n\n**Getting credentials**\nTracking, city and branch search, price and delivery-date calculation work without a key. Only `nova_poshta_list_shipments` (your own waybills) needs one. To create it, sign in to the Nova Poshta business account at new.novaposhta.ua, open Settings → Security and click Create key, accept the API terms and copy the key into `NOVA_POSHTA_API_KEY`. A key is valid for one year; an expired key makes every call fail with \"API key expired\", including the ones that work without a key, so renew it or clear the variable.\n\n**Workflow**\n1. `nova_poshta_track_parcels` takes up to 100 waybill (TTN) numbers. Add the sender's or recipient's phone to a number to get the full record (recipient, address, payment); without it Nova Poshta returns only the status and a warning asking for the phone.\n2. Resolve a city name with `nova_poshta_search_settlements`. Its `DeliveryCity` field is the city reference that `nova_poshta_list_warehouses`, `nova_poshta_get_delivery_price` and `nova_poshta_get_delivery_date` expect (`Ref` is the settlement, a different id).\n3. Price and date need a service type: Warehouse = branch, Doors = address, Postomat = parcel locker.\n\n**Formats and gotchas**\n- Dates are DD.MM.YYYY, e.g. 07.10.2026. Weight is in kg, declared value (`cost`) in UAH.\n- Nova Poshta answers HTTP 200 even when a call fails: always read `success`. When it is false, `errors` (and `errorCodes`) say why, e.g. \"Weight is invalid\". `warnings` can carry useful notes on a successful call.\n- A tracking number that does not exist still returns success with `Status` \"Номер не знайдено\" (number not found) and StatusCode 3.\n- Texts come in Ukrainian; many records also carry a Russian `DescriptionRu`.\n\n**Pagination and limits**: list methods take `page` (from 1) and `limit`; `info.totalCount` gives the total where Nova Poshta reports it. No quota is published; keep pages small and avoid bulk loops.\n\n**Cloud reachability**: api.novaposhta.ua is public over HTTPS, so AnythingMCP Cloud and self-hosted installs reach it directly.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "nova-poshta",
+  "docsUrl": "https://developers.novaposhta.ua/documentation",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "NOVA_POSHTA_API_KEY"
+  ],
+  "envVarMeta": {
+    "NOVA_POSHTA_API_KEY": {
+      "label": "Nova Poshta API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Optional. Needed only to list your own shipments. Business account at new.novaposhta.ua → Settings → Security → Create key. Valid for one year.",
+      "link": "https://new.novaposhta.ua/"
+    }
+  },
+  "connector": {
+    "name": "Nova Poshta API 2.0",
+    "type": "REST",
+    "baseUrl": "https://api.novaposhta.ua/v2.0",
+    "authType": "NONE",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "probe": {
+    "tool": "nova_poshta_search_settlements",
+    "params": {
+      "city_name": "Київ",
+      "limit": 1
+    }
+  },
+  "tools": [
+    {
+      "name": "nova_poshta_track_parcels",
+      "description": "Get the current status of one or more Nova Poshta shipments by waybill (TTN) number: status text and code, dates, cities, branch, weight, cost and payment. Pass the phone number of the sender or recipient with a number to get the full record. Up to 100 numbers per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "description": "Shipments to track, at most 100. Each item is {\"DocumentNumber\": \"20450000000000\", \"Phone\": \"380501234567\"}; Phone is optional.",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "DocumentNumber": {
+                  "type": "string",
+                  "description": "Waybill (TTN) number, 14 digits, e.g. 20450000000000."
+                },
+                "Phone": {
+                  "type": "string",
+                  "description": "Phone of the sender or recipient in international digits, e.g. 380501234567. Unlocks the full record."
+                }
+              },
+              "required": [
+                "DocumentNumber"
+              ]
+            }
+          }
+        },
+        "required": [
+          "documents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"TrackingDocument\",\"calledMethod\":\"getStatusDocuments\",\"methodProperties\":{\"Documents\":${documents}}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_search_settlements",
+      "description": "Search Ukrainian cities, towns and villages served by Nova Poshta by name. Each match carries DeliveryCity, the city reference the branch, price and delivery-date tools need, plus region and the number of branches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_name": {
+            "type": "string",
+            "description": "Full or partial place name, in Ukrainian for best results, e.g. Київ, Львів, Одеса."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Matches per page (default 20).",
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        },
+        "required": [
+          "city_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"Address\",\"calledMethod\":\"searchSettlements\",\"methodProperties\":{\"CityName\":\"${city_name}\",\"Limit\":\"${limit}\",\"Page\":\"${page}\"}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_list_warehouses",
+      "description": "List Nova Poshta branches and parcel lockers (postomats) of a city with address, number, schedule, weight limits and reference. Filter by street or number text, branch number or branch type. Use the Ref of a branch when the user needs a pickup point.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_ref": {
+            "type": "string",
+            "description": "City reference (UUID): the DeliveryCity value from nova_poshta_search_settlements, e.g. 8d5a980d-391c-11dd-90d9-001a92567626 for Kyiv."
+          },
+          "city_name": {
+            "type": "string",
+            "description": "City name in Ukrainian, used when city_ref is not known, e.g. Львів."
+          },
+          "find_by_string": {
+            "type": "string",
+            "description": "Text to match in the branch description, e.g. a street name such as Хрещатик."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Branch number within the city, e.g. 5 for branch No. 5."
+          },
+          "type_of_warehouse_ref": {
+            "type": "string",
+            "description": "Branch type reference from nova_poshta_list_warehouse_types, e.g. the parcel locker type."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Branches per page (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"Address\",\"calledMethod\":\"getWarehouses\",\"methodProperties\":{\"CityRef\":\"${city_ref}\",\"CityName\":\"${city_name}\",\"FindByString\":\"${find_by_string}\",\"WarehouseId\":\"${warehouse_id}\",\"TypeOfWarehouseRef\":\"${type_of_warehouse_ref}\",\"Limit\":\"${limit}\",\"Page\":\"${page}\"}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_list_warehouse_types",
+      "description": "List the Nova Poshta branch types (post office, cargo branch, parcel locker and so on) with their references, for filtering nova_poshta_list_warehouses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"Address\",\"calledMethod\":\"getWarehouseTypes\",\"methodProperties\":{}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_get_delivery_price",
+      "description": "Calculate the Nova Poshta delivery price for a shipment between two cities: returns Cost (delivery price in UAH) and AssessedCost (declared value). Needs city references from nova_poshta_search_settlements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_sender": {
+            "type": "string",
+            "description": "Sender city reference. City reference (UUID): the DeliveryCity value from nova_poshta_search_settlements, e.g. 8d5a980d-391c-11dd-90d9-001a92567626 for Kyiv."
+          },
+          "city_recipient": {
+            "type": "string",
+            "description": "Recipient city reference, same format as city_sender."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Actual weight in kg, e.g. 2.5."
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "WarehouseWarehouse",
+              "WarehouseDoors",
+              "DoorsWarehouse",
+              "DoorsDoors",
+              "WarehousePostomat",
+              "DoorsPostomat"
+            ],
+            "description": "Pickup and drop-off: Warehouse = branch, Doors = address, Postomat = parcel locker. Default WarehouseWarehouse.",
+            "default": "WarehouseWarehouse"
+          },
+          "cost": {
+            "type": "number",
+            "description": "Declared value in UAH, e.g. 500."
+          },
+          "cargo_type": {
+            "type": "string",
+            "enum": [
+              "Parcel",
+              "Cargo",
+              "Documents",
+              "TiresWheels",
+              "Pallet"
+            ],
+            "description": "Cargo type (default Parcel).",
+            "default": "Parcel"
+          },
+          "seats_amount": {
+            "type": "integer",
+            "description": "Number of packages (default 1).",
+            "default": 1
+          },
+          "date": {
+            "type": "string",
+            "description": "Shipping date DD.MM.YYYY, e.g. 09.10.2026. Today when omitted."
+          }
+        },
+        "required": [
+          "city_sender",
+          "city_recipient",
+          "weight",
+          "cost"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"InternetDocument\",\"calledMethod\":\"getDocumentPrice\",\"methodProperties\":{\"CitySender\":\"${city_sender}\",\"CityRecipient\":\"${city_recipient}\",\"Weight\":\"${weight}\",\"ServiceType\":\"${service_type}\",\"Cost\":\"${cost}\",\"CargoType\":\"${cargo_type}\",\"SeatsAmount\":\"${seats_amount}\",\"DateTime\":\"${date}\"}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_get_delivery_date",
+      "description": "Estimate when a Nova Poshta shipment sent on a given day will arrive, for a pair of cities and a service type. Returns DeliveryDate with date and time in Kyiv time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_sender": {
+            "type": "string",
+            "description": "Sender city reference. City reference (UUID): the DeliveryCity value from nova_poshta_search_settlements, e.g. 8d5a980d-391c-11dd-90d9-001a92567626 for Kyiv."
+          },
+          "city_recipient": {
+            "type": "string",
+            "description": "Recipient city reference, same format as city_sender."
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "WarehouseWarehouse",
+              "WarehouseDoors",
+              "DoorsWarehouse",
+              "DoorsDoors",
+              "WarehousePostomat",
+              "DoorsPostomat"
+            ],
+            "description": "Pickup and drop-off: Warehouse = branch, Doors = address, Postomat = parcel locker. Default WarehouseWarehouse.",
+            "default": "WarehouseWarehouse"
+          },
+          "date": {
+            "type": "string",
+            "description": "Shipping date DD.MM.YYYY, e.g. 09.10.2026. Today when omitted."
+          }
+        },
+        "required": [
+          "city_sender",
+          "city_recipient"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"InternetDocument\",\"calledMethod\":\"getDocumentDeliveryDate\",\"methodProperties\":{\"CitySender\":\"${city_sender}\",\"CityRecipient\":\"${city_recipient}\",\"ServiceType\":\"${service_type}\",\"DateTime\":\"${date}\"}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "nova_poshta_list_shipments",
+      "description": "List the waybills (express invoices) created by the account that owns NOVA_POSHTA_API_KEY within a date range, with number, recipient, cities, cost and state. Requires the API key; without it Nova Poshta answers \"User is undefined\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First creation date, DD.MM.YYYY, e.g. 01.10.2026."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last creation date, DD.MM.YYYY, e.g. 07.10.2026."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          },
+          "get_full_list": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1 returns every waybill of the range in one response and ignores page; 0 (default) pages the result.",
+            "default": "0"
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/json/",
+        "bodyTemplate": "{\"apiKey\":\"${NOVA_POSHTA_API_KEY}\",\"modelName\":\"InternetDocument\",\"calledMethod\":\"getDocumentList\",\"methodProperties\":{\"DateTimeFrom\":\"${date_from}\",\"DateTimeTo\":\"${date_to}\",\"Page\":\"${page}\",\"GetFullList\":\"${get_full_list}\"}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

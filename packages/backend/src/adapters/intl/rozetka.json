@@ -1,0 +1,315 @@
+{
+  "slug": "rozetka",
+  "name": "Rozetka Marketplace",
+  "description": "Rozetka Marketplace seller API for Ukraine's largest marketplace: search and read orders with items, delivery and buyer, order statuses, and the seller's goods. Signs in with the seller cabinet login. Read-only.",
+  "instructions": "Rozetka is Ukraine's largest online marketplace. This adapter reads a seller's orders, order statuses and goods through the Rozetka Marketplace seller API (`https://api-seller.rozetka.com.ua`).\n\n**Getting credentials**\nThe API signs in with the login and password of the Rozetka seller cabinet (seller.rozetka.com.ua); there is no separate API key.\n1. Put the cabinet login in `ROZETKA_USERNAME`.\n2. Rozetka expects the password Base64-encoded, so `ROZETKA_PASSWORD_BASE64` takes the encoded form, not the plain password. Encode it on your own computer, e.g. in a terminal `printf '%s' 'your-password' | base64`, and paste the result. Do not use an online encoder for a real password.\nAnythingMCP logs in with `POST /sites` and sends the session token as a Bearer token. Rozetka keeps a token alive while it is used and lets it expire after 24 hours without use; the adapter signs in again every four hours. A wrong login or password is reported as `incorrect_username_password`.\n\n**Workflow**\n1. `rozetka_list_order_statuses` maps the numeric `status` of an order to its name (`name_ua`, `name_en`).\n2. `rozetka_list_orders` with `types` (2 in processing, 4 new, 5 being delivered, 3 completed, 6 failed, 1 all) or date filters, then `rozetka_get_order` for one order. Add `expand=purchases,delivery,user` to see the items, the delivery and the buyer.\n3. `rozetka_list_goods` searches the seller's goods by name, article or id; `rozetka_get_goods` returns one item by `item_id` or `rz_item_id`.\n\n**Formats and gotchas**\n- Rozetka answers HTTP 200 even when a call fails: read `success`. When it is false, `errors.message` and `errors.code` say why, e.g. `incorrect_access_token` (1020).\n- Prices of goods are in UAH. Dates in filters are YYYY-MM-DD.\n- Texts come in the cabinet's language (Ukrainian or Russian).\n\n**Pagination and limits**: results sit under `content` with `_meta` (`totalCount`, `pageCount`, `currentPage`, `perPage`). Call again with `page` + 1 until `currentPage` equals `pageCount`. Orders come 20 per page; goods accept `pageSize`. No rate limit is published; avoid tight loops.\n\n**Cloud reachability**: api-seller.rozetka.com.ua is public over HTTPS, reachable from AnythingMCP Cloud and from self-hosted installs. This adapter is read-only.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "rozetka",
+  "docsUrl": "https://api-seller.rozetka.com.ua/apidoc/",
+  "requiredEnvVars": [
+    "ROZETKA_USERNAME",
+    "ROZETKA_PASSWORD_BASE64"
+  ],
+  "envVarMeta": {
+    "ROZETKA_USERNAME": {
+      "label": "Seller cabinet login",
+      "kind": "credential",
+      "help": "The login you use for the Rozetka seller cabinet at seller.rozetka.com.ua.",
+      "link": "https://seller.rozetka.com.ua/"
+    },
+    "ROZETKA_PASSWORD_BASE64": {
+      "label": "Password (Base64-encoded)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Rozetka expects the cabinet password Base64-encoded. Encode it locally, e.g. printf '%s' 'your-password' | base64, and paste the result.",
+      "example": "bXktcGFzc3dvcmQ=",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+      "patternMessage": "Paste the Base64-encoded password (letters, digits, + and /, optionally ending in =), not the plain password."
+    }
+  },
+  "connector": {
+    "name": "Rozetka Marketplace seller API",
+    "type": "REST",
+    "baseUrl": "https://api-seller.rozetka.com.ua",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api-seller.rozetka.com.ua/sites",
+      "loginMethod": "POST",
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{ROZETKA_USERNAME}}",
+      "password": "{{ROZETKA_PASSWORD_BASE64}}",
+      "tokenJsonPath": "content.access_token",
+      "tokenTTLSeconds": 14400,
+      "proactiveRefreshSeconds": 600,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    }
+  },
+  "probe": {
+    "tool": "rozetka_list_order_statuses"
+  },
+  "tools": [
+    {
+      "name": "rozetka_list_orders",
+      "description": "Search the seller's Rozetka orders, 20 per page, by status group, status, creation or change date, order id, buyer phone or waybill (TTN). Use expand to include purchased items, delivery and buyer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "description": "Status group: 1 all, 2 in processing, 3 completed, 4 new, 5 being delivered, 6 failed."
+          },
+          "status": {
+            "type": "integer",
+            "description": "Exact status id from rozetka_list_order_statuses."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "changed_from": {
+            "type": "string",
+            "description": "Changed on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "changed_to": {
+            "type": "string",
+            "description": "Changed on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "user_phone": {
+            "type": "string",
+            "description": "Buyer phone, e.g. 380501234567."
+          },
+          "ttn": {
+            "type": "string",
+            "description": "Waybill number, at least 4 characters; 1 = orders with a waybill, 0 = orders without."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort column, prefix - for descending: id, created, changed, amount, status. E.g. -created."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated, e.g. purchases,delivery,user,status_data."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/search",
+        "queryParams": {
+          "types": "$types",
+          "status": "$status",
+          "id": "$id",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "changed_from": "$changed_from",
+          "changed_to": "$changed_to",
+          "user_phone": "$user_phone",
+          "ttn": "$ttn",
+          "sort": "$sort",
+          "expand": "$expand",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_order",
+      "description": "Get one Rozetka order by id with amounts, status and comments. Use expand for items (purchases), delivery, buyer (user), status history (order_status_history) or payment details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Order id from rozetka_list_orders."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated, e.g. purchases,delivery,user,order_status_history."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_order_statuses",
+      "description": "List Rozetka order statuses with id, Ukrainian, Russian and English name and status group, to read the numeric status of an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Only this status id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Status name to search for."
+          },
+          "status_group": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "Status group id (1, 2 or 3), the same value as status_group on an order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-statuses/search",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "status_group": "$status_group"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_goods",
+      "description": "Search the seller's goods on Rozetka (all tabs) by name, text, article, price-list id or Rozetka id, availability or category. Returns ids, names, prices, stock state and Rozetka links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "find_by_text": {
+            "type": "string",
+            "description": "Goods name or id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Goods name, partial match."
+          },
+          "article": {
+            "type": "string",
+            "description": "Article (SKU) of the goods."
+          },
+          "price_offer_id": {
+            "type": "string",
+            "description": "Id of the goods in the seller's price list."
+          },
+          "rz_item_id": {
+            "type": "integer",
+            "description": "Id of the goods on Rozetka."
+          },
+          "available": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 out of stock, 1 in stock, 2 removed from the price list."
+          },
+          "item_active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 active goods, 0 inactive."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Rozetka category id."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: price_offer_id, rz_item_id, price, price_old or price_promo, prefix - for descending."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields: description_ua, description."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Goods per page (default 20).",
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/goods/all",
+        "queryParams": {
+          "find_by_text": "$find_by_text",
+          "name": "$name",
+          "article": "$article",
+          "price_offer_id": "$price_offer_id",
+          "rz_item_id": "$rz_item_id",
+          "available": "$available",
+          "item_active": "$item_active",
+          "category_id": "$category_id",
+          "sort": "$sort",
+          "expand": "$expand",
+          "pageSize": "$pageSize",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_goods",
+      "description": "Get the details of one of the seller's goods on Rozetka (prices, category, description, stock state) by the internal item_id or by rz_item_id. Pass one of the two.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Internal id of the goods (item_id in rozetka_list_goods)."
+          },
+          "rz_item_id": {
+            "type": "integer",
+            "description": "Id of the goods on Rozetka."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/goods/details",
+        "queryParams": {
+          "item_id": "$item_id",
+          "rz_item_id": "$rz_item_id"
+        }
+      }
+    }
+  ]
+}
