@@ -1,0 +1,1242 @@
+{
+  "slug": "microsoft-outlook",
+  "name": "Outlook (Microsoft 365 Mail and Calendar)",
+  "description": "Let your AI work in Outlook: search and read email, file messages in folders, draft, send and reply, check the calendar, create and move meetings, and find free time with colleagues. Microsoft 365 and Outlook.com through Microsoft Graph, signed in with your Microsoft account.",
+  "instructions": "## Outlook (Microsoft 365 mail and calendar)\nThis connector reads and writes the signed-in user's Outlook mailbox and calendar through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`). It works with work or school accounts (Microsoft 365, Exchange Online) and, depending on the app registration, with personal Outlook.com accounts. Everything runs as the user who authorized the connector: the AI sees and sends exactly what that user can.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Outlook\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and Outlook.com accounts) or `consumers` (Outlook.com only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`.\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the mailbox the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator (for example a Global Administrator or Cloud Application Administrator) opens the app registration → **API permissions → Grant admin consent for <organisation>** once; afterwards every user can authorize. A connector authorized by an admin still reads only the admin's own mailbox: each connector works for the account that signed in.\n\n**Scopes**: `offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. For a read-only setup, replace the scopes with `offline_access User.Read Mail.Read Calendars.Read` in the connector's OAuth settings, authorize again and disable the sending and writing tools.\n\n**Mail**: folders are addressed by id or by a well-known name (`inbox`, `drafts`, `sentitems`, `deleteditems`, `archive`, `junkemail`). `outlook_list_messages` and `outlook_search_messages` return summaries (subject, sender, dates, bodyPreview); `outlook_get_message` returns one message with its body as plain text. Moving a message gives it a new id. `outlook_send_mail` and the reply tools send immediately; `outlook_create_draft` + `outlook_send_draft` leave room to review. Recipients are written as `[{\"emailAddress\": {\"address\": \"ana@example.com\", \"name\": \"Ana\"}}]`.\n\n**Search and filter**: `search` takes a quoted keyword query, e.g. `\"invoice\"` or `\"from:ana@example.com subject:offer\"`, returns at most 1000 results and cannot be combined with `filter` or `orderby`. `filter` takes OData, e.g. `isRead eq false and receivedDateTime ge 2026-10-01T00:00:00Z`; a property used in `orderby` must also appear in `filter`, first, or Outlook answers `InefficientFilter`.\n\n**Calendar**: `outlook_list_events` and `outlook_list_calendar_events` read a time range (`start_date_time`, `end_date_time`, ISO 8601 with offset) and expand recurring meetings into occurrences. Times come back in UTC unless `timezone` is given (`Europe/Berlin` or `W. Europe Standard Time`). Creating or updating an event with attendees sends them invitations or updates. `outlook_get_free_busy` checks availability of colleagues and rooms in the same organisation; it is not available for personal accounts.\n\n**Pagination**: list responses carry `@odata.nextLink` while more results exist. Call the same tool again with the same arguments and `skip` set to the `$skip` value in that link. `top` sets the page size (Outlook's default is 10).\n\n**Rate limits**: Microsoft Graph throttles per mailbox (Outlook allows about 10,000 requests per 10 minutes per app and mailbox, and 4 concurrent requests). A throttled call answers 429 with Retry-After.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `ErrorAccessDenied` / `Authorization_RequestDenied`: a permission from step 4 is missing or was not consented. Add it, grant consent and authorize again.\n- 404 `ErrorItemNotFound`: the id belongs to another mailbox, or the message was moved (its id changed).\n- `MailboxNotEnabledForRESTAPI`: the account has no Exchange Online mailbox (for example an on-premises mailbox or an unlicensed user).\n\n**Out of scope here**: deleting mail or events, attachments, contacts, mailbox rules, other users' and shared mailboxes.",
+  "region": "intl",
+  "category": "email",
+  "icon": "microsoft-outlook",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/mail-api-overview",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for Outlook.com only).",
+      "example": "common",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Mail.ReadWrite, Mail.Send, Calendars.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "rate_limited": "Microsoft Graph is throttling this mailbox. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "outlook_get_me"
+  },
+  "unlisted": true,
+  "connector": {
+    "name": "Outlook (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "outlook_get_me",
+      "description": "Return the signed-in Microsoft 365 or Outlook.com user: id, display name, email address (mail) and user principal name. Use it to confirm which mailbox the connector reads and sends from.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": {
+          "$select": "id,displayName,mail,userPrincipalName,givenName,surname,jobTitle,preferredLanguage"
+        }
+      }
+    },
+    {
+      "name": "outlook_list_mail_folders",
+      "description": "List the top-level mail folders of the mailbox (Inbox, Sent Items, Drafts, Archive and the user's own folders) with id, displayName, parentFolderId, childFolderCount, unreadItemCount and totalItemCount. Folder ids are needed to list messages of a user folder or to move a message there.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Folders per page (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          },
+          "include_hidden": {
+            "type": "boolean",
+            "description": "true to include hidden folders as well."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/mailFolders",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "includeHiddenFolders": "$include_hidden"
+        }
+      }
+    },
+    {
+      "name": "outlook_list_child_folders",
+      "description": "List the subfolders of one mail folder, with the same fields as outlook_list_mail_folders. Use it for folders whose childFolderCount is above 0, e.g. project folders under the Inbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Parent folder id from outlook_list_mail_folders, or a well-known name such as inbox."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Folders per page (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/mailFolders/{folder_id}/childFolders",
+        "encodePathParams": true,
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "outlook_list_messages",
+      "description": "List the messages of one mail folder, newest first unless orderby says otherwise. Each message comes with id, subject, from, recipients, received and sent time, read and draft state, attachments flag, importance, flag, a short bodyPreview, conversationId and webLink; the full body is returned by outlook_get_message. Supports an OData filter (e.g. isRead eq false) or a keyword search inside the folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id from outlook_list_mail_folders, or a well-known name: inbox, drafts, sentitems, deleteditems, archive, junkemail."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. \"isRead eq false\", \"receivedDateTime ge 2026-10-01T00:00:00Z\", \"from/emailAddress/address eq 'ana@example.com'\", \"hasAttachments eq true\". Properties used in orderby must also appear in the filter, first and in the same order."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search; the double quotes are part of the value, e.g. \"invoice\" or \"from:ana@example.com subject:offer\" (quotes included). Cannot be combined with filter or orderby; returns at most 1000 results sorted by sent date."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. \"receivedDateTime desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Messages per page, 1 to 1000 (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/mailFolders/{folder_id}/messages",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,isDraft,hasAttachments,importance,flag,bodyPreview,parentFolderId,conversationId,webLink",
+          "$filter": "$filter",
+          "$search": "$search",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "outlook_search_messages",
+      "description": "Search or filter messages across the whole mailbox, all folders included (Deleted Items too). Returns the same summary fields as outlook_list_messages. Use search for keywords and KQL properties (from:, to:, subject:, body:, attachment:, received:, hasAttachments:true), or filter for exact OData conditions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Keyword search; the double quotes are part of the value, e.g. \"quarterly report\" or \"from:ana@example.com\" (quotes included). Without a property it matches from, subject and body. Cannot be combined with filter or orderby; at most 1000 results, newest first."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. \"receivedDateTime ge 2026-10-01T00:00:00Z and isRead eq false\"."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. \"receivedDateTime desc\" (only together with filter, or alone)."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Messages per page, 1 to 1000 (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/messages",
+        "queryParams": {
+          "$select": "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,isDraft,hasAttachments,importance,flag,bodyPreview,parentFolderId,conversationId,webLink",
+          "$search": "$search",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "outlook_get_message",
+      "description": "Get one message in full: subject, sender, all recipients, dates, flags, conversationId, internetMessageId, attachments flag and the body as plain text (HTML is converted by Outlook). Use the id from outlook_list_messages or outlook_search_messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/messages/{message_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "outlook.body-content-type=\"text\""
+        }
+      }
+    },
+    {
+      "name": "outlook_create_draft",
+      "description": "Create a draft message in the Drafts folder without sending it. Returns the draft with its id; send it later with outlook_send_draft, or leave it for the user to review in Outlook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "body": {
+            "type": "object",
+            "description": "Body: {\"contentType\": \"Text\" or \"HTML\", \"content\": \"...\"}.",
+            "properties": {
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "Text",
+                  "HTML"
+                ],
+                "description": "Text for plain text, HTML for formatted content."
+              },
+              "content": {
+                "type": "string",
+                "description": "The body itself."
+              }
+            },
+            "required": [
+              "contentType",
+              "content"
+            ]
+          },
+          "to_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "To recipients, each {\"emailAddress\": {\"address\": \"ana@example.com\", \"name\": \"Ana\"}}."
+          },
+          "cc_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "Cc recipients, same shape as to_recipients."
+          },
+          "bcc_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "Bcc recipients, same shape as to_recipients."
+          },
+          "importance": {
+            "type": "string",
+            "enum": [
+              "low",
+              "normal",
+              "high"
+            ],
+            "description": "Importance (default normal)."
+          }
+        },
+        "required": [
+          "subject",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/messages",
+        "bodyMapping": {
+          "subject": "$subject",
+          "body": "$body",
+          "toRecipients": "$to_recipients",
+          "ccRecipients": "$cc_recipients",
+          "bccRecipients": "$bcc_recipients",
+          "importance": "$importance"
+        }
+      }
+    },
+    {
+      "name": "outlook_send_draft",
+      "description": "Send an existing draft (from outlook_create_draft or one written in Outlook). The message moves to Sent Items; the draft id is no longer valid afterwards. Outlook answers 202 with an empty body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the draft to send."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/messages/{message_id}/send",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "outlook_send_mail",
+      "description": "Compose and send a new email in one step, from the signed-in mailbox. A copy is kept in Sent Items unless save_to_sent_items is false. Outlook answers 202 with an empty body; to review a message before it goes out, use outlook_create_draft instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "body": {
+            "type": "object",
+            "description": "Body: {\"contentType\": \"Text\" or \"HTML\", \"content\": \"...\"}.",
+            "properties": {
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "Text",
+                  "HTML"
+                ],
+                "description": "Text for plain text, HTML for formatted content."
+              },
+              "content": {
+                "type": "string",
+                "description": "The body itself."
+              }
+            },
+            "required": [
+              "contentType",
+              "content"
+            ]
+          },
+          "to_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "To recipients, each {\"emailAddress\": {\"address\": \"ana@example.com\", \"name\": \"Ana\"}}."
+          },
+          "cc_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "Cc recipients, same shape as to_recipients."
+          },
+          "bcc_recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            },
+            "description": "Bcc recipients, same shape as to_recipients."
+          },
+          "importance": {
+            "type": "string",
+            "enum": [
+              "low",
+              "normal",
+              "high"
+            ],
+            "description": "Importance (default normal)."
+          },
+          "save_to_sent_items": {
+            "type": "boolean",
+            "description": "false to send without keeping a copy in Sent Items (default true)."
+          }
+        },
+        "required": [
+          "subject",
+          "body",
+          "to_recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/sendMail",
+        "bodyMapping": {
+          "message": {
+            "subject": "$subject",
+            "body": "$body",
+            "toRecipients": "$to_recipients",
+            "ccRecipients": "$cc_recipients",
+            "bccRecipients": "$bcc_recipients",
+            "importance": "$importance"
+          },
+          "saveToSentItems": "$save_to_sent_items"
+        }
+      }
+    },
+    {
+      "name": "outlook_reply_to_message",
+      "description": "Reply to the sender of a message (or to its Reply-To addresses) and send the reply at once, quoting the original below the comment. The reply is saved in Sent Items; Outlook answers 202 with an empty body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message being answered."
+          },
+          "comment": {
+            "type": "string",
+            "description": "The reply text, placed above the quoted original."
+          }
+        },
+        "required": [
+          "message_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/messages/{message_id}/reply",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "outlook_reply_all_to_message",
+      "description": "Reply to the sender and every other recipient of a message and send the reply at once, quoting the original below the comment. The reply is saved in Sent Items; Outlook answers 202 with an empty body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message being answered."
+          },
+          "comment": {
+            "type": "string",
+            "description": "The reply text, placed above the quoted original."
+          }
+        },
+        "required": [
+          "message_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/messages/{message_id}/replyAll",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "outlook_move_message",
+      "description": "Move a message to another mail folder (for example to archive it or file it in a project folder). Returns the moved message, which has a new id in its new folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to move."
+          },
+          "destination_id": {
+            "type": "string",
+            "description": "Target folder id from outlook_list_mail_folders, or a well-known name: inbox, archive, deleteditems, junkemail, drafts."
+          }
+        },
+        "required": [
+          "message_id",
+          "destination_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/messages/{message_id}/move",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "destinationId": "$destination_id"
+        }
+      }
+    },
+    {
+      "name": "outlook_list_calendars",
+      "description": "List the user's calendars with id, name, color, owner, whether it is the default calendar and whether the user can edit it. Calendar ids are needed by outlook_list_calendar_events.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/calendars"
+      }
+    },
+    {
+      "name": "outlook_list_events",
+      "description": "List the events of the default calendar that fall within a time range, with recurring meetings expanded into their single occurrences. Each event comes with id, subject, start, end, all-day flag, location, organizer, attendees and their responses, show-as status, online meeting link, bodyPreview and webLink, sorted by start time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date_time": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601 with offset, e.g. 2026-10-08T00:00:00+02:00 (without an offset it is read as UTC)."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End of the range, ISO 8601 with offset, e.g. 2026-10-15T00:00:00+02:00."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the start and end times in the response, e.g. 'Europe/Berlin' or 'W. Europe Standard Time'. Without it, Outlook returns UTC."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Events per page (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "start_date_time",
+          "end_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/calendarView",
+        "headers": {
+          "Prefer": "outlook.timezone=\"${timezone}\""
+        },
+        "queryParams": {
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time",
+          "$select": "id,subject,start,end,isAllDay,location,organizer,attendees,showAs,isCancelled,isOnlineMeeting,onlineMeeting,responseStatus,type,seriesMasterId,bodyPreview,webLink",
+          "$orderby": "start/dateTime",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "outlook_list_calendar_events",
+      "description": "List the events of one specific calendar (a shared, secondary or team calendar) within a time range, with recurring meetings expanded. Same fields and ordering as outlook_list_events, which covers the default calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id from outlook_list_calendars."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601 with offset, e.g. 2026-10-08T00:00:00+02:00."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End of the range, ISO 8601 with offset, e.g. 2026-10-15T00:00:00+02:00."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the start and end times in the response, e.g. 'Europe/Berlin' or 'W. Europe Standard Time'. Without it, Outlook returns UTC."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Events per page (Outlook's default is 10)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip. To fetch the next page, pass the $skip value of the @odata.nextLink in the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "calendar_id",
+          "start_date_time",
+          "end_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/calendars/{calendar_id}/calendarView",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "outlook.timezone=\"${timezone}\""
+        },
+        "queryParams": {
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time",
+          "$select": "id,subject,start,end,isAllDay,location,organizer,attendees,showAs,isCancelled,isOnlineMeeting,onlineMeeting,responseStatus,type,seriesMasterId,bodyPreview,webLink",
+          "$orderby": "start/dateTime",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "outlook_get_event",
+      "description": "Get one calendar event in full: subject, body (HTML), start and end, location, organizer, attendees with their responses, recurrence, online meeting details and the user's own response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id from outlook_list_events or outlook_list_calendar_events."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the start and end times in the response, e.g. 'Europe/Berlin' or 'W. Europe Standard Time'. Without it, Outlook returns UTC."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/events/{event_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "outlook.timezone=\"${timezone}\""
+        }
+      }
+    },
+    {
+      "name": "outlook_create_event",
+      "description": "Create an event in the user's default calendar. With attendees, Outlook sends them a meeting invitation; with is_online_meeting true on a work or school account, a Teams link is added. Returns the event with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Title of the event."
+          },
+          "start": {
+            "type": "object",
+            "description": "Start: {\"dateTime\": \"2026-10-08T14:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "end": {
+            "type": "object",
+            "description": "End: {\"dateTime\": \"2026-10-08T15:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "body": {
+            "type": "object",
+            "description": "Description: {\"contentType\": \"Text\" or \"HTML\", \"content\": \"...\"}.",
+            "properties": {
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "Text",
+                  "HTML"
+                ],
+                "description": "Text for plain text, HTML for formatted content."
+              },
+              "content": {
+                "type": "string",
+                "description": "The body itself."
+              }
+            },
+            "required": [
+              "contentType",
+              "content"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the event takes place: {\"displayName\": \"Room 4.12\"}.",
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "description": "Location name as shown in the calendar."
+              }
+            },
+            "required": [
+              "displayName"
+            ]
+          },
+          "attendees": {
+            "type": "array",
+            "description": "Attendees, each {\"emailAddress\": {\"address\": \"ana@example.com\", \"name\": \"Ana\"}, \"type\": \"required\"}. type is required, optional or resource. Outlook sends each attendee an invitation.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "required",
+                    "optional",
+                    "resource"
+                  ],
+                  "description": "Attendee type."
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            }
+          },
+          "is_all_day": {
+            "type": "boolean",
+            "description": "true for an all-day event; start and end must then be midnight, in the same time zone."
+          },
+          "is_online_meeting": {
+            "type": "boolean",
+            "description": "true to attach an online meeting (Teams) link."
+          },
+          "show_as": {
+            "type": "string",
+            "enum": [
+              "free",
+              "tentative",
+              "busy",
+              "oof",
+              "workingElsewhere"
+            ],
+            "description": "How the time shows in free/busy (default busy)."
+          },
+          "reminder_minutes_before_start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Reminder, in minutes before the start."
+          }
+        },
+        "required": [
+          "subject",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/events",
+        "bodyMapping": {
+          "subject": "$subject",
+          "start": "$start",
+          "end": "$end",
+          "body": "$body",
+          "location": "$location",
+          "attendees": "$attendees",
+          "isAllDay": "$is_all_day",
+          "isOnlineMeeting": "$is_online_meeting",
+          "showAs": "$show_as",
+          "reminderMinutesBeforeStart": "$reminder_minutes_before_start"
+        }
+      }
+    },
+    {
+      "name": "outlook_update_event",
+      "description": "Change an existing event: only the fields given are changed, the others stay as they are. When the user organises the meeting, attendees receive an update; attendees passed here replace the whole attendee list. Returns the updated event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Id of the event to change."
+          },
+          "subject": {
+            "type": "string",
+            "description": "New title."
+          },
+          "start": {
+            "type": "object",
+            "description": "New start: {\"dateTime\": \"2026-10-08T14:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "end": {
+            "type": "object",
+            "description": "New end: {\"dateTime\": \"2026-10-08T15:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "body": {
+            "type": "object",
+            "description": "New description: {\"contentType\": \"Text\" or \"HTML\", \"content\": \"...\"}.",
+            "properties": {
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "Text",
+                  "HTML"
+                ],
+                "description": "Text for plain text, HTML for formatted content."
+              },
+              "content": {
+                "type": "string",
+                "description": "The body itself."
+              }
+            },
+            "required": [
+              "contentType",
+              "content"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the event takes place: {\"displayName\": \"Room 4.12\"}.",
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "description": "Location name as shown in the calendar."
+              }
+            },
+            "required": [
+              "displayName"
+            ]
+          },
+          "attendees": {
+            "type": "array",
+            "description": "Attendees, each {\"emailAddress\": {\"address\": \"ana@example.com\", \"name\": \"Ana\"}, \"type\": \"required\"}. type is required, optional or resource. Outlook sends each attendee an invitation.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emailAddress": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "description": "Email address."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name (optional)."
+                    }
+                  },
+                  "required": [
+                    "address"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "required",
+                    "optional",
+                    "resource"
+                  ],
+                  "description": "Attendee type."
+                }
+              },
+              "required": [
+                "emailAddress"
+              ]
+            }
+          },
+          "is_all_day": {
+            "type": "boolean",
+            "description": "true for an all-day event."
+          },
+          "is_online_meeting": {
+            "type": "boolean",
+            "description": "true to attach an online meeting (Teams) link."
+          },
+          "show_as": {
+            "type": "string",
+            "enum": [
+              "free",
+              "tentative",
+              "busy",
+              "oof",
+              "workingElsewhere"
+            ],
+            "description": "How the time shows in free/busy."
+          },
+          "reminder_minutes_before_start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Reminder, in minutes before the start."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/events/{event_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "subject": "$subject",
+          "start": "$start",
+          "end": "$end",
+          "body": "$body",
+          "location": "$location",
+          "attendees": "$attendees",
+          "isAllDay": "$is_all_day",
+          "isOnlineMeeting": "$is_online_meeting",
+          "showAs": "$show_as",
+          "reminderMinutesBeforeStart": "$reminder_minutes_before_start"
+        }
+      }
+    },
+    {
+      "name": "outlook_get_free_busy",
+      "description": "Get free/busy availability of up to several people, rooms or distribution lists in the same organisation for a time window, to find a slot for a meeting. Returns per address an availabilityView string (one digit per interval: 0 free, 1 tentative, 2 busy, 3 out of office, 4 working elsewhere), the busy items and the working hours. Work or school accounts only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses of the people, rooms or lists to check; include the user's own address to compare with their calendar."
+          },
+          "start_time": {
+            "type": "object",
+            "description": "Start of the window: {\"dateTime\": \"2026-10-08T08:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "end_time": {
+            "type": "object",
+            "description": "End of the window: {\"dateTime\": \"2026-10-08T18:00:00\", \"timeZone\": \"Europe/Berlin\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time without offset, e.g. 2026-10-08T14:30:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime: a Windows name ('W. Europe Standard Time'), an IANA name ('Europe/Berlin') or 'UTC'."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "description": "Length of each availabilityView slot in minutes, 5 to 1440 (default 30)."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the start and end times in the response, e.g. 'Europe/Berlin' or 'W. Europe Standard Time'. Without it, Outlook returns UTC."
+          }
+        },
+        "required": [
+          "schedules",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/calendar/getSchedule",
+        "headers": {
+          "Prefer": "outlook.timezone=\"${timezone}\""
+        },
+        "bodyMapping": {
+          "schedules": "$schedules",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "availabilityViewInterval": "$interval_minutes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
