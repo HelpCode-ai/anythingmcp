@@ -985,13 +985,6 @@
               "type": "integer"
             },
             "description": "Property IDs whose values change the SKU."
-          },
-          "readiness_state_on_property": {
-            "type": "array",
-            "items": {
-              "type": "integer"
-            },
-            "description": "Property IDs whose values change the processing profile (readiness state)."
           }
         },
         "required": [
@@ -1007,8 +1000,7 @@
           "products": "$products",
           "price_on_property": "$price_on_property",
           "quantity_on_property": "$quantity_on_property",
-          "sku_on_property": "$sku_on_property",
-          "readiness_state_on_property": "$readiness_state_on_property"
+          "sku_on_property": "$sku_on_property"
         }
       }
     },
