@@ -1,0 +1,259 @@
+{
+  "slug": "wassenger",
+  "name": "Wassenger",
+  "description": "Wassenger WhatsApp API: list connected numbers and their session health, send WhatsApp text messages, track delivery, and read chats, chat history and contacts of a number.",
+  "instructions": "Wassenger connects WhatsApp numbers to an API. A number linked by QR code (connector `web`) runs a WhatsApp Web session, an unofficial channel that WhatsApp may restrict for bulk or unsolicited sending. Numbers on the `cloud` connector use Meta's official Business API.\n\n**Getting credentials**: in the Wassenger Web Console open Developers, then API Keys, and copy or create a key into `WASSENGER_API_TOKEN`. Chat agents and supervisors cannot use the API, so use an owner or admin key. Link your WhatsApp number in the console first (scan the QR code); a number that is not online cannot send.\n\n**Workflow**: call `wassenger_list_numbers` first. It returns each number's `id` (24 hex characters), used as `device_id` by the chat, contact and health tools, and as `device` when sending from a specific number. `wassenger_get_number_health` explains why a number is not sending (`authorize` means scan the QR code again).\n\n**Sending**: `wassenger_send_message` sends a real WhatsApp message. Confirm the recipient and the exact text with the user before calling it, and do not retry after it returns an `id`. Messages are queued; check them later with `wassenger_get_message` or `wassenger_search_sent_messages`, and `wassenger_get_message_ack_info` for read receipts.\n\n**Formats**: phone numbers are E.164 with the plus sign, e.g. `+447911123456`. Chat and contact IDs are WhatsApp IDs such as `447911123456@c.us` (person) or `120363012345678901@g.us` (group).\n\n**Plans and limits**: Gateway plans are send-only; reading chat history needs a Platform plan, and those tools answer 403 \"Platform plan upgrade required\" otherwise. Delivery speed per minute and the queue size depend on the plan. `wassenger_check_number` uses the monthly number-check quota (2,000 to 50,000 by plan); keep it under 30 checks per minute. The API returns `x-ratelimit-limit`, `x-ratelimit-remaining` and `x-ratelimit-reset` headers, exposed on the list tools; on 429 wait until the reset time.\n\n**Pagination**: list tools take `page`, starting at 0, and `size`. Ask for the next page until fewer than `size` items come back.\n\n**Cloud reachability**: `api.wassenger.com` is a public HTTPS API, reachable from AnythingMCP Cloud.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "wassenger",
+  "docsUrl": "https://app.wassenger.com/docs",
+  "requiredEnvVars": ["WASSENGER_API_TOKEN"],
+  "envVarMeta": {
+    "WASSENGER_API_TOKEN": {
+      "label": "Wassenger API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Wassenger Web Console, Developers, API Keys: copy or create a key (owner or admin user).",
+      "pattern": "^[A-Za-z0-9]+$",
+      "patternMessage": "Paste only the API key (letters and digits), without a header name or URL.",
+      "link": "https://console.wassenger.com/apikeys"
+    }
+  },
+  "connector": {
+    "name": "Wassenger API",
+    "type": "REST",
+    "baseUrl": "https://api.wassenger.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Token",
+      "apiKey": "{{WASSENGER_API_TOKEN}}"
+    }
+  },
+  "probe": { "tool": "wassenger_list_numbers" },
+  "tools": [
+    {
+      "name": "wassenger_list_numbers",
+      "description": "List the WhatsApp numbers (devices) in the Wassenger account with ID, phone, alias, connector, session status, plan and queue. Call this first: the id is the device_id the other tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Match by phone number, alias or ID, e.g. +447911123456." },
+          "sessionStatus": { "type": "string", "enum": ["any", "online", "offline", "timeout", "timeout_sync", "conflict", "blocked", "error", "authorize"], "description": "Only numbers whose WhatsApp session is in this state." },
+          "page": { "type": "integer", "description": "Page number, starting at 0." },
+          "size": { "type": "integer", "description": "Numbers per page, up to 100 (default 20)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices",
+        "queryParams": { "search": "$search", "sessionStatus": "$sessionStatus", "page": "$page", "size": "$size" },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      },
+      "responseMapping": {
+        "transform": {
+          "include": [
+            "$[*].id",
+            "$[*].phone",
+            "$[*].wid",
+            "$[*].alias",
+            "$[*].connector",
+            "$[*].status",
+            "$[*].session.status",
+            "$[*].session.lastSyncAt",
+            "$[*].billing.subscription.plan",
+            "$[*].billing.subscription.status",
+            "$[*].billing.subscription.isTrial",
+            "$[*].billing.subscription.trialEndsAt",
+            "$[*].queue",
+            "$[*].waba.qualityRating",
+            "$[*].waba.messagingLimit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "wassenger_get_number_health",
+      "description": "Get the session health of one number: status (online, authorize, timeout, conflict...), subscription state, whether it is operative now, last sync and queue capacity. Use it when messages are not going out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID from wassenger_list_numbers, 24 hex characters." }
+        },
+        "required": ["device_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/devices/{device_id}/health" }
+    },
+    {
+      "name": "wassenger_check_number",
+      "description": "Check in real time whether a phone number exists on WhatsApp and can receive messages. Read-only, but it uses the plan's monthly number-check quota and needs the number session online; keep under 30 checks per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Number in E.164 format with +, e.g. +447911123456." }
+        },
+        "required": ["phone"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/numbers/exists", "bodyMapping": { "phone": "$phone" } },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "wassenger_send_message",
+      "description": "Send a WhatsApp text message to a phone number or a group through a connected number. This sends a real message: confirm the recipient and the exact text with the user before calling, and do not retry after an id is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Recipient in E.164 format with +, e.g. +447911123456. Use group instead for a group chat." },
+          "group": { "type": "string", "description": "Group chat WhatsApp ID, e.g. 120363012345678901@g.us. Use instead of phone." },
+          "message": { "type": "string", "description": "Text to send. Supports WhatsApp *bold*, _italic_ and line breaks." },
+          "device": { "type": "string", "description": "Number (device) ID to send from; omit to use the first connected number." },
+          "reference": { "type": "string", "description": "Optional own reference, e.g. a CRM ticket ID, returned with the message and its webhooks." }
+        },
+        "required": ["message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": { "phone": "$phone", "group": "$group", "message": "$message", "device": "$device", "reference": "$reference" }
+      }
+    },
+    {
+      "name": "wassenger_get_message",
+      "description": "Get one outbound message by its Wassenger ID (24 hex) or WhatsApp ID, including status, delivery status (queued, sent, delivered, read, failed) and the reason when it failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": { "type": "string", "description": "Message id returned by wassenger_send_message, or its WhatsApp message ID." }
+        },
+        "required": ["message_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/messages/{message_id}" }
+    },
+    {
+      "name": "wassenger_search_sent_messages",
+      "description": "Search outbound messages (sent, queued or failed) by text, recipient, number, status or delivery status, newest first. Inbound messages are not included: use wassenger_get_chat_messages for those.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Text content, phone number, group or message ID to match." },
+          "phone": { "type": "string", "description": "Only messages to this E.164 number." },
+          "device": { "type": "string", "description": "Only messages sent from this number ID or phone." },
+          "status": { "type": "string", "description": "Comma-separated: queued, processing, processed, failed, expired, invalid, removed." },
+          "deliveryStatus": { "type": "string", "description": "Comma-separated: queued, sent, delivered, read, played, failed, cancelled, revoked." },
+          "createdAfter": { "type": "string", "description": "Only messages created after this ISO 8601 date, e.g. 2026-10-01T00:00:00Z." },
+          "page": { "type": "integer", "description": "Page number, starting at 0." },
+          "size": { "type": "integer", "description": "Messages per page, up to 100 (default 20)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "search": "$search",
+          "phone": "$phone",
+          "device": "$device",
+          "status": "$status",
+          "deliveryStatus": "$deliveryStatus",
+          "createdAfter": "$createdAfter",
+          "page": "$page",
+          "size": "$size"
+        },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      }
+    },
+    {
+      "name": "wassenger_get_message_ack_info",
+      "description": "Get who received, read or played an outbound message sent in the last 30 days, for person and group chats. Use it to confirm a message was actually read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID that sent the message." },
+          "message_wid": { "type": "string", "description": "WhatsApp message ID (waId of the sent message)." }
+        },
+        "required": ["device_id", "message_wid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/chat/{device_id}/messages/{message_wid}/ackinfo" }
+    },
+    {
+      "name": "wassenger_list_chats",
+      "description": "List or search the chats of one number (people, groups, channels) with status, unread count, labels and assigned agent. Filter by text, status or unread to find a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID from wassenger_list_numbers." },
+          "search": { "type": "string", "description": "Free text matched against phone, chat or contact name, email, company or notes." },
+          "status": { "type": "string", "description": "Comma-separated chat status: pending, active, resolved, archived, muted, banned, removed." },
+          "unread": { "type": "boolean", "description": "True for chats with unread messages only." },
+          "type": { "type": "string", "description": "Comma-separated chat type: chat, group, community, channel." },
+          "sort": { "type": "string", "enum": ["date:asc", "date:desc", "lastMessage:asc", "lastMessage:desc"], "description": "Sort order." },
+          "page": { "type": "integer", "description": "Page number, starting at 0." },
+          "size": { "type": "integer", "description": "Chats per page, up to 500 (default 20)." }
+        },
+        "required": ["device_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/{device_id}/chats",
+        "queryParams": { "search": "$search", "status": "$status", "unread": "$unread", "type": "$type", "sort": "$sort", "page": "$page", "size": "$size" },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      }
+    },
+    {
+      "name": "wassenger_get_chat_messages",
+      "description": "Read inbound and outbound messages of one number, across chats or within one chat, newest first. Requires a Platform plan on that number; filter by chat ID, direction, text or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID from wassenger_list_numbers." },
+          "chat": { "type": "string", "description": "Chat WhatsApp ID, e.g. 447911123456@c.us or 120363012345678901@g.us." },
+          "flow": { "type": "string", "enum": ["in", "out"], "description": "in for received, out for sent messages." },
+          "search": { "type": "string", "description": "Partial text, contact name or media file name." },
+          "after": { "type": "string", "description": "Only messages created after this ISO 8601 date." },
+          "before": { "type": "string", "description": "Only messages created before this ISO 8601 date." },
+          "page": { "type": "integer", "description": "Page number, starting at 0." },
+          "size": { "type": "integer", "description": "Messages per page, up to 50 (default 20)." }
+        },
+        "required": ["device_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/{device_id}/messages",
+        "queryParams": { "chat": "$chat", "flow": "$flow", "search": "$search", "after": "$after", "before": "$before", "page": "$page", "size": "$size" },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      }
+    },
+    {
+      "name": "wassenger_list_contacts",
+      "description": "List or search the contacts stored for one number by name, phone, email, company or notes, with their WhatsApp ID, type and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID from wassenger_list_numbers." },
+          "search": { "type": "string", "description": "Name, phone, email, company, metadata or notes to match." },
+          "phone": { "type": "string", "description": "Comma-separated phone numbers or WhatsApp IDs, e.g. +447911123456." },
+          "page": { "type": "integer", "description": "Page number, starting at 0." },
+          "size": { "type": "integer", "description": "Contacts per page, up to 500 (default 20)." }
+        },
+        "required": ["device_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/{device_id}/contacts",
+        "queryParams": { "search": "$search", "phone": "$phone", "page": "$page", "size": "$size" },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      }
+    },
+    {
+      "name": "wassenger_get_contact",
+      "description": "Get one contact or group of a number by WhatsApp ID or phone number, with name, profile details and stored metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": { "type": "string", "description": "Number (device) ID from wassenger_list_numbers." },
+          "contact_wid": { "type": "string", "description": "WhatsApp ID or phone number, e.g. 447911123456@c.us." }
+        },
+        "required": ["device_id", "contact_wid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/chat/{device_id}/contacts/{contact_wid}" }
+    }
+  ]
+}

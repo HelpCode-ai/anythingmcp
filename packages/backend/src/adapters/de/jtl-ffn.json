@@ -1,0 +1,429 @@
+{
+  "slug": "jtl-ffn",
+  "name": "JTL Fulfillment Network",
+  "description": "JTL Fulfillment Network (JTL-FFN) for merchants: products, stock per warehouse, outbound orders with shipping status and tracking, inbound deliveries, returns, warehouses and shipping methods of your fulfillers. Create or cancel outbounds on request. OAuth2.",
+  "instructions": "Reads the JTL-FFN Merchant API (`ffn2.api.jtl-software.com`) as the merchant who authorized it. The account needs the Merchant role in the FFN portal.\n\n**Getting credentials**\n1. Sign in once at https://fulfillment.jtl-software.com with your JTL account; until then the API answers 404 for your user.\n2. Open https://kundencenter.jtl-software.de/oauth (it is not in the Kundencenter menu), create an OAuth client with the scopes `ffn.merchant.read` and `ffn.merchant.write`, and set its redirect URI to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when self-hosted.\n3. Paste the client ID and secret into `JTL_FFN_CLIENT_ID` and `JTL_FFN_CLIENT_SECRET`, install, then click **Authorize with Provider** on the connector page. Access tokens last 30 minutes; JTL issues a new refresh token on every renewal and AnythingMCP stores it.\n\n**Workflow**: `jtl_ffn_get_current_user` confirms the account. `jtl_ffn_list_warehouses` and `jtl_ffn_list_shipping_methods` give the ids an outbound needs. Find products with `jtl_ffn_list_products`, then read stock with `jtl_ffn_get_product_stock`. For an order, `jtl_ffn_get_outbound` shows its status and `jtl_ffn_list_outbound_shipping_notifications` the parcels with tracking.\n\n**Formats and gotchas**: a jfsku is JTL's 11-character product id (e.g. `MERC01PRDCT`), not your own SKU (`merchantSku`). Outbound and inbound tools accept either the FFN id or your own order number. `filter` takes an OData-style expression on the fields named in each tool, e.g. `status eq 'Shipped'`. Dates are ISO 8601. `jtl_ffn_create_outbound` and `jtl_ffn_cancel_outbound` install switched off: enable them deliberately, and always confirm the details with the user before a call.\n\n**Pagination and rate limits**: list tools take `limit` (default 50) and `offset`; the answer has `count`, `_page` and `nextPageLink` while more pages exist. Raise `offset` by `limit` until `nextPageLink` is missing. JTL publishes no rate limit; avoid tight polling loops and use the change feed for sync.\n\n**Cloud reachability**: `ffn2.api.jtl-software.com` and `oauth2.api.jtl-software.com` are public HTTPS endpoints, reachable from AnythingMCP Cloud and self-hosted installs.",
+  "region": "de",
+  "category": "logistics",
+  "icon": "jtl-ffn",
+  "docsUrl": "https://ffn2.api.jtl-software.com/api-docs/index.html",
+  "requiredEnvVars": ["JTL_FFN_CLIENT_ID", "JTL_FFN_CLIENT_SECRET"],
+  "envVarMeta": {
+    "JTL_FFN_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "From the OAuth client you create at kundencenter.jtl-software.de/oauth with the scopes ffn.merchant.read and ffn.merchant.write.",
+      "pattern": "^[A-Za-z0-9-]{8,}$",
+      "patternMessage": "Paste only the client ID shown for your OAuth client in the JTL Kundencenter (letters, digits and dashes).",
+      "link": "https://kundencenter.jtl-software.de/oauth"
+    },
+    "JTL_FFN_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://kundencenter.jtl-software.de/oauth"
+    }
+  },
+  "verifyHints": {
+    "403": "The token lacks a scope. Give the OAuth client the scopes ffn.merchant.read and ffn.merchant.write, then authorize again.",
+    "404": "JTL-FFN does not know this user yet. Sign in once at https://fulfillment.jtl-software.com with the same JTL account, then try again."
+  },
+  "connector": {
+    "name": "JTL-FFN Merchant API",
+    "type": "REST",
+    "baseUrl": "https://ffn2.api.jtl-software.com/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{JTL_FFN_CLIENT_ID}}",
+      "clientSecret": "{{JTL_FFN_CLIENT_SECRET}}",
+      "authorizationUrl": "https://oauth2.api.jtl-software.com/authorize",
+      "tokenUrl": "https://oauth2.api.jtl-software.com/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "ffn.merchant.read ffn.merchant.write"
+    },
+    "healthcheckPath": "/v1/users/current"
+  },
+  "probe": { "tool": "jtl_ffn_get_current_user" },
+  "tools": [
+    {
+      "name": "jtl_ffn_get_current_user",
+      "description": "Return the JTL-FFN user behind the authorization: user id (your 4-character merchant id), address and roles. Use it to confirm the connection and that the account has the Merchant role.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/v1/users/current" }
+    },
+    {
+      "name": "jtl_ffn_list_warehouses",
+      "description": "List the fulfiller warehouses authorized for this merchant, with warehouseId, fulfillerId, name, address and the shippingMethodIds each warehouse offers. Filterable fields: warehouseId, fulfillerId, name, address/company, address/city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter, e.g. fulfillerId eq 'FULF'." },
+          "order_by": { "type": "string", "description": "Field to sort by, e.g. name." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/warehouses",
+        "queryParams": { "$filter": "$filter", "$orderBy": "$order_by", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_list_fulfillers",
+      "description": "List the fulfillment providers this merchant works with: 4-character userId (the fulfillerId used elsewhere), active flag and address. Filterable fields: userId, address/company, address/city, address/email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter, e.g. userId eq 'FULF'." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/fulfillers",
+        "queryParams": { "$filter": "$filter", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_list_shipping_methods",
+      "description": "List the shipping methods the fulfillers allow this merchant to use: shippingMethodId, name, carrierName, carrierCode, shippingType, cutoffTime and the tracking URL schema. Filterable fields: shippingMethodId, fulfillerId, name, carrierCode, carrierName, shippingType.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter, e.g. fulfillerId eq 'FULF'." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/shippingmethods",
+        "queryParams": { "$filter": "$filter", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_list_products",
+      "description": "List the merchant's products in JTL-FFN with jfsku, merchantSku, name, identifiers (EAN, ASIN, MPN), dimensions, weight and attributes. Use a filter to find a product by your own SKU or EAN, e.g. merchantSku eq 'ABC-1' or identifier/ean eq '4006381333931'. Other filterable fields include name, productGroup, manufacturer and condition.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter on merchantSku, name, identifier/ean, identifier/asin, productGroup, manufacturer and similar fields." },
+          "order_by": { "type": "string", "description": "Field to sort by, e.g. name." },
+          "referenced_warehouse": { "type": "string", "description": "Only products referenced by this warehouseId." },
+          "referenced_fulfiller": { "type": "string", "description": "Only products referenced by this 4-character fulfillerId." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/products",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderBy": "$order_by",
+          "referencedWarehouse": "$referenced_warehouse",
+          "referencedFulfiller": "$referenced_fulfiller",
+          "$top": "$limit",
+          "$skip": "$offset"
+        }
+      }
+    },
+    {
+      "name": "jtl_ffn_get_product",
+      "description": "Get one product by its jfsku with all master data: name, merchantSku, identifiers, specifications (batch, best-before, serial number, bill of materials), dimensions, weight, bundles, pictures and attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jfsku": { "type": "string", "pattern": "^[A-Z0-9]{4}01[A-Z0-9]{5}$", "description": "JTL product id, 11 characters such as MERC01PRDCT. Not your own SKU: look that up with jtl_ffn_list_products." }
+        },
+        "required": ["jfsku"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/products/{jfsku}", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_stock_levels",
+      "description": "List stock for all products across all warehouses: per jfsku the available stockLevel, stockLevelReserved (held by outbounds), stockLevelAnnounced (expected from inbounds) and stockLevelBlocked, with a breakdown per warehouse and fulfiller. Filter e.g. stockLevel eq 0 to find products out of stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter on stockLevel, stockLevelReserved, stockLevelAnnounced, stockLevelBlocked, warehouses/warehouseId, fulfiller/fulfillerId and similar fields." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/stocks",
+        "queryParams": { "$filter": "$filter", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_get_product_stock",
+      "description": "Get the stock of one product by jfsku: available, reserved, announced and blocked quantities, split by warehouse and fulfiller, by batch and best-before date, and which outbounds reserve or inbounds announce how much.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jfsku": { "type": "string", "pattern": "^[A-Z0-9]{4}01[A-Z0-9]{5}$", "description": "JTL product id, 11 characters such as MERC01PRDCT." }
+        },
+        "required": ["jfsku"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/stocks/{jfsku}", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_warehouse_stock",
+      "description": "List the stock of all products in one warehouse: per jfsku and merchantSku the available, reserved, announced and blocked quantities. Get warehouse ids from jtl_ffn_list_warehouses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": { "type": "string", "description": "warehouseId from jtl_ffn_list_warehouses." },
+          "filter": { "type": "string", "description": "OData-style filter on stockLevel, stockLevelReserved, stockLevelAnnounced, stockLevelBlocked or fulfillerId." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        },
+        "required": ["warehouse_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/stocks/warehouse/{warehouse_id}",
+        "encodePathParams": true,
+        "queryParams": { "$filter": "$filter", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_list_outbounds",
+      "description": "List outbound orders (shipments the fulfiller sends to customers) with outboundId, merchantOutboundNumber, status (Preparation, Pending, Acknowledged, Pickprocess, Locked, PartiallyShipped, Shipped, PartiallyCanceled, Canceled), warehouse, items and status timestamps. Filter e.g. status eq 'Pending' or merchantOutboundNumber eq 'SO-1001'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter on status, merchantOutboundNumber, outboundId, externalNumber, warehouseId, fulfillerId, shippingAddress/lastname, shippingAddress/email, items/jfsku, statusTimestamp/shipped and similar fields." },
+          "order_by": { "type": "string", "description": "Field to sort by, e.g. modificationInfo/createdAt." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/outbounds",
+        "queryParams": { "$filter": "$filter", "$orderBy": "$order_by", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_get_outbound",
+      "description": "Get one outbound order with its status, status timestamps, shipping address, items with open quantities, shipping method, notes and cancel reason. Accepts the FFN outboundId or your own merchantOutboundNumber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outbound_id": { "type": "string", "description": "FFN outboundId or your merchantOutboundNumber (your order number)." }
+        },
+        "required": ["outbound_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/outbounds/{outbound_id}", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_outbound_shipping_notifications",
+      "description": "Get the shipping notifications the fulfiller posted for an outbound: shipped items with batch and serial numbers, and the packages with tracking numbers (identifier), trackingUrl, shipping date, estimated delivery date and shipping method. Use it to answer where an order is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outbound_id": { "type": "string", "description": "FFN outboundId or your merchantOutboundNumber." }
+        },
+        "required": ["outbound_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/outbounds/{outbound_id}/shipping-notifications", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_outbound_changes",
+      "description": "Change feed of outbounds modified within a time window (status changes, shipments, cancellations). Returns data (full outbounds), from, to and moreDataAvailable; while moreDataAvailable is true, call again with page + 1.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": { "type": "string", "description": "Start of the window, ISO 8601, e.g. 2026-10-01T00:00:00Z." },
+          "to_date": { "type": "string", "description": "End of the window, ISO 8601." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/outbounds/updates",
+        "queryParams": { "fromDate": "$from_date", "toDate": "$to_date", "page": "$page" }
+      }
+    },
+    {
+      "name": "jtl_ffn_list_inbounds",
+      "description": "List inbound deliveries announced to the fulfillers' warehouses with inboundId, merchantInboundNumber, status (Preparation, Pending, PartiallyReceipted, Receipted, Closed), warehouse, purchase order number and items. Filter e.g. status eq 'Pending'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter on status, merchantInboundNumber, inboundId, warehouseId, fulfillerId, purchaseOrderNumber, items/jfsku and similar fields." },
+          "order_by": { "type": "string", "description": "Field to sort by." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/inbounds",
+        "queryParams": { "$filter": "$filter", "$orderBy": "$order_by", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_get_inbound",
+      "description": "Get one inbound delivery with its status, warehouse, supplier, purchase order number, note and items with announced quantities. Accepts the FFN inboundId or your merchantInboundNumber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_id": { "type": "string", "description": "FFN inboundId or your merchantInboundNumber." }
+        },
+        "required": ["inbound_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/inbounds/{inbound_id}", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_inbound_shipping_notifications",
+      "description": "Get the shipping notifications of an inbound delivery, i.e. what is on its way to the warehouse: packages with tracking identifiers, carrier, trackingUrl, shipping date and estimated delivery date, and the items with quantities, batch and best-before dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_id": { "type": "string", "description": "FFN inboundId or your merchantInboundNumber." }
+        },
+        "required": ["inbound_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/inbounds/{inbound_id}/shipping-notifications", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_returns",
+      "description": "List customer returns with returnId, merchantReturnNumber, state (Announced, Arrived, Completed), warehouse, customer address, returned items with condition, and return labels with tracking numbers. Filter e.g. state eq 'Arrived' or items/outboundId eq '...'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "OData-style filter on state, returnId, merchantReturnNumber, warehouseId, fulfillerId, items/jfsku, items/outboundId, labels/trackingNumber and similar fields." },
+          "limit": { "type": "integer", "minimum": 1, "description": "Results per page, default 50." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchant/returns",
+        "queryParams": { "$filter": "$filter", "$top": "$limit", "$skip": "$offset" }
+      }
+    },
+    {
+      "name": "jtl_ffn_get_return",
+      "description": "Get one customer return by returnId with its state, items (condition, linked outbound), labels and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": { "type": "string", "description": "returnId from jtl_ffn_list_returns." }
+        },
+        "required": ["return_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/merchant/returns/{return_id}", "encodePathParams": true }
+    },
+    {
+      "name": "jtl_ffn_list_cancel_reasons",
+      "description": "List the standard cancel reasons of JTL-FFN (code and name). Use a code as cancel_reason_code in jtl_ffn_cancel_outbound.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/v1/cancelreasons" }
+    },
+    {
+      "name": "jtl_ffn_create_outbound",
+      "description": "Create a new outbound order: the fulfiller will pick, pack and ship these items to the address, which costs money and cannot be undone once shipped. Before calling, show the user the warehouse, address, items and shipping method and get an explicit yes. Answers 400 when stock is insufficient, a product or shipping method is unknown, or an active outbound already uses this merchant_outbound_number.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_outbound_number": { "type": "string", "description": "Your own unique order number, e.g. SO-1001." },
+          "warehouse_id": { "type": "string", "description": "warehouseId from jtl_ffn_list_warehouses." },
+          "currency": { "type": "string", "description": "ISO 4217 code, e.g. EUR." },
+          "shipping_address": {
+            "type": "object",
+            "description": "Recipient. street, city, zip and country (ISO 3166 alpha-2, e.g. DE) are required, plus lastname or company.",
+            "properties": {
+              "salutation": { "type": "string" },
+              "firstname": { "type": "string" },
+              "lastname": { "type": "string" },
+              "company": { "type": "string" },
+              "street": { "type": "string", "description": "Street and house number." },
+              "extraAddressLine": { "type": "string", "description": "Additional address line." },
+              "zip": { "type": "string" },
+              "city": { "type": "string" },
+              "state": { "type": "string" },
+              "country": { "type": "string", "description": "ISO 3166 alpha-2, e.g. DE." },
+              "email": { "type": "string" },
+              "phone": { "type": "string" }
+            },
+            "required": ["street", "zip", "city", "country"]
+          },
+          "items": {
+            "type": "array",
+            "description": "Order lines. outboundItemId is your own line id (e.g. 1, 2, 3); jfsku from jtl_ffn_list_products.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "outboundItemId": { "type": "string", "description": "Your line id, unique within the order." },
+                "jfsku": { "type": "string", "description": "JTL product id, 11 characters." },
+                "quantity": { "type": "number", "description": "Quantity to ship." },
+                "name": { "type": "string" },
+                "merchantSku": { "type": "string" },
+                "price": { "type": "number", "description": "Unit price, used for insurance and customs." },
+                "vat": { "type": "number", "description": "VAT rate of the line." }
+              },
+              "required": ["outboundItemId", "jfsku", "quantity"]
+            }
+          },
+          "shipping_method_id": { "type": "string", "description": "shippingMethodId from jtl_ffn_list_shipping_methods. Give either this or shipping_type, not both." },
+          "shipping_type": { "type": "string", "enum": ["Standard", "Expedited", "NextDay", "SecondDay", "SameDay"], "description": "Generic shipping speed; JTL picks an authorized method. Give either this or shipping_method_id, not both." },
+          "external_note": { "type": "string", "description": "Note that may be shown to the recipient." },
+          "internal_note": { "type": "string", "description": "Note for the fulfiller only." },
+          "desired_delivery_date": { "type": "string", "description": "ISO 8601 date-time." },
+          "order_value": { "type": "number", "description": "Total order value." },
+          "shipping_fee": { "type": "number", "description": "Shipping fee charged to the customer." },
+          "sales_channel": { "type": "string", "description": "Sales channel name, e.g. Shopify." }
+        },
+        "required": ["merchant_outbound_number", "warehouse_id", "currency", "shipping_address", "items"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/merchant/outbounds",
+        "bodyMapping": {
+          "merchantOutboundNumber": "$merchant_outbound_number",
+          "warehouseId": "$warehouse_id",
+          "currency": "$currency",
+          "shippingAddress": "$shipping_address",
+          "items": "$items",
+          "shippingMethodId": "$shipping_method_id",
+          "shippingType": "$shipping_type",
+          "externalNote": "$external_note",
+          "internalNote": "$internal_note",
+          "desiredDeliveryDate": "$desired_delivery_date",
+          "orderValue": "$order_value",
+          "shippingFee": "$shipping_fee",
+          "salesChannel": "$sales_channel"
+        }
+      }
+    },
+    {
+      "name": "jtl_ffn_cancel_outbound",
+      "description": "Cancel an outbound order by setting its status to Canceled. Only possible while the fulfiller has not shipped it; JTL answers 403 when the current status does not allow it. Confirm the order number and the reason with the user before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outbound_id": { "type": "string", "description": "FFN outboundId or your merchantOutboundNumber." },
+          "cancel_reason": { "type": "string", "description": "Free-text reason for the cancellation." },
+          "cancel_reason_code": { "type": "string", "description": "Optional code from jtl_ffn_list_cancel_reasons." }
+        },
+        "required": ["outbound_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/merchant/outbounds/{outbound_id}/status",
+        "encodePathParams": true,
+        "bodyMapping": { "status": "Canceled", "cancelReason": "$cancel_reason", "cancelReasonCode": "$cancel_reason_code" }
+      }
+    }
+  ]
+}

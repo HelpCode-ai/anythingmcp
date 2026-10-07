@@ -28,6 +28,7 @@ import * as haufeX360 from './de/haufe-x360.json';
 import * as hereGeocoding from './de/here-geocoding.json';
 import * as hrworks from './de/hrworks.json';
 import * as immobilienscout24 from './de/immobilienscout24.json';
+import * as jtlFfn from './de/jtl-ffn.json';
 import * as jtlWawi from './de/jtl-wawi.json';
 import * as kaufland from './de/kaufland.json';
 import * as kenjo from './de/kenjo.json';
@@ -80,6 +81,7 @@ import * as amazonSeller from './intl/amazon-seller.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apollo from './intl/apollo.json';
 import * as archer from './intl/archer.json';
+import * as asana from './intl/asana.json';
 import * as asite from './intl/asite.json';
 import * as atera from './intl/atera.json';
 import * as attio from './intl/attio.json';
@@ -166,6 +168,7 @@ import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
 import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
+import * as keycrm from './intl/keycrm.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
@@ -200,6 +203,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
+import * as novaPoshta from './intl/nova-poshta.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
@@ -222,6 +226,7 @@ import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
 import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
+import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
@@ -229,6 +234,7 @@ import * as redditAds from './intl/reddit-ads.json';
 import * as redmine from './intl/redmine.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
+import * as rozetka from './intl/rozetka.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
@@ -271,6 +277,8 @@ import * as uptimeRobot from './intl/uptime-robot.json';
 import * as uzumMarket from './intl/uzum-market.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
 import * as vinted from './intl/vinted.json';
+import * as wanotifier from './intl/wanotifier.json';
+import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as wildberries from './intl/wildberries.json';
@@ -289,6 +297,7 @@ import * as zenhub from './intl/zenhub.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
+import * as zApi from './br/z-api.json';
 import * as doubletick from './in/doubletick.json';
 import * as razorpay from './in/razorpay.json';
 import * as tallyprime from './in/tallyprime.json';
@@ -527,6 +536,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   hereGeocoding as unknown as AdapterDefinition,
   hrworks as unknown as AdapterDefinition,
   immobilienscout24 as unknown as AdapterDefinition,
+  jtlFfn as unknown as AdapterDefinition,
   jtlWawi as unknown as AdapterDefinition,
   kaufland as unknown as AdapterDefinition,
   kenjo as unknown as AdapterDefinition,
@@ -579,6 +589,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   apiFootball as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   archer as unknown as AdapterDefinition,
+  asana as unknown as AdapterDefinition,
   asite as unknown as AdapterDefinition,
   atera as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
@@ -665,6 +676,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   invoiced as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
+  keycrm as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
@@ -699,6 +711,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
+  novaPoshta as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
   oddsApi as unknown as AdapterDefinition,
   odoo as unknown as AdapterDefinition,
@@ -721,6 +734,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   postgres as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
   procore as unknown as AdapterDefinition,
+  promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
@@ -728,6 +742,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   redmine as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
+  rozetka as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
@@ -770,6 +785,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   uzumMarket as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
   vinted as unknown as AdapterDefinition,
+  wanotifier as unknown as AdapterDefinition,
+  wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
@@ -788,6 +805,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zohoCrm as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
+  zApi as unknown as AdapterDefinition,
   doubletick as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,
   tallyprime as unknown as AdapterDefinition,

@@ -1,50 +1,77 @@
 {
   "slug": "substack",
   "name": "Substack",
-  "description": "Read Substack publication content, posts, comments, podcast episodes via public RSS/JSON feeds. 5 tools, no auth required.",
-  "instructions": "This connector uses Substack's PUBLIC content endpoints (Substack does not yet publish a formal REST API for writes — programmatic post creation/comments require the legacy session-cookie API which isn't supported here).\n\n**Setup**: NO API KEY. Set `SUBSTACK_PUBLICATION_URL` = the publication's base URL (e.g. `https://lennysnewsletter.substack.com`). For tools that target a specific publication, the URL is taken from this env var.\n\n**Authentication**: NONE. All reads use public endpoints (the same JSON Substack's own site fetches).\n\n**Content endpoints available**:\n  - `/api/v1/posts?limit=N&offset=M` — paginated posts list (each post: id, title, slug, post_date, audience, type)\n  - `/api/v1/posts/by-id/{id}` — single post detail\n  - `/api/v1/comments/{post_id}` — top comments on a post\n  - `/api/v1/podcast/feed` — podcast episodes (audio newsletters only)\n  - `/feed` — standard RSS feed\n\n**Out of scope here**: creating posts (no public write API), email subscribers list, paid-subscriber management, comment moderation. All UI-only as of 2025.\n\n**Rate limits**: Substack doesn't publish numbers; be polite (1 req/sec recommended) and cache aggressively. They'll throttle abusive IPs.",
+  "description": "Read a Substack publication: list, search and open posts, read comments and the RSS feed, and find a writer's publication from their @handle. 7 read-only tools, no API key.",
+  "instructions": "This connector reads one Substack publication through the public JSON endpoints its own website uses (Substack has no documented public API). Everything is read-only and needs no key; paid-only posts show their preview, not the full text.\n\n**Getting credentials**: none. Set `SUBSTACK_PUBLICATION_URL` to the publication's home address, nothing after the domain: `https://yourname.substack.com` or a custom domain such as `https://www.lennysnewsletter.com`. A profile link (`https://substack.com/@handle`), a note link (`https://substack.com/@handle/note/c-123`) or a post link does not work. To find the address from a profile: open `substack.com/@handle`, click the publication shown on the profile, and copy the address bar up to the domain. In an app share link `open.substack.com/pub/NAME/p/...`, `NAME` is the subdomain: use `https://NAME.substack.com`. A `*.substack.com` address of a publication with a custom domain is redirected and also works.\n\n**Workflow**: `substack_list_posts` first (newest, or `sort=top` for most liked). Then `substack_get_post_by_id` with a post `id`, or `substack_get_post_by_slug` with the part after `/p/` in a post link, for the full `body_html`. `substack_get_comments` reads the discussion. `substack_find_publication_by_handle` turns an @handle into the writer's publication subdomain and custom domain.\n\n**Formats and gotchas**: dates are ISO 8601 UTC. `audience` is `everyone`, `only_paid`, `founding` or `only_free`. A 404 on every tool means there is no publication at the configured address; an HTML page instead of JSON means the address is a profile or a non-Substack site.\n\n**Pagination and limits**: list and search tools take `limit` (1 to 50, the API rejects more) and `offset`; page with `offset` += `limit` until fewer than `limit` posts come back. Substack publishes no rate limit; keep to about one request per second.\n\n**Cloud reachability**: all `*.substack.com` addresses, custom domains and `substack.com` are public HTTPS, reachable from AnythingMCP Cloud and from self-hosted installs with internet access.",
   "region": "intl",
   "category": "publishing",
   "icon": "substack",
-  "docsUrl": "https://substack.com/help/articles/4445-substack-content-api",
+  "docsUrl": "https://support.substack.com/hc/en-us/articles/360038239391-Is-there-an-RSS-feed-for-my-publication",
   "requiredEnvVars": ["SUBSTACK_PUBLICATION_URL"],
+  "envVarMeta": {
+    "SUBSTACK_PUBLICATION_URL": {
+      "label": "Publication URL",
+      "help": "The publication's home address, nothing after the domain: https://yourname.substack.com or its custom domain. A profile (substack.com/@handle) links to the publication: open it there and copy the address bar up to the domain.",
+      "example": "https://yourname.substack.com",
+      "pattern": "^https://(?!(?:www\\.|open\\.)?substack\\.com/?$)[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+/?$",
+      "patternMessage": "Use the publication's home address with https:// and nothing after the domain, e.g. https://yourname.substack.com or https://www.yournewsletter.com. A profile (substack.com/@handle), note or post link does not work: open the publication from the profile and copy its address up to the domain."
+    }
+  },
+  "verifyHints": {
+    "404": "There is no Substack publication at this address. Use the publication's home address (https://yourname.substack.com or its custom domain), not a profile, note or post link."
+  },
   "connector": {
     "name": "Substack public",
     "type": "REST",
     "baseUrl": "{{SUBSTACK_PUBLICATION_URL}}",
     "authType": "NONE"
   },
+  "probe": { "tool": "substack_list_posts", "params": { "limit": 1 } },
   "tools": [
     {
       "name": "substack_list_posts",
-      "description": "List recent posts from the publication. Each post has id, title, subtitle, slug, post_date, audience (everyone/only_paid/only_free/founding), type (newsletter/podcast/thread), wordcount, reactions.",
+      "description": "List the publication's posts, newest first or most liked first. Each post has id, title, subtitle, slug, post_date, audience (everyone/only_paid/founding/only_free), type (newsletter/podcast/thread), wordcount, reaction_count, comment_count, canonical_url and a short truncated_body_text. Use substack_get_post_by_id for the full text.",
       "parameters": {
         "type": "object",
         "properties": {
-          "limit": { "type": "integer", "description": "Max per page (default 12, max 50 typically)." },
-          "offset": { "type": "integer", "description": "Pagination offset." },
-          "sort": { "type": "string", "description": "new (most-recent first, default) or popular." }
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Posts per page, 1 to 50 (Substack rejects more). Default 12." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of posts to skip, for the next page: previous offset + limit." },
+          "sort": { "type": "string", "enum": ["new", "top"], "description": "new = most recent first (default), top = most liked first." }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/posts",
+        "path": "/api/v1/archive",
         "queryParams": {
+          "sort": "$sort",
           "limit": "$limit",
-          "offset": "$offset",
-          "sort": "$sort"
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].body_html",
+            "[*].body_json",
+            "[*].coverImagePalette",
+            "[*].podcastFields",
+            "[*].audio_items",
+            "[*].publishedBylines[*].publicationUsers",
+            "[*].publishedBylines[*].photo_url",
+            "[*].publishedBylines[*].status"
+          ]
         }
       }
     },
     {
       "name": "substack_search_posts",
-      "description": "Full-text search the publication's post archive. Returns an array of matching posts (same shape as substack_list_posts: id, title, slug, post_date, audience, type). Empty array when nothing matches.",
+      "description": "Full-text search the publication's post archive. Returns matching posts newest first, same fields as substack_list_posts (id, title, slug, post_date, audience, type). An empty array means nothing matched.",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Search query (matches title/body across the publication archive)." },
-          "limit": { "type": "integer", "description": "Max results (default 12)." },
-          "offset": { "type": "integer", "description": "Pagination offset." }
+          "query": { "type": "string", "description": "Words to search for in post titles and text." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Results per page, 1 to 50. Default 12." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of results to skip, for the next page." }
         },
         "required": ["query"]
       },
@@ -52,43 +79,142 @@
         "method": "GET",
         "path": "/api/v1/archive",
         "queryParams": { "sort": "new", "search": "$query", "limit": "$limit", "offset": "$offset" }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].body_html",
+            "[*].body_json",
+            "[*].coverImagePalette",
+            "[*].podcastFields",
+            "[*].audio_items",
+            "[*].publishedBylines[*].publicationUsers",
+            "[*].publishedBylines[*].photo_url",
+            "[*].publishedBylines[*].status"
+          ]
+        }
       }
     },
     {
       "name": "substack_get_post_by_id",
-      "description": "Fetch a single post by its numeric ID. Returns full body_html, subtitle, post_date, audience, podcast_url if applicable.",
+      "description": "Fetch one post by its numeric id, with the full body_html (a preview only for paid posts), subtitle, post_date, audience, comment_count and podcast_url for audio posts. The answer has the post under `post` and the publication's name and settings under `publication`.",
       "parameters": {
         "type": "object",
         "properties": {
-          "postId": { "type": "integer", "description": "Post numeric ID." }
+          "postId": { "type": "integer", "description": "Numeric post id from substack_list_posts or substack_search_posts." }
         },
         "required": ["postId"]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/api/v1/posts/by-id/{postId}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": ["publicationSettings", "post.coverImagePalette", "post.publishedBylines[*].publicationUsers"]
+        }
+      }
+    },
+    {
+      "name": "substack_get_post_by_slug",
+      "description": "Fetch one post by its slug, the part after /p/ in a post link (for https://name.substack.com/p/my-first-post the slug is my-first-post). Returns the post with id, title, post_date, audience and the full body_html (a preview only for paid posts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Post slug, e.g. my-first-post. Only the part after /p/, without the domain or query string." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/posts/{slug}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": ["coverImagePalette", "publishedBylines[*].publicationUsers"]
+        }
       }
     },
     {
       "name": "substack_get_comments",
-      "description": "Get top comments on a post. Returns nested comment threads.",
+      "description": "Get the comments on a post, as threads: each comment has id, name, handle, date, body, reaction_count and its replies under children. Best comments first by default.",
       "parameters": {
         "type": "object",
         "properties": {
-          "postId": { "type": "integer", "description": "Post ID." }
+          "postId": { "type": "integer", "description": "Numeric post id." },
+          "sort": { "type": "string", "enum": ["best_first", "most_recent_first"], "description": "best_first (default) or most_recent_first." }
         },
         "required": ["postId"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/post/{postId}/comments"
+        "path": "/api/v1/post/{postId}/comments",
+        "queryParams": { "sort": "$sort" }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "comments[*].body_json",
+            "comments[*].metadata",
+            "comments[*].userStatus",
+            "comments[*].photo_url",
+            "comments[*].children[*].body_json",
+            "comments[*].children[*].metadata",
+            "comments[*].children[*].userStatus",
+            "comments[*].children[*].photo_url",
+            "comments[*].children[*].children[*].body_json",
+            "comments[*].children[*].children[*].metadata",
+            "comments[*].children[*].children[*].userStatus",
+            "comments[*].children[*].children[*].photo_url"
+          ]
+        }
       }
     },
     {
       "name": "substack_get_rss_feed",
-      "description": "Fetch the publication's standard RSS feed (Atom format). Useful for systems that already speak RSS.",
+      "description": "Fetch the publication's RSS 2.0 feed (/feed): the most recent posts with title, link, publication date and HTML content. Paid posts carry only a preview.",
       "parameters": { "type": "object", "properties": {} },
       "endpointMapping": { "method": "GET", "path": "/feed" }
+    },
+    {
+      "name": "substack_find_publication_by_handle",
+      "description": "Look up a Substack writer by @handle (from a profile link substack.com/@handle) and return their name, bio and the publications they write for, with subdomain and custom_domain. The publication address is https://<custom_domain> when set, otherwise https://<subdomain>.substack.com. Works for any writer, not only the configured publication.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "handle": { "type": "string", "description": "The handle without @, e.g. lenny for substack.com/@lenny." }
+        },
+        "required": ["handle"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://substack.com/api/v1/user/{handle}/public_profile",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "handle": "$.handle",
+            "bio": "$.bio",
+            "primaryPublication": {
+              "name": "$.primaryPublication.name",
+              "subdomain": "$.primaryPublication.subdomain",
+              "custom_domain": "$.primaryPublication.custom_domain"
+            },
+            "publications": {
+              "$from": "$.publicationUsers[*]",
+              "$select": {
+                "name": "$.publication.name",
+                "subdomain": "$.publication.subdomain",
+                "custom_domain": "$.publication.custom_domain",
+                "role": "$.role"
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

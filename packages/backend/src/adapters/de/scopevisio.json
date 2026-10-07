@@ -1,63 +1,198 @@
 {
   "slug": "scopevisio",
-  "name": "ScopeVisio Cloud ERP",
-  "description": "Access ScopeVisio cloud ERP and CRM data including contacts, invoices, projects, and accounting. German cloud business software for SMBs.",
+  "name": "Scopevisio Cloud ERP",
+  "description": "Read Scopevisio cloud ERP data: search contacts, outgoing and incoming invoices, projects and tasks, and open single records and invoice positions. Read-only, through the Scopevisio OpenScope REST API with a user sign-in.",
+  "instructions": "Scopevisio is a German cloud ERP. This adapter reads contacts, outgoing and incoming invoices, projects and tasks through the Scopevisio OpenScope REST API. It never writes.\n\n**Getting credentials**\n1. Use an active Scopevisio user with the rights for the data the agent should read: the profiles *Kontakte (Anzeigen)*, *Rechnungen (Anzeigen)*, *Rechnungseingangsbuch (Anzeigen)*, *Projekte (Anzeigen)* and *Aufgabe (Anzeigen)*. Scopevisio recommends a dedicated technical user (a functional address such as api@yourcompany.de) added to the company like any other user.\n2. `SCOPEVISIO_CUSTOMER` is your 7-digit Scopevisio customer number, `SCOPEVISIO_USERNAME` and `SCOPEVISIO_PASSWORD` the user's login, `SCOPEVISIO_ORGANISATION` the exact name of the company (organisation) to read.\n3. The connector cannot answer a one-time password: use a user without two-factor sign-in.\n\nThe connector signs in at `POST /rest/token` and renews the short-lived access token by itself. Issued tokens are listed, and can be revoked, in the customer lounge under **My REST API clients**.\n\n**Where to start**: `scopevisio_get_account` checks the sign-in. Then search with the list tools and open one record with the get tools.\n\n**Searching**: `search` is a list of criteria `{field, value, operator}` combined with AND; comma-separated values in one criterion are OR. Example: `[{\"field\":\"lastname\",\"value\":\"Muster\",\"operator\":\"icontains\"}]`. `fields` limits the columns, `order` sorts (`[\"lastname=asc\"]`). Field names are Scopevisio's own: run one call without `fields` to learn them. Custom fields are named like `customText7`. A 403 means the user lacks the profile named in the tool description.\n\n**Pagination and rate limits**: `page` starts at 0; `pageSize` defaults to 100, maximum 1000. Ask for the next page until fewer rows than `pageSize` come back. Scopevisio publishes no rate limit; on a 429, wait before retrying.\n\n**Cloud reachability**: `appload.scopevisio.com` is a public HTTPS endpoint, reachable from AnythingMCP Cloud and from self-hosted instances alike.",
   "region": "de",
   "category": "erp",
   "icon": "scopevisio",
   "docsUrl": "https://appload.scopevisio.com/static/swagger/index.html",
   "requiredEnvVars": [
-    "SCOPEVISIO_BEARER_TOKEN"
+    "SCOPEVISIO_CUSTOMER",
+    "SCOPEVISIO_USERNAME",
+    "SCOPEVISIO_PASSWORD",
+    "SCOPEVISIO_ORGANISATION"
   ],
+  "envVarMeta": {
+    "SCOPEVISIO_CUSTOMER": {
+      "label": "Customer number",
+      "kind": "setting",
+      "help": "Your 7-digit Scopevisio customer number (Kundennummer), as used on the sign-in page.",
+      "example": "1234567",
+      "link": "https://help.scopevisio.com/en/articles/467358-rest-api-first-steps",
+      "pattern": "^[0-9]{7}$",
+      "patternMessage": "The Scopevisio customer number has exactly 7 digits."
+    },
+    "SCOPEVISIO_USERNAME": {
+      "label": "User e-mail",
+      "kind": "credential",
+      "help": "E-mail address the Scopevisio user signs in with. A dedicated technical user is recommended.",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "The e-mail address you sign in to Scopevisio with."
+    },
+    "SCOPEVISIO_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of that Scopevisio user. The user must not have two-factor sign-in enabled."
+    },
+    "SCOPEVISIO_ORGANISATION": {
+      "label": "Organisation (company) name",
+      "kind": "setting",
+      "help": "Exact name of the Scopevisio company (organisation) to read, as shown in Scopevisio.",
+      "example": "Muster GmbH"
+    }
+  },
+  "verifyHints": {
+    "400": "Scopevisio refused the sign-in request. Check the customer number (7 digits) and the organisation name.",
+    "401": "Scopevisio rejected the sign-in. Check customer number, e-mail and password, and that the user has no two-factor sign-in.",
+    "403": "The Scopevisio user lacks the rights for this data. Give it the matching (Anzeigen) profile."
+  },
+  "probe": {
+    "tool": "scopevisio_get_account"
+  },
   "connector": {
-    "name": "ScopeVisio ERP",
+    "name": "Scopevisio OpenScope REST API",
     "type": "REST",
     "baseUrl": "https://appload.scopevisio.com/rest",
-    "authType": "BEARER_TOKEN",
+    "authType": "LOGIN_TOKEN",
     "authConfig": {
-      "token": "{{SCOPEVISIO_BEARER_TOKEN}}"
+      "loginUrl": "https://appload.scopevisio.com/rest/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "password",
+        "customer": "{{SCOPEVISIO_CUSTOMER}}",
+        "username": "${username}",
+        "password": "${password}",
+        "organisation": "{{SCOPEVISIO_ORGANISATION}}"
+      },
+      "username": "{{SCOPEVISIO_USERNAME}}",
+      "password": "{{SCOPEVISIO_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 1800,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
     }
   },
   "tools": [
     {
+      "name": "scopevisio_get_account",
+      "description": "Show the signed-in Scopevisio user and customer account. No parameters and no profile needed; use it to check the sign-in.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/myaccount"
+      }
+    },
+    {
+      "name": "scopevisio_list_organisations",
+      "description": "List the Scopevisio organisations (companies) of this customer that the user can access, with id and name. Use it to find the exact organisation name for SCOPEVISIO_ORGANISATION.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organisations"
+      }
+    },
+    {
       "name": "scopevisio_list_contacts",
-      "description": "List contacts (customers, suppliers, leads) from ScopeVisio. Returns name, company, email, phone, and contact type.",
+      "description": "Search Scopevisio contacts (customers, suppliers, people and companies). Filter with search criteria, e.g. lastname icontains Muster, or isAccount equal true for companies only. Needs the profile Kontakte (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Number of results per page (default: 50)"
+          "search": {
+            "type": "array",
+            "description": "Search criteria, combined with AND. Each item is {field, value, operator}; several comma-separated values in one item are combined with OR. Example: [{\"field\": \"lastname\", \"value\": \"Muster\", \"operator\": \"icontains\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Field name, e.g. lastname, documentNumber, status."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value to compare with. Leave out for 'is null' and 'is not null'."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "equal, notequal, contains, icontains (case-insensitive), startswith, endswith, less, greater, lessorequal, greaterorequal, is null or is not null."
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, e.g. [\"id\", \"name\"]. Leave out to get the default set and learn the field names."
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort order as \"field=asc\" or \"field=desc\", e.g. [\"lastname=asc\"]."
           },
           "page": {
-            "type": "number",
-            "description": "Page number (default: 0)"
+            "type": "integer",
+            "description": "Page number, starting at 0."
           },
-          "search": {
-            "type": "string",
-            "description": "Full-text search across contact fields"
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, default 100, maximum 1000. Use 25 to 100 with fields to keep answers small."
           }
         }
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/contacts/list",
+        "path": "/contacts",
         "bodyMapping": {
-          "pageSize": "$pageSize",
+          "search": "$search",
+          "fields": "$fields",
+          "order": "$order",
           "page": "$page",
-          "search": "$search"
+          "pageSize": "$pageSize"
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
       "name": "scopevisio_get_contact",
-      "description": "Get detailed information about a specific contact by ID.",
+      "description": "Get one Scopevisio contact by its numeric id, with all default fields or only the fields you name. Needs the profile Kontakte (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
           "contactId": {
+            "type": "integer",
+            "description": "Numeric contact id from scopevisio_list_contacts."
+          },
+          "fields": {
             "type": "string",
-            "description": "The ScopeVisio contact ID"
+            "description": "Comma-separated fields to return, e.g. id,name. Leave out for the default set."
           }
         },
         "required": [
@@ -66,106 +201,412 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/contacts/{contactId}"
+        "path": "/contact/{contactId}",
+        "queryParams": {
+          "fields": "$fields"
+        }
       }
     },
     {
       "name": "scopevisio_list_outgoing_invoices",
-      "description": "List outgoing invoices (Ausgangsrechnungen) from ScopeVisio. Returns invoice number, date, amount, customer, and payment status.",
+      "description": "Search Scopevisio outgoing invoices (Ausgangsrechnungen). Filter with search criteria, e.g. on documentNumber or the customer. Needs the profile Rechnungen (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Number of results per page (default: 50)"
+          "search": {
+            "type": "array",
+            "description": "Search criteria, combined with AND. Each item is {field, value, operator}; several comma-separated values in one item are combined with OR. Example: [{\"field\": \"lastname\", \"value\": \"Muster\", \"operator\": \"icontains\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Field name, e.g. lastname, documentNumber, status."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value to compare with. Leave out for 'is null' and 'is not null'."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "equal, notequal, contains, icontains (case-insensitive), startswith, endswith, less, greater, lessorequal, greaterorequal, is null or is not null."
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "includeIndividualNumberRanges": {
+            "type": "boolean",
+            "description": "Also return invoices with individual number ranges. Default false."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, e.g. [\"id\", \"name\"]. Leave out to get the default set and learn the field names."
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort order as \"field=asc\" or \"field=desc\", e.g. [\"lastname=asc\"]."
           },
           "page": {
-            "type": "number",
-            "description": "Page number (default: 0)"
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, default 100, maximum 1000. Use 25 to 100 with fields to keep answers small."
           }
         }
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/outgoinginvoice/list",
+        "path": "/outgoinginvoices",
         "bodyMapping": {
+          "search": "$search",
+          "includeIndividualNumberRanges": "$includeIndividualNumberRanges",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "scopevisio_get_outgoing_invoice",
+      "description": "Get one Scopevisio outgoing invoice by its internal number (interne Nummer). Needs the profile Rechnungen (Anzeigen).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Internal number (interne Nummer) of the outgoing invoice."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,name. Leave out for the default set."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/outgoinginvoice/{number}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "scopevisio_get_outgoing_invoice_positions",
+      "description": "List the line items (positions) of one Scopevisio outgoing invoice by its internal number. Paginated: page from 0, pageSize up to 5000. Needs the profile Rechnungen (Anzeigen).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Internal number (interne Nummer) of the outgoing invoice."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, at most 5000."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,name. Leave out for the default set."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/outgoinginvoice/{number}/positions",
+        "queryParams": {
+          "page": "$page",
           "pageSize": "$pageSize",
-          "page": "$page"
+          "fields": "$fields"
         }
       }
     },
     {
       "name": "scopevisio_list_incoming_invoices",
-      "description": "List incoming invoices (Eingangsrechnungen) from ScopeVisio. Returns invoice number, date, amount, vendor, and status.",
+      "description": "Search Scopevisio incoming invoices (Eingangsrechnungen, Rechnungseingangsbuch). Filter with search criteria, e.g. on the vendor or the invoice number. Needs the profile Rechnungseingangsbuch (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Number of results per page (default: 50)"
+          "search": {
+            "type": "array",
+            "description": "Search criteria, combined with AND. Each item is {field, value, operator}; several comma-separated values in one item are combined with OR. Example: [{\"field\": \"lastname\", \"value\": \"Muster\", \"operator\": \"icontains\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Field name, e.g. lastname, documentNumber, status."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value to compare with. Leave out for 'is null' and 'is not null'."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "equal, notequal, contains, icontains (case-insensitive), startswith, endswith, less, greater, lessorequal, greaterorequal, is null or is not null."
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, e.g. [\"id\", \"name\"]. Leave out to get the default set and learn the field names."
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort order as \"field=asc\" or \"field=desc\", e.g. [\"lastname=asc\"]."
           },
           "page": {
-            "type": "number",
-            "description": "Page number (default: 0)"
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, default 100, maximum 1000. Use 25 to 100 with fields to keep answers small."
           }
         }
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/incominginvoice/list",
+        "path": "/incominginvoices",
         "bodyMapping": {
-          "pageSize": "$pageSize",
-          "page": "$page"
+          "search": "$search",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
       "name": "scopevisio_list_projects",
-      "description": "List projects from ScopeVisio. Returns project name, status, budget, and assigned team.",
+      "description": "Search Scopevisio projects. Filter with search criteria, e.g. name icontains Website. Needs the profile Projekte (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Number of results per page (default: 50)"
+          "search": {
+            "type": "array",
+            "description": "Search criteria, combined with AND. Each item is {field, value, operator}; several comma-separated values in one item are combined with OR. Example: [{\"field\": \"lastname\", \"value\": \"Muster\", \"operator\": \"icontains\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Field name, e.g. lastname, documentNumber, status."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value to compare with. Leave out for 'is null' and 'is not null'."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "equal, notequal, contains, icontains (case-insensitive), startswith, endswith, less, greater, lessorequal, greaterorequal, is null or is not null."
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, e.g. [\"id\", \"name\"]. Leave out to get the default set and learn the field names."
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort order as \"field=asc\" or \"field=desc\", e.g. [\"lastname=asc\"]."
           },
           "page": {
-            "type": "number",
-            "description": "Page number (default: 0)"
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, default 100, maximum 1000. Use 25 to 100 with fields to keep answers small."
           }
         }
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/project/list",
+        "path": "/projects",
         "bodyMapping": {
-          "pageSize": "$pageSize",
-          "page": "$page"
+          "search": "$search",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "scopevisio_get_project",
+      "description": "Get one Scopevisio project by its numeric id. Needs the profile Projekte (Anzeigen).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "integer",
+            "description": "Numeric project id from scopevisio_list_projects."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,name. Leave out for the default set."
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{projectId}",
+        "queryParams": {
+          "fields": "$fields"
         }
       }
     },
     {
       "name": "scopevisio_list_tasks",
-      "description": "List tasks from ScopeVisio. Returns task title, status, due date, and assignee.",
+      "description": "Search Scopevisio tasks (Aufgaben). Filter with search criteria, e.g. on status, priority, projectId or responsibleContactId. Needs the profile Aufgabe (Anzeigen).",
       "parameters": {
         "type": "object",
         "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Number of results per page (default: 50)"
+          "search": {
+            "type": "array",
+            "description": "Search criteria, combined with AND. Each item is {field, value, operator}; several comma-separated values in one item are combined with OR. Example: [{\"field\": \"lastname\", \"value\": \"Muster\", \"operator\": \"icontains\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Field name, e.g. lastname, documentNumber, status."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value to compare with. Leave out for 'is null' and 'is not null'."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "equal, notequal, contains, icontains (case-insensitive), startswith, endswith, less, greater, lessorequal, greaterorequal, is null or is not null."
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, e.g. [\"id\", \"name\"]. Leave out to get the default set and learn the field names."
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort order as \"field=asc\" or \"field=desc\", e.g. [\"lastname=asc\"]."
           },
           "page": {
-            "type": "number",
-            "description": "Page number (default: 0)"
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Rows per page, default 100, maximum 1000. Use 25 to 100 with fields to keep answers small."
           }
         }
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/task/list",
+        "path": "/tasks",
         "bodyMapping": {
-          "pageSize": "$pageSize",
-          "page": "$page"
+          "search": "$search",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "scopevisio_get_task",
+      "description": "Get one Scopevisio task by its numeric id, with topic, status, priority, linked contact and project. Needs the profile Aufgabe (Anzeigen).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "description": "Numeric task id from scopevisio_list_tasks."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,name. Leave out for the default set."
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/task/{taskId}",
+        "queryParams": {
+          "fields": "$fields"
         }
       }
     }
