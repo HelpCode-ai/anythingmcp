@@ -1,11 +1,12 @@
 {
   "slug": "teamviewer",
   "name": "TeamViewer API",
-  "description": "Manage TeamViewer devices, contacts, and sessions via the TeamViewer Web API. List devices, check online status, create remote support sessions.",
+  "description": "Read your TeamViewer account through the Web API: devices and their online status, contacts, groups, account details and service-queue sessions. Read-only.",
   "region": "de",
   "category": "remote",
   "icon": "teamviewer",
   "docsUrl": "https://www.teamviewer.com/en/for-developers/",
+  "instructions": "This connector reads a TeamViewer account through the Web API (`webapi.teamviewer.com/api/v1`): the token's account, the devices and contacts in its Computers & Contacts list, groups and service-queue sessions. All six tools only read: they cannot start a remote connection, create a session or change a device.\n\n**Getting credentials**\n1. The Web API needs a Business, Premium, Corporate or Tensor plan.\n2. Sign in to the TeamViewer Management Console, click your profile avatar, open **Edit profile → Apps & Tokens** and choose **Create app or token** to create a script token.\n3. Tick only the read permissions this connector needs: account information, Computers & Contacts, group management and session management.\n4. Paste the token into `TEAMVIEWER_API_TOKEN`. It is sent as `Authorization: Bearer <token>`. A 401 `invalid_token` means the token is wrong or was deleted; a permission error on one tool means the token lacks that area.\n\n**Scope follows the token's user**: devices, contacts and groups are those visible to the user who created the token, not necessarily the whole company.\n\n**IDs**: TeamViewer prefixes its IDs. `teamviewer_get_device` takes the `device_id` from `teamviewer_list_devices` (starts with `d`), not the TeamViewer ID that users read on screen (`remotecontrol_id`, starts with `r`, or the numeric `teamviewer_id`). Group IDs start with `g`, contact IDs with `c`. To find a device by name, list devices and match on `alias`.\n\n**Devices**: `online_state` filters by `online` or `offline`; leave it empty for all. Each device carries `alias`, `groupid`, `description`, `online_state`, `last_seen` and `assigned_to`.\n\n**Sessions** are service-queue cases (session codes such as `s12-345-678`) with `state`, `assigned_userid`, `created_at` and `end_customer`, not a log of past connections. The API returns them in pages (`next_offset`, `sessions_remaining`); this tool only reads the first page.\n\n**Cloud reachability**: webapi.teamviewer.com is public over HTTPS. If you get a 429, wait before retrying.",
   "requiredEnvVars": [
     "TEAMVIEWER_API_TOKEN"
   ],
