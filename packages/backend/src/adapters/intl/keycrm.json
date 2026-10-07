@@ -1,0 +1,372 @@
+{
+  "slug": "keycrm",
+  "name": "KeyCRM",
+  "description": "KeyCRM (Ukraine) for online shops and sales teams: read orders, buyers, products, variants and stock, sales pipelines and their cards, order statuses and sources, and create orders through the KeyCRM OpenAPI.",
+  "instructions": "KeyCRM is a Ukrainian CRM for online shops. This adapter reads orders, buyers, the product catalogue with stock, and sales pipelines, and can create an order.\n\n**Getting credentials**\n1. In KeyCRM open Settings → General (Налаштування → Основні) and find the API key field.\n2. Click Generate API key (Згенерувати API ключ) if none exists yet, copy it and paste it into `KEYCRM_API_KEY`. Only the CRM owner can refresh the key; refreshing it stops the old key at once in every integration.\n\n**Workflow**: `keycrm_list_order_statuses` and `keycrm_list_order_sources` return the ids the order filters need. `keycrm_list_orders` lists orders, `keycrm_get_order` returns one with its buyer, products, payments and shipping. Find customers with `keycrm_list_buyers` (by phone or email). For stock use `keycrm_list_offers` (variants with quantity and reserve) or `keycrm_list_stocks` (per warehouse with details=true). Pipelines (Воронки) hold leads as cards: `keycrm_list_pipelines`, `keycrm_list_pipeline_statuses`, `keycrm_list_pipeline_cards`.\n\n**Formats and gotchas**: ids are integers. All times are UTC (GMT+0). Date-range filters take `YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM:SS`. Several values for one filter are comma-separated, e.g. `status_id` = `1,4`. Without `include` an order or card comes back without its buyer, products or status; the tools send useful defaults. If pipelines are switched off in the CRM settings, pipeline tools answer 400 Leads are not enabled. Phone numbers work best in international format with `+`.\n\n**Writes**: `keycrm_create_order` creates a real order (and a new buyer if the contact is new). Show the user the source, buyer and products and wait for confirmation; never retry a successful call.\n\n**Pagination and rate limits**: list tools take `page` (from 1) and `limit` (max 50, default 50 here). The body carries `total`, `current_page` and `next_page_url`: call again with `page` + 1 until `next_page_url` is null. KeyCRM allows 20 requests per minute per API key, so prefer filters over paging through everything; on HTTP 429 wait a minute.\n\n**Cloud reachability**: `openapi.keycrm.app` is a public HTTPS API, reachable from AnythingMCP Cloud and from self-hosted installs.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "keycrm",
+  "docsUrl": "https://docs.keycrm.app",
+  "requiredEnvVars": ["KEYCRM_API_KEY"],
+  "envVarMeta": {
+    "KEYCRM_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In KeyCRM: Settings → General (Налаштування → Основні), API key field. Paste only the key.",
+      "link": "https://help.keycrm.app/uk/process-automation-api-and-more/where-to-get-an-api-key",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the key, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "KeyCRM refused the API key. Copy it again from Settings → General; if the owner refreshed it, the old key no longer works.",
+    "rate_limited": "KeyCRM allows 20 requests per minute per API key. Wait a minute and try again."
+  },
+  "probe": { "tool": "keycrm_list_order_statuses" },
+  "connector": {
+    "name": "KeyCRM OpenAPI v1",
+    "type": "REST",
+    "baseUrl": "https://openapi.keycrm.app/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KEYCRM_API_KEY}}"
+    },
+    "headers": { "Accept": "application/json" },
+    "healthcheckPath": "/order/status"
+  },
+  "tools": [
+    {
+      "name": "keycrm_list_orders",
+      "description": "List KeyCRM orders, newest first by default, filtered by status, source, buyer phone or email, payment status or created/updated/shipping date range. Page with page + 1 until next_page_url is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_id": { "type": "string", "description": "Order status id(s) from keycrm_list_order_statuses, comma-separated, e.g. 1,4." },
+          "source_id": { "type": "string", "description": "Order source id(s) from keycrm_list_order_sources, comma-separated." },
+          "source_uuid": { "type": "string", "description": "Order number in the source system (shop or marketplace)." },
+          "buyer_phone": { "type": "string", "description": "Buyer phone(s), comma-separated, international format, e.g. +380671234567." },
+          "buyer_email": { "type": "string", "description": "Buyer email(s), comma-separated." },
+          "payment_status": { "type": "string", "description": "Comma-separated: paid, overpaid, part_paid, not_paid." },
+          "created_between": { "type": "string", "description": "Created in this UTC range: YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM:SS." },
+          "updated_between": { "type": "string", "description": "Updated in this UTC range, same format as created_between." },
+          "shipping_between": { "type": "string", "description": "Shipping date in this UTC range, same format as created_between." },
+          "has_tracking_code": { "type": "boolean", "description": "true for orders with a tracking number, false for orders without." },
+          "include": { "type": "string", "default": "buyer,status", "description": "Comma-separated relations to add: buyer, products.offer, manager, tags, status, marketing, payments, shipping.lastHistory, shipping.deliveryService, expenses, custom_fields, assigned. Default buyer,status." },
+          "sort": { "type": "string", "default": "-id", "description": "id for oldest first, -id for newest first. Default -id." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Orders per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order",
+        "queryParams": {
+          "filter[status_id]": "$status_id",
+          "filter[source_id]": "$source_id",
+          "filter[source_uuid]": "$source_uuid",
+          "filter[buyer_phone]": "$buyer_phone",
+          "filter[buyer_email]": "$buyer_email",
+          "filter[payment_status]": "$payment_status",
+          "filter[created_between]": "$created_between",
+          "filter[updated_between]": "$updated_between",
+          "filter[shipping_between]": "$shipping_between",
+          "filter[has_tracking_code]": "$has_tracking_code",
+          "include": "$include",
+          "sort": "$sort",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_get_order",
+      "description": "Get one KeyCRM order by id with its buyer, products and variants, status, payments, shipping and manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "integer", "description": "Order id from keycrm_list_orders." },
+          "include": { "type": "string", "default": "buyer,products.offer,status,manager,payments,shipping.deliveryService,tags", "description": "Comma-separated relations to add: buyer, products.offer, manager, tags, status, marketing, payments, shipping.lastHistory, shipping.deliveryService, expenses, custom_fields, assigned." }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/order/{order_id}", "queryParams": { "include": "$include" } }
+    },
+    {
+      "name": "keycrm_list_order_statuses",
+      "description": "List the active KeyCRM order statuses with their ids and names (e.g. New, Confirmed, Shipped). Use the ids to filter keycrm_list_orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Statuses per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/order/status", "queryParams": { "limit": "$limit", "page": "$page" } }
+    },
+    {
+      "name": "keycrm_list_order_sources",
+      "description": "List KeyCRM order sources (shops, marketplaces, manual entry) with their ids. keycrm_create_order needs a source_id from here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Sources per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/order/source", "queryParams": { "limit": "$limit", "page": "$page" } }
+    },
+    {
+      "name": "keycrm_list_buyers",
+      "description": "List or find KeyCRM buyers (customers) by id, phone, email or created/updated date range. Page with page + 1 until next_page_url is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "buyer_id": { "type": "string", "description": "Buyer id(s), comma-separated." },
+          "buyer_phone": { "type": "string", "description": "Phone(s), comma-separated, international format, e.g. +380671234567." },
+          "buyer_email": { "type": "string", "description": "Email(s), comma-separated." },
+          "created_between": { "type": "string", "description": "Created in this UTC range: YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM:SS." },
+          "updated_between": { "type": "string", "description": "Updated in this UTC range, same format as created_between." },
+          "include": { "type": "string", "description": "Comma-separated relations to add: manager, shipping, company, loyalty, custom_fields." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Buyers per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buyer",
+        "queryParams": {
+          "filter[buyer_id]": "$buyer_id",
+          "filter[buyer_phone]": "$buyer_phone",
+          "filter[buyer_email]": "$buyer_email",
+          "filter[created_between]": "$created_between",
+          "filter[updated_between]": "$updated_between",
+          "include": "$include",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_get_buyer",
+      "description": "Get one KeyCRM buyer by id with phones, emails, manager, company, shipping addresses and loyalty totals (discount, purchase sums).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "buyer_id": { "type": "integer", "description": "Buyer id from keycrm_list_buyers or an order's buyer." },
+          "include": { "type": "string", "default": "manager,company,shipping,loyalty", "description": "Comma-separated relations to add: manager, shipping, company, loyalty, custom_fields." }
+        },
+        "required": ["buyer_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/buyer/{buyer_id}", "queryParams": { "include": "$include" } }
+    },
+    {
+      "name": "keycrm_list_products",
+      "description": "List products in the KeyCRM catalogue, optionally by product id, category id or archive state. Variants and their stock come from keycrm_list_offers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "string", "description": "Product id(s), comma-separated." },
+          "category_id": { "type": "string", "description": "Category id(s), comma-separated." },
+          "is_archived": { "type": "boolean", "description": "true for archived products only, false for active ones." },
+          "include": { "type": "string", "description": "custom_fields to add custom field values." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Products per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "filter[product_id]": "$product_id",
+          "filter[category_id]": "$category_id",
+          "filter[is_archived]": "$is_archived",
+          "include": "$include",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_list_offers",
+      "description": "List product variants (offers) with SKU, barcode, price, purchase price, quantity in stock and quantity in reserve. Filter by variant id, product id or SKU; include=product adds the parent product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Variant id(s), comma-separated." },
+          "product_id": { "type": "string", "description": "Product id(s), comma-separated." },
+          "sku": { "type": "string", "description": "SKU(s), comma-separated." },
+          "is_archived": { "type": "boolean", "description": "true for archived variants only, false for active ones." },
+          "include": { "type": "string", "description": "product to add the parent product." },
+          "sort": { "type": "string", "description": "id for ascending, -id for descending." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Variants per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "filter[id]": "$id",
+          "filter[product_id]": "$product_id",
+          "filter[sku]": "$sku",
+          "filter[is_archived]": "$is_archived",
+          "include": "$include",
+          "sort": "$sort",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_list_stocks",
+      "description": "List stock levels per product variant (quantity and reserve), optionally split by warehouse with details=true. Filter by variant id or SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers_id": { "type": "string", "description": "Variant id(s), comma-separated." },
+          "offers_sku": { "type": "string", "description": "Variant SKU(s), comma-separated." },
+          "details": { "type": "boolean", "description": "true to return the stock of each warehouse separately." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Rows per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/stocks",
+        "queryParams": {
+          "filter[offers_id]": "$offers_id",
+          "filter[offers_sku]": "$offers_sku",
+          "filter[details]": "$details",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_list_pipelines",
+      "description": "List the sales pipelines (Воронки) of the CRM with their ids. Returns 400 Leads are not enabled when pipelines are switched off in the CRM settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Pipelines per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/pipelines", "queryParams": { "limit": "$limit", "page": "$page" } }
+    },
+    {
+      "name": "keycrm_list_pipeline_statuses",
+      "description": "List the stages (statuses) of one KeyCRM pipeline. Statuses are not shared between pipelines, so read them for the pipeline you work with.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": { "type": "integer", "description": "Pipeline id from keycrm_list_pipelines." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Statuses per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        },
+        "required": ["pipeline_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/pipelines/{pipeline_id}/statuses", "queryParams": { "limit": "$limit", "page": "$page" } }
+    },
+    {
+      "name": "keycrm_list_pipeline_cards",
+      "description": "List pipeline cards (leads or deals) filtered by pipeline, stage, source or created/updated date range, with contact, manager and status. Page with page + 1 until next_page_url is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": { "type": "string", "description": "Pipeline id(s), comma-separated." },
+          "status_id": { "type": "string", "description": "Pipeline status id(s), comma-separated." },
+          "source_id": { "type": "string", "description": "Source id(s), comma-separated." },
+          "created_between": { "type": "string", "description": "Created in this UTC range: YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM:SS." },
+          "updated_between": { "type": "string", "description": "Updated in this UTC range, same format as created_between." },
+          "include": { "type": "string", "default": "contact.client,manager,status", "description": "Comma-separated relations to add: contact.client, products, manager, status, payments, custom_fields. Default contact.client,manager,status." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 50, "description": "Cards per page, up to 50. Default 50." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipelines/cards",
+        "queryParams": {
+          "filter[pipeline_id]": "$pipeline_id",
+          "filter[status_id]": "$status_id",
+          "filter[source_id]": "$source_id",
+          "filter[created_between]": "$created_between",
+          "filter[updated_between]": "$updated_between",
+          "include": "$include",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "keycrm_get_pipeline_card",
+      "description": "Get one KeyCRM pipeline card (lead or deal) by id with contact and buyer, products, manager, status, payments and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": { "type": "integer", "description": "Card id from keycrm_list_pipeline_cards." },
+          "include": { "type": "string", "default": "contact.client,products,manager,status,payments,custom_fields", "description": "Comma-separated relations to add: contact.client, products, manager, status, payments, custom_fields." }
+        },
+        "required": ["card_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/pipelines/cards/{card_id}", "queryParams": { "include": "$include" } }
+    },
+    {
+      "name": "keycrm_create_order",
+      "description": "Create a new KeyCRM order. Writes real data and creates a new buyer when the contact is unknown: show the user the source, buyer and products and get confirmation first. Each call creates another order, so never retry a successful call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "integer", "description": "Order source id from keycrm_list_order_sources." },
+          "source_uuid": { "type": "string", "description": "Order number in the source system, if any." },
+          "buyer_full_name": { "type": "string", "description": "Buyer's full name." },
+          "buyer_phone": { "type": "string", "description": "Buyer's phone in international format with +, e.g. +380671234567." },
+          "buyer_email": { "type": "string", "description": "Buyer's email." },
+          "products": {
+            "type": "array",
+            "description": "Order lines. Each item: sku (matches a catalogue variant), name, price (per unit), quantity; optional discount_percent, discount_amount, comment.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": { "type": "string", "description": "Variant SKU, links the line to the catalogue." },
+                "name": { "type": "string", "description": "Product name." },
+                "price": { "type": "number", "description": "Price per unit." },
+                "quantity": { "type": "number", "description": "Quantity ordered." },
+                "discount_percent": { "type": "number", "description": "Line discount in percent." },
+                "discount_amount": { "type": "number", "description": "Fixed line discount." },
+                "comment": { "type": "string", "description": "Comment for this line." }
+              }
+            }
+          },
+          "manager_id": { "type": "integer", "description": "Responsible manager's user id." },
+          "buyer_comment": { "type": "string", "description": "Comment from the buyer." },
+          "manager_comment": { "type": "string", "description": "Internal comment from the manager." },
+          "discount_percent": { "type": "number", "description": "Order discount in percent." },
+          "discount_amount": { "type": "number", "description": "Fixed order discount." },
+          "shipping_price": { "type": "number", "description": "Shipping cost." },
+          "ordered_at": { "type": "string", "description": "Order time in UTC, YYYY-MM-DD HH:MM:SS. Defaults to now." }
+        },
+        "required": ["source_id", "buyer_full_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order",
+        "bodyMapping": {
+          "source_id": "$source_id",
+          "source_uuid": "$source_uuid",
+          "buyer": { "full_name": "$buyer_full_name", "phone": "$buyer_phone", "email": "$buyer_email" },
+          "products": "$products",
+          "manager_id": "$manager_id",
+          "buyer_comment": "$buyer_comment",
+          "manager_comment": "$manager_comment",
+          "discount_percent": "$discount_percent",
+          "discount_amount": "$discount_amount",
+          "shipping_price": "$shipping_price",
+          "ordered_at": "$ordered_at"
+        }
+      }
+    }
+  ]
+}

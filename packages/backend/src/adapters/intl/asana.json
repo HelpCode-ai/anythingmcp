@@ -1,0 +1,317 @@
+{
+  "slug": "asana",
+  "name": "Asana",
+  "description": "Asana work management: browse workspaces, projects, sections and tasks, read task comments, search tasks, and create, update or comment on tasks through the REST API.",
+  "instructions": "Asana organises work as workspaces, projects, sections and tasks. This adapter reads them and can create tasks, update them and post comments as the token's user.\n\n**Getting credentials**\n1. In Asana, click your profile photo, then Settings, Apps, View developer console (older menus say Manage developer apps), or open https://app.asana.com/0/my-apps.\n2. Under Personal access tokens choose Create new token, give it a name, accept the terms and copy the token into `ASANA_ACCESS_TOKEN`. It is shown only once and acts with your permissions.\n\n**Workflow**: start with `asana_get_me` (it also lists your workspaces) or `asana_list_workspaces`. Pass a workspace gid to `asana_list_projects`, then a project gid to `asana_list_tasks` or `asana_list_sections`. For your own work, call `asana_list_tasks` with `assignee` = `me` plus `workspace`. `asana_get_task` returns notes, custom fields and memberships; `asana_list_task_stories` returns comments and activity.\n\n**Formats and gotchas**: every id is a string gid, e.g. `1204567890123456`. Dates are `YYYY-MM-DD`, times ISO 8601 UTC. Each read tool sends `opt_fields` with a compact default field list; pass your own comma-separated list (nested fields with dots, e.g. `assignee.name`) to get other fields. `completed_since=now` returns only incomplete tasks. `asana_search_tasks` needs a premium workspace or team; other users get HTTP 402, so fall back to `asana_list_tasks`. Search results lag writes by up to a minute.\n\n**Writes**: `asana_create_task`, `asana_update_task` and `asana_add_comment` change real data visible to the team. Show the user what will be written and wait for confirmation; never retry a successful create.\n\n**Pagination and rate limits**: list tools send `limit` (default 50, max 100). While more results exist the body holds `next_page.offset`: call again with `offset` set to it until `next_page` is null. Search has no `next_page`: sort by `created_at` and narrow with `created_after`. Asana allows 150 requests per minute on free domains, 1500 on paid ones, and 60 per minute for search; on HTTP 429 wait for the `Retry-After` seconds.\n\n**Cloud reachability**: `app.asana.com` is a public HTTPS API, so AnythingMCP Cloud and self-hosted installs reach it without extra network setup.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "asana",
+  "docsUrl": "https://developers.asana.com/reference/rest-api-reference",
+  "requiredEnvVars": ["ASANA_ACCESS_TOKEN"],
+  "envVarMeta": {
+    "ASANA_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Create it in the Asana developer console under Personal access tokens, then Create new token. Paste only the token.",
+      "link": "https://app.asana.com/0/my-apps",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the token, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Asana refused the token. Personal access tokens are shown once; create a new one in the developer console (https://app.asana.com/0/my-apps) and paste it without the word Bearer.",
+    "rate_limited": "Asana allows 150 requests per minute on free domains and 1500 on paid ones. Wait for the Retry-After time and try again."
+  },
+  "probe": { "tool": "asana_get_me" },
+  "connector": {
+    "name": "Asana REST API 1.0",
+    "type": "REST",
+    "baseUrl": "https://app.asana.com/api/1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ASANA_ACCESS_TOKEN}}"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "asana_get_me",
+      "description": "Get the Asana user behind the access token: gid, name, email and the workspaces it belongs to. Call this first to confirm the connection and pick a workspace gid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opt_fields": { "type": "string", "default": "name,email,workspaces.name", "description": "Comma-separated fields to return. Default: name,email,workspaces.name." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/me", "queryParams": { "opt_fields": "$opt_fields" } }
+    },
+    {
+      "name": "asana_list_workspaces",
+      "description": "List the Asana workspaces and organizations visible to the token's user, with their gids. Most other tools need a workspace gid from here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results per page, 1 to 100. Default 50." },
+          "offset": { "type": "string", "description": "Page token: next_page.offset from the previous response. Omit for the first page." },
+          "opt_fields": { "type": "string", "default": "name,is_organization", "description": "Comma-separated fields to return. Default: name,is_organization." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/workspaces", "queryParams": { "limit": "$limit", "offset": "$offset", "opt_fields": "$opt_fields" } }
+    },
+    {
+      "name": "asana_list_projects",
+      "description": "List projects in one Asana workspace, optionally only archived or only active ones. Returns project gids for asana_list_tasks and asana_list_sections. Page with offset = next_page.offset until next_page is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": { "type": "string", "description": "Workspace gid from asana_list_workspaces or asana_get_me." },
+          "archived": { "type": "boolean", "description": "true for archived projects only, false for active projects only. Omit for both." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results per page, 1 to 100. Default 50." },
+          "offset": { "type": "string", "description": "Page token: next_page.offset from the previous response. Omit for the first page." },
+          "opt_fields": { "type": "string", "default": "name,archived,owner,team.name,start_on,due_on,modified_at,permalink_url", "description": "Comma-separated fields to return. Default: name,archived,owner,team.name,start_on,due_on,modified_at,permalink_url." }
+        },
+        "required": ["workspace"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": { "workspace": "$workspace", "archived": "$archived", "limit": "$limit", "offset": "$offset", "opt_fields": "$opt_fields" }
+      }
+    },
+    {
+      "name": "asana_get_project",
+      "description": "Get one Asana project by gid: description, owner, team, members, dates, latest status update and custom field settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_gid": { "type": "string", "description": "Project gid from asana_list_projects, e.g. 1204567890123456." },
+          "opt_fields": { "type": "string", "default": "name,notes,archived,completed,owner,team.name,members.name,start_on,due_on,created_at,modified_at,permalink_url,current_status_update.title,custom_field_settings.custom_field.name", "description": "Comma-separated fields to return. The default covers description, owner, team, members, dates, status update title and custom field names." }
+        },
+        "required": ["project_gid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/projects/{project_gid}", "queryParams": { "opt_fields": "$opt_fields" } }
+    },
+    {
+      "name": "asana_list_tasks",
+      "description": "List Asana tasks of one project, one section, or one assignee in a workspace. Give project, or section, or assignee together with workspace. Use completed_since=now for open tasks only. Page with offset = next_page.offset until next_page is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": { "type": "string", "description": "Project gid. Lists the project's tasks." },
+          "section": { "type": "string", "description": "Section gid from asana_list_sections. Lists the tasks in that section." },
+          "assignee": { "type": "string", "description": "User gid, email or me. Requires workspace." },
+          "workspace": { "type": "string", "description": "Workspace gid. Only valid together with assignee." },
+          "completed_since": { "type": "string", "description": "Only tasks that are incomplete or were completed after this ISO 8601 time; now returns open tasks only." },
+          "modified_since": { "type": "string", "description": "Only tasks modified after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results per page, 1 to 100. Default 50." },
+          "offset": { "type": "string", "description": "Page token: next_page.offset from the previous response. Omit for the first page." },
+          "opt_fields": { "type": "string", "default": "name,completed,assignee.name,due_on,due_at,modified_at,memberships.section.name,permalink_url", "description": "Comma-separated fields to return. Default: name,completed,assignee.name,due_on,due_at,modified_at,memberships.section.name,permalink_url." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "project": "$project",
+          "section": "$section",
+          "assignee": "$assignee",
+          "workspace": "$workspace",
+          "completed_since": "$completed_since",
+          "modified_since": "$modified_since",
+          "limit": "$limit",
+          "offset": "$offset",
+          "opt_fields": "$opt_fields"
+        }
+      }
+    },
+    {
+      "name": "asana_get_task",
+      "description": "Get one Asana task by gid with its description, assignee, dates, projects and sections, parent, tags, custom field values, followers and subtask count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_gid": { "type": "string", "description": "Task gid, e.g. 1204567890123456." },
+          "opt_fields": { "type": "string", "default": "name,notes,completed,completed_at,assignee.name,due_on,due_at,start_on,created_at,modified_at,created_by,projects.name,memberships.project.name,memberships.section.name,parent.name,tags.name,num_subtasks,custom_fields.name,custom_fields.display_value,followers.name,permalink_url", "description": "Comma-separated fields to return. The default covers the task's description, people, dates, placement, tags and custom field values." }
+        },
+        "required": ["task_gid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tasks/{task_gid}", "queryParams": { "opt_fields": "$opt_fields" } }
+    },
+    {
+      "name": "asana_search_tasks",
+      "description": "Search tasks across an Asana workspace by text, assignee, project, due date, completion and modification time. Premium only: non-premium users get HTTP 402, then use asana_list_tasks. There is no next_page; sort by created_at and narrow with created_after to see more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_gid": { "type": "string", "description": "Workspace gid to search in." },
+          "text": { "type": "string", "description": "Full-text match on task name and description." },
+          "assignee_any": { "type": "string", "description": "Comma-separated user gids, emails or me." },
+          "projects_any": { "type": "string", "description": "Comma-separated project gids." },
+          "completed": { "type": "boolean", "description": "true for completed tasks only, false for incomplete tasks only." },
+          "due_on_before": { "type": "string", "description": "Due before this date, YYYY-MM-DD." },
+          "due_on_after": { "type": "string", "description": "Due after this date, YYYY-MM-DD." },
+          "created_after": { "type": "string", "description": "Created after this ISO 8601 time; use with sort_by=created_at to page through results." },
+          "modified_after": { "type": "string", "description": "Modified after this ISO 8601 time." },
+          "is_subtask": { "type": "boolean", "description": "true for subtasks only, false to exclude subtasks." },
+          "sort_by": { "type": "string", "enum": ["due_date", "created_at", "completed_at", "likes", "relevance", "modified_at"], "description": "Sort order; Asana's default is modified_at." },
+          "sort_ascending": { "type": "boolean", "description": "true for ascending order. Default false." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results to return, 1 to 100. Default 50." },
+          "opt_fields": { "type": "string", "default": "name,completed,assignee.name,due_on,projects.name,created_at,modified_at,permalink_url", "description": "Comma-separated fields to return. Default: name,completed,assignee.name,due_on,projects.name,created_at,modified_at,permalink_url." }
+        },
+        "required": ["workspace_gid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_gid}/tasks/search",
+        "queryParams": {
+          "text": "$text",
+          "assignee.any": "$assignee_any",
+          "projects.any": "$projects_any",
+          "completed": "$completed",
+          "due_on.before": "$due_on_before",
+          "due_on.after": "$due_on_after",
+          "created_at.after": "$created_after",
+          "modified_at.after": "$modified_after",
+          "is_subtask": "$is_subtask",
+          "sort_by": "$sort_by",
+          "sort_ascending": "$sort_ascending",
+          "limit": "$limit",
+          "opt_fields": "$opt_fields"
+        }
+      }
+    },
+    {
+      "name": "asana_list_sections",
+      "description": "List the sections (list headers or board columns) of an Asana project with their gids, for filtering asana_list_tasks by section.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_gid": { "type": "string", "description": "Project gid from asana_list_projects." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results per page, 1 to 100. Default 50." },
+          "offset": { "type": "string", "description": "Page token: next_page.offset from the previous response. Omit for the first page." },
+          "opt_fields": { "type": "string", "default": "name,created_at", "description": "Comma-separated fields to return. Default: name,created_at." }
+        },
+        "required": ["project_gid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_gid}/sections",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "opt_fields": "$opt_fields" }
+      }
+    },
+    {
+      "name": "asana_list_task_stories",
+      "description": "List the comments and activity (stories) of an Asana task. Set resource_subtype=comment_added to skip assignment and date-change activity, and sort_ascending=false with a small limit to read only the latest ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_gid": { "type": "string", "description": "Task gid." },
+          "resource_subtype": { "type": "string", "enum": ["comment_added"], "description": "comment_added returns comments only. Omit for the full activity feed." },
+          "sort_ascending": { "type": "boolean", "description": "true (Asana default) is oldest first, false is newest first." },
+          "limit": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Results per page, 1 to 100. Default 50." },
+          "offset": { "type": "string", "description": "Page token: next_page.offset from the previous response. Omit for the first page." },
+          "opt_fields": { "type": "string", "default": "created_at,created_by.name,resource_subtype,text", "description": "Comma-separated fields to return. Default: created_at,created_by.name,resource_subtype,text." }
+        },
+        "required": ["task_gid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{task_gid}/stories",
+        "queryParams": { "resource_subtype": "$resource_subtype", "sort_ascending": "$sort_ascending", "limit": "$limit", "offset": "$offset", "opt_fields": "$opt_fields" }
+      }
+    },
+    {
+      "name": "asana_create_task",
+      "description": "Create a new Asana task. Writes real data visible to the team: show the user the name, project, assignee and due date and get confirmation first. Give projects or workspace. Each call creates another task, so never retry a successful call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Task name, a short line." },
+          "notes": { "type": "string", "description": "Plain-text description." },
+          "projects": { "type": "array", "items": { "type": "string" }, "description": "Project gids to add the task to, e.g. [\"1204567890123456\"]." },
+          "workspace": { "type": "string", "description": "Workspace gid; needed only when no projects or parent are given." },
+          "parent": { "type": "string", "description": "Parent task gid to create a subtask." },
+          "assignee": { "type": "string", "description": "User gid, email or me." },
+          "due_on": { "type": "string", "description": "Due date, YYYY-MM-DD. Do not combine with due_at." },
+          "due_at": { "type": "string", "description": "Due time, ISO 8601 UTC, e.g. 2026-10-20T15:00:00Z. Do not combine with due_on." },
+          "start_on": { "type": "string", "description": "Start date, YYYY-MM-DD; needs due_on or due_at." },
+          "opt_fields": { "type": "string", "default": "name,completed,assignee.name,due_on,due_at,projects.name,permalink_url", "description": "Comma-separated fields to return for the new task." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "queryParams": { "opt_fields": "$opt_fields" },
+        "bodyMapping": {
+          "data": {
+            "name": "$name",
+            "notes": "$notes",
+            "projects": "$projects",
+            "workspace": "$workspace",
+            "parent": "$parent",
+            "assignee": "$assignee",
+            "due_on": "$due_on",
+            "due_at": "$due_at",
+            "start_on": "$start_on"
+          }
+        }
+      }
+    },
+    {
+      "name": "asana_update_task",
+      "description": "Update an Asana task: rename it, change its description, mark it complete or incomplete, reassign it or move its dates. Only the fields you pass change. Changes real data: confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_gid": { "type": "string", "description": "Task gid to update." },
+          "name": { "type": "string", "description": "New task name." },
+          "notes": { "type": "string", "description": "New plain-text description; replaces the existing one." },
+          "completed": { "type": "boolean", "description": "true to mark complete, false to reopen." },
+          "assignee": { "type": "string", "description": "New assignee: user gid, email or me." },
+          "due_on": { "type": "string", "description": "New due date, YYYY-MM-DD. Do not combine with due_at." },
+          "due_at": { "type": "string", "description": "New due time, ISO 8601 UTC. Do not combine with due_on." },
+          "start_on": { "type": "string", "description": "New start date, YYYY-MM-DD." },
+          "opt_fields": { "type": "string", "default": "name,completed,assignee.name,due_on,due_at,projects.name,permalink_url", "description": "Comma-separated fields to return for the updated task." }
+        },
+        "required": ["task_gid"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_gid}",
+        "queryParams": { "opt_fields": "$opt_fields" },
+        "bodyMapping": {
+          "data": {
+            "name": "$name",
+            "notes": "$notes",
+            "completed": "$completed",
+            "assignee": "$assignee",
+            "due_on": "$due_on",
+            "due_at": "$due_at",
+            "start_on": "$start_on"
+          }
+        }
+      }
+    },
+    {
+      "name": "asana_add_comment",
+      "description": "Post a comment on an Asana task as the token's user. Followers are notified, so show the user the exact text and get confirmation first. Each call posts another comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_gid": { "type": "string", "description": "Task gid to comment on." },
+          "text": { "type": "string", "description": "Plain-text comment." },
+          "opt_fields": { "type": "string", "default": "created_at,created_by.name,text", "description": "Comma-separated fields to return for the new comment." }
+        },
+        "required": ["task_gid", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/{task_gid}/stories",
+        "queryParams": { "opt_fields": "$opt_fields" },
+        "bodyMapping": { "data": { "text": "$text" } }
+      }
+    }
+  ]
+}

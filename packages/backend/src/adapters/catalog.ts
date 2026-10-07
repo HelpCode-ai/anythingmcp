@@ -81,6 +81,7 @@ import * as amazonSeller from './intl/amazon-seller.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apollo from './intl/apollo.json';
 import * as archer from './intl/archer.json';
+import * as asana from './intl/asana.json';
 import * as asite from './intl/asite.json';
 import * as atera from './intl/atera.json';
 import * as attio from './intl/attio.json';
@@ -167,6 +168,7 @@ import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
 import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
+import * as keycrm from './intl/keycrm.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
@@ -584,6 +586,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   apiFootball as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   archer as unknown as AdapterDefinition,
+  asana as unknown as AdapterDefinition,
   asite as unknown as AdapterDefinition,
   atera as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
@@ -670,6 +673,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   invoiced as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
+  keycrm as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
