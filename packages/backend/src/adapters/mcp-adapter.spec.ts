@@ -189,6 +189,8 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
   it('prefixes the tools of a bridge that sets a tool prefix (linear), calling them by the remote name', async () => {
     const discover = jest.fn().mockResolvedValue([remote('list_issues'), remote('delete_comment'), remote('brand_new')]);
     const { service, prisma, created } = build(discover);
+    // Unlisted until verified with a real account; the install path is what is tested here.
+    jest.spyOn(service as any, 'isInstallableHere').mockReturnValue(true);
     await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_x' });
 
     expect(prisma.connector.create.mock.calls[0][0].data.config).toMatchObject({ mcpToolPrefix: 'linear_' });
@@ -202,6 +204,8 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
   it('installs the snapshot of a bridge that needs a sign-in without trying to list it (notion)', async () => {
     const discover = jest.fn();
     const { service, prisma, created } = build(discover);
+    // Unlisted until verified with a real account; the install path is what is tested here.
+    jest.spyOn(service as any, 'isInstallableHere').mockReturnValue(true);
     const out = await service.importAdapter('notion', 'u1', 'o1', {});
 
     expect(discover).not.toHaveBeenCalled();
