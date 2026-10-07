@@ -219,6 +219,35 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
   return result;
 }
 
+/**
+ * The catalog variables that auth fields stand for, with the values the fields
+ * now hold.
+ *
+ * The auth editors (PATCH :id/oauth-config, :id/oauth1-config) write straight
+ * into authConfig. On a catalog connector the same variable often feeds other
+ * fields too: Etsy sends `x-api-key: {{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}`
+ * next to the OAuth client. A secret corrected in the editor reached the
+ * client and never the header, so every call kept the old key. Only fields
+ * whose template is exactly one variable are mapped; the value must be a
+ * literal, not a placeholder.
+ */
+export function variablesForAuthFields(
+  template: Record<string, unknown> | undefined,
+  values: Record<string, unknown>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [field, value] of Object.entries(values)) {
+    const tmpl = template?.[field];
+    if (typeof tmpl !== 'string' || typeof value !== 'string') continue;
+    if (!value || placeholders(value).length > 0) continue;
+    const match = /^\{\{([^{}]+)\}\}$/.exec(tmpl.trim());
+    if (!match) continue;
+    const name = match[1].trim();
+    if (!name.startsWith(CALLER_CONTEXT_PREFIX)) out[name] = value;
+  }
+  return out;
+}
+
 /** One sentence per variable, for the editor. */
 export function describeMissing(missing: MissingVariable[]): string[] {
   const byVariable = new Map<string, { kept: string[]; unset: string[] }>();
