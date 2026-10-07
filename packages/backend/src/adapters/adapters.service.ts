@@ -16,6 +16,8 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
+import { odooDatabaseHint } from './odoo-database-hint';
+import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
 import { STARTER_PACK } from './starter-pack';
 import {
@@ -427,14 +429,25 @@ export class AdaptersService {
       // an Odoo 404 means "older than 19", not "check the tool path".
       const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
       const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
-      const suggest = typeof own === 'object' && own?.suggest ? own.suggest : undefined;
+      const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
+      // A wrong Odoo database name: look up the right one rather than send
+      // the user looking for a value Odoo shows nowhere.
+      const database = await odooDatabaseHint(
+        adapter.slug,
+        message,
+        prepared.resolvedBaseUrl,
+        credentials?.ODOO_DB,
+      );
+      // ...in which case the JSON-RPC adapter is not the better choice either.
+      const suggest =
+        !database && typeof own === 'object' && own?.suggest ? own.suggest : undefined;
       return {
         ok: false,
         kind: classified.kind,
         toolName: call.toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
+        message: database ? `${database} ${message}` : message,
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
@@ -734,11 +747,15 @@ export class AdaptersService {
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();
+    let envVars: Record<string, string> = {};
+    let baseUrl: string | undefined;
     try {
       const connector = await this.prisma.connector.findUnique({
         where: { id: connectorId },
         include: { tools: { where: { name: call.toolName } } },
       });
+      envVars = (connector?.envVars as Record<string, string> | null) ?? {};
+      baseUrl = connector ? interpolateString(connector.baseUrl, envVars) : undefined;
       const tool = connector?.tools[0];
       if (!connector || !tool) return null;
       const raw = await this.connectors.executeConnectorCall(
@@ -768,13 +785,15 @@ export class AdaptersService {
         authType: adapter.connector.authType,
         message: upstream,
       });
+      const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
+      const database = await odooDatabaseHint(adapter.slug, message, baseUrl, envVars.ODOO_DB);
       return {
         ok: false,
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
+        message: database ? `${database} ${message}` : message,
       };
     }
   }
