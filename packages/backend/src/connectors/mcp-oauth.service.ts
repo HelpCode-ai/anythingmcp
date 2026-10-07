@@ -50,6 +50,11 @@ export interface PendingOAuthFlow {
    * only what the flow took from the catalog is added.
    */
   persistAuthConfig?: Record<string, unknown>;
+  /**
+   * The User-Agent the connector's API calls carry, sent on the code exchange
+   * as well (see tokenEndpointUserAgent). Unset leaves the default.
+   */
+  userAgent?: string;
   createdAt: number;
 }
 
@@ -307,6 +312,8 @@ export class McpOAuthService {
     codeVerifier: string;
     tokenAuthMethod?: string;
     clientAssertion?: ClientAssertionSettings;
+    /** Sent as User-Agent; Reddit throttles generic agents at its token endpoint. */
+    userAgent?: string;
   }): Promise<{
     accessToken: string;
     refreshToken?: string;
@@ -329,6 +336,7 @@ export class McpOAuthService {
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
     };
+    if (params.userAgent) headers['User-Agent'] = params.userAgent;
 
     if (privateKeyJwt) {
       // private_key_jwt (RFC 7523 §2.2): a JWT signed with the client's own

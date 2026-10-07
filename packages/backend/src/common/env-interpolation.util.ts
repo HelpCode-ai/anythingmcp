@@ -10,6 +10,8 @@
  *   interpolate('{{BASE_URL}}/v1/users', envVars) → 'https://api.example.com/v1/users'
  */
 
+import { escapeXmlValue } from './xml-escape.util';
+
 const VAR_PATTERN = /\{\{([^{}]+)\}\}/g;
 
 export interface InterpolateOptions {
@@ -30,6 +32,11 @@ export interface InterpolateOptions {
    * placeholder such as `{"limit": {{MAX}}}` still yields valid JSON.
    */
   jsonEscape?: boolean;
+  /**
+   * Escape substituted values for XML text or an attribute, for an XML body
+   * (`bodyEncoding: "xml"`). Takes precedence over `jsonEscape`.
+   */
+  xmlEscape?: boolean;
 }
 
 /** Escape a value for embedding inside a JSON string literal. */
@@ -55,7 +62,11 @@ export function interpolateString(
   if (typeof template !== 'string') return template;
   const reservedPrefix = options?.reservedPrefix;
   const emit = (value: string) =>
-    options?.jsonEscape ? escapeForJsonString(value) : value;
+    options?.xmlEscape
+      ? escapeXmlValue(value)
+      : options?.jsonEscape
+        ? escapeForJsonString(value)
+        : value;
   return template.replace(VAR_PATTERN, (match, varName) => {
     const trimmed = varName.trim();
     if (envVars[trimmed] !== undefined) return emit(envVars[trimmed]);
@@ -121,6 +132,7 @@ export function interpolateConnectorConfig(
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
     bodyTemplate?: string;
+    bodyEncoding?: string;
     headers?: Record<string, string>;
   },
   envVars: Record<string, string>,
@@ -134,6 +146,19 @@ export function interpolateConnectorConfig(
     !options?.reservedPrefix
   ) {
     return { config, endpointMapping };
+  }
+
+  // An XML body (`bodyEncoding: "xml"`) is markup, so a variable's value is
+  // escaped for XML there, the way a JSON template escapes it for JSON.
+  const xmlBody = endpointMapping.bodyEncoding === 'xml';
+  const bodyMapping = endpointMapping.bodyMapping
+    ? interpolateDeep(endpointMapping.bodyMapping, envVars, options)
+    : undefined;
+  if (xmlBody && bodyMapping && typeof endpointMapping.bodyMapping?.__raw === 'string') {
+    bodyMapping.__raw = interpolateString(endpointMapping.bodyMapping.__raw, envVars, {
+      ...options,
+      xmlEscape: true,
+    });
   }
 
   return {
@@ -150,9 +175,7 @@ export function interpolateConnectorConfig(
       queryParams: endpointMapping.queryParams
         ? interpolateDeep(endpointMapping.queryParams, envVars, options)
         : undefined,
-      bodyMapping: endpointMapping.bodyMapping
-        ? interpolateDeep(endpointMapping.bodyMapping, envVars, options)
-        : undefined,
+      bodyMapping,
       // A bodyTemplate is raw JSON text, so substituted values must be escaped
       // for a JSON string context — otherwise a quote in a value would break
       // the document. Without this, {{VAR}} (and {{amcp.*}}) silently reached
@@ -160,7 +183,7 @@ export function interpolateConnectorConfig(
       bodyTemplate: endpointMapping.bodyTemplate
         ? interpolateString(endpointMapping.bodyTemplate, envVars, {
             ...options,
-            jsonEscape: true,
+            ...(xmlBody ? { xmlEscape: true } : { jsonEscape: true }),
           })
         : undefined,
       headers: endpointMapping.headers

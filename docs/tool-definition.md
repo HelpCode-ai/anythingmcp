@@ -49,6 +49,49 @@ Set `connector.type` to `REST`, `GRAPHQL`, `SOAP`, `MCP`, `DATABASE`, or
 `LOGIN_TOKEN`. Set `connector.authType` to a supported authentication scheme
 listed below; these values are validated before an adapter can pass.
 
+### Errors inside a 200 response
+
+Some APIs answer every request with HTTP 200 and report a failure in the body:
+PeopleHR returns `{"Status": 5, "Message": "API Key does not exists."}`, Korea's
+law.go.kr returns `{"result": "사용자 정보 검증에 실패하였습니다.", "msg": "..."}`.
+Without help such a call counts as a success: the install check passes with a
+wrong key and the model has to spot the refusal itself. A REST adapter can
+describe its error shape in `connector.config.errorWhen`, one rule or a list:
+
+```json
+"connector": {
+  "type": "REST",
+  "config": {
+    "errorWhen": [
+      { "path": "Status", "in": [1, 2], "messagePath": "Message", "status": 401 },
+      { "path": "Status", "equals": 5, "messagePath": "Message", "messageMatches": "API Key does not exist|Access Denied", "status": 401 },
+      { "path": "Status", "in": [3, 4, 5, 7, 8, 9], "messagePath": "Message", "status": 400 },
+      { "path": "Status", "equals": 6, "messagePath": "Message", "status": 502 }
+    ]
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `path` | Dotted path into the parsed body (`Status`, `error.code`, `errors[0].code`). Required. |
+| `equals` | The value equals this one. Scalars compare as text, so `5` also matches `"5"`. |
+| `in` | The value is one of these. |
+| `matches` | The value, as text, matches this case-insensitive regular expression. |
+| _(none of the three)_ | The field is present and not `null`, `false`, `""` or `0`. |
+| `messagePath` | Where the error text is; a list is joined with a space. Defaults to the value at `path`. |
+| `messageMatches` | The rule only applies when the error text also matches this regular expression. |
+| `status` | The status the failure reports, which decides how it is classified: 401/403 `auth_failed`, 400/422 `bad_request`, 404 `not_found`, 429 `rate_limited`, 5xx `upstream_error`. Default `400`. |
+
+Rules are checked in order and the first match wins, so put the specific ones
+(an auth message) before the general ones. A match turns the response into a
+failed tool call carrying the API's text and the whole body; the install probe,
+Verify and the tool test in the dashboard classify it by `status`. JSON-RPC
+error envelopes (`{"jsonrpc": "2.0", "error": {...}}`) are recognised without a
+rule. Connectors installed from the catalog follow the adapter's rules even if
+they were installed before the rules existed; a connector's own
+`config.errorWhen` overrides them, and `[]` switches the check off.
+
 ### Authentication
 
 Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
@@ -62,6 +105,12 @@ at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
 or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
+
+A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
+connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
+also sent on the token requests: the authorization-code exchange, refreshes
+and client-credentials grants. Reddit throttles generic agents at its token
+endpoint as well. No other header is forwarded there.
 
 ### HMAC-signed requests
 
@@ -277,6 +326,38 @@ default) and attaches the response as a real multipart part, with a filename and
 instead of a text field containing the URL. Declare the parameter with `"type": "string",
 "format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
 configuration error — that encoding cannot carry a file at all.
+
+### XML bodies
+
+APIs that take an XML request (TallyPrime, SOAP-like endpoints) get their body
+from a `__raw` string, or from a `bodyTemplate`, with `${param}` placeholders.
+Set `"bodyEncoding": "xml"` on the mapping and every substituted value is
+XML-escaped (`&` `<` `>` `"` `'`), so a name such as `Sharma & Sons` cannot
+break the document:
+
+```json
+{
+  "method": "POST",
+  "path": "/",
+  "bodyEncoding": "xml",
+  "bodyMapping": {
+    "__raw": "<ENVELOPE><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></ENVELOPE>"
+  }
+}
+```
+
+- Connector variables (`{{VAR}}`) in the body are escaped the same way.
+- An `&` that already starts an entity (`&amp;`, `&#38;`, `&lt;` ...) is left
+  as it is, so a value escaped by hand is not escaped twice.
+- A whole-value `"__raw": "$param"` is the caller's own document and goes out
+  unchanged.
+- With `bodyEncoding: "xml"` a `bodyTemplate` is sent as text; it is not
+  parsed as JSON. A missing placeholder becomes empty.
+- The body is labelled `application/xml; charset=utf-8` unless the connector
+  or the tool sets its own `Content-Type`.
+
+Without `bodyEncoding: "xml"`, `__raw` values are inserted as they are, as
+before.
 
 ### Response headers and pagination (`exposeHeaders`)
 

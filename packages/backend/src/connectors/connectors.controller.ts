@@ -53,6 +53,8 @@ import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
+import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
+import { interpolateDeep } from '../common/env-interpolation.util';
 import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
   mergeMaskedEnvVars,
@@ -1263,6 +1265,13 @@ export class ConnectorsController {
         return { error: 'No authorization URL configured for this connector' };
       }
 
+      // The code exchange identifies itself like the connector's API calls.
+      const flowVars = (connector.envVars as Record<string, string> | null) ?? {};
+      const userAgent = tokenEndpointUserAgent(
+        interpolateDeep(authConfig, flowVars),
+        interpolateDeep(connector.headers ?? undefined, flowVars),
+      );
+
       // Generate PKCE challenge
       const codeVerifier = this.mcpOAuthService.generateCodeVerifier();
       const codeChallenge = this.mcpOAuthService.generateCodeChallenge(codeVerifier);
@@ -1280,6 +1289,7 @@ export class ConnectorsController {
         tokenAuthMethod,
         clientAssertion,
         persistAuthConfig,
+        ...(userAgent ? { userAgent } : {}),
         createdAt: Date.now(),
       }, { returnTo: body?.returnTo });
 

@@ -21,6 +21,8 @@ import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
+import { assertNoResponseBodyError } from './response-error.util';
+import { escapeXmlValue } from '../../common/xml-escape.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -116,6 +118,10 @@ export class RestEngine {
       // (env present, tool opted in, license + rate-limit ok) and passes
       // the URL here, or omits it for a direct request.
       proxyUrl?: string;
+      // The connector's `errorWhen` rules: how this API reports an error in
+      // a 2xx body. Absent for almost every connector, which then behaves as
+      // it always has. See response-error.util.ts.
+      errorWhen?: unknown;
     },
     endpointMapping: {
       method: string;
@@ -145,6 +151,7 @@ export class RestEngine {
     const withMeta = (response: AxiosResponse) => {
       const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
       assertNotJsonRpcError(body);
+      assertNoResponseBodyError(body, config.errorWhen);
       return {
         body,
         headers: pickExposedHeaders(
@@ -283,8 +290,13 @@ export class RestEngine {
 
     // Request body
     const httpMethod = endpointMapping.method.toUpperCase();
+    // An XML body: values substituted into the markup are XML-escaped. Opt-in,
+    // because an adapter written before this may already escape by hand.
+    const xmlBody = endpointMapping.bodyEncoding === 'xml';
     if (REQUEST_BODY_METHODS.has(httpMethod)) {
-      if (endpointMapping.bodyTemplate) {
+      if (endpointMapping.bodyTemplate && xmlBody) {
+        axiosConfig.data = renderXmlBodyTemplate(endpointMapping.bodyTemplate, params);
+      } else if (endpointMapping.bodyTemplate) {
         const rendered = renderBodyTemplate(
           endpointMapping.bodyTemplate,
           params,
@@ -311,8 +323,14 @@ export class RestEngine {
       } else if (endpointMapping.bodyMapping) {
         // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
         if ('__raw' in endpointMapping.bodyMapping) {
-          const mapped = this.mapParams(endpointMapping.bodyMapping, params);
-          axiosConfig.data = mapped['__raw'];
+          // Resolved on its own rather than through mapParams so an XML body
+          // can escape what `${param}` puts into it. A whole-value `$param`
+          // is the caller's own body and goes out as given.
+          axiosConfig.data = this.resolveValue(
+            endpointMapping.bodyMapping['__raw'],
+            params,
+            xmlBody ? escapeXmlValue : undefined,
+          );
         } else {
           const mapped = this.mapParams(endpointMapping.bodyMapping, params);
           const encoding = endpointMapping.bodyEncoding || 'json';
@@ -403,6 +421,12 @@ export class RestEngine {
       }
       if (httpMethod === 'DELETE' && isEmptyBody(axiosConfig.data)) {
         delete axiosConfig.data;
+      }
+      if (xmlBody && typeof axiosConfig.data === 'string' && !hasHeader(axiosConfig.headers, 'content-type')) {
+        axiosConfig.headers = {
+          ...axiosConfig.headers,
+          'Content-Type': 'application/xml; charset=utf-8',
+        };
       }
     }
 
@@ -925,6 +949,8 @@ export class RestEngine {
   private resolveValue(
     value: unknown,
     params: Record<string, unknown>,
+    // Applied to what `${param}` inserts into a longer string (an XML body).
+    escape?: (text: string) => string,
   ): unknown {
     if (typeof value === 'string') {
       if (value.startsWith('$') && !value.includes('${')) {
@@ -942,7 +968,7 @@ export class RestEngine {
             missing = true;
             return '';
           }
-          return String(pv);
+          return escape ? escape(String(pv)) : String(pv);
         });
         return missing ? undefined : interpolated;
       }
@@ -950,13 +976,13 @@ export class RestEngine {
     }
     if (Array.isArray(value)) {
       return value
-        .map((v) => this.resolveValue(v, params))
+        .map((v) => this.resolveValue(v, params, escape))
         .filter((v) => v !== undefined);
     }
     if (value && typeof value === 'object') {
       const nested: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        const resolved = this.resolveValue(v, params);
+        const resolved = this.resolveValue(v, params, escape);
         if (resolved !== undefined) {
           nested[k] = resolved;
         }
@@ -1288,6 +1314,24 @@ function missingTemplateParams(
     referenced.add(match[1]);
   }
   return [...referenced].filter((name) => params[name] === undefined);
+}
+
+/**
+ * Render an XML body template (`bodyEncoding: "xml"`): every `${name}` becomes
+ * the parameter's value, XML-escaped; a missing one becomes empty. No quoting
+ * rules apply, unlike the JSON renderer: the template is markup and the value
+ * lands in element text or an attribute either way.
+ */
+export function renderXmlBodyTemplate(
+  template: string,
+  params: Record<string, unknown>,
+): string {
+  return template.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
+    if (!Object.prototype.hasOwnProperty.call(params, name)) return '';
+    const value = params[name];
+    if (value === undefined || value === null) return '';
+    return escapeXmlValue(typeof value === 'object' ? JSON.stringify(value) : String(value));
+  });
 }
 
 function renderBodyTemplate(

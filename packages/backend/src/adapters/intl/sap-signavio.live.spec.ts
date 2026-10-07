@@ -66,7 +66,7 @@ describe('sap-signavio adapter (static)', () => {
     expect(tool('sap_signavio_get_revision_bpmn').endpointMapping.rawBody).toBe(true);
   });
 
-  it('logs in form-encoded and sends JSESSIONID plus x-signavio-id', async () => {
+  it('logs in form-encoded and sends every login cookie plus x-signavio-id', async () => {
     const auth = interpolateDeep(adapter.connector.authConfig, {
       SIGNAVIO_URL: 'https://editor.signavio.com',
       SIGNAVIO_EMAIL: 'api@example.com',
@@ -84,11 +84,16 @@ describe('sap-signavio adapter (static)', () => {
     expect(call.url).toBe('https://editor.signavio.com/p/login');
     expect(call.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
     expect(call.data).toEqual({ name: 'api@example.com', password: 'secret', tokenonly: 'true', tenant: 'ws1' });
-    expect(bundle.token).toBe('SESSION42');
+    // The load-balancer cookie travels with the session cookie, so the next
+    // call reaches the node that holds the session.
+    expect(bundle.token).toBe('JSESSIONID=SESSION42; LBROUTEID=.n1');
     expect(bundle.aud).toBe('abc123token');
 
     const req: any = { headers: {} };
     injectLoginTokenHeaders(req, auth, bundle.token, bundle.aud);
-    expect(req.headers).toEqual({ Cookie: 'JSESSIONID=SESSION42', 'x-signavio-id': 'abc123token' });
+    expect(req.headers).toEqual({
+      Cookie: 'JSESSIONID=SESSION42; LBROUTEID=.n1',
+      'x-signavio-id': 'abc123token',
+    });
   });
 });

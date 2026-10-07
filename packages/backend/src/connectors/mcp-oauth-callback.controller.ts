@@ -197,6 +197,7 @@ export class McpOAuthCallbackController {
       codeVerifier: flow.codeVerifier,
       tokenAuthMethod: flow.tokenAuthMethod,
       clientAssertion: flow.clientAssertion,
+      userAgent: flow.userAgent,
     });
 
     this.logger.log(`OAuth tokens obtained for connector ${flow.connectorId}`);

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConnectorsController } from './connectors.controller';
 import { McpOAuthService } from './mcp-oauth.service';
 import { encrypt } from '../common/crypto/encryption.util';
+import { getAdapter } from '../adapters/catalog';
 
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
 
@@ -834,6 +835,34 @@ describe('POST :id/oauth/authorize (REST)', () => {
       tokenAuthMethod: 'basic',
       persistAuthConfig: {},
     });
+  });
+
+  it("sends the connector's User-Agent on the code exchange (Reddit Ads)", async () => {
+    const reddit = getAdapter('reddit-ads')!;
+    const { controller, store } = setup(
+      row(reddit.connector.authConfig as Record<string, unknown>, {
+        config: { adapterSlug: 'reddit-ads' },
+        envVars: { REDDIT_ADS_CLIENT_ID: 'rid', REDDIT_ADS_CLIENT_SECRET: 'rsecret' },
+      }),
+    );
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    expect(new URL(result.authorizationUrl).host).toBe('www.reddit.com');
+    expect(store.mock.calls[0][1].userAgent).toBe('web:anythingmcp:v1 (by /u/anythingmcp)');
+  });
+
+  it('falls back to a User-Agent in the connector headers, and sets none without one', async () => {
+    const own = { clientId: 'id', clientSecret: 's', authorizationUrl: 'https://x.example/auth', tokenUrl: 'https://x.example/token' };
+    const withHeader = setup(
+      row(own, { config: null, headers: { 'user-agent': 'my-client/{{VER}}' }, envVars: { VER: '2' } }),
+    );
+    await withHeader.controller.initiateOAuth(req('ADMIN'), 'c1');
+    expect(withHeader.store.mock.calls[0][1].userAgent).toBe('my-client/2');
+
+    const without = setup(row(own, { config: null }));
+    await without.controller.initiateOAuth(req('ADMIN'), 'c1');
+    expect(without.store.mock.calls[0][1]).not.toHaveProperty('userAgent');
   });
 
   it('still reports a missing authorization URL for a connector outside the catalog', async () => {

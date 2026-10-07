@@ -16,7 +16,7 @@ export interface RestEndpointMapping {
   queryParams?: Record<string, unknown>;
   bodyMapping?: Record<string, unknown>;
   bodyTemplate?: string;
-  bodyEncoding?: 'json' | 'form-urlencoded' | 'form-data' | string;
+  bodyEncoding?: 'json' | 'form-urlencoded' | 'form-data' | 'xml' | string;
   headers?: Record<string, string>;
 }
 

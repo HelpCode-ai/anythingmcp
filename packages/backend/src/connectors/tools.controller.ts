@@ -31,6 +31,7 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
+import { ResponseBodyError } from './engines/response-error.util';
 import {
   applyResponseTransform,
   hasTransform,
@@ -929,6 +930,25 @@ export class ToolsController {
           status: err.response.status,
           statusText: err.response.statusText,
           responseBody: err.response.data,
+          kind,
+          hint,
+          ...withNote,
+        };
+      }
+      // A 200 whose body the connector's errorWhen rules read as an error:
+      // classified by the status the rule gave it, with the body shown like
+      // an HTTP error's.
+      if (err instanceof ResponseBodyError) {
+        const { kind, hint } = classifyToolExecutionError({
+          status: err.status,
+          authType: tool.connector.authType,
+          message: err.message,
+        });
+        return {
+          ok: false,
+          durationMs,
+          error: err.message,
+          responseBody: err.responseBody,
           kind,
           hint,
           ...withNote,

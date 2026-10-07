@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "tallyprime",
   "docsUrl": "https://help.tallysolutions.com/xml-integration/",
-  "instructions": "## TallyPrime\nThis connector reads a TallyPrime installation (Tally Solutions) through its built-in XML over HTTP interface: companies, ledgers, groups, voucher types, stock items, Trial Balance, Balance Sheet, Profit and Loss, Day Book, ledger statements and outstanding receivables and payables. Version 1 is read-only: no voucher or master is created or changed.\n\n## Setup\n1. In TallyPrime press **F1 (Help) > Settings > Connectivity > Client/Server configuration**. Set **TallyPrime acts as** to **Server** (or **Both**), enable ODBC, keep the port (default **9000**) and accept. Restart TallyPrime if asked.\n2. Open (load) the companies you want to read. The HTTP interface only sees companies that are open in the running TallyPrime.\n3. Put the address in `TALLY_URL`, e.g. `http://192.168.1.20:9000`. Opening that address in a browser on the same network shows a short \"TallyPrime Server is Running\" text.\n\n## Network\nTallyPrime runs on the customer's own computer or server, so AnythingMCP must be able to reach it. AnythingMCP Cloud cannot reach a LAN address (192.168.x.x, 10.x.x.x): run a self-hosted AnythingMCP on the same network and add the host to `SSRF_ALLOWED_HOSTS`, or publish the port through a secure tunnel or VPN. The Tally port has **no password**: anyone who can reach it can read and import data, so never open it to the internet without access control in front of it.\n\n## How the tools work\nEvery tool POSTs an XML request (`TALLYREQUEST` Export) to the root of the server. Masters come from TDL collections (clean objects: `LEDGER`, `STOCKITEM`, `GROUP` with their fields); reports come back in Tally's display format, where each row is a pair of tags, e.g. `DSPACCNAME/DSPDISPNAME` (name) followed by `DSPACCINFO` with `DSPCLDRAMTA` (closing debit, negative) and `DSPCLCRAMTA` (closing credit). After parsing, these are parallel lists: the n-th name belongs to the n-th amount row. Amounts use Tally's sign convention: debit negative, credit positive.\n\n## Values\n- **Company**: every tool except `tallyprime_list_companies` needs the exact company name. Start with `tallyprime_list_companies`.\n- **Dates** are YYYYMMDD (`20250401`). Indian financial years run 1 April to 31 March; outside the company's books Tally returns an empty report.\n- **Names** of ledgers, groups and voucher types must match exactly. Names are placed inside XML, so write `&` as `&amp;` (for example `Sharma &amp; Sons`).\n- An error such as \"Could not set SVCurrentCompany\" means the company is not open in TallyPrime or the name differs.\n\n## Where to start\n`tallyprime_list_companies`, then `tallyprime_get_trial_balance` for an overview, `tallyprime_get_bills_receivable` for who owes money, `tallyprime_get_ledger_vouchers` for one party's statement, and `tallyprime_get_day_book` for the vouchers of a short period. Large reports over a long period can take several seconds and return a lot of data: keep ranges to a month where possible.",
+  "instructions": "## TallyPrime\nThis connector reads a TallyPrime installation (Tally Solutions) through its built-in XML over HTTP interface: companies, ledgers, groups, voucher types, stock items, Trial Balance, Balance Sheet, Profit and Loss, Day Book, ledger statements and outstanding receivables and payables. Version 1 is read-only: no voucher or master is created or changed.\n\n## Setup\n1. In TallyPrime press **F1 (Help) > Settings > Connectivity > Client/Server configuration**. Set **TallyPrime acts as** to **Server** (or **Both**), enable ODBC, keep the port (default **9000**) and accept. Restart TallyPrime if asked.\n2. Open (load) the companies you want to read. The HTTP interface only sees companies that are open in the running TallyPrime.\n3. Put the address in `TALLY_URL`, e.g. `http://192.168.1.20:9000`. Opening that address in a browser on the same network shows a short \"TallyPrime Server is Running\" text.\n\n## Network\nTallyPrime runs on the customer's own computer or server, so AnythingMCP must be able to reach it. AnythingMCP Cloud cannot reach a LAN address (192.168.x.x, 10.x.x.x): run a self-hosted AnythingMCP on the same network and add the host to `SSRF_ALLOWED_HOSTS`, or publish the port through a secure tunnel or VPN. The Tally port has **no password**: anyone who can reach it can read and import data, so never open it to the internet without access control in front of it.\n\n## How the tools work\nEvery tool POSTs an XML request (`TALLYREQUEST` Export) to the root of the server. Masters come from TDL collections (clean objects: `LEDGER`, `STOCKITEM`, `GROUP` with their fields); reports come back in Tally's display format, where each row is a pair of tags, e.g. `DSPACCNAME/DSPDISPNAME` (name) followed by `DSPACCINFO` with `DSPCLDRAMTA` (closing debit, negative) and `DSPCLCRAMTA` (closing credit). After parsing, these are parallel lists: the n-th name belongs to the n-th amount row. Amounts use Tally's sign convention: debit negative, credit positive.\n\n## Values\n- **Company**: every tool except `tallyprime_list_companies` needs the exact company name. Start with `tallyprime_list_companies`.\n- **Dates** are YYYYMMDD (`20250401`). Indian financial years run 1 April to 31 March; outside the company's books Tally returns an empty report.\n- **Names** of ledgers, groups and voucher types must match exactly. Pass them as they appear in TallyPrime (for example `Sharma & Sons`): the connector escapes them for the XML request.\n- An error such as \"Could not set SVCurrentCompany\" means the company is not open in TallyPrime or the name differs.\n\n## Where to start\n`tallyprime_list_companies`, then `tallyprime_get_trial_balance` for an overview, `tallyprime_get_bills_receivable` for who owes money, `tallyprime_get_ledger_vouchers` for one party's statement, and `tallyprime_get_day_book` for the vouchers of a short period. Large reports over a long period can take several seconds and return a lot of data: keep ranges to a month where possible.",
   "prerequisites": "TallyPrime must be running with its server switched on (**F1 > Settings > Connectivity**, port 9000) and be reachable from AnythingMCP: use a self-hosted AnythingMCP on the same network, or a secure tunnel or VPN. AnythingMCP Cloud cannot reach a LAN address such as 192.168.x.x, and the Tally port has no password, so never expose it to the internet without access control.",
   "requiredEnvVars": [
     "TALLY_URL"
@@ -51,6 +51,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>AMCP Companies</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"AMCP Companies\" ISMODIFY=\"No\"><TYPE>Company</TYPE><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>StartingFrom</NATIVEMETHOD><NATIVEMETHOD>BooksFrom</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -67,7 +68,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           }
         },
         "required": [
@@ -77,6 +78,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>AMCP Ledgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"AMCP Ledgers\" ISMODIFY=\"No\"><TYPE>Ledger</TYPE><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>Parent</NATIVEMETHOD><NATIVEMETHOD>OpeningBalance</NATIVEMETHOD><NATIVEMETHOD>ClosingBalance</NATIVEMETHOD><NATIVEMETHOD>LedgerPhone</NATIVEMETHOD><NATIVEMETHOD>Email</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -93,11 +95,11 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "group": {
             "type": "string",
-            "description": "Exact group name, e.g. Sundry Debtors, Sundry Creditors, Bank Accounts, or a group from tallyprime_list_groups. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact group name, e.g. Sundry Debtors, Sundry Creditors, Bank Accounts, or a group from tallyprime_list_groups."
           }
         },
         "required": [
@@ -108,6 +110,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Ledgers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"List of Ledgers\" ISMODIFY=\"Yes\"><ADD>CHILD OF : ${group}</ADD><ADD>BELONGS TO : Yes</ADD><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>Parent</NATIVEMETHOD><NATIVEMETHOD>OpeningBalance</NATIVEMETHOD><NATIVEMETHOD>ClosingBalance</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -124,11 +127,11 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "ledger": {
             "type": "string",
-            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers."
           }
         },
         "required": [
@@ -139,6 +142,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Object</TYPE><SUBTYPE>Ledger</SUBTYPE><ID TYPE=\"Name\">${ledger}</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><FETCHLIST><FETCH>Name</FETCH><FETCH>Parent</FETCH><FETCH>OpeningBalance</FETCH><FETCH>ClosingBalance</FETCH><FETCH>MailingName</FETCH><FETCH>Address</FETCH><FETCH>LedStateName</FETCH><FETCH>PinCode</FETCH><FETCH>CountryName</FETCH><FETCH>LedgerPhone</FETCH><FETCH>LedgerMobile</FETCH><FETCH>Email</FETCH></FETCHLIST></DESC></BODY></ENVELOPE>"
         }
@@ -155,7 +159,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           }
         },
         "required": [
@@ -165,6 +169,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>AMCP Groups</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"AMCP Groups\" ISMODIFY=\"No\"><TYPE>Group</TYPE><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>Parent</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -181,7 +186,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           }
         },
         "required": [
@@ -191,6 +196,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>AMCP Voucher Types</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"AMCP Voucher Types\" ISMODIFY=\"No\"><TYPE>VoucherType</TYPE><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>Parent</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -207,7 +213,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           }
         },
         "required": [
@@ -217,6 +223,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>AMCP Stock Items</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME=\"AMCP Stock Items\" ISMODIFY=\"No\"><TYPE>StockItem</TYPE><NATIVEMETHOD>Name</NATIVEMETHOD><NATIVEMETHOD>Parent</NATIVEMETHOD><NATIVEMETHOD>BaseUnits</NATIVEMETHOD><NATIVEMETHOD>OpeningBalance</NATIVEMETHOD><NATIVEMETHOD>OpeningValue</NATIVEMETHOD><NATIVEMETHOD>ClosingBalance</NATIVEMETHOD><NATIVEMETHOD>ClosingValue</NATIVEMETHOD></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -233,7 +240,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -253,6 +260,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Trial Balance</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE><EXPLODEFLAG>Yes</EXPLODEFLAG></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -269,7 +277,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -289,6 +297,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Balance Sheet</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -305,7 +314,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -325,6 +334,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Profit and Loss</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -341,7 +351,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -361,6 +371,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Day Book</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -377,7 +388,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -389,7 +400,7 @@
           },
           "voucher_type": {
             "type": "string",
-            "description": "Exact voucher type name, e.g. Sales, Purchase, Receipt, Payment, Journal, Credit Note. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact voucher type name, e.g. Sales, Purchase, Receipt, Payment, Journal, Credit Note."
           }
         },
         "required": [
@@ -402,6 +413,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Day Book</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES><TDL><TDLMESSAGE><REPORT NAME=\"Day Book\" ISMODIFY=\"Yes\" ISFIXED=\"No\" ISINITIALIZE=\"No\" ISOPTION=\"No\" ISINTERNAL=\"No\"><LOCAL>Collection : Default : Add : Filter : AMCPVchTypeFilter</LOCAL><LOCAL>Collection : Default : Add : Fetch : VoucherTypeName</LOCAL></REPORT><SYSTEM TYPE=\"Formulae\" NAME=\"AMCPVchTypeFilter\" ISMODIFY=\"No\" ISFIXED=\"No\" ISINTERNAL=\"No\">$VoucherTypeName = \"${voucher_type}\"</SYSTEM></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
         }
@@ -418,7 +430,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -430,7 +442,7 @@
           },
           "ledger": {
             "type": "string",
-            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers."
           }
         },
         "required": [
@@ -443,6 +455,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Ledger Vouchers</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE><LEDGERNAME>${ledger}</LEDGERNAME></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -459,7 +472,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -479,6 +492,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Bills Receivable</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -495,7 +509,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -515,6 +529,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Bills Payable</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -531,7 +546,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -543,7 +558,7 @@
           },
           "ledger": {
             "type": "string",
-            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact ledger name as shown in TallyPrime, e.g. a customer or supplier ledger from tallyprime_list_ledgers."
           }
         },
         "required": [
@@ -556,6 +571,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Ledger Outstandings</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE><LEDGERNAME>${ledger}</LEDGERNAME></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }
@@ -572,7 +588,7 @@
         "properties": {
           "company": {
             "type": "string",
-            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact name of a company that is open in TallyPrime, as returned by tallyprime_list_companies."
           },
           "from_date": {
             "type": "string",
@@ -584,7 +600,7 @@
           },
           "group": {
             "type": "string",
-            "description": "Exact group name, e.g. Sundry Debtors, Sundry Creditors, Bank Accounts, or a group from tallyprime_list_groups. Write & as &amp; and < as &lt; because the value is placed inside XML."
+            "description": "Exact group name, e.g. Sundry Debtors, Sundry Creditors, Bank Accounts, or a group from tallyprime_list_groups."
           }
         },
         "required": [
@@ -597,6 +613,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/",
+        "bodyEncoding": "xml",
         "bodyMapping": {
           "__raw": "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Group Outstandings</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY><SVFROMDATE TYPE=\"Date\">${from_date}</SVFROMDATE><SVTODATE TYPE=\"Date\">${to_date}</SVTODATE><GROUPNAME>${group}</GROUPNAME></STATICVARIABLES></DESC></BODY></ENVELOPE>"
         }

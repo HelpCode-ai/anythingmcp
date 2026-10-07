@@ -56,6 +56,22 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     expect(String(body)).toContain('client_id=cid');
   });
 
+  it("sends the connector's User-Agent to the token endpoint (Reddit throttles generic agents)", async () => {
+    await service.exchangeCodeForTokens({
+      ...baseParams,
+      tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+      userAgent: 'web:anythingmcp:v1 (by /u/anythingmcp)',
+    });
+    const [, , config] = mockedAxios.post.mock.calls[0];
+    expect((config as any).headers['User-Agent']).toBe('web:anythingmcp:v1 (by /u/anythingmcp)');
+  });
+
+  it('sets no User-Agent of its own when the connector has none', async () => {
+    await service.exchangeCodeForTokens({ ...baseParams });
+    const [, , config] = mockedAxios.post.mock.calls[0];
+    expect((config as any).headers['User-Agent']).toBeUndefined();
+  });
+
   it("treats 'client_secret_basic' as an alias for basic", async () => {
     await service.exchangeCodeForTokens({
       ...baseParams,

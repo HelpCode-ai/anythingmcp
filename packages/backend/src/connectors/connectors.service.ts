@@ -25,6 +25,8 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
+import { connectorErrorWhen } from './error-when.util';
+import { ResponseBodyError } from './engines/response-error.util';
 
 @Injectable()
 export class ConnectorsService {
@@ -291,6 +293,7 @@ export class ConnectorsService {
               // provider rotated the refresh token, the connector kept the
               // spent one, and its next refresh was refused as revoked.
               connectorId: connector.id,
+              errorWhen: connectorErrorWhen(connector.config),
             },
             { method: 'GET', path },
             {},
@@ -422,6 +425,14 @@ export class ConnectorsService {
     httpStatus?: number;
     suggestedFix?: { action: string; hostname?: string; url?: string };
   } {
+    // A 200 whose body the connector's errorWhen rules read as an error. Its
+    // status is the one the rule assigned, not an HTTP one, so it is not
+    // reported as httpStatus.
+    if (error instanceof ResponseBodyError) {
+      const auth = error.status === 401 || error.status === 403;
+      return { ok: false, kind: auth ? 'auth_failed' : 'error', message: error.message };
+    }
+
     // HTTP responses (axios)
     const status: number | undefined = error?.response?.status;
     if (status === 401 || status === 403) {
@@ -592,6 +603,7 @@ export class ConnectorsService {
       headers: resolved.headers as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
+      errorWhen: connectorErrorWhen(connector.config),
     };
 
     if (

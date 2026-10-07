@@ -462,6 +462,42 @@ describe('OAuth2TokenService', () => {
       expect(opts.headers['x-api-key']).toBeUndefined();
     });
 
+    it('sends the User-Agent on a refresh_token grant too', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'rd', expires_in: 3600 },
+      });
+
+      await service.refreshToken({
+        tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+        refreshToken: 'rt',
+        clientId: 'id',
+        clientSecret: 'secret',
+        tokenAuthMethod: 'client_secret_basic',
+        extraHeaders: { 'User-Agent': 'web:anythingmcp:v1 (by /u/anythingmcp)' },
+      });
+
+      const [, , opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(opts.headers['User-Agent']).toBe('web:anythingmcp:v1 (by /u/anythingmcp)');
+    });
+
+    it("falls back to the User-Agent in the connector's own headers, as the API calls send it", async () => {
+      mockPrisma.connector.findUnique.mockResolvedValue({
+        authConfig: encrypt(
+          JSON.stringify({ tokenUrl: 'https://auth.example/token', refreshToken: 'rt' }),
+          encryptionKey,
+        ),
+        envVars: { VER: '3' },
+        headers: { 'user-agent': 'example-client/{{VER}}', Accept: 'application/json' },
+      });
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'x', expires_in: 3600 } });
+
+      await service.refreshToken({ tokenUrl: 'https://auth.example/token', refreshToken: 'rt' }, 'conn-ua');
+
+      const [, , opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(opts.headers['User-Agent']).toBe('example-client/3');
+      expect(opts.headers.Accept).toBeUndefined();
+    });
+
     it('throws what the token endpoint said instead of sending an empty bearer', async () => {
       // Reddit's real answer to a wrong client ID/secret.
       mockedAxios.post.mockRejectedValue(
