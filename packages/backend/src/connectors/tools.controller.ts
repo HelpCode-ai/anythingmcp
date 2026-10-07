@@ -11,6 +11,7 @@ import {
   UseGuards,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -414,20 +415,35 @@ export class ToolsController {
     await this.assertCanWriteConnector(connectorId, req);
     this.assertKnownCallerContextVars(dto.endpointMapping);
     this.assertValidResponseMapping(dto.responseMapping);
-    const tool = await this.prisma.mcpTool.create({
-      data: {
-        connectorId,
-        name: dto.name,
-        description: dto.description,
-        parameters: dto.parameters as any,
-        endpointMapping: dto.endpointMapping as any,
-        responseMapping: dto.responseMapping as any,
-      },
-    });
+    const tool = await this.prisma.mcpTool
+      .create({
+        data: {
+          connectorId,
+          name: dto.name,
+          description: dto.description,
+          parameters: dto.parameters as any,
+          endpointMapping: dto.endpointMapping as any,
+          responseMapping: dto.responseMapping as any,
+        },
+      })
+      .catch((err) => ToolsController.duplicateNameAsConflict(err, dto.name));
 
     // Reload MCP tools for this connector
     await this.mcpServer.reloadConnectorTools(connectorId);
     return tool;
+  }
+
+  /**
+   * Tool names are unique per connector. The database says so with a P2002,
+   * which used to surface as a 500; answer what actually happened instead.
+   */
+  private static duplicateNameAsConflict(err: unknown, name: string | undefined): never {
+    if ((err as { code?: string } | null)?.code === 'P2002') {
+      throw new ConflictException(
+        `A tool named "${name ?? ''}" already exists on this connector. Choose another name or edit the existing tool.`,
+      );
+    }
+    throw err;
   }
 
   @Post('bulk')
@@ -518,10 +534,12 @@ export class ToolsController {
     // Bind the toolId to the connectorId in the WHERE clause so that
     // a request like /connectors/<my>/tools/<other-org's-tool> cannot
     // update a tool that doesn't belong to the requested connector.
-    const result = await this.prisma.mcpTool.updateMany({
-      where: { id: toolId, connectorId },
-      data: data as any,
-    });
+    const result = await this.prisma.mcpTool
+      .updateMany({
+        where: { id: toolId, connectorId },
+        data: data as any,
+      })
+      .catch((err) => ToolsController.duplicateNameAsConflict(err, dto.name));
     if (result.count === 0) {
       throw new ForbiddenException('Tool not found');
     }

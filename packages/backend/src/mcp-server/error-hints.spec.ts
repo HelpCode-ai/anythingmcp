@@ -18,6 +18,12 @@ describe('deriveErrorHint', () => {
       expect(hint).toMatch(/orderItems/);
     });
 
+    it('names the right field for the spellings seen guessed in production', () => {
+      const hint = deriveErrorHint({ host: 'x.weclapp.com', status: 400, body: { detail: 'unknown property: shippingAddress' } });
+      expect(hint).toMatch(/`deliveryAddress` \(not `shippingAddress`\)/);
+      expect(hint).toMatch(/`unitId` \(not `unitName`\)/);
+    });
+
     it('treats "unexpected filter property" the same way', () => {
       expect(
         deriveErrorHint({ host: 'x.weclapp.com', body: 'unexpected filter property' }),
@@ -142,6 +148,20 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
       expect(
         deriveErrorHint({ host, status: 403, body: { description: "Forbidden: bot can't initiate conversation with a user" } }),
       ).toMatch(/pressed Start/);
+    });
+    it('gives the new id when a group became a supergroup', () => {
+      expect(
+        deriveErrorHint({
+          host,
+          status: 400,
+          body: { description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1004376396847 } },
+        }),
+      ).toMatch(/migrate_to_chat_id/);
+    });
+    it('explains a photo URL Telegram could not fetch', () => {
+      expect(
+        deriveErrorHint({ host, status: 400, body: { description: 'Bad Request: failed to get HTTP URL content' } }),
+      ).toMatch(/public https link/);
     });
     it('stays quiet for another host answering Not Found', () => {
       expect(deriveErrorHint({ host: 'api.example.com', status: 404, body: '"Not Found"' })).toBeUndefined();

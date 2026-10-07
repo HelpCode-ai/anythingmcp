@@ -34,7 +34,8 @@
           },
           "limit": {
             "type": "number",
-            "description": "Max results (default: 24, max: 500)."
+            "description": "Max results (default: 24, max: 100; Shopware refuses more with FRAMEWORK__QUERY_LIMIT_EXCEEDED). Use page for the next page.",
+            "maximum": 100
           },
           "page": {
             "type": "number",

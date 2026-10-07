@@ -80,6 +80,24 @@ describe('ConnectorSetupService — find', () => {
     expect(out.connectorsLeftOnThisPlan).toBe(4);
   });
 
+  it('gives the callback URL to register for a provider sign-in, before the user creates the app', async () => {
+    const before = process.env.SERVER_URL;
+    process.env.SERVER_URL = 'https://cloud.example.com/';
+    try {
+      const { service, ctx } = build();
+      const out: any = (await service.find(ctx, { query: 'etsy openplz', limit: 10 })).body;
+      const etsy = out.results.find((r: any) => r.adapter === 'etsy');
+      const openplz = out.results.find((r: any) => r.adapter === 'openplz');
+      expect(etsy.callbackUrlToRegisterInTheProviderApp).toBe('https://cloud.example.com/api/mcp-oauth/callback');
+      expect(openplz.callbackUrlToRegisterInTheProviderApp).toBeUndefined();
+
+      const installed: any = (await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abcdefghijklmnopqrstuvwx' } })).body;
+      expect(installed.callbackUrlToRegisterInTheProviderApp).toBe('https://cloud.example.com/api/mcp-oauth/callback');
+    } finally {
+      process.env.SERVER_URL = before;
+    }
+  });
+
   it('records what the chat searched for and how well the catalog answered', async () => {
     const { service, ctx, productEvents } = build();
     await service.find(ctx, { query: 'etsy' });

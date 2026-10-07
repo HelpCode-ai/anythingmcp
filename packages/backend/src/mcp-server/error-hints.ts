@@ -32,7 +32,10 @@ const WECLAPP_FIELD_HINT =
   'the entity itself: line items live under `orderItems` / `salesInvoiceItems` / ' +
   '`shipmentItems` (as nested objects, not as filterable properties), the customer ' +
   'name is inside `recordAddress`, links end in `Id` (`customerId`, `articleId`, ' +
-  '`warehouseId` is NOT a field of every entity). Do not guess another spelling: ' +
+  '`warehouseId` is NOT a field of every entity). Names seen guessed wrong: the ' +
+  'shipping address of an order is `deliveryAddress` (not `shippingAddress`), an ' +
+  'article has `unitId` (not `unitName`), and fields of line items cannot be picked ' +
+  'with a dot (`orderItems.articleNumber`): ask for `orderItems` whole. Do not guess another spelling: ' +
   'fetch ONE record without `properties` and without that filter, read the field ' +
   'names it actually returns, then retry using only those.';
 
@@ -100,6 +103,17 @@ const TELEGRAM_CHAT_HINT =
   'the user has sent the bot a message; @usernames only work for public channels. ' +
   'Ask the user to do that instead of trying other ids.';
 
+const TELEGRAM_SUPERGROUP_HINT =
+  'The group became a supergroup and has a new chat id: it is the ' +
+  '`migrate_to_chat_id` in this answer (it starts with -100). Send to that id; ' +
+  'the old one will not work again.';
+
+const TELEGRAM_URL_CONTENT_HINT =
+  'Telegram downloads the file itself and could not fetch that URL. It must be a ' +
+  'public https link that returns the file directly (no login, no preview page, no ' +
+  'expiring link from a chat app or file share), at most 5 MB for a photo. Ask the ' +
+  'user for such a link instead of retrying the same one.';
+
 const LEXWARE_OVERDUE_HINT =
   'Lexware does not accept `overdue` together with other statuses in ' +
   '`voucherStatus`. Make one call with voucherStatus=overdue and a separate one ' +
@@ -163,6 +177,12 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   if (hostMatches(input.host, 'api.telegram.org')) {
     if (input.status === 401 || (input.status === 404 && /"Not Found"/.test(text))) {
       return TELEGRAM_BAD_TOKEN_HINT;
+    }
+    if (/upgraded to a supergroup|migrate_to_chat_id/i.test(text)) {
+      return TELEGRAM_SUPERGROUP_HINT;
+    }
+    if (/failed to get HTTP URL content|wrong file identifier\/HTTP URL specified/i.test(text)) {
+      return TELEGRAM_URL_CONTENT_HINT;
     }
     if (/chat not found|bot is not a member|can't initiate conversation|need administrator rights|bot was blocked by the user/i.test(text)) {
       return TELEGRAM_CHAT_HINT;
