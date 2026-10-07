@@ -51,7 +51,8 @@ type Tool = {
 
 const a = adapter as unknown as {
   instructions: string;
-  unlisted: boolean;
+  unlisted?: boolean;
+  prerequisites?: string;
   requiredEnvVars: string[];
   probe: { tool: string };
   connector: {
@@ -96,8 +97,10 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('microsoft-outlook adapter — static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('stays unlisted until someone has run it against a real mailbox', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed, and says up front that it needs an Entra app registration', () => {
+    expect(a.unlisted).toBeFalsy();
+    expect(a.prerequisites).toMatch(/Entra/);
+    expect(a.prerequisites).toMatch(/redirect URI/);
   });
 
   it('authorises in the browser against the configured tenant and asks for a refresh token', () => {
