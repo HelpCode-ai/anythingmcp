@@ -401,6 +401,13 @@ export interface AdapterMeta {
    *  names another adapter to offer instead (e.g. the JSON-RPC Odoo for an
    *  instance older than 19). */
   verifyHints?: Record<string, VerifyHint>;
+  /** For an adapter signed in through the browser: a GET, relative to the
+   *  connector's base URL, that checks the app keys before the user is sent to
+   *  the provider. Headers may use {{VAR}}. A 401/403 keeps the user on the
+   *  setup page with the adapter's verifyHints instead of a provider error
+   *  page they never come back from (Etsy refuses the sign-in of an app that
+   *  is still Pending or whose shared secret is wrong). */
+  checkBeforeAuthorization?: { path: string; headers?: Record<string, string> };
   /** What setting it up involves; filled in by the adapters API. */
   setupKind?: SetupKind;
 }

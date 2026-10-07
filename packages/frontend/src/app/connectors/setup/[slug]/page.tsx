@@ -194,15 +194,10 @@ function SetupContent() {
     setVerifyFailed(null);
     setPhase('working');
     try {
-      if (info.setupKind === 'oauth_browser') {
-        const id = await save();
-        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${fromClaude ? '&from=claude' : ''}`;
-        const auth = await connectors.oauthAuthorize(id, token, returnTo);
-        if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
-        productEvents.track('oauth_started', token, { adapterSlug: slug });
-        window.location.href = auth.authorizationUrl;
-        return;
-      }
+      // Checked before anything else, the browser sign-in included: an app
+      // the provider does not accept yet (Etsy: still Pending, or the wrong
+      // shared secret) used to send the user to an error page at the
+      // provider that they never came back from.
       const check =
         info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), existingId ?? undefined);
       if (check && check.ok === false) {
@@ -212,6 +207,15 @@ function SetupContent() {
         }
         setVerifyFailed(check);
         setPhase('form');
+        return;
+      }
+      if (info.setupKind === 'oauth_browser') {
+        const id = await save();
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${fromClaude ? '&from=claude' : ''}`;
+        const auth = await connectors.oauthAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
         return;
       }
       const id = await save();

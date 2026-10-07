@@ -1,5 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { AdaptersService } from './adapters.service';
+import { outboundRequest } from '../common/outbound-http';
+
+// The pre-sign-in check of the app keys (Etsy) goes out through this; no
+// test here may reach a real provider.
+jest.mock('../common/outbound-http', () => ({
+  ...jest.requireActual('../common/outbound-http'),
+  outboundRequest: jest.fn(),
+}));
+const outbound = outboundRequest as jest.MockedFunction<typeof outboundRequest>;
 
 /**
  * Placeholder resolution for adapter credentials.
@@ -401,12 +410,59 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('has nothing to try for Etsy before the sign-in at Etsy', async () => {
+  it('checks the Etsy app keys before the sign-in, and goes ahead when Etsy accepts them', async () => {
+    outbound.mockReset().mockResolvedValue({ status: 200, data: '{"application_id":1}' } as any);
     const execute = jest.fn();
     const { service } = build(execute);
     const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
     expect(out).toEqual({ ok: null, skipped: 'authorization' });
     expect(execute).not.toHaveBeenCalled();
+    expect(outbound).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        url: 'https://openapi.etsy.com/v3/application/openapi-ping',
+        headers: { 'x-api-key': 'ks:ss' },
+      }),
+    );
+  });
+
+  it('keeps the user on the setup page when Etsy does not accept the app keys yet', async () => {
+    // 7 Oct 2026: every Etsy user who left for the sign-in and never came back
+    // had keys Etsy answered this way (app still Pending, or wrong secret).
+    outbound.mockReset().mockResolvedValue({
+      status: 403,
+      data: '{"error":"API key not found or not active, or incorrect shared secret for API key."}',
+    } as any);
+    const { service } = build(jest.fn());
+    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 403 });
+    expect((out as any).message).toContain('stays Pending until Etsy approves it');
+    expect((out as any).message).toContain('API key not found or not active');
+  });
+
+  it('does not hold the sign-in back when Etsy cannot be reached or answers something else', async () => {
+    const { service } = build(jest.fn());
+    outbound.mockReset().mockRejectedValue(new Error('ETIMEDOUT'));
+    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+      ok: null,
+      skipped: 'authorization',
+    });
+    outbound.mockReset().mockResolvedValue({ status: 503, data: 'down' } as any);
+    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+      ok: null,
+      skipped: 'authorization',
+    });
+  });
+
+  it('has nothing to check before the sign-in for an OAuth adapter without app-key check', async () => {
+    outbound.mockReset();
+    const { service } = build(jest.fn());
+    const out = await service.verifyCredentials('google-search-console', 'org1', {
+      GOOGLE_CLIENT_ID: 'id',
+      GOOGLE_CLIENT_SECRET: 'secret',
+    });
+    expect(out).toEqual({ ok: null, skipped: 'authorization' });
+    expect(outbound).not.toHaveBeenCalled();
   });
 });
 

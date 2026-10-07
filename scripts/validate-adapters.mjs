@@ -323,6 +323,14 @@ export function validateAdapter(adapter, file, region) {
     }
   }
 
+  if (adapter.checkBeforeAuthorization !== undefined) {
+    const check = adapter.checkBeforeAuthorization;
+    const okPath = check && typeof check === 'object' && typeof check.path === 'string' && check.path.trim() && !/^https?:/i.test(check.path);
+    const okHeaders = check?.headers === undefined || (check.headers && typeof check.headers === 'object' && Object.values(check.headers).every((v) => typeof v === 'string'));
+    if (!okPath || !okHeaders) errors.push(error('check-before-authorization', 'checkBeforeAuthorization', 'checkBeforeAuthorization needs a path relative to the base URL and string headers', 'Use { "path": "/ping", "headers": { "x-api-key": "{{KEY}}" } }.', 'adapter-fields'));
+    if (adapter.connector?.authType !== 'OAUTH2') errors.push(error('check-before-authorization', 'checkBeforeAuthorization', 'checkBeforeAuthorization only runs for adapters signed in through the browser (OAUTH2)', 'Remove it, or use probe for other adapters.', 'adapter-fields'));
+  }
+
   for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {
     errors.push(error('error-when', 'connector.config.errorWhen', problem, 'Each rule needs a path and may set equals, in, matches, messagePath, messageMatches and an error status (400-599).', 'errors-inside-a-200-response'));
   }

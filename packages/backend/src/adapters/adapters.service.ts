@@ -17,6 +17,7 @@ import {
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
 import { odooDatabaseHint } from './odoo-database-hint';
+import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
 import { STARTER_PACK } from './starter-pack';
@@ -388,7 +389,14 @@ export class AdaptersService {
         message: `Still empty: ${state.missing.join(', ')}.`,
       };
     }
-    if (state.status === 'needs_authorization') return { ok: null, skipped: 'authorization' };
+    if (state.status === 'needs_authorization') {
+      return (
+        (await this.checkAppKeys(adapter, prepared.resolvedBaseUrl, credentials)) ?? {
+          ok: null,
+          skipped: 'authorization',
+        }
+      );
+    }
 
     const call = pickProbe(adapter);
     const tool = call ? adapter.tools.find((t) => t.name === call.toolName) : undefined;
@@ -451,6 +459,52 @@ export class AdaptersService {
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
+  }
+
+  /**
+   * The adapter's checkBeforeAuthorization, when it has one: a refusal of the
+   * app keys (401/403) as a failed check, anything else (keys accepted, the
+   * provider down, a timeout) as nothing, so the sign-in goes ahead as before.
+   * On 7 Oct 2026 every Etsy user who started the sign-in and never came back
+   * had keys Etsy refused: an app still Pending, or the wrong shared secret.
+   */
+  private async checkAppKeys(
+    adapter: AdapterDefinition,
+    baseUrl: string,
+    credentials?: Record<string, string>,
+  ): Promise<VerifyResult | undefined> {
+    const check = adapter.checkBeforeAuthorization;
+    if (!check) return undefined;
+    const headers = Object.fromEntries(
+      Object.entries(check.headers ?? {}).map(([k, v]) => [k, this.resolveString(v, credentials)]),
+    );
+    if (Object.values(headers).some((v) => /\{\{\w+\}\}/.test(v))) return undefined;
+    let status: number;
+    let body = '';
+    try {
+      const response = await outboundRequest({
+        method: 'GET',
+        url: `${baseUrl.replace(/\/+$/, '')}/${check.path.replace(/^\/+/, '')}`,
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+        responseType: 'text',
+      });
+      status = response.status;
+      body = String(response.data ?? '').slice(0, 200);
+    } catch {
+      return undefined;
+    }
+    if (status !== 401 && status !== 403) return undefined;
+    const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.auth_failed;
+    const hint = typeof own === 'string' ? own : own?.hint;
+    const upstream = `${status}${body ? `: ${body.replace(/\s+/g, ' ').trim()}` : ''}`;
+    return {
+      ok: false,
+      kind: 'auth_failed',
+      status,
+      message: hint ? `${hint} (${upstream})` : `The provider refused the app keys (${upstream}).`,
+    };
   }
 
   /**
