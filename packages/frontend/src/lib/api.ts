@@ -994,6 +994,19 @@ export const server = {
     }>('/health/server-info'),
 };
 
+// Public aggregate numbers (GitHub stars, downloads, workspaces, tool calls)
+export interface PublicStats {
+  githubStars: number | null;
+  dockerPulls: number | null;
+  workspaces: number | null;
+  toolCalls30d: number | null;
+  updatedAt: string | null;
+}
+
+export const publicStats = {
+  get: () => request<PublicStats>('/api/public/stats'),
+};
+
 // Site Settings
 export const siteSettings = {
   footerLinks: () =>

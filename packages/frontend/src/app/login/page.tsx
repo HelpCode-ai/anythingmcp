@@ -12,6 +12,8 @@ import { ProviderMark } from '@/components/provider-mark';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useTrustStats } from '@/lib/trust-stats';
+import { TrustLine, TrustPanel } from '@/components/auth-trust';
 import { safeRedirect } from '@/lib/safe-redirect';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
@@ -46,6 +48,9 @@ const inputClass =
   'placeholder:text-[var(--text-3)] outline-none transition-colors ' +
   'focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-ring)]';
 
+/** Every step but the Cloud sign-up: one centred card. */
+const singleColumn = 'mx-auto flex min-h-dvh w-full max-w-[26rem] flex-col justify-center px-4 py-8';
+
 const alertDanger =
   'mb-4 rounded-[9px] px-3 py-2.5 text-sm bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]';
 const alertSuccess =
@@ -73,6 +78,7 @@ function LoginForm() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
+  const [infoLoaded, setInfoLoaded] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState(0);
   // What the trial actually grants, read from the licence once it exists, so
   // this card cannot drift from the plan (it said "2 connectors" after the
@@ -127,8 +133,12 @@ function LoginForm() {
       } else if (modeParam === 'login') {
         setIsRegister(false);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setInfoLoaded(true));
   }, [modeParam]);
+
+  // Live trust numbers for the panel and the line under the card. Hidden
+  // when the endpoint is unavailable.
+  const trustStats = useTrustStats(infoLoaded);
 
   // Cloud only: note where this visitor came from, for the sign-up to carry.
   // Self-hosted instances record nothing.
@@ -450,7 +460,7 @@ function LoginForm() {
 
   if (setupStep === 'verify-email') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -537,7 +547,7 @@ function LoginForm() {
 
   if (setupStep === 'check-inbox') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -578,7 +588,7 @@ function LoginForm() {
 
   if (setupStep === 'trial-activated') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -634,7 +644,7 @@ function LoginForm() {
 
   if (setupStep === 'license-choice') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -704,7 +714,7 @@ function LoginForm() {
 
   if (setupStep === 'license-email-sent') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -765,7 +775,7 @@ function LoginForm() {
 
   if (setupStep === 'license-key') {
     return (
-      <div className="w-full max-w-sm">
+      <div className={singleColumn}>
         <Card className="p-6">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
@@ -835,233 +845,283 @@ function LoginForm() {
 
   // ── Auth Form (Login / Register) ──────────────────────────────────────────
 
-  return (
-    <div className="w-full max-w-sm">
-      <Card className="p-6">
-        <div className="text-center mb-6">
-          <div className="flex justify-center mb-4">
-            <BrandMark />
-          </div>
-          <h1 className="text-xl font-semibold text-[var(--text)]">
-            {isRegister ? 'Create your account' : 'Sign in'}
-          </h1>
-          <p className="text-[var(--text-2)] mt-1 text-sm">
-            Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent
-          </p>
+  // Cloud sign-up gets the two-column page with the trust panel. Everything
+  // else (sign-in, self-hosted first-user setup) keeps the single card: a
+  // self-hosted instance makes none of the Cloud claims (EU hosting, trial).
+  const cloudSignup = isRegister && isCloudMode && !ssoExchanging;
+
+  const formCard = (
+    <Card className={cloudSignup ? 'w-full max-w-[400px] p-6 sm:p-8' : 'p-6'}>
+      <div className={cloudSignup ? 'mb-6' : 'text-center mb-6'}>
+        <div className={cloudSignup ? 'mb-5 flex' : 'flex justify-center mb-4'}>
+          <BrandMark />
         </div>
-
-        {emailVerifiedParam === 'true' && (
-          <div className={alertSuccess}>
-            Email verified successfully! You can now sign in.
-          </div>
-        )}
-
-        {error && <div className={alertDanger}>{error}</div>}
-
-        {ssoExchanging && (
-          <p className="text-center text-sm text-[var(--text-2)] py-6">
-            Signing you in…
-          </p>
-        )}
-
-        {!ssoExchanging && !isRegister && ssoProviders.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {ssoProviders.map((p) => (
-              <a
-                key={p.startUrl}
-                href={p.startUrl}
-                className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
-              >
-                <ProviderMark type={p.type} />
-                <span>{p.name}</span>
-              </a>
-            ))}
-            <div className="flex items-center gap-3 pt-1">
-              <div className="h-px flex-1 bg-[var(--border)]" />
-              <span className="text-[11.5px] text-[var(--text-3)]">or</span>
-              <div className="h-px flex-1 bg-[var(--border)]" />
-            </div>
-          </div>
-        )}
-
-        <form
-          className={`space-y-4${ssoExchanging ? ' hidden' : ''}`}
-          onSubmit={handleSubmit}
+        <h1
+          className={
+            cloudSignup
+              ? 'text-2xl font-semibold leading-tight tracking-[-0.015em] text-[var(--text)]'
+              : 'text-xl font-semibold text-[var(--text)]'
+          }
         >
-          {isRegister && (
-            <div>
-              <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">Name</label>
-              <input
-                id="auth-name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
-                className={inputClass}
-                required
-              />
-            </div>
-          )}
+          {cloudSignup ? 'Create your free account' : isRegister ? 'Create your account' : 'Sign in'}
+        </h1>
+        <p className="text-[var(--text-2)] mt-1.5 text-sm leading-relaxed">
+          {cloudSignup
+            ? '7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.'
+            : 'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent'}
+        </p>
+      </div>
 
+      {emailVerifiedParam === 'true' && (
+        <div className={alertSuccess}>
+          Email verified successfully! You can now sign in.
+        </div>
+      )}
+
+      {error && <div className={alertDanger}>{error}</div>}
+
+      {ssoExchanging && (
+        <p className="text-center text-sm text-[var(--text-2)] py-6">
+          Signing you in…
+        </p>
+      )}
+
+      {!ssoExchanging && !isRegister && ssoProviders.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {ssoProviders.map((p) => (
+            <a
+              key={p.startUrl}
+              href={p.startUrl}
+              className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
+            >
+              <ProviderMark type={p.type} />
+              <span>{p.name}</span>
+            </a>
+          ))}
+          <div className="flex items-center gap-3 pt-1">
+            <div className="h-px flex-1 bg-[var(--border)]" />
+            <span className="text-[11.5px] text-[var(--text-3)]">or</span>
+            <div className="h-px flex-1 bg-[var(--border)]" />
+          </div>
+        </div>
+      )}
+
+      <form
+        className={`space-y-4${ssoExchanging ? ' hidden' : ''}`}
+        onSubmit={handleSubmit}
+      >
+        {isRegister && (
           <div>
-            <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">Email</label>
+            <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">Name</label>
             <input
-              id="auth-email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
-              className={inputClass}
+              id="auth-name"
+              name="name"
+              type="text"
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              className={cn(inputClass, cloudSignup && 'h-[42px]')}
               required
             />
           </div>
+        )}
 
-          <div className={recoveryMode ? 'hidden' : undefined}>
-            <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
-            <input
-              id="auth-password"
-              name="password"
-              type="password"
-              autoComplete={isRegister ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Min. 8 characters"
-              className={inputClass}
-              // A hidden field that is still `required` blocks submission with
-              // a validation bubble the user cannot see or reach.
-              required={!recoveryMode}
-              minLength={8}
-            />
-            {isRegister && password.length > 0 && (
-              <ul className="mt-1.5 space-y-0.5 text-xs">
-                {[
-                  [password.length >= 8, 'At least 8 characters'],
-                  [/[A-Z]/.test(password), 'One uppercase letter'],
-                  [/[a-z]/.test(password), 'One lowercase letter'],
-                  [/\d/.test(password), 'One number'],
-                  [/[^a-zA-Z0-9]/.test(password), 'One special character'],
-                ].map(([ok, label]) => (
-                  <li key={label as string} className={ok ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
-                    {ok ? '\u2713' : '\u2022'} {label as string}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <div>
+          <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">
+            {cloudSignup ? 'Work email' : 'Email'}
+          </label>
+          <input
+            id="auth-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={cloudSignup ? 'you@company.com' : 'admin@example.com'}
+            className={cn(inputClass, cloudSignup && 'h-[42px]')}
+            required
+          />
+        </div>
 
-          {isRegister && (
-            <>
-              <div>
-                <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
-                <input
-                  id="auth-confirm-password"
-                  name="confirm-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat your password"
-                  className={inputClass}
-                  required
-                  minLength={8}
-                />
-              </div>
-
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={acceptTerms}
-                  onChange={(e) => setAcceptTerms(e.target.checked)}
-                  className="mt-0.5 accent-[var(--brand)]"
-                />
-                <span className="text-sm text-[var(--text-2)]">
-                  I accept the{' '}
-                  <a
-                    href="https://anythingmcp.com/en/agb"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--brand)] hover:underline font-medium"
-                  >
-                    Terms of Use
-                  </a>
-                </span>
-              </label>
-            </>
+        <div className={recoveryMode ? 'hidden' : undefined}>
+          <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
+          <input
+            id="auth-password"
+            name="password"
+            type="password"
+            autoComplete={isRegister ? 'new-password' : 'current-password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Min. 8 characters"
+            className={cn(inputClass, cloudSignup && 'h-[42px]')}
+            // A hidden field that is still `required` blocks submission with
+            // a validation bubble the user cannot see or reach.
+            required={!recoveryMode}
+            minLength={8}
+          />
+          {isRegister && password.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 text-xs">
+              {[
+                [password.length >= 8, 'At least 8 characters'],
+                [/[A-Z]/.test(password), 'One uppercase letter'],
+                [/[a-z]/.test(password), 'One lowercase letter'],
+                [/\d/.test(password), 'One number'],
+                [/[^a-zA-Z0-9]/.test(password), 'One special character'],
+              ].map(([ok, label]) => (
+                <li key={label as string} className={ok ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
+                  {ok ? '✓' : '•'} {label as string}
+                </li>
+              ))}
+            </ul>
           )}
+        </div>
 
-          {recoveryMode && (
+        {isRegister && (
+          <>
             <div>
-              <label htmlFor="auth-recovery-code" className="block text-sm font-medium mb-1 text-[var(--text)]">
-                Recovery code
-              </label>
+              <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
               <input
-                id="auth-recovery-code"
-                name="recovery-code"
-                type="text"
-                autoComplete="one-time-code"
-                spellCheck={false}
-                value={recoveryCode}
-                onChange={(e) => setRecoveryCode(e.target.value)}
-                placeholder="XXXXX-XXXXX"
-                className={`${inputClass} tracking-widest uppercase`}
+                id="auth-confirm-password"
+                name="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat your password"
+                className={cn(inputClass, cloudSignup && 'h-[42px]')}
                 required
+                minLength={8}
               />
-              <p className="text-xs text-[var(--text-2)] mt-1.5">
-                One of the codes you saved when setting up single sign-on. Each works once.
-              </p>
             </div>
-          )}
 
-          <Button type="submit" disabled={loading} className="w-full" size="lg">
-            {loading
-              ? 'Loading...'
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                className="mt-0.5 accent-[var(--brand)]"
+              />
+              <span className="text-sm text-[var(--text-2)]">
+                I accept the{' '}
+                <a
+                  href="https://anythingmcp.com/en/agb"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--brand)] hover:underline font-medium"
+                >
+                  Terms of Use
+                </a>
+                {cloudSignup && (
+                  <>
+                    {' '}and have read the{' '}
+                    <a
+                      href="https://anythingmcp.com/datenschutz"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--brand)] hover:underline font-medium"
+                    >
+                      Privacy Policy
+                    </a>
+                  </>
+                )}
+              </span>
+            </label>
+          </>
+        )}
+
+        {recoveryMode && (
+          <div>
+            <label htmlFor="auth-recovery-code" className="block text-sm font-medium mb-1 text-[var(--text)]">
+              Recovery code
+            </label>
+            <input
+              id="auth-recovery-code"
+              name="recovery-code"
+              type="text"
+              autoComplete="one-time-code"
+              spellCheck={false}
+              value={recoveryCode}
+              onChange={(e) => setRecoveryCode(e.target.value)}
+              placeholder="XXXXX-XXXXX"
+              className={`${inputClass} tracking-widest uppercase`}
+              required
+            />
+            <p className="text-xs text-[var(--text-2)] mt-1.5">
+              One of the codes you saved when setting up single sign-on. Each works once.
+            </p>
+          </div>
+        )}
+
+        <Button type="submit" disabled={loading} className={cn('w-full', cloudSignup && 'h-11 text-[15px] font-semibold')} size="lg">
+          {loading
+            ? 'Loading...'
+            : cloudSignup
+              ? 'Start free trial →'
               : isRegister
                 ? 'Create Account'
                 : recoveryMode
                   ? 'Sign in with recovery code'
                   : 'Sign In'}
-          </Button>
-        </form>
+        </Button>
 
-        {!isRegister && (
-          <p className="text-center text-sm mt-3 flex items-center justify-center gap-3">
-            {!recoveryMode && (
-              <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
-                Forgot password?
-              </Link>
-            )}
-            {/*
-              Always reachable, not just once a password has been refused: the
-              situation this exists for is one where the identity provider is
-              down, and an admin should not have to guess a wrong password
-              first to be offered the way in.
-            */}
-            <button
-              type="button"
-              onClick={() => { setRecoveryMode(!recoveryMode); setError(''); }}
-              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
-            >
-              {recoveryMode ? 'Back to password sign-in' : 'Use a recovery code'}
-            </button>
+        {cloudSignup && (
+          <p className="text-center text-xs leading-relaxed text-[var(--text-3)]">
+            <span aria-hidden>🔒 </span>Encrypted with AES-256-GCM · hosted in Frankfurt, Germany
           </p>
         )}
+      </form>
 
-        {(registrationEnabled || isRegister) && (
-          <p className="text-center text-sm text-[var(--text-2)] mt-3">
-            {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-            <button
-              onClick={() => { setIsRegister(!isRegister); setError(''); }}
-              className="text-[var(--brand)] hover:underline font-medium"
-            >
-              {isRegister ? 'Sign In' : 'Register'}
-            </button>
-          </p>
-        )}
-      </Card>
+      {!isRegister && (
+        <p className="text-center text-sm mt-3 flex items-center justify-center gap-3">
+          {!recoveryMode && (
+            <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
+              Forgot password?
+            </Link>
+          )}
+          {/*
+            Always reachable, not just once a password has been refused: the
+            situation this exists for is one where the identity provider is
+            down, and an admin should not have to guess a wrong password
+            first to be offered the way in.
+          */}
+          <button
+            type="button"
+            onClick={() => { setRecoveryMode(!recoveryMode); setError(''); }}
+            className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
+          >
+            {recoveryMode ? 'Back to password sign-in' : 'Use a recovery code'}
+          </button>
+        </p>
+      )}
+
+      {(registrationEnabled || isRegister) && (
+        <p className="text-center text-sm text-[var(--text-2)] mt-3">
+          {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button
+            onClick={() => { setIsRegister(!isRegister); setError(''); }}
+            className="text-[var(--brand)] hover:underline font-medium"
+          >
+            {isRegister ? 'Sign In' : 'Register'}
+          </button>
+        </p>
+      )}
+    </Card>
+  );
+
+  if (cloudSignup) {
+    return (
+      <div className="grid w-full lg:min-h-dvh lg:grid-cols-2">
+        <div className="flex items-center justify-center px-4 py-6 sm:py-10 lg:px-6 lg:py-12">{formCard}</div>
+        <TrustPanel stats={trustStats} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={singleColumn}>
+      {formCard}
+      {infoLoaded && <TrustLine cloud={isCloudMode} stats={trustStats} />}
     </div>
   );
 }
@@ -1070,7 +1130,7 @@ export default function LoginPage() {
   return (
     // <main>, not a <div>: this page sits outside AppShell, so without it the
     // document has no main landmark for a screen reader to jump to.
-    <main className="min-h-dvh flex items-center justify-center bg-[var(--bg)] px-4">
+    <main className="min-h-dvh bg-[var(--bg)]">
       <Suspense>
         <LoginForm />
       </Suspense>

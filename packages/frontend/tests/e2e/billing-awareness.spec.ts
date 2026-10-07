@@ -187,7 +187,8 @@ test.describe('promotion code through sign-up (cloud)', () => {
   test('a code on the sign-up link is kept and applied to the card trial checkout', async ({ page }) => {
     await cloudSession(page, { signedIn: false });
     await page.goto('/login?mode=register&plan=cloud_team&period=monthly&promo=start30');
-    await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible({ timeout: 15_000 });
+    // Cloud sign-up: the form's submit button starts the trial.
+    await expect(page.getByRole('button', { name: /Start free trial/ })).toBeVisible({ timeout: 15_000 });
     const stored = await page.evaluate(() => localStorage.getItem('amcp_promo_code'));
     expect(JSON.parse(stored ?? '{}').code).toBe('START30');
   });

@@ -30,6 +30,10 @@ export default function SettingsPage() {
   const [mcpAuthMode, setMcpAuthMode] = useState('');
   const [oauthEndpoints, setOauthEndpoints] = useState<Record<string, string> | null>(null);
   const [serverUrl, setServerUrl] = useState('');
+  // Cloud only: onboarding tips and offers by email (the drip, win-back).
+  const [isCloud, setIsCloud] = useState(false);
+  const [marketingOptOut, setMarketingOptOut] = useState<boolean | null>(null);
+  const [marketingSaving, setMarketingSaving] = useState(false);
 
   // Delete account
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -49,8 +53,31 @@ export default function SettingsPage() {
       setMcpAuthMode(info.mcpAuthMode);
       setOauthEndpoints(info.oauthEndpoints);
       setServerUrl(info.serverUrl);
+      setIsCloud(info.deploymentMode === 'cloud');
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isCloud || !token) return;
+    users
+      .onboardingState(token)
+      .then((st) => setMarketingOptOut(st.emailMarketingOptOut))
+      .catch(() => setMarketingOptOut(null));
+  }, [isCloud, token]);
+
+  const handleMarketingToggle = async (wantsEmails: boolean) => {
+    if (!token) return;
+    setMarketingSaving(true);
+    try {
+      const st = await users.updateOnboardingState({ emailMarketingOptOut: !wantsEmails }, token);
+      setMarketingOptOut(st.emailMarketingOptOut);
+      toast.show({ tone: 'success', title: wantsEmails ? 'Tips and offers turned on' : 'Unsubscribed from tips and offers' });
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not save', description: err?.message });
+    } finally {
+      setMarketingSaving(false);
+    }
+  };
 
   const loadLinkable = () => {
     if (!token) return;
@@ -223,6 +250,27 @@ export default function SettingsPage() {
           <Button onClick={handleSaveProfile}>Save Profile</Button>
         </div>
       </Card>
+
+      {/* Email preferences (Cloud). The unsubscribe link in tips emails also leads here. */}
+      {isCloud && marketingOptOut !== null && (
+        <Card id="email-preferences" className="p-[22px] scroll-mt-6">
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Email preferences</h3>
+          <label className="flex items-start gap-2.5 cursor-pointer max-w-md">
+            <input
+              type="checkbox"
+              checked={!marketingOptOut}
+              disabled={marketingSaving}
+              onChange={(e) => handleMarketingToggle(e.target.checked)}
+              className="mt-0.5 accent-[var(--brand)]"
+            />
+            <span className="text-sm text-[var(--text-2)]">
+              <span className="font-medium text-[var(--text)]">Tips and offers by email</span>
+              <br />
+              Setup tips while your workspace is new, and offers after a trial. Emails about your account, such as sign-in codes and plan notices, are always sent.
+            </span>
+          </label>
+        </Card>
+      )}
 
       {/* Change Password */}
       <Card className="p-[22px]">

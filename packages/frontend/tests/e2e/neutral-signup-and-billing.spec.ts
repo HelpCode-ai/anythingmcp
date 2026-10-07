@@ -25,7 +25,8 @@ async function fillSignup(page: Page, email: string, query = '') {
   await page.locator('#auth-password').fill('Str0ng#Passw0rd');
   await page.locator('#auth-confirm-password').fill('Str0ng#Passw0rd');
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Create Account' }).click();
+  // Cloud sign-up: the submit button starts the 7-day trial.
+  await page.getByRole('button', { name: /Start free trial/ }).click();
 }
 
 test.describe('cloud sign-up', () => {
