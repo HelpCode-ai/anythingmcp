@@ -6,6 +6,7 @@
   "category": "finance",
   "icon": "bundesbank",
   "docsUrl": "https://api.statistiken.bundesbank.de/doc/index.html",
+  "instructions": "Read-only access to the Deutsche Bundesbank time series database through its SDMX REST web service (`api.statistiken.bundesbank.de`): ECB euro reference exchange rates, yields of German federal securities, and any other Bundesbank series by flow and key. No account or API key is needed.\n\n**Which tool**\n- `bundesbank_get_exchange_rates`: daily ECB euro reference rate for one currency (series `BBEX3` `D.<CUR>.EUR.BB.AC.000`). The value is units of foreign currency per 1 EUR: `1.1269` for USD means 1 EUR = 1.1269 USD; take 1/value for EUR per unit of foreign currency. The ECB sets these rates at about 14:15 CET on business days.\n- `bundesbank_get_bund_yields`: daily yield, in percent, derived from the term structure for German federal securities with a residual maturity of 1, 2, 5, 10 or 30 years (`BBSIS` `D.I.ZAR.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A` for 10 years). `3.49` means 3.49 %.\n- `bundesbank_get_timeseries`: any other series, e.g. flow `BBDP1` with key `M.DE.N.VPI.C.A00000.I20.A` (German consumer price index, 2020 = 100, monthly). Copy keys from the series pages of the Bundesbank time series database. Leave a key part empty as a wildcard or join codes with `+`: `D.USD+GBP.EUR.BB.AC.000` returns two series, `D..EUR.BB.AC.000` every reference rate.\n\n**Periods must match the frequency**, which is the first part of the key: daily `D` takes `2026-10-01`, monthly `M` takes `2026-10`, quarterly `Q` takes `2026-Q3`, annual `A` takes `2026`. A mismatch returns HTTP 400 \"Period restriction ... does not match frequency\". The two dedicated tools are daily, so they need full dates. Always pass `startPeriod`: without it the whole history comes back (EUR/USD since 1999, about 10,000 observations).\n\n**Reading SDMX-JSON**: values are under `data.dataSets[0].series[\"0:0:...\"].observations`. Each observation key is an index into `data.structure.dimensions.observation[0].values`, which holds the dates; the first element of each observation is the value as a string (`[\"1.1269\", 5, 0]`), the other numbers are attribute indexes. Weekends and holidays appear with a `null` value. With several series, each series key is a colon-separated list of indexes into `data.structure.dimensions.series[n].values`, which are sorted alphabetically, not in request order. The tools request `detail=dataonly`, so titles and units are not included.\n\n**Errors**: an unknown flow or key, or a range with no data at all, returns HTTP 404 with a German message. A range that lies entirely in the future can return 200 with an empty `series` entry.\n\n**Cloud reachability**: `api.statistiken.bundesbank.de` is publicly reachable over HTTPS.",
   "requiredEnvVars": [],
   "probe": {
     "tool": "bundesbank_get_exchange_rates",
@@ -77,11 +78,11 @@
           },
           "startPeriod": {
             "type": "string",
-            "description": "First period, e.g. 2026-01-01 (daily) or 2026-01 (monthly). Omit for the full history — can be large."
+            "description": "First day, YYYY-MM-DD (e.g. 2026-01-01). The series is daily, so 2026-01 returns HTTP 400. Omit for the full history, which is large."
           },
           "endPeriod": {
             "type": "string",
-            "description": "Last period, same format as startPeriod."
+            "description": "Last day, YYYY-MM-DD."
           }
         },
         "required": [

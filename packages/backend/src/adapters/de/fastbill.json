@@ -5,7 +5,8 @@
   "region": "de",
   "category": "finance",
   "icon": "fastbill",
-  "docsUrl": "https://apidocs.fastbill.com/fastbill/",
+  "docsUrl": "https://apidocs.fastbill.com/",
+  "instructions": "FastBill is an invoicing and bookkeeping service for German freelancers and small businesses. This connector reads customers, outgoing invoices, expenses (Kosteneinträge) and revenues (Einnahmen) through the FastBill API 1.0. Every tool is read-only.\n\n**Getting credentials**\n1. Sign in at my.fastbill.com, click your name in the top right corner, open **Einstellungen** (Settings) and scroll to the bottom: the **API-Key** is shown there. Put it in `FASTBILL_API_KEY`.\n2. Put the e-mail address you sign in with in `FASTBILL_EMAIL`. Both are sent together as HTTP Basic authentication.\n\nFastBill Automatic, the subscription billing product, uses a different API host and is not covered by these tools.\n\n**How the API works**: every tool POSTs a JSON body to one URL, `https://my.fastbill.com/api/1.0/api.php`, naming a `SERVICE` such as `invoice.get`. The answer repeats the request under `REQUEST` and puts the data under `RESPONSE`, e.g. `RESPONSE.CUSTOMERS[]` or `RESPONSE.INVOICES[]`. Problems are reported in `RESPONSE.ERRORS`: read it before concluding that a list is empty.\n\n**Filters and fields**: `TERM` on `fastbill_list_customers` searches organization, first and last name, address, ZIP code, e-mail and tags. Invoices and expenses can be narrowed by `MONTH` and `YEAR` (FastBill marks these filters as deprecated but still accepts them), invoices also by `CUSTOMER_ID`. `fastbill_get_invoice` takes the internal `INVOICE_ID`, not the printed invoice number. On invoices, `TYPE` is `outgoing`, `draft` or `credit` (credit note) and `STATE` is `draft`, `unpaid`, `overdue`, `paid` or `canceled`; leave drafts, credit notes and cancelled invoices out when adding up revenue. `SUB_TOTAL` is net, `VAT_TOTAL` the VAT, `TOTAL` gross. Dates are `YYYY-MM-DD`.\n\n**Pagination and limits**: without `LIMIT`, FastBill returns 10 entries; the maximum is 100 per call. Page with `OFFSET` (0, 100, 200 …) until fewer than `LIMIT` entries come back. The number of calls per hour depends on the plan: Solo 50, Solo-Plus 100, Pro 500, Premium 1000. Fetch 100 entries per call rather than many small pages.\n\n**Cloud reachability**: `my.fastbill.com` is publicly reachable over HTTPS.",
   "requiredEnvVars": [
     "FASTBILL_EMAIL",
     "FASTBILL_API_KEY"
@@ -29,7 +30,7 @@
         "properties": {
           "LIMIT": {
             "type": "number",
-            "description": "Maximum number of results (default: 25)"
+            "description": "Maximum number of results (default: 10, max: 100)"
           },
           "OFFSET": {
             "type": "number",
@@ -62,7 +63,7 @@
         "properties": {
           "LIMIT": {
             "type": "number",
-            "description": "Maximum number of results (default: 25)"
+            "description": "Maximum number of results (default: 10, max: 100)"
           },
           "OFFSET": {
             "type": "number",
@@ -105,7 +106,7 @@
         "properties": {
           "LIMIT": {
             "type": "number",
-            "description": "Maximum number of results (default: 25)"
+            "description": "Maximum number of results (default: 10, max: 100)"
           },
           "OFFSET": {
             "type": "number",
@@ -143,7 +144,7 @@
         "properties": {
           "LIMIT": {
             "type": "number",
-            "description": "Maximum number of results (default: 25)"
+            "description": "Maximum number of results (default: 10, max: 100)"
           },
           "OFFSET": {
             "type": "number",

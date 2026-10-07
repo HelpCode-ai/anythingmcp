@@ -6,6 +6,7 @@
   "category": "finance",
   "icon": "billomat",
   "docsUrl": "https://www.billomat.com/en/api/",
+  "instructions": "Billomat is a German online invoicing and bookkeeping service. This connector reads clients, invoices, offers (estimates, Angebote) and articles through the Billomat REST API. Every tool is read-only.\n\n**Getting credentials**\n1. API access is switched on per user: in Billomat open **Settings → Employees** (Einstellungen → Mitarbeiter), edit the user and activate API access. Billomat then generates a personal API key; copy it into `BILLOMAT_API_KEY`. The key acts with that user's rights.\n2. Set `BILLOMAT_SUBDOMAIN` to your Billomat ID, the first part of your account address: for `mycompany.billomat.net`, enter `mycompany`. Requests go to `https://mycompany.billomat.net/api` with the key in the `X-BillomatApiKey` header.\n\n**Finding records**: get tools take Billomat's internal numeric `id`, not the document number (`RE123`) or client number (`KD123`). List clients first (`name` matches part of the name, case-insensitive) and pass their `id` as `client_id` to filter invoices and offers.\n\n**Status values**: invoices are `DRAFT`, `OPEN`, `OVERDUE`, `PAID` or `CANCELED`; several can be combined with commas, e.g. `OPEN,OVERDUE` for everything unpaid. Offers are `DRAFT`, `OPEN`, `WON`, `LOST`, `CANCELED` or `CLEARED`. Booleans are `1` and `0`, dates `YYYY-MM-DD`, timestamps ISO 8601 with offset.\n\n**Reading responses**: lists are wrapped, e.g. `{\"invoices\": {\"invoice\": [...], \"@page\": \"1\", \"@per_page\": \"100\", \"@total\": \"57\"}}`. When exactly one record matches, `invoice` can be a single object instead of an array. `billomat_get_invoice` returns the header with `total_net`, `total_gross`, `taxes`, `paid_amount` and `open_amount`; line items, comments and payments are separate Billomat resources that this adapter does not read.\n\n**Pagination and limits**: `page` starts at 1; `per_page` defaults to 100 and allows up to 1000. Keep paging while `page` × `per_page` is below `@total`. Billomat allows 300 requests per account per 15-minute window (XX:00, XX:15, XX:30, XX:45) for clients that are not registered as an app, and this adapter is not; the quota is shared with every other unregistered integration on the account. Over the quota, Billomat answers HTTP 429 and says how many seconds to wait.\n\n**Cloud reachability**: `*.billomat.net` is publicly reachable over HTTPS.",
   "requiredEnvVars": [
     "BILLOMAT_SUBDOMAIN",
     "BILLOMAT_API_KEY"
@@ -33,7 +34,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Results per page (default: 25, max: 100)"
+            "description": "Results per page (default: 100, max: 1000)"
           },
           "name": {
             "type": "string",
@@ -89,7 +90,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Results per page (default: 25, max: 100)"
+            "description": "Results per page (default: 100, max: 1000)"
           },
           "client_id": {
             "type": "string",
@@ -117,7 +118,7 @@
     },
     {
       "name": "billomat_get_invoice",
-      "description": "Get detailed information about a specific invoice including line items, taxes, and payment info.",
+      "description": "Get one invoice by its internal ID: number, status, dates, client, net and gross totals, taxes, paid and open amount. Line items, comments and payments are separate Billomat resources and are not included.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -150,7 +151,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Results per page (default: 25, max: 100)"
+            "description": "Results per page (default: 100, max: 1000)"
           }
         }
       },
@@ -178,7 +179,7 @@
           },
           "per_page": {
             "type": "number",
-            "description": "Results per page (default: 25, max: 100)"
+            "description": "Results per page (default: 100, max: 1000)"
           },
           "client_id": {
             "type": "string",
