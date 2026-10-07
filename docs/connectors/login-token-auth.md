@@ -104,6 +104,11 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "expiryFormat":   "iso8601",                       // iso8601 | unix | ttl_seconds
   "tokenTTLSeconds": 2592000,                        // fallback when expiry is absent (30 days)
 
+  // ─── Or: the session is a cookie the login sets ────────────────
+  "tokenSource": "cookie",                           // body (default) | cookie
+  "cookieName":  "B1SESSION",                        // the cookie whose value is ${token}
+  "cookieMode":  "single",                           // single (default) | all — see below
+
   // ─── Re-login policy ───────────────────────────────────────────
   "refreshOn401": true,                              // re-login on a 401 and retry once (default true)
   "proactiveRefreshSeconds": 86400,                  // re-login when this much remains (default 24 h)
@@ -140,6 +145,28 @@ In `headerTemplate` and `extraHeaders`, only `${token}` and `${aud}` are availab
 | `ttl_seconds` | Lifetime in seconds from now |
 
 If `expiryJsonPath` is missing or unresolvable, the engine falls back to `tokenTTLSeconds` (default 30 days).
+
+### Session cookies
+
+With `"tokenSource": "cookie"` the token is read from the login response's
+`Set-Cookie` headers instead of its body.
+
+- `"cookieMode": "single"` (default): `${token}` is the value of the cookie
+  named `cookieName`, so the header is written as
+  `"headerName": "Cookie", "headerTemplate": "B1SESSION=${token}"` (SAP
+  Business One Service Layer).
+- `"cookieMode": "all"`: `${token}` is every cookie the login set, already
+  formatted as `name=value; name2=value2`, so the header is
+  `"headerName": "Cookie", "headerTemplate": "${token}"`. Use it when the
+  login sets more than one cookie the API needs, typically a session cookie
+  plus a load-balancer cookie that pins the session to one node (SAP
+  Signavio). Attributes are dropped, a cookie set twice keeps its last value,
+  and a cookie the response deletes (empty value or `Max-Age` of 0 or less)
+  is left out. `cookieName` is optional here; when set, the login fails unless
+  that cookie is among them.
+
+The body can still supply `${aud}` through `audJsonPath` (`"."` takes the
+whole body, for logins that answer with a bare token string).
 
 ---
 

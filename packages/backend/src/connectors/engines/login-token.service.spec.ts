@@ -6,9 +6,12 @@ import {
   jsonPath,
   interpolateDeep,
   extractSetCookieValue,
+  extractAllSetCookies,
   extractLoginRefusal,
   LoginTokenAuthConfig,
 } from './login-token.service';
+import { injectLoginTokenHeaders } from './rest.engine';
+import signavio from '../../adapters/intl/sap-signavio.json';
 import { encrypt } from '../../common/crypto/encryption.util';
 
 jest.mock('axios');
@@ -409,6 +412,125 @@ describe('LoginTokenService — tokenSource=cookie (SAP B1 pattern)', () => {
     await expect(service.getToken(cookieAuth, 'conn-x')).rejects.toThrow(
       /B1SESSION/,
     );
+  });
+});
+
+describe('extractAllSetCookies helper', () => {
+  it('joins every cookie as a Cookie header value, without attributes', () => {
+    expect(
+      extractAllSetCookies({
+        'set-cookie': [
+          'JSESSIONID=abc123; Path=/; Secure; HttpOnly',
+          'AWSALB=lb-node-7; Expires=Tue, 14 Oct 2026 07:00:00 GMT; Path=/',
+        ],
+      }),
+    ).toBe('JSESSIONID=abc123; AWSALB=lb-node-7');
+  });
+
+  it('accepts a single header string', () => {
+    expect(extractAllSetCookies({ 'set-cookie': 'B1SESSION=x; Path=/' })).toBe('B1SESSION=x');
+  });
+
+  it('lets the last value win and drops deleted cookies', () => {
+    expect(
+      extractAllSetCookies({
+        'set-cookie': [
+          'a=1; Path=/',
+          'b=old',
+          'gone=x',
+          'b=new; Path=/',
+          'gone=; Max-Age=0',
+          'c=3; Max-Age=-1',
+        ],
+      }),
+    ).toBe('a=1; b=new');
+  });
+
+  it('keeps an = inside a value', () => {
+    expect(extractAllSetCookies({ 'set-cookie': 'tok=YWJj==; Path=/' })).toBe('tok=YWJj==');
+  });
+
+  it('returns null when nothing usable was set', () => {
+    expect(extractAllSetCookies(undefined)).toBeNull();
+    expect(extractAllSetCookies({})).toBeNull();
+    expect(extractAllSetCookies({ 'set-cookie': ['x=; Max-Age=0', 'garbage'] })).toBeNull();
+  });
+});
+
+describe('LoginTokenService — cookieMode=all (SAP Signavio pattern)', () => {
+  let service: LoginTokenService;
+  const encryptionKey = 'test-encryption-key-32-chars!!!!';
+
+  beforeEach(() => {
+    const mockPrisma = { connector: { findUnique: jest.fn(), update: jest.fn() } } as any;
+    const mockConfigService = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, mockConfigService);
+    jest.clearAllMocks();
+  });
+
+  // The catalog adapter's own settings, with the credentials filled in.
+  const signavioAuth = {
+    ...(signavio.connector.authConfig as unknown as LoginTokenAuthConfig),
+    loginUrl: 'https://editor.signavio.com/p/login',
+    username: 'tech@example.com',
+    password: 'secret',
+    loginBody: { name: '${username}', password: '${password}', tokenonly: 'true', tenant: '' },
+  } as LoginTokenAuthConfig;
+
+  it('is what the Signavio adapter asks for', () => {
+    expect(signavioAuth.tokenSource).toBe('cookie');
+    expect(signavioAuth.cookieMode).toBe('all');
+    expect(signavioAuth.headerName).toBe('Cookie');
+    expect(signavioAuth.headerTemplate).toBe('${token}');
+    expect((signavio as { unlisted?: boolean }).unlisted).toBe(true);
+  });
+
+  it('sends back every cookie the login set, plus the token from the body', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: 'x-signavio-token-42',
+      headers: {
+        'set-cookie': [
+          'JSESSIONID=sess-1; Path=/; Secure; HttpOnly',
+          'LBROUTE=node-3; Path=/',
+        ],
+      },
+    });
+
+    const bundle = await service.getToken(signavioAuth, 'conn-signavio');
+    expect(bundle.token).toBe('JSESSIONID=sess-1; LBROUTE=node-3');
+    expect(bundle.aud).toBe('x-signavio-token-42');
+
+    const request: any = { headers: { Accept: 'application/json' } };
+    injectLoginTokenHeaders(request, signavioAuth, bundle.token, bundle.aud);
+    expect(request.headers.Cookie).toBe('JSESSIONID=sess-1; LBROUTE=node-3');
+    expect(request.headers['x-signavio-id']).toBe('x-signavio-token-42');
+  });
+
+  it('fails when the required cookie is missing', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: 'tok',
+      headers: { 'set-cookie': 'LBROUTE=node-3; Path=/' },
+    });
+    await expect(service.getToken(signavioAuth, 'conn-s2')).rejects.toThrow(/JSESSIONID/);
+  });
+
+  it('fails when the login set no cookies at all', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({ data: 'tok', headers: {} });
+    await expect(
+      service.getToken({ ...signavioAuth, cookieName: undefined }, 'conn-s3'),
+    ).rejects.toThrow(/set no cookies/);
+  });
+
+  it('without cookieMode still forwards only the named cookie', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: 'tok',
+      headers: { 'set-cookie': ['JSESSIONID=sess-1; Path=/', 'LBROUTE=node-3'] },
+    });
+    const bundle = await service.getToken(
+      { ...signavioAuth, cookieMode: undefined },
+      'conn-s4',
+    );
+    expect(bundle.token).toBe('sess-1');
   });
 });
 

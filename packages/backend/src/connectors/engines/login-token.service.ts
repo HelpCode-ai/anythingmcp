@@ -51,6 +51,13 @@ export interface LoginTokenAuthConfig {
   //                    uses this with cookieName="B1SESSION".
   tokenSource?: 'body' | 'cookie';
   cookieName?: string;
+  // With tokenSource 'cookie': 'single' (default) keeps the value of
+  // {cookieName}; 'all' keeps every cookie the login sets, as one
+  // "a=1; b=2" string for a `Cookie: ${token}` header. For logins that set a
+  // session cookie plus a load-balancer or CSRF cookie the API also wants
+  // (SAP Signavio). cookieName is optional then; when set, the login fails
+  // unless that cookie is among them.
+  cookieMode?: 'single' | 'all';
 
   refreshOn401?: boolean;
   proactiveRefreshSeconds?: number;
@@ -215,7 +222,18 @@ export class LoginTokenService {
     });
 
     let token: unknown;
-    if (authConfig.tokenSource === 'cookie') {
+    if (authConfig.tokenSource === 'cookie' && authConfig.cookieMode === 'all') {
+      token = extractAllSetCookies(response.headers);
+      if (!token) {
+        throw new Error('LOGIN_TOKEN: the login response set no cookies');
+      }
+      const required = authConfig.cookieName;
+      if (required && !extractSetCookieValue(response.headers, required)) {
+        throw new Error(
+          `LOGIN_TOKEN: cookie "${required}" not found in Set-Cookie response headers`,
+        );
+      }
+    } else if (authConfig.tokenSource === 'cookie') {
       const cookieName = authConfig.cookieName;
       if (!cookieName) {
         throw new Error(
@@ -513,6 +531,49 @@ export function extractSetCookieValue(
     }
   }
   return found;
+}
+
+/**
+ * Every cookie a response sets, as the value of a `Cookie` request header:
+ * `name=value` pairs joined with "; ", in the order they were set. Attributes
+ * (Path, Domain, HttpOnly ...) are dropped. When a name is set more than once
+ * the last value wins and keeps its first position; a deletion (empty value
+ * or Max-Age <= 0) removes it, as a browser would. Null when nothing is left.
+ *
+ * SAP Signavio's login sets JSESSIONID plus a load-balancer cookie; sending
+ * only the session cookie lands the next call on another node, which does not
+ * know the session.
+ */
+export function extractAllSetCookies(
+  headers: Record<string, unknown> | undefined,
+): string | null {
+  if (!headers) return null;
+  const raw = (headers['set-cookie'] ?? headers['Set-Cookie']) as
+    | string
+    | string[]
+    | undefined;
+  if (!raw) return null;
+  const entries = Array.isArray(raw) ? raw : [raw];
+  const jar = new Map<string, string>();
+  for (const entry of entries) {
+    const [pair, ...attributes] = String(entry).split(';');
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (!name) continue;
+    const expired = attributes.some((a) => {
+      const m = /^\s*max-age\s*=\s*(-?\d+)\s*$/i.exec(a);
+      return m !== null && Number(m[1]) <= 0;
+    });
+    if (!value || expired) {
+      jar.delete(name);
+      continue;
+    }
+    jar.set(name, value);
+  }
+  if (jar.size === 0) return null;
+  return [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
 }
 
 export function interpolateDeep(
