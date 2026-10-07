@@ -176,7 +176,7 @@ export class ProductEventService {
 // `verified`: whether a completed setup made a successful call.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing',
-  'status', 'toolName', 'error', 'verified',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered',
 ] as const;
 const MAX_QUERY_LENGTH = 100;
 
