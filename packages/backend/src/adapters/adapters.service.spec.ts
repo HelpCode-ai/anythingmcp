@@ -515,7 +515,7 @@ describe('AdaptersService unlisted adapters', () => {
   }
 
   // Did not match the vendor's API and could not be verified (Oct 2026 audit).
-  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'haufe-x360', 'zucchetti'];
+  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'haufe-x360', 'zucchetti', 'payone'];
 
   it('are neither listed nor installable, on the cloud or on self-host', () => {
     for (const mode of ['cloud', undefined]) {

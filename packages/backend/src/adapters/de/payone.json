@@ -1,16 +1,16 @@
 {
   "slug": "payone",
   "name": "PAYONE Payments",
-  "description": "Process and manage e-commerce payments via the PAYONE API. Create transactions, check payment status, capture and refund payments.",
+  "description": "Not offered. The PAYONE APIs need per-request HMAC signatures or have no read endpoint for transactions, so this adapter cannot work; kept only so connectors installed earlier still resolve.",
   "region": "de",
   "category": "finance",
   "icon": "payone",
   "docsUrl": "https://docs.payone.com/",
+  "unlisted": true,
+  "instructions": "**Not offered: this adapter cannot work and is kept only so connectors installed earlier still resolve.**\n\nIt was written against `payment.payone.com` (the PAYONE / Worldline Direct API). That API does not accept a static key in a header: every request must carry a GCS v1HMAC signature computed over the method, content type, an RFC 1123 `Date` and the path, which this connector cannot produce. It also has no endpoint that lists transactions, so `payone_list_transactions` has nothing to call.\n\nThe classic PAYONE Server API (`https://api.pay1.de/post-gateway/`) was checked as an alternative. It has no request that lists or looks up transactions either: transaction status reaches the merchant only as a push (TransactionStatus notification) to a URL the shop runs. Its read requests are the invoice and mandate PDFs (`getinvoice`, `getfile`), the stored customer record (`getuser`, including bank details) and checks such as `addresscheck` and `consumerscore`, which are billed per call. None of these gives an agent a useful, safe view of payments, so no replacement is offered.\n\nCapture and refund were removed from this adapter: money-moving calls are never shipped unless they can be verified end to end.\n\n**What to use instead**: read payment data in the PAYONE Merchant Interface (PMI), or export it from there into a system this workspace already connects to.",
   "requiredEnvVars": [
     "PAYONE_MERCHANT_ID",
-    "PAYONE_API_KEY",
-    "PAYONE_PORTAL_ID",
-    "PAYONE_ACCOUNT_ID"
+    "PAYONE_API_KEY"
   ],
   "connector": {
     "name": "PAYONE Payments",
@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "payone_list_transactions",
-      "description": "List recent payment transactions. Returns transaction IDs, amounts, status, and payment methods.",
+      "description": "List payment transactions. Not functional: the PAYONE APIs offer no endpoint that lists transactions, see the connector instructions.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -51,7 +51,7 @@
     },
     {
       "name": "payone_get_transaction",
-      "description": "Get detailed information about a specific payment transaction by its ID.",
+      "description": "Get one payment transaction by its ID. Not functional: the API this adapter targets needs signed requests the connector cannot produce.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -67,65 +67,6 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/transactions/{transactionId}"
-      }
-    },
-    {
-      "name": "payone_capture_payment",
-      "description": "Capture (settle) a previously authorized payment transaction.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "transactionId": {
-            "type": "string",
-            "description": "The PAYONE transaction ID to capture"
-          },
-          "amount": {
-            "type": "number",
-            "description": "Amount to capture in smallest currency unit (cents). Leave empty for full capture."
-          }
-        },
-        "required": [
-          "transactionId"
-        ]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/transactions/{transactionId}/capture",
-        "bodyMapping": {
-          "amount": "$amount"
-        }
-      }
-    },
-    {
-      "name": "payone_refund_payment",
-      "description": "Refund a captured payment transaction fully or partially.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "transactionId": {
-            "type": "string",
-            "description": "The PAYONE transaction ID to refund"
-          },
-          "amount": {
-            "type": "number",
-            "description": "Amount to refund in smallest currency unit (cents). Leave empty for full refund."
-          },
-          "reason": {
-            "type": "string",
-            "description": "Reason for the refund"
-          }
-        },
-        "required": [
-          "transactionId"
-        ]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/transactions/{transactionId}/refund",
-        "bodyMapping": {
-          "amount": "$amount",
-          "reason": "$reason"
-        }
       }
     }
   ]
