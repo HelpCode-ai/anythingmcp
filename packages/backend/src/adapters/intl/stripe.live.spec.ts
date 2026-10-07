@@ -58,7 +58,6 @@ describe('stripe adapter: static spec conformance', () => {
         'stripe_api_write',
         'get_stripe_account_info',
         'stripe_analytics',
-        'get_balance_summary',
         'search_stripe_documentation',
         'stripe_implementation_planner',
         'send_stripe_feedback',
