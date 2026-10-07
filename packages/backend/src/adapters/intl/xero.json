@@ -1,0 +1,185 @@
+{
+  "slug": "xero",
+  "name": "Xero",
+  "description": "Read a Xero organisation's invoices, bills, contacts, chart of accounts, Trial Balance and Profit and Loss reports. 9 GET-only tools with OAuth2 and a fixed tenant ID.",
+  "instructions": "This connector reads the Xero Accounting API for one organisation. All nine tools use GET; no tool creates, updates or deletes accounting data.\n\n**Setup**\nInstallation requires the organisation's tenant UUID. If you are starting with a new Xero app and no token, obtain it through the external Postman authorisation below before installing this connector.\n1. At https://developer.xero.com/app/manage create an OAuth2 Web app using the authorisation code flow. Register `https://cloud.anythingmcp.com/api/mcp-oauth/callback` for AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` for a self-hosted server. The redirect URI must match exactly. Copy the Client ID and Client Secret into `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET`.\n2. To obtain your first access token, also register `https://oauth.pstmn.io/v1/browser-callback` on that Xero app. In Postman Desktop create a GET request to `https://api.xero.com/connections`. On its Authorization tab select OAuth 2.0, grant type Authorization Code and Authorize using browser. Set that Postman callback URL, Auth URL `https://login.xero.com/identity/connect/authorize`, Access Token URL `https://identity.xero.com/connect/token`, your app's Client ID and Client Secret, the read-only scope string below, a random State, and Client Authentication **Send as Basic Auth header**. Select **Get New Access Token**, sign in, choose the intended organisation and select **Use Token**. Keep Share Token off. Then send the GET Connections request. See https://learning.postman.com/docs/use/send-requests/authorization/oauth-20/ and Xero's walkthrough at https://github.com/XeroAPI/xero-postman-oauth2; use this connector's current read-only scopes rather than the walkthrough's older scope examples.\n3. If you already have an authorised OAuth session for the same app, you can skip the Postman token setup and make `GET https://api.xero.com/connections` with `Authorization: Bearer <access token>`. In either case choose the entry with the intended `tenantName` and `tenantType: ORGANISATION`, and copy its `tenantId` into `XERO_TENANT_ID`. The connection's `id` and `authEventId` are different values and must not be used. See https://developer.xero.com/documentation/guides/oauth2/tenants/. Connections is outside this connector's Accounting base URL, so it is documented here instead of exposed as a tool.\n4. Leave `XERO_REFRESH_TOKEN` empty, install, then open the connector and click **Authorize with Provider**. Sign in to Xero and connect the same organisation selected above. AnythingMCP exchanges the code at Xero Identity using HTTP Basic client authentication and stores the tokens. Stop using the Postman bootstrap tokens; AnythingMCP maintains its own tokens.\n5. Run `xero_get_organisation` with `{}` and check the returned organisation name before reading its accounts or transactions. Install a separate connector for each organisation.\n\n**Read-only scopes**\n`openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read`. These are the current granular scopes; deprecated `accounting.transactions.read` and `accounting.reports.read` are not requested. Identity scopes are limited to `openid` and `offline_access`. Xero consent is additive: a token previously granted write permissions keeps them. To reduce permissions, revoke the old connection in Xero and authorise again with these scopes. See https://developer.xero.com/documentation/guides/oauth2/scopes/.\n\n**Tokens and tenant header**\nEvery Accounting call includes `xero-tenant-id: XERO_TENANT_ID` and a bearer access token. Access tokens last 30 minutes; `offline_access` supplies refresh tokens, which expire after 60 days without renewal. AnythingMCP refreshes automatically and saves replacement refresh tokens. You may supply `XERO_REFRESH_TOKEN` only if you already obtained a current token for the same app and read-only consent. Do not share a rotating refresh token between integrations. Changing the tenant ID changes the organisation every tool reads.\n\n**Lists and identifiers**\nInvoices include sales invoices (ACCREC) and purchase bills (ACCPAY). Invoices and contacts use 1-based `page` and `pageSize`, defaulting to page 1 with 100 records. Request subsequent pages until the nested Invoices or Contacts array is empty or shorter than pageSize. Accounts returns the chart of accounts without pagination. `where` uses Xero filter syntax, for example `Type==\"ACCREC\"` or `ContactStatus==\"ACTIVE\"`; `order` accepts values such as `InvoiceNumber ASC` and `Name ASC`. Get tools require the UUID returned by the corresponding list, not an invoice number, contact name or account code. List and detail responses retain Xero's `Invoices`, `Contacts`, `Accounts` and `Organisations` envelopes.\n\n**Reports**\nPass `YYYY-MM-DD` dates: Trial Balance uses `date`; Profit and Loss uses `fromDate` and `toDate` with fromDate no later than toDate. `paymentsOnly` defaults to false for accrual reports; set true for cash reports. Profit and Loss can compare 1 to 12 periods using `periods` and `timeframe` (MONTH, QUARTER or YEAR). Reports retain the `Reports` envelope and nested Rows/Cells; financial values may be strings. The authorising Xero user needs access to reports.\n\n**Errors and limits**\nFor 401 or 403 check consent, token expiry, Xero user permissions and whether the tenant is connected to this app. On HTTP 429, pause requests to that tenant for the `Retry-After` seconds; inspect `X-Rate-Limit-Problem` and retry with backoff instead of immediately paging again. Limits depend on the app tier: https://developer.xero.com/documentation/guides/oauth2/limits/.\n\n**Cloud and self-hosted**\nBoth use Xero's public HTTPS Accounting and Identity endpoints with the same scopes and tenant header; only the registered callback differs. Live Xero authorisation and API calls have not been verified for this adapter.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "xero",
+  "docsUrl": "https://developer.xero.com/documentation/api/accounting/overview/",
+  "requiredEnvVars": ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET", "XERO_TENANT_ID"],
+  "optionalEnvVars": ["XERO_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "XERO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Xero Developer > My Apps > your OAuth2 Web app > Configuration > Client ID.",
+      "link": "https://developer.xero.com/app/manage"
+    },
+    "XERO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "help": "Generate a client secret for the same Xero OAuth2 Web app."
+    },
+    "XERO_TENANT_ID": {
+      "label": "Organisation tenant ID",
+      "kind": "setting",
+      "help": "The tenantId UUID of the intended ORGANISATION from GET https://api.xero.com/connections. Do not use the connection id. Obtain it before installing and verify the organisation with xero_get_organisation.",
+      "link": "https://developer.xero.com/documentation/guides/oauth2/tenants/",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Enter the organisation's tenantId as a UUID."
+    },
+    "XERO_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "help": "Leave empty for Authorize with Provider. Supply only a current refresh token for this app with read-only consent; AnythingMCP stores rotated replacements.",
+      "advanced": true
+    }
+  },
+  "connector": {
+    "name": "Xero Accounting API",
+    "type": "REST",
+    "baseUrl": "https://api.xero.com/api.xro/2.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{XERO_CLIENT_ID}}",
+      "clientSecret": "{{XERO_CLIENT_SECRET}}",
+      "refreshToken": "{{XERO_REFRESH_TOKEN}}",
+      "grant": "refresh_token",
+      "authorizationUrl": "https://login.xero.com/identity/connect/authorize",
+      "tokenUrl": "https://identity.xero.com/connect/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read",
+      "extraHeaders": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }
+    },
+    "headers": { "Accept": "application/json" },
+    "healthcheckPath": "/Organisation"
+  },
+  "probe": { "tool": "xero_get_organisation" },
+  "tools": [
+    {
+      "name": "xero_get_organisation",
+      "description": "Read the configured organisation's name, base currency and settings. Call with {} to verify authentication and the tenant selection before reading financial data.",
+      "parameters": { "type": "object", "properties": {}, "additionalProperties": false, "examples": [{}] },
+      "endpointMapping": { "method": "GET", "path": "/Organisation" }
+    },
+    {
+      "name": "xero_list_invoices",
+      "description": "List sales invoices and purchase bills with totals, status and line items, one page at a time. Filter with where, for example Type==\"ACCREC\" for sales invoices or Type==\"ACCPAY\" for bills. Returns Xero's response envelope; invoice records are in the Invoices array.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "default": 1, "description": "1-based page number." },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100, "description": "Records per page, up to 100." },
+          "where": { "type": "string", "description": "Xero filter expression, for example Type==\"ACCREC\" AND Status==\"AUTHORISED\"." },
+          "order": { "type": "string", "description": "Xero sort expression, for example InvoiceNumber ASC." }
+        },
+        "additionalProperties": false,
+        "examples": [{ "page": 1, "pageSize": 100, "where": "Type==\"ACCREC\"", "order": "InvoiceNumber ASC" }]
+      },
+      "endpointMapping": {
+        "method": "GET", "path": "/Invoices",
+        "queryParams": { "page": "$page", "pageSize": "$pageSize", "where": "$where", "order": "$order" }
+      }
+    },
+    {
+      "name": "xero_get_invoice",
+      "description": "Read one invoice or bill with its line items, amounts and payment details. Use InvoiceID from xero_list_invoices, not InvoiceNumber.",
+      "parameters": {
+        "type": "object",
+        "properties": { "invoiceId": { "type": "string", "format": "uuid", "description": "InvoiceID UUID returned by xero_list_invoices." } },
+        "required": ["invoiceId"], "additionalProperties": false,
+        "examples": [{ "invoiceId": "11111111-1111-4111-8111-111111111111" }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Invoices/{invoiceId}", "encodePathParams": true }
+    },
+    {
+      "name": "xero_list_contacts",
+      "description": "List customer and supplier contacts one page at a time. Search by name or email, filter with where and optionally include archived contacts. Returns Xero's response envelope; contact records are in the Contacts array.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "default": 1, "description": "1-based page number." },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100, "description": "Records per page, up to 100." },
+          "searchTerm": { "type": "string", "description": "Case-insensitive search across Name, FirstName, LastName, ContactNumber and EmailAddress." },
+          "where": { "type": "string", "description": "Xero filter expression, for example ContactStatus==\"ACTIVE\"." },
+          "order": { "type": "string", "description": "Xero sort expression, for example Name ASC." },
+          "includeArchived": { "type": "boolean", "description": "Include contacts with ARCHIVED status when true." }
+        },
+        "additionalProperties": false,
+        "examples": [{ "page": 1, "pageSize": 100, "searchTerm": "Example", "order": "Name ASC", "includeArchived": false }]
+      },
+      "endpointMapping": {
+        "method": "GET", "path": "/Contacts",
+        "queryParams": { "page": "$page", "pageSize": "$pageSize", "searchTerm": "$searchTerm", "where": "$where", "order": "$order", "includeArchived": "$includeArchived" }
+      }
+    },
+    {
+      "name": "xero_get_contact",
+      "description": "Read one customer or supplier contact, including its addresses, contact people and balances. Use ContactID from xero_list_contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": { "contactId": { "type": "string", "format": "uuid", "description": "ContactID UUID returned by xero_list_contacts." } },
+        "required": ["contactId"], "additionalProperties": false,
+        "examples": [{ "contactId": "22222222-2222-4222-8222-222222222222" }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Contacts/{contactId}", "encodePathParams": true }
+    },
+    {
+      "name": "xero_list_accounts",
+      "description": "Read the chart of accounts with account codes, names, types, tax types and status. Accounts is not paginated; optionally filter or sort the Accounts array.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": { "type": "string", "description": "Xero filter expression, for example Status==\"ACTIVE\"." },
+          "order": { "type": "string", "description": "Xero sort expression, for example Code ASC." }
+        },
+        "additionalProperties": false,
+        "examples": [{ "where": "Status==\"ACTIVE\"", "order": "Code ASC" }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Accounts", "queryParams": { "where": "$where", "order": "$order" } }
+    },
+    {
+      "name": "xero_get_account",
+      "description": "Read one account's code, name, type, tax type and status. Use AccountID from xero_list_accounts, not its chart-of-accounts code.",
+      "parameters": {
+        "type": "object",
+        "properties": { "accountId": { "type": "string", "format": "uuid", "description": "AccountID UUID returned by xero_list_accounts." } },
+        "required": ["accountId"], "additionalProperties": false,
+        "examples": [{ "accountId": "33333333-3333-4333-8333-333333333333" }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Accounts/{accountId}", "encodePathParams": true }
+    },
+    {
+      "name": "xero_get_trial_balance",
+      "description": "Read the Trial Balance as at a specified date, including debit, credit and year-to-date values. Returns Xero's Reports with nested Rows and Cells. Accrual by default; paymentsOnly=true requests cash basis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Report date in YYYY-MM-DD format." },
+          "paymentsOnly": { "type": "boolean", "default": false, "description": "True for cash basis; false for accrual basis." }
+        },
+        "required": ["date"], "additionalProperties": false,
+        "examples": [{ "date": "2026-06-30", "paymentsOnly": false }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Reports/TrialBalance", "queryParams": { "date": "$date", "paymentsOnly": "$paymentsOnly" } }
+    },
+    {
+      "name": "xero_get_profit_and_loss",
+      "description": "Read income, expenses and profit for a date range. Returns Xero's Reports with nested Rows and Cells. Accrual by default; optionally request cash basis and comparison periods.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fromDate": { "type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Start date in YYYY-MM-DD format; no later than toDate." },
+          "toDate": { "type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "End date in YYYY-MM-DD format." },
+          "paymentsOnly": { "type": "boolean", "default": false, "description": "True for cash basis; false for accrual basis." },
+          "periods": { "type": "integer", "minimum": 1, "maximum": 12, "description": "Number of comparison periods, from 1 to 12. Use with timeframe." },
+          "timeframe": { "type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparison period size. Use with periods." }
+        },
+        "required": ["fromDate", "toDate"], "additionalProperties": false,
+        "examples": [{ "fromDate": "2026-07-01", "toDate": "2026-09-30", "paymentsOnly": false, "periods": 1, "timeframe": "QUARTER" }]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Reports/ProfitAndLoss", "queryParams": { "fromDate": "$fromDate", "toDate": "$toDate", "paymentsOnly": "$paymentsOnly", "periods": "$periods", "timeframe": "$timeframe" } }
+    }
+  ]
+}
