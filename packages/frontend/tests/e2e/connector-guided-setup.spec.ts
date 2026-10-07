@@ -42,7 +42,10 @@ interface Calls {
   authorize: any[];
 }
 
-async function setup(page: Page, opts: { verify?: any; connector?: any; test?: any } = {}): Promise<Calls> {
+async function setup(
+  page: Page,
+  opts: { verify?: any; etsyVerify?: any; connector?: any; test?: any } = {},
+): Promise<Calls> {
   const calls: Calls = { verify: [], imports: [], envVars: [], authorize: [] };
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: 'http://localhost:3100' }]);
   await page.addInitScript((user) => {
@@ -57,6 +60,10 @@ async function setup(page: Page, opts: { verify?: any; connector?: any; test?: a
     if (url.endsWith('/api/adapters/lexware-office/verify')) {
       calls.verify.push(req.postDataJSON());
       return json(opts.verify ?? { ok: true, toolName: 'lexware_office_get_profile', durationMs: 120, sample: '{"companyName":"Acme GmbH"}' });
+    }
+    if (url.endsWith('/api/adapters/etsy/verify')) {
+      calls.verify.push(req.postDataJSON());
+      return json(opts.etsyVerify ?? { ok: null, skipped: 'authorization' });
     }
     if (url.includes('/api/adapters/lexware-office/import') || url.includes('/api/adapters/etsy/import')) {
       calls.imports.push(req.postDataJSON());
@@ -132,8 +139,32 @@ test('OAuth: saves the app keys and goes straight to the sign-in, with the way b
   await page.getByLabel('Shared secret').fill('s3cr3t0abc');
   await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
   await page.waitForURL('https://www.etsy.com/oauth/connect?state=s1');
+  // The app keys were checked before leaving for Etsy.
+  expect(calls.verify[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2', ETSY_CLIENT_SECRET: 's3cr3t0abc' });
   expect(calls.imports[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2', ETSY_CLIENT_SECRET: 's3cr3t0abc' });
   expect(calls.authorize).toEqual([{ returnTo: '/connectors/setup/etsy?connector=c9&step=done' }]);
+});
+
+test('OAuth: app keys Etsy does not accept yet keep the user here, instead of an error page at Etsy', async ({ page }) => {
+  // 7 Oct 2026: every Etsy user who left for the sign-in and never came back
+  // had keys Etsy refused (an app still Pending, or the wrong shared secret).
+  const calls = await setup(page, {
+    etsyVerify: {
+      ok: false,
+      kind: 'auth_failed',
+      status: 403,
+      message: 'Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it.',
+    },
+  });
+  await page.goto('/connectors/setup/etsy');
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
+  await expect(page.getByText('Etsy Open API v3 did not accept these credentials.')).toBeVisible();
+  await expect(page.getByText('stays Pending until Etsy approves it')).toBeVisible();
+  expect(calls.imports).toHaveLength(0);
+  expect(calls.authorize).toHaveLength(0);
+  await expect(page).toHaveURL(/\/connectors\/setup\/etsy/);
 });
 
 test('OAuth: back from the provider, shows the connector ready', async ({ page }) => {
