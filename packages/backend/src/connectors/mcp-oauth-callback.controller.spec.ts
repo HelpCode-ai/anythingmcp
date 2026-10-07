@@ -141,6 +141,16 @@ describe('McpOAuthCallbackController — provider redirect', () => {
 });
 
 describe('McpOAuthCallbackController — completion by the dashboard', () => {
+  it("passes the flow's User-Agent to the code exchange", async () => {
+    const { controller, mcpOAuthService } = makeController({
+      flow: { userAgent: 'web:anythingmcp:v1 (by /u/anythingmcp)' },
+    });
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(mcpOAuthService.exchangeCodeForTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'the-code', userAgent: 'web:anythingmcp:v1 (by /u/anythingmcp)' }),
+    );
+  });
+
   it('refuses a user other than the one who started the flow, and kills the attempt', async () => {
     const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
     await expect(

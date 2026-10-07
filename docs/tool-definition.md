@@ -106,6 +106,12 @@ or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
 
+A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
+connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
+also sent on the token requests: the authorization-code exchange, refreshes
+and client-credentials grants. Reddit throttles generic agents at its token
+endpoint as well. No other header is forwarded there.
+
 ### HMAC-signed requests
 
 Some APIs never receive the secret: each request carries a digest computed

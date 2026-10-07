@@ -192,9 +192,12 @@ export class OAuth2TokenService {
     // (persistRefreshedToken). So for a persisted connector always re-read the
     // freshest authConfig from the DB before refreshing; otherwise a second
     // refresh would replay the already-rotated token and DATEV would reject it.
+    // The connector's own headers, for the User-Agent the API calls carry.
+    let connectorHeaders: unknown;
     if (connectorId) {
       const fresh = await this.loadAuthConfigFromDb(connectorId);
-      if (fresh) authConfig = { ...authConfig, ...fresh };
+      if (fresh) authConfig = { ...authConfig, ...fresh.authConfig };
+      connectorHeaders = fresh?.headers;
     }
 
     const tokenUrl = String(authConfig.tokenUrl || '');
@@ -242,7 +245,7 @@ export class OAuth2TokenService {
       // throttles generic agents ("axios/1.x" is one) and asks every client,
       // token endpoint included, to identify itself. Only the User-Agent is
       // forwarded: other extraHeaders (Etsy's x-api-key) belong to the API.
-      const userAgent = findHeader(authConfig.extraHeaders, 'user-agent');
+      const userAgent = tokenEndpointUserAgent(authConfig, connectorHeaders);
       if (userAgent) headers['User-Agent'] = userAgent;
 
       if (grant === 'client_credentials') {
@@ -468,13 +471,14 @@ export class OAuth2TokenService {
    */
   private async loadAuthConfigFromDb(
     connectorId: string,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<{ authConfig: Record<string, unknown>; headers: unknown } | null> {
     try {
       const connector = await this.prisma.connector.findUnique({
         where: { id: connectorId },
-        select: { authConfig: true, envVars: true },
+        select: { authConfig: true, envVars: true, headers: true },
       });
       if (!connector?.authConfig) return null;
+      const envVars = (connector.envVars as Record<string, string> | null) ?? {};
       // Resolved like the tool path resolves the snapshot it hands us. A
       // connector whose credentials were typed after install keeps
       // `{{ETSY_REFRESH_TOKEN}}` (and the client id/secret) as placeholders in
@@ -482,10 +486,13 @@ export class OAuth2TokenService {
       // resolved snapshot put the placeholders back, and the token endpoint
       // was sent `refresh_token={{ETSY_REFRESH_TOKEN}}`. Literal values
       // contain no placeholder and pass through unchanged.
-      return interpolateDeep(
-        JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
-        (connector.envVars as Record<string, string> | null) ?? {},
-      );
+      return {
+        authConfig: interpolateDeep(
+          JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+          envVars,
+        ),
+        headers: interpolateDeep(connector.headers ?? undefined, envVars),
+      };
     } catch (err: any) {
       this.logger.warn(
         `OAuth2: failed to load fresh authConfig for ${connectorId}: ${err.message}`,
@@ -575,6 +582,24 @@ function hostOf(url: unknown): string {
 }
 
 /** Case-insensitive lookup in an adapter's extraHeaders object. */
+/**
+ * The User-Agent for a request to the token endpoint: the one the API calls
+ * carry, so a provider that identifies clients by it (Reddit throttles
+ * generic agents such as "axios/1.x") sees the same client at both. The REST
+ * engine sends the connector's headers with authConfig.extraHeaders on top,
+ * so extraHeaders wins here too. Undefined when neither sets one, which
+ * leaves the HTTP client's default as before.
+ */
+export function tokenEndpointUserAgent(
+  authConfig: Record<string, unknown> | undefined,
+  connectorHeaders?: unknown,
+): string | undefined {
+  return (
+    findHeader(authConfig?.extraHeaders, 'user-agent') ??
+    findHeader(connectorHeaders, 'user-agent')
+  );
+}
+
 function findHeader(headers: unknown, name: string): string | undefined {
   if (!headers || typeof headers !== 'object') return undefined;
   for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
