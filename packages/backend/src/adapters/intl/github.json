@@ -23,7 +23,6 @@
     }
   },
   "prerequisites": "- A GitHub account with access to the repositories the AI should work with.\n- If the repositories belong to an organization: personal access tokens allowed there, and the fine-grained token approved by an organization owner when the organization requires it.\n- On Copilot Business or Copilot Enterprise: the \"MCP servers in Copilot\" policy enabled for the organization.",
-  "unlisted": true,
   "connector": {
     "name": "GitHub",
     "type": "MCP",
