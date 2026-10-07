@@ -110,4 +110,72 @@ describe('computeSetupState', () => {
       }).status,
     ).toBe('ready');
   });
+
+  describe('variables only the tools use', () => {
+    // Odoo's JSON-RPC adapter carries db, uid and key in the request body.
+    const odooBody = (key: string) => ({
+      method: 'POST',
+      path: '/jsonrpc',
+      bodyTemplate: `{"params":{"args":["{{ODOO_DB}}",{{ODOO_UID}},"${key}","\${model}"]}}`,
+    });
+    const odoo = {
+      authType: 'NONE',
+      baseUrl: '{{ODOO_URL}}',
+      headers: { 'Content-Type': 'application/json' },
+      config: { adapterSlug: 'odoo-jsonrpc' },
+    };
+
+    it('needs input when the API key used in the body was never set', () => {
+      expect(
+        computeSetupState({
+          ...odoo,
+          envVars: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod', ODOO_UID: '2' },
+          toolMappings: [odooBody('{{ODOO_API_KEY}}')],
+        }),
+      ).toEqual({ status: 'needs_input', missing: ['ODOO_API_KEY'] });
+    });
+
+    it('is ready once the key is set', () => {
+      expect(
+        computeSetupState({
+          ...odoo,
+          envVars: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod', ODOO_UID: '2', ODOO_API_KEY: 'k' },
+          toolMappings: [odooBody('{{ODOO_API_KEY}}')],
+        }).status,
+      ).toBe('ready');
+    });
+
+    it('does not hold a catalog connector back for a variable its adapter does not require', () => {
+      // Statsig's console key is used by some tools only and is not required.
+      expect(
+        computeSetupState({
+          authType: 'API_KEY',
+          authConfig: { headerName: 'statsig-api-key', apiKey: 'k' },
+          baseUrl: 'https://api.statsig.com',
+          config: { adapterSlug: 'statsig' },
+          toolMappings: [{ method: 'GET', path: '/x', headers: { 'STATSIG-API-KEY': '{{STATSIG_CONSOLE_API_KEY}}' } }],
+        }).status,
+      ).toBe('ready');
+    });
+
+    it('counts every variable a hand-built connector uses in its tools', () => {
+      expect(
+        computeSetupState({
+          authType: 'NONE',
+          baseUrl: 'https://api.example.com',
+          toolMappings: [{ method: 'POST', path: '/rpc', bodyTemplate: '{"key":"{{SHOP_KEY}}"}' }],
+        }),
+      ).toEqual({ status: 'needs_input', missing: ['SHOP_KEY'] });
+    });
+
+    it("ignores the upstream's own lower-case templates in a body", () => {
+      expect(
+        computeSetupState({
+          authType: 'NONE',
+          baseUrl: 'https://api.example.com',
+          toolMappings: [{ method: 'POST', path: '/mail', bodyTemplate: '{"text":"Hello {{first_name}}"}' }],
+        }).status,
+      ).toBe('ready');
+    });
+  });
 });

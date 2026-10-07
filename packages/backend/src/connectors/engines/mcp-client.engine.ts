@@ -157,7 +157,7 @@ export class McpClientEngine {
       try {
         await client.connect(transport);
       } catch (err) {
-        throw explainMcpConnectError(err, mcpUrl);
+        throw explainMcpConnectError(err, mcpUrl, config.authType);
       }
       const result = await client.listTools();
 
@@ -288,10 +288,10 @@ export function assertNotThisServer(mcpUrl: URL, env: NodeJS.ProcessEnv = proces
  * was not told about, e.g. its own public tunnel (trycloudflare, ngrok). The
  * raw message reads like our fault; say which setting on their side to change.
  */
-export function explainMcpConnectError(err: unknown, mcpUrl: URL): Error {
+export function explainMcpConnectError(err: unknown, mcpUrl: URL, authType?: string): Error {
   const message = String((err as Error)?.message ?? err);
   if (!/invalid host header|host not allowed|dns rebinding/i.test(message)) {
-    return err instanceof Error ? err : new Error(message);
+    return explainHttpRefusal(err, message, mcpUrl, authType);
   }
   const explained = new Error(
     `${message}. The MCP server refused the hostname '${mcpUrl.hostname}': its DNS-rebinding ` +
@@ -303,3 +303,43 @@ export function explainMcpConnectError(err: unknown, mcpUrl: URL): Error {
   return explained;
 }
 
+/**
+ * Discovery that fails before the MCP handshake, in words that say what to
+ * change. Seven of ten custom MCP connectors created in early October ended
+ * with no tools and nothing said why: two servers (TradingView, an Odoo 19
+ * /mcp) wanted an OAuth sign-in the connector was created without, and the
+ * rest were not MCP servers at all (a REST API, a website, a webmail inbox).
+ */
+function explainHttpRefusal(err: unknown, message: string, mcpUrl: URL, authType?: string): Error {
+  const original = err instanceof Error ? err : new Error(message);
+  const data = (err as { data?: { status?: unknown } } | null)?.data;
+  const status =
+    typeof data?.status === 'number'
+      ? data.status
+      : Number(message.match(/\bHTTP (\d{3})\b/)?.[1] ?? NaN);
+  const webPage =
+    (err as { code?: unknown } | null)?.code === 'CLIENT_HTTP_UNEXPECTED_CONTENT' ||
+    /<!doctype html|<html/i.test(message);
+
+  let advice: string | undefined;
+  if (status === 401 || status === 403) {
+    advice =
+      authType === 'OAUTH2'
+        ? `The MCP server at ${mcpUrl} refused the sign-in (HTTP ${status}). Open the connector ` +
+          'and click Authorize with Provider again, then discover the tools again.'
+        : `The MCP server at ${mcpUrl} requires sign-in (HTTP ${status}), and this connector sends ` +
+          'no credentials it accepts. Most hosted MCP servers use OAuth: set the connector\'s ' +
+          'authentication to OAuth2 and click Authorize with Provider, then discover the tools ' +
+          'again. If the server uses an API key or token instead, enter it under Authentication.';
+  } else if (status === 404 || status === 405 || webPage) {
+    advice =
+      `${mcpUrl} does not answer as an MCP server (${webPage ? 'it returned a web page' : `HTTP ${status}`}). ` +
+      'An MCP connector needs the address of an MCP endpoint, which usually ends in /mcp. ' +
+      'For a website or a REST API, create a REST connector (or import its OpenAPI spec), ' +
+      'or pick a ready connector from the catalog.';
+  }
+  if (!advice) return original;
+  const explained = new Error(advice);
+  (explained as Error & { cause?: unknown }).cause = err;
+  return explained;
+}

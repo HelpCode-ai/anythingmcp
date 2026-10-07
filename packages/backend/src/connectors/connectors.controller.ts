@@ -612,6 +612,7 @@ export class ConnectorsController {
     authType: string;
     baseUrl: string;
     config?: unknown;
+    tools?: Array<{ endpointMapping: unknown }>;
   }>(connector: C) {
     let authConfig: unknown = undefined;
     if (typeof connector.authConfig === 'string' && connector.authConfig) {
@@ -628,6 +629,7 @@ export class ConnectorsController {
       headers: connector.headers,
       envVars: connector.envVars,
       config: connector.config,
+      toolMappings: connector.tools?.map((t) => t.endpointMapping),
     });
     return {
       ...toPublicConnector(connector),

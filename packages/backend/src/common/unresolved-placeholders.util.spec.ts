@@ -117,4 +117,24 @@ describe('assertNoUnresolvedPlaceholders', () => {
       }),
     ).not.toThrow();
   });
+
+  it('refuses a connector variable left in the body (Odoo JSON-RPC key)', () => {
+    expect(() =>
+      assertNoUnresolvedPlaceholders({
+        baseUrl: 'https://erp.example.com',
+        path: '/jsonrpc',
+        body: { template: '{"params":{"args":["prod",2,"{{ODOO_API_KEY}}"]}}' },
+      }),
+    ).toThrow(/missing a value for ODOO_API_KEY/);
+  });
+
+  it("lets the upstream's own lower-case templates through in the body", () => {
+    expect(() =>
+      assertNoUnresolvedPlaceholders({
+        baseUrl: 'https://api.example.com',
+        path: '/mail',
+        body: { template: '{"text":"Hello {{first_name}}"}', mapping: { subject: '{{ subject }}' } },
+      }),
+    ).not.toThrow();
+  });
 });
