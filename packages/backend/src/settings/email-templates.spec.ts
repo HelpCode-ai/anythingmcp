@@ -56,6 +56,17 @@ describe.each([
       }
     });
 
+    it('names no customer in the footer', () => {
+      expect(email.html).not.toContain('KOCH');
+      expect(email.text).not.toContain('KOCH');
+    });
+
+    it('sells the product, not the price: no card, charge or price talk', () => {
+      // The win-back offers are about a discount by design.
+      if (id.startsWith('winback-discount')) return;
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/charged|payment method|your card|€\s?\d|\d\s?€/i);
+    });
+
     it('escapes every user-supplied value', () => {
       expect(email.html).not.toContain('<img src=x');
       expect(email.html).not.toContain('<script>');
