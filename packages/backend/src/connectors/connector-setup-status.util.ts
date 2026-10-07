@@ -1,7 +1,10 @@
 import { getAdapter } from '../adapters/catalog';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
-import { findUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
+import {
+  findUnresolvedPlaceholders,
+  findUnresolvedVariables,
+} from '../common/unresolved-placeholders.util';
 
 /**
  * Whether a connector can serve calls yet.
@@ -32,6 +35,14 @@ export interface SetupStatusInput {
   headers?: unknown;
   envVars?: unknown;
   config?: unknown;
+  /**
+   * The endpoint mappings of the connector's tools. Some adapters use a
+   * variable only there: Odoo's JSON-RPC adapter sends ODOO_API_KEY in the
+   * request body, so without the tools a connector with no key looked ready,
+   * a chat install said "its tools are available now" without asking for the
+   * key, and every call came back "Access Denied".
+   */
+  toolMappings?: unknown[];
 }
 
 /** Auth config fields that an authorization fills in, not the user. */
@@ -94,11 +105,16 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
     ? Object.fromEntries(Object.entries(authConfig).filter(([k]) => !TOKEN_FIELDS.has(k)))
     : authConfig;
 
-  const missing = findUnresolvedPlaceholders({
-    baseUrl: input.baseUrl ? interpolateString(input.baseUrl, envVars, options) : undefined,
-    headers: input.headers ? interpolateDeep(input.headers, envVars, options) : undefined,
-    authConfig: checkedAuth,
-  })
+  const missing = [
+    ...new Set([
+      ...findUnresolvedPlaceholders({
+        baseUrl: input.baseUrl ? interpolateString(input.baseUrl, envVars, options) : undefined,
+        headers: input.headers ? interpolateDeep(input.headers, envVars, options) : undefined,
+        authConfig: checkedAuth,
+      }),
+      ...missingToolVariables(input, envVars),
+    ]),
+  ]
     .filter((name) => !name.startsWith(CALLER_CONTEXT_PREFIX))
     .sort();
   if (missing.length > 0) return { status: 'needs_input', missing };
@@ -107,4 +123,22 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
     return { status: 'needs_authorization', missing: [] };
   }
   return { status: 'ready', missing: [] };
+}
+
+/**
+ * Variables the tools use that have no value. Only names shaped like a
+ * connector variable count (a body may carry the upstream's own `{{name}}`
+ * templates). For a catalog connector only the variables its adapter requires
+ * count, so a tool-level option (Statsig's console key) does not hold the
+ * whole connector back; the call itself still refuses to send the placeholder.
+ */
+function missingToolVariables(input: SetupStatusInput, envVars: Record<string, string>): string[] {
+  if (!input.toolMappings?.length) return [];
+  const unresolved = findUnresolvedVariables(input.toolMappings).filter((name) => !envVars[name]);
+  if (unresolved.length === 0) return [];
+  const slug = (input.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+  const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
+  if (!adapter) return unresolved;
+  const required = new Set(adapter.requiredEnvVars ?? []);
+  return unresolved.filter((name) => required.has(name));
 }

@@ -316,7 +316,18 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       where: { organizationId: ctx.organizationId },
       orderBy: { createdAt: 'desc' },
       take: 50,
-      select: { id: true, name: true, authType: true, authConfig: true, baseUrl: true, headers: true, envVars: true, config: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        authType: true,
+        authConfig: true,
+        baseUrl: true,
+        headers: true,
+        envVars: true,
+        config: true,
+        createdAt: true,
+        tools: { where: { isEnabled: true }, select: { endpointMapping: true } },
+      },
     });
     const out = [];
     for (const r of rows) {
@@ -473,7 +484,15 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   private async connectorState(connectorId: string) {
     const row = await this.prisma.connector.findUnique({
       where: { id: connectorId },
-      select: { authType: true, authConfig: true, baseUrl: true, headers: true, envVars: true, config: true },
+      select: {
+        authType: true,
+        authConfig: true,
+        baseUrl: true,
+        headers: true,
+        envVars: true,
+        config: true,
+        tools: { where: { isEnabled: true }, select: { endpointMapping: true } },
+      },
     });
     return row ? this.stateOf(row) : { status: 'needs_input' as const, missing: [] as string[] };
   }
@@ -485,6 +504,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     headers: unknown;
     envVars: unknown;
     config: unknown;
+    tools?: Array<{ endpointMapping: unknown }>;
   }) {
     let authConfig: unknown;
     try {
@@ -499,6 +519,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       headers: row.headers,
       envVars: row.envVars,
       config: row.config,
+      toolMappings: row.tools?.map((t) => t.endpointMapping),
     });
   }
 }

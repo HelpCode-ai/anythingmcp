@@ -213,4 +213,35 @@ describe('explainMcpConnectError', () => {
     const err = new Error('Error POSTing to endpoint: 401 Unauthorized');
     expect(explainMcpConnectError(err, url)).toBe(err);
   });
+
+  const sdkHttpError = (status: number, body: string, code = 'CLIENT_HTTP_NOT_IMPLEMENTED') =>
+    Object.assign(new Error(`Error POSTing to endpoint: ${body}`), { code, data: { status } });
+  const tradingView = new URL('https://mcp.tradingview.com/mcp');
+
+  it('says to sign in with OAuth when a server wants it and the connector sends nothing', () => {
+    const err = sdkHttpError(401, '{"detail":"This server requires OAuth authentication"}');
+    const out = explainMcpConnectError(err, tradingView, 'NONE');
+    expect(out.message).toContain('requires sign-in (HTTP 401)');
+    expect(out.message).toContain('set the connector\'s authentication to OAuth2 and click Authorize with Provider');
+    expect((out as Error & { cause?: unknown }).cause).toBe(err);
+  });
+
+  it('says to authorize again when an OAuth connector is refused', () => {
+    const out = explainMcpConnectError(sdkHttpError(401, '{}'), tradingView, 'OAUTH2');
+    expect(out.message).toContain('click Authorize with Provider again');
+  });
+
+  it('says an address that returns a web page is not an MCP server', () => {
+    const page = Object.assign(new Error('Unexpected content type: text/html; charset=utf-8'), {
+      code: 'CLIENT_HTTP_UNEXPECTED_CONTENT',
+    });
+    const out = explainMcpConnectError(page, new URL('https://www.pinterest.com/'), 'NONE');
+    expect(out.message).toContain('does not answer as an MCP server (it returned a web page)');
+    expect(out.message).toContain('create a REST connector');
+  });
+
+  it('says a 404 is not an MCP endpoint', () => {
+    const out = explainMcpConnectError(sdkHttpError(404, 'Not Found'), new URL('https://erp.example.com/mcp'));
+    expect(out.message).toContain('does not answer as an MCP server (HTTP 404)');
+  });
 });

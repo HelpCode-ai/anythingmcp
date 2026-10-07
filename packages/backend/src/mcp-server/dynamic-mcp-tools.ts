@@ -361,6 +361,11 @@ export class DynamicMcpTools {
           queryParams: interpolatedMapping.queryParams,
           headers: engineConfig.headers,
           authConfig,
+          body: {
+            template: interpolatedMapping.bodyTemplate,
+            mapping: interpolatedMapping.bodyMapping,
+            headers: interpolatedMapping.headers,
+          },
         },
         `the connector behind ${tool.name}`,
         connectorPageUrl(tool.connectorId),

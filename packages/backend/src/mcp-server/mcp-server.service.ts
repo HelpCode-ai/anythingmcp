@@ -142,6 +142,7 @@ export class McpServerService implements OnModuleInit {
       headers: connector.headers,
       envVars: connector.envVars,
       config: connector.config,
+      toolMappings: connector.tools.map((t) => t.endpointMapping),
     }).status;
     for (const tool of connector.tools) {
       const toolDef = {
