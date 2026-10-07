@@ -157,8 +157,8 @@ test.describe('card-trial offer (cloud)', () => {
     await expect(page).toHaveURL(/\/start-trial$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Your 7-day free trial' })).toBeVisible();
     await expect(page.getByText('€0 today.')).toBeVisible();
-    // Team is preselected without an intent from the pricing page.
-    await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
+    // Starter is preselected without an intent from the pricing page.
+    await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
 
     // The skip is a small link, not a button styled as one.
     const skip = page.getByRole('button', { name: 'Continue without payment details' });
@@ -176,12 +176,12 @@ test.describe('card-trial offer (cloud)', () => {
     const { posted } = await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
     await page.goto('/start-trial');
     await page.getByRole('radio', { name: 'Yearly' }).click();
-    await page.getByRole('radio', { name: /Starter/ }).click();
-    await expect(page.getByText('190 €/year')).toBeVisible();
+    await page.getByRole('radio', { name: /Team/ }).click();
+    await expect(page.getByText('490 €/year')).toBeVisible();
     await page.getByRole('button', { name: 'Start free trial' }).click();
 
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'yearly', trial: true }]);
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'yearly', trial: true }]);
   });
 
   test('a failed checkout shows a friendly error and can be retried', async ({ page }) => {
