@@ -46,8 +46,8 @@ const refs = (v: unknown, out: Set<string>) => {
 };
 
 describe('gelato adapter: static spec conformance', () => {
-  it('ships unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified against a real account on 7 Oct 2026', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the key in X-API-KEY with a User-Agent', () => {
