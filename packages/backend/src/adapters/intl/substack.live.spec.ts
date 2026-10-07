@@ -62,7 +62,7 @@ describe('substack adapter — static spec conformance', () => {
     '@lenny',
   ])('refuses %s with a message that explains the home address', (value) => {
     expect(urlPattern.test(value)).toBe(false);
-    expect(a.envVarMeta.SUBSTACK_PUBLICATION_URL.patternMessage).toMatch(/https:\/\/yourname\.substack\.com/);
+    expect(a.envVarMeta.SUBSTACK_PUBLICATION_URL.patternMessage).toContain("https://yourname.substack.com");
   });
 
   it('lists posts through the archive endpoint, whose sort accepts new and top', () => {
