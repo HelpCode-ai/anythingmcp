@@ -10,6 +10,7 @@
   "requiredEnvVars": [],
   "envVarMeta": {},
   "prerequisites": "- A Helium 10 Diamond plan or higher (Elite included); MCP comes with 1,000 tool calls a month, and Market Tracker 360, Ads and Walmart tools need those features on the account.\n- After saving, you click Authorize with Provider and sign in with Helium 10; whoever signs in is the Helium 10 user for everyone who uses this connector.\n- A sub-user needs the MCP permission from the primary account owner in Access Management.",
+  "unlisted": true,
   "connector": {
     "name": "Helium 10",
     "type": "MCP",

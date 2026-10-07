@@ -67,6 +67,7 @@
     }
   },
   "prerequisites": "- A Snowflake account where you can create an MCP server object, a role and a programmatic access token (ACCOUNTADMIN or a delegated admin).\n- An MCP server object (CREATE MCP SERVER) exposing the Cortex Agents, Cortex Analyst semantic views, Cortex Search services or functions the AI should use.\n- A network policy for the connecting user that allows the address AnythingMCP calls from.",
+  "unlisted": true,
   "connector": {
     "name": "Snowflake",
     "type": "MCP",

@@ -34,6 +34,7 @@
     }
   },
   "prerequisites": "- An Atlassian Cloud site with Jira and/or Confluence, and an account that can see the data the AI should work with.\n- An organization admin has turned on API-token authentication for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).\n- If your organization uses an IP allow list, it includes the address AnythingMCP calls from.",
+  "unlisted": true,
   "connector": {
     "name": "Atlassian",
     "type": "MCP",

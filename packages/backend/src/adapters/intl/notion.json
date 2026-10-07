@@ -10,6 +10,7 @@
   "requiredEnvVars": [],
   "envVarMeta": {},
   "prerequisites": "- A Notion account with access to the workspace you want to connect; any plan works, while AI search, meeting notes, unlimited SQL queries and Custom Agents need Notion AI or a Business or Enterprise plan.\n- After saving, you click Authorize with Provider and sign in with Notion; whoever signs in is the Notion identity for everyone who uses this connector.\n- If several people share the connector, use a dedicated Notion member account limited to the teamspaces the AI should see.",
+  "unlisted": true,
   "connector": {
     "name": "Notion",
     "type": "MCP",
