@@ -12,7 +12,7 @@ const a = adapter as unknown as {
   instructions: string;
   requiredEnvVars: string[];
   envVarMeta?: Record<string, unknown>;
-  prerequisites: string[];
+  prerequisites?: string;
   connector: {
     type: string;
     baseUrl: string;
@@ -35,8 +35,8 @@ describe('helium10 adapter: static spec conformance', () => {
   it('asks for no key: the user signs in with Helium 10 after saving', () => {
     expect(a.requiredEnvVars).toEqual([]);
     expect(Object.keys(a.envVarMeta ?? {})).toEqual([]);
-    expect(a.prerequisites.some((p) => /sign in with Helium 10/i.test(p))).toBe(true);
-    expect(a.prerequisites.some((p) => /Diamond/.test(p))).toBe(true);
+    expect(/sign in with Helium 10/i.test(a.prerequisites ?? '')).toBe(true);
+    expect(/Diamond/.test(a.prerequisites ?? '')).toBe(true);
   });
   it('names each tool with the prefix and calls it by its remote name', () => {
     for (const t of a.tools) {
