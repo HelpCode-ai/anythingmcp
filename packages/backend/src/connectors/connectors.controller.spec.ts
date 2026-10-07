@@ -678,6 +678,30 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
     expect(connectorsService.update).not.toHaveBeenCalled();
   });
 
+  it('keeps only the Freshdesk subdomain when the whole address is pasted', async () => {
+    const { controller, connectorsService } = build({
+      id: 'c1',
+      type: 'REST',
+      userId: 'u1',
+      organizationId: 'org1',
+      baseUrl: 'https://old.freshdesk.com/api/v2',
+      envVars: { FRESHDESK_DOMAIN: 'old' },
+      config: { adapterSlug: 'freshdesk' },
+    });
+
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { FRESHDESK_DOMAIN: 'tigertrade.freshdesk.com/api/v2' },
+    });
+
+    expect(connectorsService.update).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        envVars: expect.objectContaining({ FRESHDESK_DOMAIN: 'tigertrade' }),
+        baseUrl: 'https://tigertrade.freshdesk.com/api/v2',
+      }),
+    );
+  });
+
   it('uses the stored template of a hand-built connector', async () => {
     const { controller, connectorsService } = build({
       id: 'c1',
