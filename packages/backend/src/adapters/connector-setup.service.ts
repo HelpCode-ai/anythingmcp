@@ -24,6 +24,16 @@ export const SETUP_LINK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const INSTALLS_PER_HOUR = 10;
 
 /**
+ * Where providers send the browser back after sign-in: the URL a user must
+ * register in their own app (Etsy, Google, ...). Same value as the dashboard
+ * shows (ConnectorsController.oauthCallbackUrl).
+ */
+function oauthCallbackUrl(): string {
+  const base = (process.env.SERVER_URL || 'http://localhost:4000').replace(/\/+$/, '');
+  return `${base}/api/mcp-oauth/callback`;
+}
+
+/**
  * Setting up connectors from an AI client, through the shared `/mcp`
  * endpoint (see shared-setup.ts), and the one-time links that finish what a
  * chat must not handle: secrets and the provider's sign-in.
@@ -141,6 +151,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
                 : full.setupKind === 'oauth_browser'
                   ? 'Needs the user\'s own app keys and a sign-in at the provider, done on a page AnythingMCP links to.'
                   : 'Needs credentials the user enters on a page AnythingMCP links to.',
+            // The provider refuses the sign-in, without ever coming back here,
+            // when the app does not list this URL. Users creating the app from
+            // a chat never saw the setup page that shows it.
+            ...(full.setupKind === 'oauth_browser'
+              ? { callbackUrlToRegisterInTheProviderApp: oauthCallbackUrl() }
+              : {}),
             settingsYouMayPass: vars
               .filter((v) => !v.secret)
               .map((v) => ({ name: v.name, label: v.label, required: v.required, help: v.help, example: v.example })),
@@ -247,6 +263,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         installed: definition.name,
         status: state.status,
+        ...(needsBrowserAuthorization(definition)
+          ? { callbackUrlToRegisterInTheProviderApp: oauthCallbackUrl() }
+          : {}),
         whatTheUserDoes:
           state.status === 'needs_authorization'
             ? `Open the link, then sign in to ${definition.name} and approve. It takes a minute.`

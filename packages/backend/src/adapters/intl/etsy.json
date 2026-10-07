@@ -36,7 +36,7 @@
       "advanced": true
     }
   },
-  "prerequisites": "An Etsy app of your own (etsy.com/developers → Create a New App). A new app can stay *Pending* for a while: until Etsy activates it, sign-in works but every call is refused. Use the **Keystring** and **Shared secret** of an active app.",
+  "prerequisites": "An Etsy app of your own (etsy.com/developers → Create a New App). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, sign-in works but every call is refused. Use the **Keystring** and **Shared secret** of an active app.",
   "verifyHints": {
     "403": "Etsy refused the app keys: the app is not active yet, or the shared secret does not belong to this keystring."
   },
@@ -950,7 +950,7 @@
     },
     {
       "name": "etsy_set_listing_inventory",
-      "description": "Set price, quantity and SKU of a listing, per variation. It REPLACES the whole inventory: read it with etsy_read_listing_inventory, change what you need, and send every product back. In each product keep sku and property_values; in each offering send price as a plain number (amount / divisor from the read, e.g. 2450/100 = 24.5), quantity and is_enabled. Leave out product_id, offering_id, is_deleted and scale_name.",
+      "description": "Set price, quantity and SKU of a listing, per variation. It REPLACES the whole inventory: read it with etsy_read_listing_inventory, change what you need, and send every product back. In each product keep sku and property_values; in each offering send price as a plain number (amount / divisor from the read, e.g. 2450/100 = 24.5), quantity, is_enabled and readiness_state_id. Etsy refuses an offering without readiness_state_id (\"All offerings need readiness state\"): keep the one from the read, or take an id from etsy_list_processing_profiles. Unless quantity_on_property lists the property that varies, every product must have the same quantity (\"quantity must be consistent across all products\"); the same holds for price with price_on_property. Leave out product_id, offering_id, is_deleted and scale_name.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -960,7 +960,7 @@
           },
           "products": {
             "type": "array",
-            "description": "Every product of the listing, e.g. [{\"sku\": \"MUG-01\", \"property_values\": [], \"offerings\": [{\"price\": 24.5, \"quantity\": 10, \"is_enabled\": true}]}].",
+            "description": "Every product of the listing, e.g. [{\"sku\": \"MUG-01\", \"property_values\": [], \"offerings\": [{\"price\": 24.5, \"quantity\": 10, \"is_enabled\": true, \"readiness_state_id\": 1234567}]}].",
             "items": {
               "type": "object"
             }
@@ -985,6 +985,13 @@
               "type": "integer"
             },
             "description": "Property IDs whose values change the SKU."
+          },
+          "readiness_state_on_property": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Property IDs whose values change the processing profile (readiness state)."
           }
         },
         "required": [
@@ -1000,7 +1007,8 @@
           "products": "$products",
           "price_on_property": "$price_on_property",
           "quantity_on_property": "$quantity_on_property",
-          "sku_on_property": "$sku_on_property"
+          "sku_on_property": "$sku_on_property",
+          "readiness_state_on_property": "$readiness_state_on_property"
         }
       }
     },

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { ToolsController } from './tools.controller';
 
 const RAW = {
@@ -288,5 +288,33 @@ describe('ToolsController — test endpoint', () => {
 
     const inferred = prisma.mcpTool.update.mock.calls[0][0].data.outputSchema;
     expect(Object.keys(inferred.properties).sort()).toEqual(['devices', 'total']);
+  });
+});
+
+describe('ToolsController — duplicate tool names', () => {
+  const unique = () => Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+  const dto = { name: 'get_orders', description: 'd', parameters: {}, endpointMapping: { method: 'GET', path: '/orders' } } as any;
+
+  it('answers 409 with the name when a tool of that name already exists', async () => {
+    const { controller, prisma, mcpServer } = buildController();
+    prisma.mcpTool.create.mockRejectedValueOnce(unique());
+    const err = await controller.create(req(), 'c1', dto).catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.message).toContain('"get_orders" already exists');
+    expect(mcpServer.reloadConnectorTools).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when a rename collides with another tool', async () => {
+    const { controller, prisma } = buildController();
+    prisma.mcpTool.updateMany.mockRejectedValueOnce(unique());
+    await expect(controller.update(req(), 't1', 'c1', { name: 'get_orders' } as any)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('still lets any other database error through', async () => {
+    const { controller, prisma } = buildController();
+    prisma.mcpTool.create.mockRejectedValueOnce(new Error('connection lost'));
+    await expect(controller.create(req(), 'c1', dto)).rejects.toThrow('connection lost');
   });
 });
