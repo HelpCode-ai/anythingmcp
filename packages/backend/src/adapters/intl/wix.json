@@ -1,0 +1,951 @@
+{
+  "slug": "wix",
+  "name": "Wix",
+  "description": "Wix website and online business: site details, Wix Stores products, eCommerce orders, contacts, Wix Bookings appointments and services, and blog posts. Wix REST API with an API key, one site per connector.",
+  "instructions": "## Wix\nThis connector talks to the Wix REST APIs (`https://www.wixapis.com`) for one Wix site: its business details and URLs, Wix Stores products, eCommerce orders, contacts, Wix Bookings appointments and services, and Wix Blog posts. It suits a small business that runs its shop, bookings or blog on Wix.\n\n## Setup\n1. Sign in to Wix as the account owner or a co-owner and open the **API Keys Manager** (https://manage.wix.com/account/api-keys).\n2. **Generate API key**. Give it access to the site you want to connect (or to all sites) and the permissions for the Wix apps you use: site properties, Wix Stores, eCommerce orders, contacts, Wix Bookings, Wix Blog. Read permissions are enough for every tool except `wix_create_contact`, which needs permission to manage contacts.\n3. Copy the key into `WIX_API_KEY`.\n4. Open the site's dashboard: the site ID is the UUID after `/dashboard/` in the browser address. Put it in `WIX_SITE_ID`.\n\nThe key goes in the `Authorization` header as is (no `Bearer`), and every call carries `wix-site-id`. One connector covers one site; add the connector again for another site. A key only works on sites owned by the account that created it. Account-level APIs (listing sites, managing the account) need a `wix-account-id` header instead of the site ID and are not part of this connector.\n\n## Start here\n`wix_get_site_properties` checks the key and site ID and tells what the site is (store, restaurant, blog, events...). For a shop, call `wix_get_catalog_version` once: Wix Stores runs either catalog V3 (newer sites, and all sites eventually) or catalog V1, and each answers only its own API.\n- `V3_CATALOG`: `wix_search_products`, then `wix_get_product` for variants.\n- `V1_CATALOG`: `wix_query_products_v1` and `wix_get_product_v1`.\n- `STORES_NOT_INSTALLED`: the site has no Wix Stores app.\n\nOrders (`wix_search_orders`, `wix_get_order`) come from Wix eCommerce and cover both catalog versions, plus bookings and other Wix apps that sell through checkout.\n\n## Filters, sorting and paging\nQuery and search tools take a `filter` object in the Wix API query language: `{\"status\": \"APPROVED\"}`, `{\"createdDate\": {\"$gte\": \"2026-09-01T00:00:00Z\"}}`, `{\"$and\": [{...}, {...}]}`. Operators include `$eq`, `$ne`, `$in`, `$gt`, `$gte`, `$lt`, `$lte`, `$startsWith`, `$hasSome`, `$hasAll` and `$exists`; each tool lists the fields it can filter on, and a field outside that list answers `Field '<name>' is not declared as filterable`. Dates are ISO 8601 in UTC. Exception: `wix_query_products_v1` takes `filter` and `sort` as JSON strings.\n\nPaging is either by cursor or by offset:\n- Cursor (`wix_search_products`, `wix_search_orders`, `wix_query_bookings`, `wix_query_blog_posts`): set `limit` (max 100) on the first call, then pass `pagingMetadata.cursors.next` as `cursor`, without filter or sort.\n- Offset (`wix_query_contacts` up to 1,000 per page, `wix_query_booking_services`, `wix_query_products_v1` up to 100): `limit` and `offset`.\n\nThese read tools use `POST` because Wix sends the query in the body; they change nothing.\n\n## Good to know\n- `wix_search_orders` leaves out orders in `PENDING` and `REJECTED` status unless the filter asks for them, and never returns `INITIALIZED` orders (fetch those by id with `wix_get_order`). Orders carry no payment method details.\n- `wix_search_products` with `search_text` also needs `search_fields`, for example `[\"name\", \"description\"]`. Hidden products and `MERCHANT_DATA` (cost and margin) need the admin product permission.\n- `wix_query_products_v1` silently drops hidden and draft products unless `include_hidden_products` is true.\n- Bookings dates are UTC; always narrow `wix_query_bookings` with `startDate` for fast answers.\n- Contact labels must exist before they can be set on a contact.\n\n## Errors\n- 401: wrong key, or the site belongs to another Wix account than the key.\n- 403: the key lacks the permission for this API or has no access to this site. Edit the key in the API Keys Manager.\n- 404: unknown id, or the Wix app (Stores, Bookings, Blog) is not installed on the site.\n- 429: too many requests. Wait a minute and retry.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "wix",
+  "docsUrl": "https://dev.wix.com/docs/api-reference",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "WIX_API_KEY",
+    "WIX_SITE_ID"
+  ],
+  "envVarMeta": {
+    "WIX_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Wix account → API Keys Manager → Generate API key. Give it access to this site and the permissions for the apps you use (site properties, Stores, eCommerce orders, contacts, Bookings, Blog). Only the account owner or a co-owner can create keys.",
+      "link": "https://manage.wix.com/account/api-keys"
+    },
+    "WIX_SITE_ID": {
+      "label": "Site ID",
+      "kind": "setting",
+      "help": "Open the site dashboard in Wix: the site ID is the UUID after /dashboard/ in the browser address.",
+      "link": "https://manage.wix.com/account/sites",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "A Wix site ID is a UUID such as 1a2b3c4d-1234-5678-9abc-1234567890ab, taken from the dashboard URL."
+    }
+  },
+  "verifyHints": {
+    "401": "Wix refused the API key. Copy it again from the API Keys Manager, and check that the site ID belongs to the same Wix account as the key.",
+    "403": "The key has no permission for this API or no access to this site. Edit the key in the API Keys Manager: add the site and the permission for the app you are calling.",
+    "rate_limited": "Wix is throttling requests. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "wix_get_site_properties"
+  },
+  "connector": {
+    "name": "Wix",
+    "type": "REST",
+    "baseUrl": "https://www.wixapis.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{WIX_API_KEY}}",
+      "extraHeaders": {
+        "wix-site-id": "{{WIX_SITE_ID}}"
+      }
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/site-properties/v4/properties"
+  },
+  "tools": [
+    {
+      "name": "wix_get_site_properties",
+      "description": "Get the site's business information: business and display name, description, email, phone, address, logo, locale, language, currency, time zone, opening hours, categories and the business type (store, restaurant, blog, events...).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-properties/v4/properties"
+      }
+    },
+    {
+      "name": "wix_list_site_urls",
+      "description": "List the site's published URLs, marking the primary domain and any language subdomains. Empty when the site is not published.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/urls-server/v2/published-site-urls"
+      }
+    },
+    {
+      "name": "wix_get_catalog_version",
+      "description": "Tell which Wix Stores catalog the site runs: V3_CATALOG (use wix_search_products and wix_get_product), V1_CATALOG (use wix_query_products_v1 and wix_get_product_v1) or STORES_NOT_INSTALLED. The two catalog APIs do not work on each other's sites.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores/v3/provision/version"
+      }
+    },
+    {
+      "name": "wix_search_products",
+      "description": "Search the products of a Wix Stores catalog V3 site by free text (name, description, SKU...) and filters such as visibility, product type, brand, category, inventory status or price range. Returns up to 100 products per page without variant details; use wix_get_product for variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Free text to look for. Needs search_fields."
+          },
+          "search_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields the text is searched in, required with search_text: name, description, minVariantPriceInfo.sku, variantsInfo.variants.sku, variantsInfo.variants.barcode."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: id, slug, handle, visible, visibleInPos, productType (PHYSICAL, DIGITAL), brand.name, ribbon.name, inventory.availabilityStatus, allCategoriesInfo.categories, actualPriceRange.minValue.amount, actualPriceRange.maxValue.amount, createdDate, updatedDate."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, e.g. [{\"fieldName\": \"name\", \"order\": \"ASC\"}]. Sortable: name, createdDate, updatedDate, actualPriceRange.minValue.amount, actualPriceRange.maxValue.amount.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "URL",
+                "CURRENCY",
+                "PLAIN_DESCRIPTION",
+                "THUMBNAIL",
+                "MEDIA_ITEMS_INFO",
+                "BREADCRUMBS_INFO",
+                "DIRECT_CATEGORIES_INFO",
+                "ALL_CATEGORIES_INFO",
+                "INFO_SECTION",
+                "MERCHANT_DATA",
+                "WEIGHT_MEASUREMENT_UNIT_INFO",
+                "MIN_PRICE_VARIANT",
+                "DISCOUNT_INFO"
+              ]
+            },
+            "description": "Extra fields to include, e.g. URL, CURRENCY, PLAIN_DESCRIPTION. MERCHANT_DATA (cost and margin) needs the admin product scope."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagingMetadata.cursors.next from the previous answer, to read the next page. When set, send no filter or sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stores/v3/products/search",
+        "bodyMapping": {
+          "fields": "$fields",
+          "search": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "cursorPaging": {
+              "limit": "$limit",
+              "cursor": "$cursor"
+            },
+            "search": {
+              "expression": "$search_text",
+              "fields": "$search_fields"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_get_product",
+      "description": "Get one product of a Wix Stores catalog V3 site with its options, variants (SKU, price, stock status), media and inventory, by product id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID) from wix_search_products."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "URL",
+                "CURRENCY",
+                "PLAIN_DESCRIPTION",
+                "DESCRIPTION",
+                "THUMBNAIL",
+                "MEDIA_ITEMS_INFO",
+                "BREADCRUMBS_INFO",
+                "DIRECT_CATEGORIES_INFO",
+                "ALL_CATEGORIES_INFO",
+                "INFO_SECTION",
+                "INFO_SECTION_PLAIN_DESCRIPTION",
+                "MERCHANT_DATA",
+                "VARIANT_OPTION_CHOICE_NAMES",
+                "WEIGHT_MEASUREMENT_UNIT_INFO",
+                "SUBSCRIPTION_PRICES_INFO"
+              ]
+            },
+            "description": "Extra fields to include, e.g. VARIANT_OPTION_CHOICE_NAMES, PLAIN_DESCRIPTION, URL, CURRENCY."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores/v3/products/{product_id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "wix_query_products_v1",
+      "description": "List products of a site still on Wix Stores catalog V1, with paging, filtering and sorting; optionally with variants and hidden products. Only for sites where wix_get_catalog_version answers V1_CATALOG.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter as a JSON string, e.g. \"{\\\"name\\\": {\\\"$startsWith\\\": \\\"Mug\\\"}}\" or \"{\\\"collections.id\\\": {\\\"$hasSome\\\": [\\\"<collection id>\\\"]}}\"."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as a JSON string, e.g. \"[{\\\"price\\\": \\\"desc\\\"}]\"."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Products to skip, for paging."
+          },
+          "include_variants": {
+            "type": "boolean",
+            "description": "Include variants in the answer."
+          },
+          "include_hidden_products": {
+            "type": "boolean",
+            "description": "Include hidden and draft products, which are left out silently otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stores-reader/v1/products/query",
+        "bodyMapping": {
+          "query": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "paging": {
+              "limit": "$limit",
+              "offset": "$offset"
+            }
+          },
+          "includeVariants": "$include_variants",
+          "includeHiddenProducts": "$include_hidden_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_get_product_v1",
+      "description": "Get one product of a site on Wix Stores catalog V1 by id: name, price, SKU, stock, options, variants, media and collections.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id from wix_query_products_v1."
+          },
+          "include_merchant_specific_data": {
+            "type": "boolean",
+            "description": "Include cost and profit data."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores-reader/v1/products/{product_id}",
+        "queryParams": {
+          "includeMerchantSpecificData": "$include_merchant_specific_data"
+        }
+      }
+    },
+    {
+      "name": "wix_search_orders",
+      "description": "Search eCommerce orders of the site (Stores, Bookings, Events and other Wix apps), newest first by default, with filters such as status, payment or fulfillment status, buyer email, order number, total or date. Returns full orders with line items, buyer, addresses and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: status (APPROVED, CANCELED, PENDING, REJECTED), paymentStatus (NOT_PAID, PAID, PARTIALLY_REFUNDED, FULLY_REFUNDED, PENDING...), fulfillmentStatus (NOT_FULFILLED, FULFILLED, PARTIALLY_FULFILLED), number, buyerInfo.email, buyerInfo.contactId, createdDate, updatedDate, purchasedDate, priceSummary.total.amount, archived, channelInfo.type, lineItems.productName.original ($hasSome)."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, default [{\"fieldName\": \"createdDate\", \"order\": \"DESC\"}]. Also sortable: number, purchasedDate, updatedDate, status.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagingMetadata.cursors.next from the previous answer, to read the next page. When set, send no filter or sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ecom/v1/orders/search",
+        "bodyMapping": {
+          "search": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "cursorPaging": {
+              "limit": "$limit",
+              "cursor": "$cursor"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_get_order",
+      "description": "Get one eCommerce order by id: number, status, payment and fulfillment status, line items, buyer and contact details, billing and shipping info, price summary, applied discounts and activity history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (UUID) from wix_search_orders, not the order number."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/v1/orders/{order_id}"
+      }
+    },
+    {
+      "name": "wix_query_contacts",
+      "description": "List the contacts of the site (customers, members, form leads) with filters on name, email, phone, company, labels or dates, sorted and paged. Returns up to 1,000 contacts per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: info.name.first, info.name.last, primaryInfo.email, primaryInfo.phone, info.company, info.jobTitle, info.labelKeys ($hasSome), info.emails.email, info.locale, createdDate, updatedDate, lastActivity.activityDate. Text fields also take $startsWith."
+          },
+          "sort": {
+            "type": "array",
+            "description": "One sort object. Sortable: createdDate, lastActivity.activityDate, primaryInfo.email, info.name.first, info.name.last, info.company, info.jobTitle, info.birthdate.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            },
+            "maxItems": 1
+          },
+          "fieldsets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "BASIC",
+                "COMMUNICATION_DETAILS",
+                "EXTENDED",
+                "FULL"
+              ]
+            },
+            "description": "BASIC (name, primary email and phone), COMMUNICATION_DETAILS (all emails, phones, addresses), EXTENDED (adds extended fields such as amount spent), FULL."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Contacts per page, default 50, max 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Contacts to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/v4/contacts/query",
+        "bodyMapping": {
+          "query": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "fieldsets": "$fieldsets",
+            "paging": {
+              "limit": "$limit",
+              "offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_get_contact",
+      "description": "Get one contact by id with names, emails, phones, addresses, company, labels, source and last activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID) from wix_query_contacts or an order or booking."
+          },
+          "fieldsets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "BASIC",
+                "COMMUNICATION_DETAILS",
+                "EXTENDED",
+                "FULL"
+              ]
+            },
+            "description": "Field sets to return; FULL by default."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/v4/contacts/{contact_id}",
+        "queryParams": {
+          "fieldsets": "$fieldsets"
+        }
+      }
+    },
+    {
+      "name": "wix_create_contact",
+      "description": "Create a contact in the site's contact list. info needs at least a name, an email or a phone. By default the call fails when the email or phone already belongs to another contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "info": {
+            "type": "object",
+            "description": "Contact details.",
+            "properties": {
+              "name": {
+                "type": "object",
+                "properties": {
+                  "first": {
+                    "type": "string"
+                  },
+                  "last": {
+                    "type": "string"
+                  }
+                }
+              },
+              "emails": {
+                "type": "object",
+                "description": "{\"items\": [{\"email\": \"a@b.com\", \"tag\": \"MAIN\"}]}",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "email": {
+                          "type": "string"
+                        },
+                        "tag": {
+                          "type": "string",
+                          "enum": [
+                            "UNTAGGED",
+                            "MAIN",
+                            "HOME",
+                            "WORK"
+                          ]
+                        },
+                        "primary": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "email"
+                      ]
+                    }
+                  }
+                }
+              },
+              "phones": {
+                "type": "object",
+                "description": "{\"items\": [{\"phone\": \"...\", \"countryCode\": \"DE\", \"tag\": \"MOBILE\"}]}",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "phone": {
+                          "type": "string"
+                        },
+                        "countryCode": {
+                          "type": "string",
+                          "description": "ISO 3166-1 alpha-2."
+                        },
+                        "tag": {
+                          "type": "string",
+                          "enum": [
+                            "UNTAGGED",
+                            "MAIN",
+                            "HOME",
+                            "MOBILE",
+                            "WORK",
+                            "FAX"
+                          ]
+                        },
+                        "primary": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "phone"
+                      ]
+                    }
+                  }
+                }
+              },
+              "addresses": {
+                "type": "object",
+                "description": "{\"items\": [{\"tag\": \"HOME\", \"address\": {\"addressLine\": \"...\", \"city\": \"...\", \"postalCode\": \"...\", \"country\": \"DE\"}}]}",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tag": {
+                          "type": "string",
+                          "enum": [
+                            "UNTAGGED",
+                            "HOME",
+                            "WORK",
+                            "BILLING",
+                            "SHIPPING"
+                          ]
+                        },
+                        "address": {
+                          "type": "object",
+                          "properties": {
+                            "addressLine": {
+                              "type": "string"
+                            },
+                            "addressLine2": {
+                              "type": "string"
+                            },
+                            "city": {
+                              "type": "string"
+                            },
+                            "postalCode": {
+                              "type": "string"
+                            },
+                            "subdivision": {
+                              "type": "string",
+                              "description": "ISO 3166-2 code, e.g. US-NY."
+                            },
+                            "country": {
+                              "type": "string",
+                              "description": "ISO 3166-1 alpha-2."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "company": {
+                "type": "string"
+              },
+              "jobTitle": {
+                "type": "string"
+              },
+              "birthdate": {
+                "type": "string",
+                "description": "YYYY-MM-DD."
+              },
+              "locale": {
+                "type": "string",
+                "description": "BCP 47, e.g. en-US."
+              },
+              "labelKeys": {
+                "type": "object",
+                "description": "{\"items\": [\"custom.vip\"]}; the labels must already exist.",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allow_duplicates": {
+            "type": "boolean",
+            "description": "Create the contact even if the email or phone is already used by another contact."
+          }
+        },
+        "required": [
+          "info"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/v4/contacts",
+        "bodyMapping": {
+          "info": "$info",
+          "allowDuplicates": "$allow_duplicates"
+        }
+      }
+    },
+    {
+      "name": "wix_query_bookings",
+      "description": "List Wix Bookings appointments and class bookings with the booked service, session time, contact details, number of participants, status and payment status. Filter by start or end date (UTC), service, contact, status or payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: startDate, endDate, createdDate (all UTC, $gte/$lt...), status (CREATED, CONFIRMED, CANCELED, PENDING, DECLINED, WAITING_LIST), paymentStatus, contactDetails.contactId, contactDetails.email, bookedEntity.item.slot.serviceId, bookedEntity.item.schedule.serviceId, bookedEntity.item.slot.sessionId. Include startDate for fast answers."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, e.g. [{\"fieldName\": \"createdDate\", \"order\": \"DESC\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagingMetadata.cursors.next from the previous answer, to read the next page. When set, send no filter or sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bookings/bookings-reader/v2/extended-bookings/query",
+        "bodyMapping": {
+          "query": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "cursorPaging": {
+              "limit": "$limit",
+              "cursor": "$cursor"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_query_booking_services",
+      "description": "List the services offered with Wix Bookings (appointments, classes, courses) with name, type, description, price and payment options, staff, locations, category and whether online booking is on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: name, type (APPOINTMENT, CLASS, COURSE), hidden, category.name, category.id, staffMemberIds ($hasSome), onlineBooking.enabled, payment.options.online, locations.business.id."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, e.g. [{\"fieldName\": \"createdDate\", \"order\": \"DESC\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Services to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bookings/v2/services/query",
+        "bodyMapping": {
+          "query": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "paging": {
+              "limit": "$limit",
+              "offset": "$offset"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_query_blog_posts",
+      "description": "List published Wix Blog posts, newest first with pinned posts on top, filtered by title, slug, category, tag, hashtag, featured flag, language or date. Optional field sets add the post URL, plain text content, SEO data or view, like and comment counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter in the Wix API query language, e.g. {\"field\": \"value\"} or {\"field\": {\"$gte\": \"...\"}}; combine with $and / $or. Filterable fields: title ($startsWith), slug, firstPublishedDate, lastPublishedDate, featured, pinned, categoryIds ($hasSome), tagIds ($hasSome), hashtags ($hasSome), memberId, language, metrics.views, metrics.likes, metrics.comments."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, e.g. [{\"fieldName\": \"metrics.views\", \"order\": \"DESC\"}]. Sortable: title, firstPublishedDate, lastPublishedDate, featured, pinned, metrics.views, metrics.likes, metrics.comments.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldName": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "fieldName"
+              ]
+            },
+            "maxItems": 3
+          },
+          "fieldsets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "URL",
+                "CONTENT_TEXT",
+                "METRICS",
+                "SEO",
+                "CONTACT_ID",
+                "RICH_CONTENT",
+                "REFERENCE_ID"
+              ]
+            },
+            "description": "Extra fields to include, e.g. URL, METRICS, CONTENT_TEXT."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page, at most 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagingMetadata.cursors.next from the previous answer, to read the next page. When set, send no filter or sort."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/blog/v3/posts/query",
+        "bodyMapping": {
+          "fieldsets": "$fieldsets",
+          "query": {
+            "filter": "$filter",
+            "sort": "$sort",
+            "cursorPaging": {
+              "limit": "$limit",
+              "cursor": "$cursor"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wix_get_blog_post",
+      "description": "Get one published blog post by id with title, excerpt, author, categories, tags and dates; add field sets for the URL, full text, SEO data or metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id from wix_query_blog_posts."
+          },
+          "fieldsets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "URL",
+                "CONTENT_TEXT",
+                "METRICS",
+                "SEO",
+                "CONTACT_ID",
+                "RICH_CONTENT",
+                "REFERENCE_ID"
+              ]
+            },
+            "description": "Extra fields to include."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/blog/v3/posts/{post_id}",
+        "queryParams": {
+          "fieldsets": "$fieldsets"
+        }
+      }
+    }
+  ]
+}

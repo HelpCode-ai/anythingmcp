@@ -1,0 +1,1430 @@
+{
+  "slug": "gelato",
+  "name": "Gelato",
+  "description": "Gelato print-on-demand: browse the product catalog, check prices, stock and shipping methods, quote, draft and track orders (including Etsy and Shopify orders), and manage products in connected stores. Gelato API with an API key.",
+  "instructions": "## Gelato\nThis connector talks to the Gelato API. Gelato prints and ships products on demand (posters, wall art, apparel, mugs, cards, photo books...) from production partners in over 30 countries, so most orders are produced close to the customer. It is used directly through the API and as the fulfilment behind Etsy and Shopify stores.\n\n## Setup\n1. In the Gelato dashboard open **Developer → API Keys** and click **Add API key**. Only admins, or users given the permission, see this page.\n2. Name the key, click **Create key** and copy it right away: it is not shown again.\n3. Paste it into `GELATO_API_KEY`.\n\nThe key is sent as the `X-API-KEY` header on every request.\n\n## One key, four hosts\nGelato splits its API across several hosts, and this connector calls each of them with the same key:\n- `product.gelatoapis.com`: catalogs, products, prices, cover dimensions and stock (the connector's base URL and health check).\n- `order.gelatoapis.com`: order quote, create, get, search, confirm and cancel (Order API v4).\n- `shipment.gelatoapis.com`: shipment methods.\n- `ecommerce.gelatoapis.com`: products and templates of connected stores.\n\n## Start here\n1. `gelato_list_catalogs`, then `gelato_get_catalog` for the attributes (size, paper, colour...) of the product family you need.\n2. `gelato_search_products` with `attribute_filters` to find the exact `productUid`. Every price, quote and order uses this UID.\n3. `gelato_get_product_prices` for production prices per quantity, `gelato_check_stock` for stockable items such as frames, and `gelato_quote_order` for the full price with shipping options for a real address.\n\n## Gelato and Etsy or Shopify\nA store connected to Gelato sends its orders to Gelato on its own; they show up in `gelato_search_orders` with channel `etsy` or `shopify` and a `storeId`. Do not create them again with `gelato_create_order`. The store id is that `storeId`, or the id in the store page URL of the Gelato dashboard. Use `gelato_list_store_products` to see which listings are connected to Gelato products, and `gelato_get_template` with `gelato_create_product_from_template` to create new listings from a template built in the dashboard (the template id is on the Templates page).\n\n## Orders\n- Three ids you choose are required: `order_reference_id` (your order), `customer_reference_id` (your customer) and an `itemReferenceId` per line. Gelato returns its own order `id` (a UUID) for the get, confirm and cancel tools.\n- `gelato_create_draft_order` creates a draft that is neither produced nor charged. Review it in the dashboard; `gelato_confirm_draft_order` turns it into a real order.\n- An order with items that need different production sites is split into connected orders: each has its own Gelato id, all share your `order_reference_id`, and `connectedOrderIds` lists them.\n- Fulfillment statuses run from `created` and `passed` through `in_production`, `printed`, `shipped`, `in_transit` and `delivered`; other states include `draft`, `pending_approval`, `on_hold`, `not_connected`, `failed` and `canceled`. Tracking codes and URLs are in `shipment.packages` of `gelato_get_order`.\n- Print files are given by public URL (PDF, PNG, TIFF, SVG or JPEG; PDF/X-1a or PDF/X-4 preferred for PDFs). File `type` `default` is the primary print area.\n- Addresses: country is ISO 3166-1 alpha-2 (`GB`, not `UK`); `state` is required for the US, Canada and Australia; addresses in China, Japan, South Korea and Russia must be written in the local language.\n\n## Paging\n`gelato_search_products`, `gelato_search_orders` and `gelato_list_store_products` page with `limit` (at most 100) and `offset`.\n\n## Write tools\n`gelato_create_order`, `gelato_confirm_draft_order` and `gelato_create_product_from_template` are installed switched off: the first two charge the Gelato account, the third publishes a listing to the connected store (Etsy charges a listing fee). Enable them on the connector page if you want them. `gelato_cancel_order` only works before an order is printed (409 otherwise).\n\n## Errors\n- 401: the key is wrong or was deleted. Create a new one under Developer → API Keys.\n- 404: unknown id or UID. Look ids up with the list and search tools rather than guessing them.\n- 409 on cancel: an item is already printed.\n- 429: too many requests. Wait a minute and retry.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "gelato",
+  "docsUrl": "https://dashboard.gelato.com/docs/",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "GELATO_API_KEY"
+  ],
+  "envVarMeta": {
+    "GELATO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Gelato dashboard → Developer → API Keys → Add API key. Name it, click Create key and copy it right away: it is not shown again. Only admins, or users given the permission, can manage keys.",
+      "link": "https://dashboard.gelato.com/"
+    }
+  },
+  "verifyHints": {
+    "401": "Gelato refused the API key. Copy it again from Developer → API Keys, or create a new key there; a key is only shown once.",
+    "403": "The key is valid but has no access to this resource. Check that it belongs to the right Gelato account.",
+    "rate_limited": "Gelato is throttling requests. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gelato_list_catalogs"
+  },
+  "connector": {
+    "name": "Gelato",
+    "type": "REST",
+    "baseUrl": "https://product.gelatoapis.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{GELATO_API_KEY}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v3/catalogs"
+  },
+  "tools": [
+    {
+      "name": "gelato_list_catalogs",
+      "description": "List the Gelato product catalogs (posters, t-shirts, mugs, cards, canvas...) with their catalogUid and title. Start here to find the catalog to browse.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalogs"
+      }
+    },
+    {
+      "name": "gelato_get_catalog",
+      "description": "Get one catalog with its product attributes and every allowed value (size, paper, colour, orientation...). The attribute and value UIDs are the filters of gelato_search_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_uid": {
+            "type": "string",
+            "description": "Catalog UID from gelato_list_catalogs, e.g. posters."
+          }
+        },
+        "required": [
+          "catalog_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalogs/{catalog_uid}"
+      }
+    },
+    {
+      "name": "gelato_search_products",
+      "description": "List the products of a catalog, optionally filtered by attribute values, with productUid, attributes, weight, dimensions and supported countries. Also returns how many products match each attribute value. Use the productUid to price, quote and order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_uid": {
+            "type": "string",
+            "description": "Catalog UID from gelato_list_catalogs."
+          },
+          "attribute_filters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Map of attribute UID to a list of accepted value UIDs, both from gelato_get_catalog, e.g. {\"Orientation\": [\"hor\", \"ver\"], \"CoatingType\": [\"none\"]}."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Products per page, at most 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Products to skip, for paging. Default 0."
+          }
+        },
+        "required": [
+          "catalog_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/catalogs/{catalog_uid}/products:search",
+        "bodyMapping": {
+          "attributeFilters": "$attribute_filters",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gelato_get_product",
+      "description": "Get one Gelato product by productUid: attributes, weight, supported and unsupported countries, whether it is stockable or printable, and the valid page counts of multi-page products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_uid": {
+            "type": "string",
+            "description": "Product UID, e.g. cards_pf_bb_pt_110-lb-cover-uncoated_cl_4-0_hor."
+          }
+        },
+        "required": [
+          "product_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/products/{product_uid}"
+      }
+    },
+    {
+      "name": "gelato_get_product_prices",
+      "description": "Get the production price of a product for every quantity tier, optionally for one destination country and currency. Shipping is not included; use gelato_quote_order for a full quote.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_uid": {
+            "type": "string",
+            "description": "Product UID."
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 destination country, e.g. US."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency, e.g. EUR."
+          },
+          "page_count": {
+            "type": "integer",
+            "description": "Total page count. Required for multi-page products."
+          }
+        },
+        "required": [
+          "product_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/products/{product_uid}/prices",
+        "queryParams": {
+          "country": "$country",
+          "currency": "$currency",
+          "pageCount": "$page_count"
+        }
+      }
+    },
+    {
+      "name": "gelato_get_cover_dimensions",
+      "description": "Get the cover dimensions in mm of a multi-page product such as a photo book or brochure for a given page count, to size the cover artwork.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_uid": {
+            "type": "string",
+            "description": "Product UID of a multi-page product."
+          },
+          "page_count": {
+            "type": "integer",
+            "description": "Total page count including covers."
+          }
+        },
+        "required": [
+          "product_uid",
+          "page_count"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/products/{product_uid}/cover-dimensions",
+        "queryParams": {
+          "pageCount": "$page_count"
+        }
+      }
+    },
+    {
+      "name": "gelato_check_stock",
+      "description": "Check stock of up to 250 products per stock region (US-CA, EU, UK, OC, AS, SA...). Each product gets in-stock, out-of-stock-replenishable (with a replenishment date), out-of-stock, non-stockable (printed on demand, e.g. posters and mugs) or not-supported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_uids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 250,
+            "description": "Product UIDs to check, 1 to 250."
+          }
+        },
+        "required": [
+          "product_uids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/stock/region-availability",
+        "bodyMapping": {
+          "products": "$product_uids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gelato_list_shipment_methods",
+      "description": "List Gelato shipment methods with their shipmentMethodUid, type (normal, express, pallet), whether they are tracked, suit business or private addresses, and the countries they deliver to. Filter by destination country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 destination country, e.g. DE."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://shipment.gelatoapis.com/v1/shipment-methods",
+        "queryParams": {
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "gelato_quote_order",
+      "description": "Price an order before placing it: for the given products and recipient, returns one or more quotes (one per fulfilment facility) with product prices and every available shipment method with price, delivery-day range and dates. Creates nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference_id": {
+            "type": "string",
+            "description": "Your own order id (for example the Etsy or Shopify order number)."
+          },
+          "customer_reference_id": {
+            "type": "string",
+            "description": "Your own customer id."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency the order is charged in, e.g. USD, EUR, GBP."
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Recipient address.",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "lastName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Max 60 characters."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "Street and number, max 35 characters."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Apartment, suite, max 35 characters."
+              },
+              "city": {
+                "type": "string",
+                "description": "Max 30 characters."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal or ZIP code, max 15 characters."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 code (GB, not UK)."
+              },
+              "email": {
+                "type": "string",
+                "description": "Recipient email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone in E.123 format, max 25 characters."
+              },
+              "isBusiness": {
+                "type": "boolean",
+                "description": "Recipient is a business (relevant for Brazil)."
+              },
+              "federalTaxId": {
+                "type": "string",
+                "description": "CPF/CNPJ of a Brazilian recipient (required for Brazil)."
+              },
+              "stateTaxId": {
+                "type": "string",
+                "description": "IE of a Brazilian business recipient."
+              },
+              "registrationStateCode": {
+                "type": "string",
+                "description": "State where a Brazilian business recipient is registered."
+              }
+            },
+            "required": [
+              "firstName",
+              "lastName",
+              "addressLine1",
+              "city",
+              "postCode",
+              "country",
+              "email"
+            ]
+          },
+          "products": {
+            "type": "array",
+            "description": "Products to quote.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemReferenceId": {
+                  "type": "string",
+                  "description": "Your own id for this line, unique within the order."
+                },
+                "productUid": {
+                  "type": "string",
+                  "description": "Gelato product UID, from gelato_search_products."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of copies."
+                },
+                "pageCount": {
+                  "type": "integer",
+                  "description": "Multi-page products only: total pages including covers."
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Print area the file fills: default (the primary area: front for apparel, cover + back for folded cards), front, back, neck-inner, neck-outer, sleeve-left, sleeve-right, inside, or an embroidery area such as chest-left-embroidery. Required for embroidery."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Gelato downloads the print file from (PDF, PNG, TIFF, SVG or JPEG). Optional when id is given."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Id of an embroidery file submitted before, to reuse its digitization."
+                      },
+                      "threadColors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Embroidery only: up to six hex thread colours."
+                      },
+                      "isVisible": {
+                        "type": "boolean",
+                        "description": "Embroidery only: whether the file shows in the dashboard file list."
+                      }
+                    }
+                  },
+                  "description": "Print files. Required for printable products."
+                }
+              },
+              "required": [
+                "itemReferenceId",
+                "productUid",
+                "quantity"
+              ]
+            }
+          },
+          "allow_multiple_quotes": {
+            "type": "boolean",
+            "description": "true (default) allows one quote per facility; false returns a single quote with aggregated delivery days."
+          }
+        },
+        "required": [
+          "order_reference_id",
+          "customer_reference_id",
+          "currency",
+          "recipient",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://order.gelatoapis.com/v4/orders:quote",
+        "bodyMapping": {
+          "orderReferenceId": "$order_reference_id",
+          "customerReferenceId": "$customer_reference_id",
+          "currency": "$currency",
+          "recipient": "$recipient",
+          "products": "$products",
+          "allowMultipleQuotes": "$allow_multiple_quotes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gelato_create_draft_order",
+      "description": "Create a draft order. A draft is not produced or charged: it can be reviewed and edited in the Gelato dashboard and turned into a real order there or with gelato_confirm_draft_order. Returns the order with its Gelato id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference_id": {
+            "type": "string",
+            "description": "Your own order id (for example the Etsy or Shopify order number)."
+          },
+          "customer_reference_id": {
+            "type": "string",
+            "description": "Your own customer id."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency the order is charged in, e.g. USD, EUR, GBP."
+          },
+          "items": {
+            "type": "array",
+            "description": "Line items.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemReferenceId": {
+                  "type": "string",
+                  "description": "Your own id for this line, unique within the order."
+                },
+                "productUid": {
+                  "type": "string",
+                  "description": "Gelato product UID, from gelato_search_products."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of copies."
+                },
+                "pageCount": {
+                  "type": "integer",
+                  "description": "Multi-page products only: total pages including covers."
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Print area the file fills: default (the primary area: front for apparel, cover + back for folded cards), front, back, neck-inner, neck-outer, sleeve-left, sleeve-right, inside, or an embroidery area such as chest-left-embroidery. Required for embroidery."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Gelato downloads the print file from (PDF, PNG, TIFF, SVG or JPEG). Optional when id is given."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Id of an embroidery file submitted before, to reuse its digitization."
+                      },
+                      "threadColors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Embroidery only: up to six hex thread colours."
+                      },
+                      "isVisible": {
+                        "type": "boolean",
+                        "description": "Embroidery only: whether the file shows in the dashboard file list."
+                      }
+                    }
+                  },
+                  "description": "Print files. Required for printable products."
+                },
+                "adjustProductUidByFileTypes": {
+                  "type": "boolean",
+                  "description": "Let Gelato adjust the productUid to the file types sent."
+                }
+              },
+              "required": [
+                "itemReferenceId",
+                "productUid",
+                "quantity"
+              ]
+            }
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "Recipient address. Addresses in China, Japan, South Korea and Russia must be written in the local language.",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "lastName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Max 60 characters."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "Street and number, max 35 characters."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Apartment, suite, max 35 characters."
+              },
+              "city": {
+                "type": "string",
+                "description": "Max 30 characters."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal or ZIP code, max 15 characters."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 code (GB, not UK)."
+              },
+              "email": {
+                "type": "string",
+                "description": "Recipient email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone in E.123 format, max 25 characters."
+              },
+              "isBusiness": {
+                "type": "boolean",
+                "description": "Recipient is a business (relevant for Brazil)."
+              },
+              "federalTaxId": {
+                "type": "string",
+                "description": "CPF/CNPJ of a Brazilian recipient (required for Brazil)."
+              },
+              "stateTaxId": {
+                "type": "string",
+                "description": "IE of a Brazilian business recipient."
+              },
+              "registrationStateCode": {
+                "type": "string",
+                "description": "State where a Brazilian business recipient is registered."
+              }
+            },
+            "required": [
+              "firstName",
+              "lastName",
+              "addressLine1",
+              "city",
+              "postCode",
+              "country",
+              "email"
+            ]
+          },
+          "shipment_method_uid": {
+            "type": "string",
+            "description": "Preferred shipping: normal, standard, express, or a shipmentMethodUid from gelato_quote_order. Several values separated by commas pick the cheapest match; omitted, the cheapest method is used."
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Overrides fields of the sender address printed on the parcel.",
+            "properties": {
+              "companyName": {
+                "type": "string",
+                "description": "Max 60 characters."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "Street and number, max 35 characters."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Apartment, suite, max 35 characters."
+              },
+              "city": {
+                "type": "string",
+                "description": "Max 30 characters."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal or ZIP code, max 15 characters."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 code (GB, not UK)."
+              },
+              "email": {
+                "type": "string",
+                "description": "Recipient email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone in E.123 format, max 25 characters."
+              }
+            }
+          },
+          "metadata": {
+            "type": "array",
+            "description": "Up to 20 key/value pairs stored on the order (each max 100 characters).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_reference_id",
+          "customer_reference_id",
+          "currency",
+          "items",
+          "shipping_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://order.gelatoapis.com/v4/orders",
+        "bodyMapping": {
+          "orderType": "draft",
+          "orderReferenceId": "$order_reference_id",
+          "customerReferenceId": "$customer_reference_id",
+          "currency": "$currency",
+          "items": "$items",
+          "shippingAddress": "$shipping_address",
+          "shipmentMethodUid": "$shipment_method_uid",
+          "returnAddress": "$return_address",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "gelato_create_order",
+      "description": "Place an order that goes straight to production: Gelato charges the account (wallet or card) and prints and ships it. Returns the order with its Gelato id, statuses and receipts. Orders from a connected Etsy or Shopify store arrive on their own and do not need this.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference_id": {
+            "type": "string",
+            "description": "Your own order id (for example the Etsy or Shopify order number)."
+          },
+          "customer_reference_id": {
+            "type": "string",
+            "description": "Your own customer id."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency the order is charged in, e.g. USD, EUR, GBP."
+          },
+          "items": {
+            "type": "array",
+            "description": "Line items.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemReferenceId": {
+                  "type": "string",
+                  "description": "Your own id for this line, unique within the order."
+                },
+                "productUid": {
+                  "type": "string",
+                  "description": "Gelato product UID, from gelato_search_products."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of copies."
+                },
+                "pageCount": {
+                  "type": "integer",
+                  "description": "Multi-page products only: total pages including covers."
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Print area the file fills: default (the primary area: front for apparel, cover + back for folded cards), front, back, neck-inner, neck-outer, sleeve-left, sleeve-right, inside, or an embroidery area such as chest-left-embroidery. Required for embroidery."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Gelato downloads the print file from (PDF, PNG, TIFF, SVG or JPEG). Optional when id is given."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Id of an embroidery file submitted before, to reuse its digitization."
+                      },
+                      "threadColors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Embroidery only: up to six hex thread colours."
+                      },
+                      "isVisible": {
+                        "type": "boolean",
+                        "description": "Embroidery only: whether the file shows in the dashboard file list."
+                      }
+                    }
+                  },
+                  "description": "Print files. Required for printable products."
+                },
+                "adjustProductUidByFileTypes": {
+                  "type": "boolean",
+                  "description": "Let Gelato adjust the productUid to the file types sent."
+                }
+              },
+              "required": [
+                "itemReferenceId",
+                "productUid",
+                "quantity"
+              ]
+            }
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "Recipient address. Addresses in China, Japan, South Korea and Russia must be written in the local language.",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "lastName": {
+                "type": "string",
+                "description": "Max 25 characters."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Max 60 characters."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "Street and number, max 35 characters."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Apartment, suite, max 35 characters."
+              },
+              "city": {
+                "type": "string",
+                "description": "Max 30 characters."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal or ZIP code, max 15 characters."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 code (GB, not UK)."
+              },
+              "email": {
+                "type": "string",
+                "description": "Recipient email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone in E.123 format, max 25 characters."
+              },
+              "isBusiness": {
+                "type": "boolean",
+                "description": "Recipient is a business (relevant for Brazil)."
+              },
+              "federalTaxId": {
+                "type": "string",
+                "description": "CPF/CNPJ of a Brazilian recipient (required for Brazil)."
+              },
+              "stateTaxId": {
+                "type": "string",
+                "description": "IE of a Brazilian business recipient."
+              },
+              "registrationStateCode": {
+                "type": "string",
+                "description": "State where a Brazilian business recipient is registered."
+              }
+            },
+            "required": [
+              "firstName",
+              "lastName",
+              "addressLine1",
+              "city",
+              "postCode",
+              "country",
+              "email"
+            ]
+          },
+          "shipment_method_uid": {
+            "type": "string",
+            "description": "Preferred shipping: normal, standard, express, or a shipmentMethodUid from gelato_quote_order. Several values separated by commas pick the cheapest match; omitted, the cheapest method is used."
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Overrides fields of the sender address printed on the parcel.",
+            "properties": {
+              "companyName": {
+                "type": "string",
+                "description": "Max 60 characters."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "Street and number, max 35 characters."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Apartment, suite, max 35 characters."
+              },
+              "city": {
+                "type": "string",
+                "description": "Max 30 characters."
+              },
+              "postCode": {
+                "type": "string",
+                "description": "Postal or ZIP code, max 15 characters."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 code (GB, not UK)."
+              },
+              "email": {
+                "type": "string",
+                "description": "Recipient email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone in E.123 format, max 25 characters."
+              }
+            }
+          },
+          "metadata": {
+            "type": "array",
+            "description": "Up to 20 key/value pairs stored on the order (each max 100 characters).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_reference_id",
+          "customer_reference_id",
+          "currency",
+          "items",
+          "shipping_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://order.gelatoapis.com/v4/orders",
+        "bodyMapping": {
+          "orderType": "order",
+          "orderReferenceId": "$order_reference_id",
+          "customerReferenceId": "$customer_reference_id",
+          "currency": "$currency",
+          "items": "$items",
+          "shippingAddress": "$shipping_address",
+          "shipmentMethodUid": "$shipment_method_uid",
+          "returnAddress": "$return_address",
+          "metadata": "$metadata"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gelato_get_order",
+      "description": "Get one order: type, fulfillment and financial status, channel (api, ui, shopify, etsy), store id, items with files and previews, shipment with tracking codes and URLs, addresses, receipts with prices and VAT, and connected order ids of split orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Gelato order id (a UUID), from gelato_search_orders or the create response."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://order.gelatoapis.com/v4/orders/{order_id}"
+      }
+    },
+    {
+      "name": "gelato_search_orders",
+      "description": "Search orders, including those imported from connected Etsy and Shopify stores. Filter by type, statuses, channel, country, currency, store, date range, your reference ids or a text that matches recipient name or order reference. Returns a summary per order; use gelato_get_order for details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "order",
+                "draft"
+              ]
+            },
+            "description": "order, draft or both."
+          },
+          "fulfillment_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e.g. created, passed, in_production, printed, shipped, delivered, draft, failed, canceled, pending_approval, not_connected, on_hold."
+          },
+          "financial_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "draft, pending, invoiced, to_be_invoiced, paid, canceled, partially_refunded, refunded, refused."
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ui, api, shopify, etsy."
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipping countries, ISO 3166-1 alpha-2."
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Order currencies, ISO 4217."
+          },
+          "store_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gelato e-commerce store ids."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gelato order ids."
+          },
+          "order_reference_id": {
+            "type": "string",
+            "description": "One of your own order ids."
+          },
+          "order_reference_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Several of your own order ids."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against recipient first name, last name and order reference id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Orders ordered or created on or after this ISO 8601 date-time, e.g. 2026-09-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Orders ordered or created on or before this ISO 8601 date-time."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Orders per page, default 50, max 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Orders to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://order.gelatoapis.com/v4/orders:search",
+        "bodyMapping": {
+          "orderTypes": "$order_types",
+          "fulfillmentStatuses": "$fulfillment_statuses",
+          "financialStatuses": "$financial_statuses",
+          "channels": "$channels",
+          "countries": "$countries",
+          "currencies": "$currencies",
+          "storeIds": "$store_ids",
+          "ids": "$ids",
+          "orderReferenceId": "$order_reference_id",
+          "orderReferenceIds": "$order_reference_ids",
+          "search": "$search",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gelato_confirm_draft_order",
+      "description": "Turn a draft order into a real order, which sends it to production and charges the account. Optionally replaces the print files of some items in the same call; items left out of a non-empty items list are removed from the order.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Gelato order id (a UUID), from gelato_search_orders or the create response."
+          },
+          "items": {
+            "type": "array",
+            "description": "Optional. Items to keep or change. Pass {\"id\": \"<item id>\"} alone to keep an item as is, or with files to replace its print files. Items not listed are removed; omit the list to keep all items unchanged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Existing order item id from gelato_get_order."
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Print area the file fills: default (the primary area: front for apparel, cover + back for folded cards), front, back, neck-inner, neck-outer, sleeve-left, sleeve-right, inside, or an embroidery area such as chest-left-embroidery. Required for embroidery."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Gelato downloads the print file from (PDF, PNG, TIFF, SVG or JPEG). Optional when id is given."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Id of an embroidery file submitted before, to reuse its digitization."
+                      },
+                      "threadColors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Embroidery only: up to six hex thread colours."
+                      },
+                      "isVisible": {
+                        "type": "boolean",
+                        "description": "Embroidery only: whether the file shows in the dashboard file list."
+                      }
+                    }
+                  },
+                  "description": "New print files."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://order.gelatoapis.com/v4/orders/{order_id}",
+        "bodyMapping": {
+          "orderType": "order",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gelato_cancel_order",
+      "description": "Cancel an order to stop production and shipment. Only possible before it is printed: an order with an item in printed or shipped status answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Gelato order id (a UUID), from gelato_search_orders or the create response."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://order.gelatoapis.com/v4/orders/{order_id}:cancel"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gelato_list_store_products",
+      "description": "List the products of a Gelato-connected e-commerce store (Shopify, Etsy...) with title, status (created, publishing, publishing_error, active), preview images, external ids and variants with their productUid and connection status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Gelato store id: the storeId of an order from that store, or the id in the store page URL of the Gelato dashboard."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ],
+            "description": "Sort field, default createdAt."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction, default desc."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Products per page, default and max 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Products to skip, for paging."
+          }
+        },
+        "required": [
+          "store_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://ecommerce.gelatoapis.com/v1/stores/{store_id}/products",
+        "queryParams": {
+          "orderBy": "$order_by",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "gelato_get_store_product",
+      "description": "Get one product of a connected store: title, description, status, publishing error code, preview URLs, variants with productUid and connection status, and variant options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Gelato store id."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Store product id from gelato_list_store_products."
+          }
+        },
+        "required": [
+          "store_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://ecommerce.gelatoapis.com/v1/stores/{store_id}/products/{product_id}"
+      }
+    },
+    {
+      "name": "gelato_get_template",
+      "description": "Get a product template made in the Gelato dashboard: title, description, and its variants with productUid, variant options and the named image placeholders (print area and size in mm) that gelato_create_product_from_template fills.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id, copied from the Templates page of the Gelato dashboard."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://ecommerce.gelatoapis.com/v1/templates/{template_id}"
+      }
+    },
+    {
+      "name": "gelato_create_product_from_template",
+      "description": "Create a product in a connected store from a dashboard template, with your own title, description, tags and images per placeholder. Gelato then creates the variants and mockups and publishes the listing to the store (Shopify, Etsy...) in the background; check progress with gelato_get_store_product.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Gelato store id."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Template id from the Gelato dashboard."
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description (HTML allowed)."
+          },
+          "is_visible_in_the_online_store": {
+            "type": "boolean",
+            "description": "Show the product in the online store. Default false."
+          },
+          "sales_channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "web",
+                "global"
+              ]
+            },
+            "description": "Shopify only: web (default) or global to also publish to Point of Sale."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 13 tags (Etsy: max 20 characters each)."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "Product type shown in the store."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Vendor shown in the store."
+          },
+          "variants": {
+            "type": "array",
+            "description": "Variants to create, from gelato_get_template. Omit to create all template variants; a subset creates only those.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "templateVariantId": {
+                  "type": "string",
+                  "description": "Variant id from the template."
+                },
+                "position": {
+                  "type": "number",
+                  "description": "Variant position, default 0."
+                },
+                "imagePlaceholders": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Placeholder name exactly as in the template."
+                      },
+                      "fileUrl": {
+                        "type": "string",
+                        "description": "Public URL of a jpg, jpeg, png or pdf."
+                      },
+                      "fitMethod": {
+                        "type": "string",
+                        "enum": [
+                          "slice",
+                          "meet"
+                        ],
+                        "description": "slice (default) fills and crops; meet fits inside and leaves the rest transparent."
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "fileUrl"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "templateVariantId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "store_id",
+          "template_id",
+          "title",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://ecommerce.gelatoapis.com/v1/stores/{store_id}/products:create-from-template",
+        "bodyMapping": {
+          "templateId": "$template_id",
+          "title": "$title",
+          "description": "$description",
+          "isVisibleInTheOnlineStore": "$is_visible_in_the_online_store",
+          "salesChannels": "$sales_channels",
+          "tags": "$tags",
+          "productType": "$product_type",
+          "vendor": "$vendor",
+          "variants": "$variants"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

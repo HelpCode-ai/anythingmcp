@@ -1,0 +1,722 @@
+{
+  "slug": "prestashop",
+  "name": "PrestaShop",
+  "description": "Your own PrestaShop shop: products and combinations, stock, orders with their status history, customers, addresses, carriers and categories, through the shop's Webservice API. Change an order's status, a product's price or a stock quantity.",
+  "instructions": "## PrestaShop\nThis connector talks to the **Webservice API** of a self-hosted PrestaShop shop (`<shop address>/api`). It asks for JSON on every call (`output_format=JSON`). Reading works on PrestaShop 1.7 and 8; the two update tools (`prestashop_update_product_price`, `prestashop_update_stock_quantity`) use `PATCH`, which the Webservice offers from **PrestaShop 8.0**.\n\n## Setup\n1. In the back office open **Advanced Parameters → Webservice** and set **Enable PrestaShop's webservice** to **Yes**. Save.\n2. On the same page click **Add new webservice key**. Click **Generate** for a 32-character key, add a description, set **Status** to enabled.\n3. Under **Permissions** tick, per resource, the methods the key may use. For everything this connector does: **GET** on `products`, `combinations`, `stock_availables`, `orders`, `order_states`, `order_histories`, `customers`, `addresses`, `carriers`, `categories`; **POST** on `order_histories` (change an order's status); **PATCH** on `products` and `stock_availables` (price and stock). A read-only key needs only the GET column. In multistore mode, also pick the shop(s) the key may reach.\n4. Paste the shop address into `PRESTASHOP_URL` (the root, e.g. `https://shop.example.com`, or `https://example.com/shop` when the shop lives in a folder; no `/api`, no trailing slash) and the key into `PRESTASHOP_WEBSERVICE_KEY`.\n\nThe key travels as the username of HTTP Basic authentication with an empty password. Behind Apache with PHP as CGI/FastCGI, the `Authorization` header can be dropped before PrestaShop sees it (every call then answers 401): enable **CGI mode for PHP** on the Webservice page, or fix the server so it passes the header.\n\n## Lists: display, filter, sort, limit\n- **display**: without it, a list returns only ids. `full` returns every field; `[id,name,price]` returns the fields named. Customer tools always return a fixed set of fields that leaves out the password hash and secure key.\n- **filters** (where offered): extra query parameters in PrestaShop syntax, joined with `&`, for fields the tool has no argument for, e.g. `filter[date_upd]=[2026-01-01,2026-12-31]` or `filter[ean13]=[4006381333931]`. Value syntax: `[a]` exact (case-insensitive), `[a|b]` one of, `[1,10]` range, `[ab]%` starts with, `%[ab]` ends with, `%[ab]%` contains. Filtering or sorting by a field the resource does not have is answered with HTTP 500 and error code 38, which lists the fields that can be used.\n- **sort**: `[field_ASC]` or `[field1_DESC,field2_ASC]`.\n- **limit**: `20` for the first 20 rows, `40,20` for 20 rows starting at offset 40. There is no total count; page until a call returns fewer rows than asked for. An empty result comes back as `[]`.\n- Dates (`date_add`, `date_upd`) can be filtered and sorted; the order tool already sends the `date=1` switch PrestaShop needs for that.\n- **language**: multilingual fields (product `name`, `description`, `link_rewrite`, category and order status `name`) come back as a list of `{id, value}` per language when the shop has several languages; pass a language id (`1`) to get plain text.\n\n## Money and stock\n- Product `price` is the base price **without tax**, in the shop's default currency. Order totals come in `total_paid_tax_incl` / `total_paid_tax_excl`, in the order's currency (`id_currency`, `conversion_rate`).\n- Stock lives in `stock_availables`, one row per product and combination: `id_product_attribute` 0 is the product row, other rows are its combinations (sizes, colours). For a product with combinations, change the combination rows; the product row holds their total. A product with `depends_on_stock` 1 is managed by advanced stock management and its quantity cannot be set here.\n\n## Order status\n`prestashop_list_order_states` gives the shop's statuses (ids differ between shops). `prestashop_change_order_state` adds a row to the order's history, which is how PrestaShop changes `current_state` and runs what the status triggers (invoice, stock movements, and, with `send_email` 1, the status e-mail to the customer). PrestaShop changes the status before it sends the e-mail; if the shop cannot send it, the answer is *Unable to save resource* (code 46) although `current_state` has already changed. Check with `prestashop_get_order` before trying again.\n\n## Rate limits\nPrestaShop sets none; the shop's own server is the limit. Prefer `display=[…]` with the fields needed over `display=full` on long lists.\n\n## Common errors\n- **401** *Authentification key is not active* / *No permission for this authentication key*: wrong or disabled key, or the `Authorization` header is lost (see CGI mode above).\n- **401 / 405** on one resource only: the key lacks that method for that resource; tick it under Permissions.\n- **503** *The PrestaShop webservice is disabled*: switch the Webservice on (step 1).\n- **404** on `/api`: the shop has no friendly URLs rewrite (`.htaccess`) for the API; regenerate it under **Shop Parameters → Traffic & SEO** (save with Friendly URL on).\n- **405** on the update tools: the shop runs PrestaShop 1.7, whose Webservice has no `PATCH`.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "prestashop",
+  "docsUrl": "https://devdocs.prestashop-project.org/8/webservice/",
+  "requiredEnvVars": [
+    "PRESTASHOP_URL",
+    "PRESTASHOP_WEBSERVICE_KEY"
+  ],
+  "envVarMeta": {
+    "PRESTASHOP_URL": {
+      "label": "Shop address",
+      "kind": "address",
+      "help": "The https:// address of the shop's front office, including the folder if the shop lives in one. Without /api and without a trailing slash.",
+      "example": "https://shop.example.com",
+      "pattern": "^https://[^\\s?#]+[^/\\s?#]$",
+      "patternMessage": "The https:// address of the shop root, without a trailing slash or /api."
+    },
+    "PRESTASHOP_WEBSERVICE_KEY": {
+      "label": "Webservice key",
+      "kind": "credential",
+      "help": "Back office → Advanced Parameters → Webservice → Add new webservice key → Generate. Tick the GET permission for the resources to read, POST on order_histories and PATCH on products and stock_availables for the write tools.",
+      "pattern": "^[A-Za-z0-9]{32}$",
+      "patternMessage": "A PrestaShop webservice key is 32 letters and digits."
+    }
+  },
+  "verifyHints": {
+    "401": "PrestaShop refused the key. Check that it is enabled under Advanced Parameters → Webservice and has GET on products. If the key is right, the server may drop the Authorization header: enable CGI mode for PHP on the Webservice page.",
+    "404": "No PrestaShop Webservice at this address. Check the shop address (root of the shop, without /api) and that friendly URLs are on, so /api is rewritten.",
+    "503": "The PrestaShop Webservice is switched off. Enable it under Advanced Parameters → Webservice."
+  },
+  "probe": {
+    "tool": "prestashop_list_products",
+    "params": {
+      "limit": "1"
+    }
+  },
+  "connector": {
+    "name": "PrestaShop",
+    "type": "REST",
+    "baseUrl": "{{PRESTASHOP_URL}}/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{PRESTASHOP_WEBSERVICE_KEY}}",
+      "password": ""
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "prestashop_list_products",
+      "description": "List products of the shop, with filters on id, reference, name, active flag and default category. Without display only ids come back; display=full returns every field, [id,name,price,reference,active] only those. price is the base price without tax.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string",
+            "description": "full, or a field list such as [id,name,reference,price,active,id_category_default,date_upd]. Omitted: ids only.",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$"
+          },
+          "id": {
+            "type": "string",
+            "description": "Product id, or several separated by | (e.g. 3|7|12).",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "reference": {
+            "type": "string",
+            "description": "Exact product reference (SKU), case-insensitive."
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Text the product name contains."
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for enabled products, 0 for disabled ones."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Default category id (id_category_default), from prestashop_list_categories."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Further filters in PrestaShop syntax joined with &, e.g. filter[ean13]=[4006381333931] or filter[date_upd]=[2026-01-01,2026-12-31]."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, e.g. [id_DESC] or [price_ASC,id_ASC].",
+            "pattern": "^\\[[A-Za-z0-9_]+_(ASC|DESC)(,[A-Za-z0-9_]+_(ASC|DESC))*\\]$"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language instead of a list per language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "filter[reference]": "[${reference}]",
+          "filter[name]": "%[${name_contains}]%",
+          "filter[active]": "[${active}]",
+          "filter[id_category_default]": "[${category_id}]",
+          "__rawquery": "$filters",
+          "sort": "$sort",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_get_product",
+      "description": "Get one product with all its fields: prices (base price without tax, wholesale price), reference and EANs, descriptions, active flag, and associations to categories, images, combinations, features and stock_availables rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id for plain-text multilingual fields."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "output_format": "JSON",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_combinations",
+      "description": "List the combinations (variants such as size and colour) of products: reference, EAN, price impact on the product price, weight impact, default flag and the attribute values (product_option_values) that make the combination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Only the combinations of this product."
+          },
+          "id": {
+            "type": "string",
+            "description": "Combination id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "reference": {
+            "type": "string",
+            "description": "Exact combination reference."
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/combinations",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id_product]": "[${product_id}]",
+          "filter[id]": "[${id}]",
+          "filter[reference]": "[${reference}]",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_stock_availables",
+      "description": "List stock rows: quantity per product and combination (id_product_attribute 0 is the product row), out-of-stock behaviour and whether advanced stock management drives the row (depends_on_stock). The row id is what prestashop_update_stock_quantity needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Only the rows of this product."
+          },
+          "product_attribute_id": {
+            "type": "integer",
+            "description": "Only the row of this combination id (0 for the product row)."
+          },
+          "quantity_range": {
+            "type": "string",
+            "description": "Quantity range min,max, e.g. -100,0 for products out of stock or oversold.",
+            "pattern": "^-?[0-9]+,-?[0-9]+$"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock_availables",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id_product]": "[${product_id}]",
+          "filter[id_product_attribute]": "[${product_attribute_id}]",
+          "filter[quantity]": "[${quantity_range}]",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_update_product_price",
+      "description": "Set a product's base price without tax, in the shop's default currency. Only the price changes; the other fields of the product stay as they are. Needs PrestaShop 8 or later and the PATCH permission on products. Returns the updated product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "New base price without tax, e.g. 24.5."
+          }
+        },
+        "required": [
+          "product_id",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><product><id>${product_id}</id><price>${price}</price></product></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_update_stock_quantity",
+      "description": "Set the quantity of one stock row (a product or one of its combinations) to an absolute number. Take the row id from prestashop_list_stock_availables. Needs PrestaShop 8 or later and the PATCH permission on stock_availables. Returns the updated row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_available_id": {
+            "type": "integer",
+            "description": "Id of the stock_availables row."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "New quantity on hand."
+          }
+        },
+        "required": [
+          "stock_available_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/stock_availables/{stock_available_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><stock_available><id>${stock_available_id}</id><quantity>${quantity}</quantity></stock_available></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_orders",
+      "description": "List orders, filtered by id, reference, customer, current status or a date range on date_add. Without display only ids come back; display=full returns totals, addresses, carrier, payment and order lines. current_state is an order status id from prestashop_list_order_states.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string",
+            "description": "full, or a field list such as [id,reference,id_customer,current_state,total_paid_tax_incl,payment,date_add].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$"
+          },
+          "id": {
+            "type": "string",
+            "description": "Order id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "reference": {
+            "type": "string",
+            "description": "Order reference (9 letters, e.g. XKBKNABJK)."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only orders of this customer."
+          },
+          "current_state": {
+            "type": "string",
+            "description": "Order status id, or several separated by | (e.g. 2|3).",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Orders placed on or after this date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS). Needs date_to as well."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Orders placed on or before this date. Needs date_from as well."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Further filters in PrestaShop syntax joined with &, e.g. filter[id_carrier]=[2] or filter[valid]=[1]."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, e.g. [id_DESC] or [date_add_DESC].",
+            "pattern": "^\\[[A-Za-z0-9_]+_(ASC|DESC)(,[A-Za-z0-9_]+_(ASC|DESC))*\\]$"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "output_format": "JSON",
+          "date": "1",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "filter[reference]": "[${reference}]",
+          "filter[id_customer]": "[${customer_id}]",
+          "filter[current_state]": "[${current_state}]",
+          "filter[date_add]": "[${date_from},${date_to}]",
+          "__rawquery": "$filters",
+          "sort": "$sort",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_get_order",
+      "description": "Get one order: customer, delivery and invoice address ids, carrier, payment method, current status, totals with and without tax, currency, and the order lines (product, combination, quantity, unit prices).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_order_states",
+      "description": "List the shop's order statuses with id, name and flags: paid, shipped, delivery, invoice, whether the customer gets an e-mail (send_email) and the e-mail template. Ids differ between shops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "integer",
+            "description": "Language id for plain-text names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_states",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_order_histories",
+      "description": "List the status history of orders: each row is one status change with the order id, the status id, the employee who made it (0 for the system) and its date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Only the history of this order."
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_histories",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id_order]": "[${order_id}]",
+          "sort": "[id_ASC]",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_change_order_state",
+      "description": "Move an order to another status by adding a row to its history. PrestaShop then updates current_state and runs what the status triggers (invoice, stock movements). With send_email 1, the customer gets the status e-mail if the status has one. Returns the new history row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "order_state_id": {
+            "type": "integer",
+            "description": "Target status id from prestashop_list_order_states."
+          },
+          "send_email": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 to send the customer the e-mail tied to the status. 0 or omitted: no e-mail."
+          }
+        },
+        "required": [
+          "order_id",
+          "order_state_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order_histories",
+        "queryParams": {
+          "output_format": "JSON",
+          "sendemail": "$send_email"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><order_history><id_order>${order_id}</id_order><id_order_state>${order_state_id}</id_order_state></order_history></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_customers",
+      "description": "List customer accounts with name, e-mail, company, group, language, newsletter and opt-in flags, guest flag, active flag, note and dates. The password hash and secure key are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Customer id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address, case-insensitive."
+          },
+          "lastname_contains": {
+            "type": "string",
+            "description": "Text the last name contains."
+          },
+          "company_contains": {
+            "type": "string",
+            "description": "Text the company name contains."
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for active accounts, 0 for disabled ones."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, e.g. [id_DESC] or [lastname_ASC].",
+            "pattern": "^\\[[A-Za-z0-9_]+_(ASC|DESC)(,[A-Za-z0-9_]+_(ASC|DESC))*\\]$"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "[id,id_default_group,id_lang,id_gender,firstname,lastname,email,company,siret,ape,website,birthday,newsletter,optin,is_guest,active,note,date_add,date_upd]",
+          "filter[id]": "[${id}]",
+          "filter[email]": "[${email}]",
+          "filter[lastname]": "%[${lastname_contains}]%",
+          "filter[company]": "%[${company_contains}]%",
+          "filter[active]": "[${active}]",
+          "sort": "$sort",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_get_customer",
+      "description": "Get one customer account by id: name, e-mail, company, group, language, newsletter and opt-in flags, guest flag, active flag, note and dates. The password hash and secure key are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "[id,id_default_group,id_lang,id_gender,firstname,lastname,email,company,siret,ape,website,birthday,newsletter,optin,is_guest,active,note,date_add,date_upd]",
+          "filter[id]": "[${customer_id}]"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_addresses",
+      "description": "List postal addresses with name, company, VAT number, street lines, postcode, city, country and state ids, phones and the customer they belong to. Orders point to them through id_address_delivery and id_address_invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Address id, or several separated by | (e.g. the delivery and invoice address of an order).",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only the addresses of this customer."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Exact postcode."
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id]": "[${id}]",
+          "filter[id_customer]": "[${customer_id}]",
+          "filter[postcode]": "[${postcode}]",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_carriers",
+      "description": "List carriers with id, name, active and deleted flags, delivery delay text, tracking URL and limits. PrestaShop keeps the old version of an edited carrier as a deleted row with its own id, so older orders can point to a deleted carrier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Carrier id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for carriers offered at checkout, 0 for disabled ones."
+          },
+          "deleted": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 for current carriers, 1 for replaced or deleted ones."
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id for the plain-text delay."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id]": "[${id}]",
+          "filter[active]": "[${active}]",
+          "filter[deleted]": "[${deleted}]",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_categories",
+      "description": "List product categories with id, name, parent id, depth in the tree, active flag and, with display=full, descriptions and associated products. The tree starts at Root (id 1) and Home (id 2).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string",
+            "description": "full, or a field list such as [id,name,id_parent,level_depth,active]. Omitted: ids only.",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$"
+          },
+          "id": {
+            "type": "string",
+            "description": "Category id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Only the direct children of this category."
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Text the category name contains."
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for visible categories, 0 for hidden ones."
+          },
+          "limit": {
+            "type": "string",
+            "description": "20, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id for plain-text names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "filter[id_parent]": "[${parent_id}]",
+          "filter[name]": "%[${name_contains}]%",
+          "filter[active]": "[${active}]",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    }
+  ]
+}

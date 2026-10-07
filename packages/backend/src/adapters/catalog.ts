@@ -141,6 +141,7 @@ import * as freshservice from './intl/freshservice.json';
 import * as front from './intl/front.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
+import * as gelato from './intl/gelato.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
@@ -191,6 +192,7 @@ import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
+import * as microsoftOutlook from './intl/microsoft-outlook.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
@@ -224,6 +226,7 @@ import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
+import * as prestashop from './intl/prestashop.json';
 import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
@@ -282,6 +285,7 @@ import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as wildberries from './intl/wildberries.json';
+import * as wix from './intl/wix.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
 import * as workable from './intl/workable.json';
@@ -649,6 +653,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   front as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
+  gelato as unknown as AdapterDefinition,
   georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
@@ -699,6 +704,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
+  microsoftOutlook as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
@@ -732,6 +738,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
+  prestashop as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
   procore as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
@@ -790,6 +797,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   waveAccounting as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
+  wix as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
   workable as unknown as AdapterDefinition,
