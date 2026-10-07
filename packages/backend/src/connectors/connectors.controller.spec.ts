@@ -223,6 +223,76 @@ describe('OAuth2 config endpoints', () => {
       });
     });
 
+    it('carries a corrected Etsy secret into the x-api-key header and the variables', async () => {
+      // Production, 6 Oct 2026: the keystring was typed as the shared secret
+      // at install, then corrected in the OAuth editor. authConfig.clientSecret
+      // changed, authConfig.extraHeaders kept "keystring:keystring", and
+      // Etsy refused every call. extraHeaders wins over connector headers.
+      const stored = {
+        grant: 'refresh_token',
+        authorizationUrl: 'https://www.etsy.com/oauth/connect',
+        tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+        scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
+        clientId: 'keystring',
+        clientSecret: 'keystring',
+        refreshToken: 'issued-refresh',
+        accessToken: 'issued-access',
+        extraHeaders: { 'x-api-key': 'keystring:keystring' },
+      };
+      const before = oauthConnector({
+        config: { adapterSlug: 'etsy' },
+        baseUrl: 'https://openapi.etsy.com/v3/application',
+        envVars: { ETSY_CLIENT_ID: 'keystring', ETSY_CLIENT_SECRET: 'keystring' },
+        authConfig: encrypt(JSON.stringify(stored), VALID_ENCRYPTION_KEY),
+      });
+      const after = {
+        ...before,
+        authConfig: encrypt(
+          JSON.stringify({ ...stored, clientSecret: 'shared-secret' }),
+          VALID_ENCRYPTION_KEY,
+        ),
+      };
+      const connectorsService = {
+        findById: jest.fn().mockResolvedValueOnce(before).mockResolvedValue(after),
+        updateAuthConfigMerge: jest.fn().mockResolvedValue(after),
+        update: jest.fn().mockResolvedValue(after),
+      };
+      const { controller, mcpServer } = buildController({ connectorsService });
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        clientSecret: 'shared-secret',
+      });
+
+      expect(connectorsService.update).toHaveBeenCalledWith('c1', {
+        envVars: { ETSY_CLIENT_ID: 'keystring', ETSY_CLIENT_SECRET: 'shared-secret' },
+        authConfig: {
+          ...stored,
+          clientSecret: 'shared-secret',
+          extraHeaders: { 'x-api-key': 'keystring:shared-secret' },
+        },
+      });
+      expect(mcpServer.reloadConnectorTools).toHaveBeenCalledWith('c1');
+    });
+
+    it('leaves the variables alone when the auth method alone changes', async () => {
+      const connector = oauthConnector({
+        config: { adapterSlug: 'etsy' },
+        envVars: { ETSY_CLIENT_ID: 'keystring', ETSY_CLIENT_SECRET: 'old' },
+      });
+      const connectorsService = {
+        findById: jest.fn().mockResolvedValue(connector),
+        updateAuthConfigMerge: jest.fn().mockResolvedValue(connector),
+        update: jest.fn(),
+      };
+      const { controller } = buildController({ connectorsService });
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        tokenAuthMethod: 'client_secret_basic',
+      });
+
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
     it('does not write anything when the body is empty', async () => {
       const { controller, connectorsService } = build(oauthConnector());
 

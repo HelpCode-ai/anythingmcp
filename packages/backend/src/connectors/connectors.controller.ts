@@ -63,6 +63,7 @@ import {
 import {
   describeMissing,
   rebuildCatalogCredentials,
+  variablesForAuthFields,
 } from './catalog-env-rebuild.util';
 import {
   buildODataBuiltinTools,
@@ -1050,6 +1051,12 @@ export class ConnectorsController {
     }
 
     await this.connectorsService.updateAuthConfigMerge(id, patch);
+    if (patch.clientId !== undefined || patch.clientSecret !== undefined) {
+      await this.syncCatalogAuthVariables(connector, ['clientId', 'clientSecret']);
+    }
+    // The tool registry holds its own decrypted copy of authConfig; without a
+    // reload the old client settings stay in use until the next restart.
+    await this.mcpServer.reloadConnectorTools(id);
     return { message: 'OAuth configuration updated' };
   }
 
@@ -1105,6 +1112,12 @@ export class ConnectorsController {
     }
 
     await this.connectorsService.updateAuthConfigMerge(id, patch);
+    if (patch.consumerKey !== undefined || patch.consumerSecret !== undefined) {
+      await this.syncCatalogAuthVariables(connector, [
+        'consumerKey',
+        'consumerSecret',
+      ]);
+    }
     // The tool registry holds its own decrypted copy of authConfig and signs
     // every call with it; without a reload the old key stays in use.
     await this.mcpServer.reloadConnectorTools(id);
@@ -1760,6 +1773,55 @@ export class ConnectorsController {
     const updated = await this.connectorsService.update(id, updateData);
     await this.mcpServer.reloadConnectorTools(id);
     return { ...toPublicConnector(updated), warnings };
+  }
+
+  /**
+   * After an auth editor saved client credentials on a catalog connector,
+   * copy them to the variables they stand for and rebuild every other field
+   * built from those variables.
+   *
+   * Etsy sends `x-api-key: {{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}` next to
+   * the OAuth client, and authConfig.extraHeaders wins over the connector's
+   * own headers. A shared secret corrected in the OAuth editor reached
+   * authConfig.clientSecret, never the header, and Etsy refused every call
+   * with the old key. The values are read back from the stored authConfig,
+   * so a client ID corrected in an earlier save is carried over as well.
+   */
+  private async syncCatalogAuthVariables(
+    connector: { id: string; authType: string; config: unknown },
+    fields: string[],
+  ): Promise<void> {
+    const cfg = connector.config as { adapterSlug?: string } | null;
+    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+    if (!adapter || adapter.connector.authType !== connector.authType) return;
+
+    const fresh = await this.connectorsService.findById(connector.id);
+    const authConfig = this.readAuthConfig(fresh.authConfig);
+    if (!authConfig) return;
+    const values = Object.fromEntries(fields.map((f) => [f, authConfig[f]]));
+    const typed = variablesForAuthFields(adapter.connector.authConfig, values);
+    if (Object.keys(typed).length === 0) return;
+
+    const previousEnvVars = (fresh.envVars as Record<string, string> | null) || {};
+    const nextEnvVars = { ...previousEnvVars, ...typed };
+    if (Object.entries(typed).every(([k, v]) => previousEnvVars[k] === v)) {
+      return;
+    }
+    const rebuilt = rebuildCatalogCredentials({
+      adapter,
+      connectorAuthType: connector.authType,
+      storedAuthConfig: authConfig,
+      storedBaseUrl: fresh.baseUrl,
+      storedHeaders: (fresh.headers as Record<string, string> | null) ?? null,
+      previousEnvVars,
+      nextEnvVars,
+    });
+    await this.connectorsService.update(connector.id, {
+      envVars: nextEnvVars,
+      ...(rebuilt.authConfig ? { authConfig: rebuilt.authConfig } : {}),
+      ...(rebuilt.baseUrl !== undefined ? { baseUrl: rebuilt.baseUrl } : {}),
+      ...(rebuilt.headers ? { headers: rebuilt.headers } : {}),
+    });
   }
 
   /** The stored authConfig, or null when there is none or it cannot be read. */

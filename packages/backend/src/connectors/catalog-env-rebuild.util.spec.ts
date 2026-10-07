@@ -1,6 +1,7 @@
 import {
   describeMissing,
   rebuildCatalogCredentials,
+  variablesForAuthFields,
   withAliases,
   type CatalogTemplate,
 } from './catalog-env-rebuild.util';
@@ -238,5 +239,37 @@ describe('rebuildCatalogCredentials', () => {
       user: '{{amcp.user_email}}',
     });
     expect(result.missing).toEqual([]);
+  });
+});
+
+describe('variablesForAuthFields', () => {
+  const template = {
+    clientId: '{{ETSY_CLIENT_ID}}',
+    clientSecret: '{{ETSY_CLIENT_SECRET}}',
+    tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+    scopes: 'shops_r {{EXTRA_SCOPE}}',
+  };
+
+  it('maps fields whose template is a single variable', () => {
+    expect(
+      variablesForAuthFields(template, { clientId: 'key', clientSecret: 'secret' }),
+    ).toEqual({ ETSY_CLIENT_ID: 'key', ETSY_CLIENT_SECRET: 'secret' });
+  });
+
+  it('skips fixed values, composite templates, empty values and placeholders', () => {
+    expect(
+      variablesForAuthFields(template, {
+        tokenUrl: 'https://example.com/token',
+        scopes: 'shops_r listings_r',
+        clientId: '',
+        clientSecret: '{{ETSY_CLIENT_SECRET}}',
+      }),
+    ).toEqual({});
+  });
+
+  it('never maps a caller-context variable', () => {
+    expect(
+      variablesForAuthFields({ clientId: '{{amcp.user.email}}' }, { clientId: 'x' }),
+    ).toEqual({});
   });
 });
