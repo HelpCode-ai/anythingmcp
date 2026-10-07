@@ -376,7 +376,8 @@ describe('LoginController', () => {
       expect(authService.verifyToken).toHaveBeenCalledWith('jwt');
       expect(res._sent).toContain('Signed in as <strong>a@b.com</strong>');
       expect(res._sent).toContain('value="approve-session"');
-      expect(res._sent).toContain('Use a different account');
+      // A way to sign in as someone else, keeping the pending authorization.
+      expect(res._sent).toContain('href="/auth/login?switch=1">Switch account</a>');
       expect(res._sent).not.toContain('name="password"');
       expect(res._sent).toContain('Claude');
       expect(res._headers['Content-Security-Policy']).toBe("frame-ancestors 'none'");
@@ -737,6 +738,135 @@ describe('LoginController', () => {
 
       expect(res._redirect).toBe('http://mcp.test/callback');
       expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('consent page design', () => {
+    const DEPLOY = {
+      cloud: { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false },
+      selfHosted: { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true },
+    };
+    const make = (deployment: object, p: object = prisma, trustStats?: object) =>
+      new LoginController(
+        authService as unknown as AuthService,
+        p as unknown as PrismaService,
+        config as unknown as ConfigService,
+        store as unknown as PrismaOAuthStore,
+        sso as unknown as SsoService,
+        deployment as any,
+        grants as any,
+        undefined,
+        undefined,
+        trustStats as any,
+      );
+    const session = (redirectUri: string, clientName: string) => {
+      store.getOAuthSession.mockResolvedValue({
+        sessionId: 's1',
+        state: 'x',
+        clientId: 'client-abc',
+        redirectUri,
+        expiresAt: Date.now() + 60_000,
+      } as any);
+      store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: clientName } as any);
+    };
+    const page = async (c: LoginController, req: Partial<Request> = {}) => {
+      const res = makeRes();
+      await c.showLoginPage(
+        undefined as unknown as string,
+        undefined as unknown as string,
+        makeReq({ cookies: { oauth_session: 's1' }, ...req } as any),
+        res,
+      );
+      return res._sent ?? '';
+    };
+
+    it("shows Claude's logo and the directory badge when the code goes back to claude.ai", async () => {
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      const html = await page(make(DEPLOY.cloud));
+      expect(html).toContain('Connect Claude to AnythingMCP');
+      expect(html).toContain('class="tile tile-claude"');
+      expect(html).toContain('Listed in Anthropic&#39;s Claude Directory');
+      expect(html).toContain('<span class="host">claude.ai</span>');
+      expect(html).not.toContain('returns unknown');
+    });
+
+    it('trusts the redirect host, not the name a client gave itself', async () => {
+      session('https://claude.ai.evil.example/cb', 'Claude');
+      const html = await page(make(DEPLOY.cloud));
+      expect(html).not.toContain('class="tile tile-claude"');
+      expect(html).not.toContain('Claude Directory');
+      expect(html).toContain('class="tile tile-initial"');
+      // The unknown destination is shown, highlighted, with the warning.
+      expect(html).toContain('class="returns unknown"');
+      expect(html).toContain('claude.ai.evil.example');
+      expect(html).toContain('Only continue if you started this');
+    });
+
+    it('shows no directory badge on self-hosted, even for Claude', async () => {
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      const html = await page(make(DEPLOY.selfHosted));
+      expect(html).toContain('class="tile tile-claude"');
+      expect(html).not.toContain('Claude Directory');
+    });
+
+    it('puts Allow before Cancel in the markup, so Enter never cancels', async () => {
+      session('https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT');
+      const html = await page(make(DEPLOY.cloud));
+      expect(html.indexOf('value="approve"')).toBeGreaterThan(0);
+      expect(html.indexOf('value="approve"')).toBeLessThan(html.indexOf('value="deny"'));
+    });
+
+    it('makes Frankfurt and DPA claims on Cloud only, with the live star count', async () => {
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      const stats = { peek: () => ({ githubStars: 1234 }) };
+      const cloudHtml = await page(make(DEPLOY.cloud, prisma, stats));
+      expect(cloudHtml).toContain('Hosted in Frankfurt');
+      expect(cloudHtml).toContain('GDPR &middot; DPA');
+      expect(cloudHtml).toContain('1,200+ on GitHub');
+      const selfHtml = await page(make(DEPLOY.selfHosted, prisma, stats));
+      expect(selfHtml).not.toMatch(/Frankfurt|DPA/);
+      expect(selfHtml).toContain('AES-256-GCM');
+    });
+
+    it('names the requested server only to a signed-in member of its workspace', async () => {
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      authService.verifyToken.mockReturnValue({
+        sub: 'u1',
+        tokenUse: 'dashboard',
+        iat: Math.floor(Date.now() / 1000),
+      } as any);
+      const member = { userId: 'u1' };
+      const p = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'u1',
+            email: 'a@b.com',
+            name: 'A',
+            emailVerified: true,
+            sessionsValidFrom: null,
+            memberships: [{ organizationId: 'org-1' }],
+          }),
+        },
+        mcpServerConfig: { findUnique: jest.fn().mockResolvedValue({ name: 'Sales & <ERP>', organizationId: 'org-1' }) },
+        organizationMember: { findFirst: jest.fn().mockResolvedValue(member) },
+      };
+      const req = { cookies: { oauth_session: 's1', amcp_token: 'jwt' }, signedCookies: { mcp_resource: 'srv-1' } };
+      const html = await page(make(DEPLOY.cloud, p), req as any);
+      expect(html).toContain('Use the tools on <b>Sales &amp; &lt;ERP&gt;</b> that your role allows');
+      expect(p.organizationMember.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ userId: 'u1', organizationId: 'org-1' }) }),
+      );
+
+      p.organizationMember.findFirst.mockResolvedValue(null);
+      const outsider = await page(make(DEPLOY.cloud, p), req as any);
+      expect(outsider).not.toContain('Sales');
+    });
+
+    it('escapes the client name in the tiles and the heading', async () => {
+      session('https://x.example/cb', '<svg onload=alert(1)>');
+      const html = await page(make(DEPLOY.cloud));
+      expect(html).not.toContain('<svg onload');
+      expect(html).toContain('&lt;svg onload=alert(1)&gt;');
     });
   });
 });

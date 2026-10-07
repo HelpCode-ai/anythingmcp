@@ -28,6 +28,16 @@ import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { TrustStatsService } from '../public-stats/trust-stats.service';
+import { formatStars } from '../public-stats/trust-stats.format';
+import {
+  AMCP_MARK_SVG as AMCP_MARK,
+  claudeMark,
+  clientTilePair,
+  knownClientFor,
+  renderAuthPage,
+  type TrustRowOptions,
+} from './auth-page';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -84,7 +94,45 @@ export class LoginController {
     private readonly grants: McpConnectionGrantService,
     @Optional() private readonly productEvents?: ProductEventService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
+    @Optional() private readonly trustStats?: TrustStatsService,
   ) {}
+
+  /** The trust row under every page of the flow. Never waits on GitHub. */
+  private trust(): TrustRowOptions {
+    let stars: string | null = null;
+    try {
+      stars = formatStars(this.trustStats?.peek().githubStars);
+    } catch {
+      stars = null;
+    }
+    return { cloud: this.deployment.isCloud(), stars };
+  }
+
+  /**
+   * The name of the MCP server this client asked for (RFC 8707 `resource`),
+   * for the consent text. Only for a signed-in user who belongs to that
+   * server's workspace: the page is otherwise unauthenticated.
+   */
+  private async requestedServerName(req: Request, userId: string | undefined): Promise<string | null> {
+    if (!userId) return null;
+    const serverId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (typeof serverId !== 'string' || !serverId) return null;
+    try {
+      const server = await this.prisma.mcpServerConfig.findUnique({
+        where: { id: serverId },
+        select: { name: true, organizationId: true },
+      });
+      if (!server) return null;
+      const member = await this.prisma.organizationMember.findFirst({
+        where: { userId, organizationId: server.organizationId, deactivatedAt: null },
+        select: { userId: true },
+      });
+      return member ? server.name : null;
+    } catch {
+      return null;
+    }
+  }
 
   @Get('login')
   async showLoginPage(
@@ -124,6 +172,9 @@ export class LoginController {
         : null;
 
     const ssoProviders = sessionUser ? [] : await this.loadSsoProviders(req);
+    const requestedServer = consent
+      ? await this.requestedServerName(req, sessionUser?.id)
+      : null;
 
     res.setHeader('Content-Type', 'text/html');
     // A one-click Approve is exactly what clickjacking wants: never framed.
@@ -136,6 +187,7 @@ export class LoginController {
         csrfToken,
         ssoProviders,
         sessionUser,
+        requestedServer,
       }),
     );
   }
@@ -393,6 +445,7 @@ export class LoginController {
     res.send(
       this.renderFirstConnectorOffer({
         clientName: consent.clientName,
+        redirectHost: consent.redirectHost,
         callbackUrl,
         welcomeUrl: `${dashboard}/welcome`,
         ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: `${dashboard}/start-trial` } } : {}),
@@ -403,6 +456,7 @@ export class LoginController {
 
   private renderFirstConnectorOffer(params: {
     clientName: string;
+    redirectHost?: string;
     callbackUrl: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
@@ -414,45 +468,29 @@ export class LoginController {
           params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
         ).replace(' ', '&nbsp;')
       : '';
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="referrer" content="no-referrer" />
-  <title>${client} is connected</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-           background: #f5f6f8; margin: 0; padding: 40px 16px; color: #111; }
-    .card { max-width: 460px; margin: 0 auto; background: #fff; border-radius: 12px;
-            padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    h1 { font-size: 19px; margin: 0 0 6px; }
-    p { color: #444; font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
-    .example { background: #f5f6f8; border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #111; }
-    a.button { display: block; text-align: center; padding: 11px; font-size: 15px; font-weight: 600;
-               color: #fff; background: #2563eb; border-radius: 8px; text-decoration: none; margin-top: 18px; }
-    a.button:hover { background: #1d4ed8; }
-    a.secondary { display: block; text-align: center; font-size: 14px; color: #2563eb; margin-top: 12px; }
-    p.trial { font-size: 13px; color: #666; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #eee; }
-    p.trial a { color: #2563eb; }
-  </style>
-</head>
-<body>
-  <div class="card">
+    const card = `
+    ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
-    <p>Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
-    <p class="example">“Connect my Etsy shop to AnythingMCP.”</p>
-    <p>${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
+    <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
+    <div class="example">“Connect my Etsy shop to AnythingMCP.”</div>
+    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
     <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
-    <a class="secondary" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a>${
+    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
     <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
         : ''
-    }
-  </div>
-</body>
-</html>`;
+    }`;
+    return renderAuthPage({
+      title: `${params.clientName} is connected`,
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  .example { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin: 0 0 14px; }
+  .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
+  .trial a { color: var(--brand); }`,
+    });
   }
 
   /**
@@ -532,6 +570,7 @@ export class LoginController {
     res.send(
       this.renderServerPicker({
         clientName: consent.clientName,
+        redirectHost: consent.redirectHost,
         targets,
         csrfToken,
       }),
@@ -809,6 +848,7 @@ export class LoginController {
    */
   private renderServerPicker(params: {
     clientName: string;
+    redirectHost?: string;
     targets: {
       organizationId: string;
       organizationName: string;
@@ -823,18 +863,17 @@ export class LoginController {
         const servers = t.servers
           .map(
             (srv) => `
-            <label class="row">
+            <label class="pick">
               <input type="checkbox" name="servers" value="${this.escapeHtml(srv.id)}" />
-              <span class="row-name">${this.escapeHtml(srv.name)}</span>
-              <span class="row-meta">${srv.connectorCount} connector${srv.connectorCount === 1 ? '' : 's'}</span>
+              <span class="pick-name">${this.escapeHtml(srv.name)}</span>
+              <span class="pick-meta">${srv.connectorCount} connector${srv.connectorCount === 1 ? '' : 's'}</span>
             </label>`,
           )
           .join('');
         const whole = `
-            <label class="row whole">
+            <label class="pick whole">
               <input type="radio" name="workspace" value="${this.escapeHtml(t.organizationId)}" />
-              <span class="row-name">Everything in this workspace</span>
-              <span class="row-meta">including connectors not on a server</span>
+              <span class="pick-name">Everything in this workspace<span class="pick-sub">including connectors not on a server</span></span>
             </label>`;
         return `
         <fieldset>
@@ -844,47 +883,34 @@ export class LoginController {
       })
       .join('');
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Choose what to connect</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-           background: #f5f6f8; margin: 0; padding: 40px 16px; color: #111; }
-    .card { max-width: 460px; margin: 0 auto; background: #fff; border-radius: 12px;
-            padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    h1 { font-size: 19px; margin: 0 0 6px; }
-    p.lead { color: #555; font-size: 14px; margin: 0 0 20px; }
-    .app { font-weight: 600; }
-    fieldset { border: 1px solid #e3e5e8; border-radius: 9px; margin: 0 0 14px; padding: 10px 12px 12px; }
-    legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; padding: 0 4px; }
-    .row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-radius: 7px; cursor: pointer; }
-    .row:hover { background: #f7f8fa; }
-    .row-name { flex: 1; font-size: 14px; }
-    .row-meta { font-size: 12px; color: #8a8f98; }
-    .whole { border-top: 1px solid #eef0f2; margin-top: 6px; padding-top: 12px; }
-    button { width: 100%; padding: 11px; font-size: 15px; font-weight: 600; color: #fff;
-             background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; margin-top: 6px; }
-    button:hover { background: #1d4ed8; }
-    .note { font-size: 12px; color: #8a8f98; margin-top: 14px; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="card">
+    const card = `
+    ${clientTilePair(clientName, params.redirectHost ?? '')}
     <h1>Choose what to connect</h1>
-    <p class="lead"><span class="app">${this.escapeHtml(clientName)}</span> will be able to use
-      the tools from whatever you pick here — and nothing else.</p>
+    <p class="sub"><strong>${this.escapeHtml(clientName)}</strong> will be able to use the tools from whatever you pick here, as far as your role allows, and nothing else.</p>
     <form method="POST" action="/auth/select-servers">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}" />
       ${groups}
       <button type="submit">Connect</button>
     </form>
-    <p class="note">You can change this later from Settings, without reconnecting.</p>
-  </div>
-</body>
-</html>`;
+    <p class="note">You can change this later from Settings, without reconnecting.</p>`;
+
+    return renderAuthPage({
+      title: 'Choose what to connect',
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  .sub strong { color: var(--text); font-weight: 600; }
+  fieldset { border: 1px solid var(--border); border-radius: 12px; margin: 0 0 14px; padding: 8px 10px 10px; min-width: 0; }
+  legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 0 4px; overflow-wrap: anywhere; }
+  .pick { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-radius: 8px; cursor: pointer; margin: 0; font-weight: 400; }
+  .pick:hover { background: var(--surface-2); }
+  .pick input { accent-color: var(--brand); width: 16px; height: 16px; flex: none; }
+  .pick-name { flex: 1; font-size: 14px; overflow-wrap: anywhere; }
+  .pick-meta { font-size: 12px; color: var(--text-3); text-align: right; white-space: nowrap; }
+  .pick-sub { display: block; font-size: 12px; color: var(--text-3); margin-top: 2px; }
+  .whole { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; border-radius: 0 0 8px 8px; }
+  form button { margin-top: 4px; }`,
+    });
   }
 
   private renderLoginPage(params: {
@@ -894,12 +920,17 @@ export class LoginController {
     csrfToken: string;
     ssoProviders: { id: string; name: string; type: string }[];
     sessionUser?: SessionUser | null;
+    /** The MCP server the client asked for, when the signed-in user may see its name. */
+    requestedServer?: string | null;
   }): string {
-    const { error, serverName, consent, csrfToken, ssoProviders, sessionUser } =
+    const { error, serverName, consent, csrfToken, ssoProviders, sessionUser, requestedServer } =
       params;
+    const server = this.escapeHtml(serverName);
+    const client = consent ? this.escapeHtml(consent.clientName) : '';
+    const known = consent ? knownClientFor(consent.redirectHost) : null;
 
     const errorHtml = error
-      ? `<div class="error">${this.escapeHtml(error)}</div>`
+      ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>`
       : '';
 
     // `formnovalidate` matters: without it the browser blocks the submit
@@ -921,17 +952,48 @@ export class LoginController {
           .join('') + '<div class="divider"><span>or</span></div>'
       : '';
 
+    // The pair of tiles shows the client's logo only when the code goes back
+    // to that client's own domain (see knownClientFor); otherwise its initial.
+    const top = consent
+      ? clientTilePair(consent.clientName, consent.redirectHost)
+      : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
+
+    const heading = consent ? `Connect ${client} to ${server}` : 'Sign in';
+    const sub = consent
+      ? sessionUser
+        ? `${client} will use the tools your role allows on ${server}. You stay in control and can disconnect at any time.`
+        : `Sign in to let ${client} use your ${server} tools. You stay in control and can disconnect at any time.`
+      : `Authorize access to ${server} MCP Server`;
+
+    // Claude's directory lists AnythingMCP Cloud, so the badge appears only
+    // there, and only when the code really goes back to Claude.
+    const directoryPill =
+      known === 'claude' && this.deployment.isCloud()
+        ? `<div class="verified">${claudeMark(12)}<span>Listed in Anthropic&#39;s Claude Directory</span></div>`
+        : '';
+
+    const DEFAULT_SCOPE = "Access to your organization's MCP tools and connected servers.";
+    const toolsLine = requestedServer
+      ? `Use the tools on <b>${this.escapeHtml(requestedServer)}</b> that your role allows`
+      : `Use the tools on your MCP server that your role allows`;
+    // The destination is the security-relevant part: a code sent anywhere
+    // else than the client the user means to connect is a stolen session.
+    // Unknown destinations are shown in amber.
     const consentHtml = consent
       ? `
     <div class="consent">
-      <p class="consent-lead">An application is requesting access to your
-        <strong>${this.escapeHtml(serverName)}</strong> account:</p>
-      <div class="consent-app">${this.escapeHtml(consent.clientName)}</div>
-      <p class="consent-redirect">${sessionUser ? 'If you approve' : 'After you sign in'}, your access will be sent to:</p>
-      <div class="consent-host">${this.escapeHtml(consent.redirectHost)}</div>
-      <p class="consent-scope">${this.escapeHtml(consent.scopeText)}</p>
-      <p class="consent-warn">Only continue if you started this and recognise the
-        destination above. If you did not, choose <strong>Cancel</strong>.</p>
+      <h2>${client} will be able to</h2>
+      <div class="row"><span class="ok">&#10003;</span><span>${toolsLine}</span></div>
+      <div class="row"><span class="ok">&#10003;</span><span>Read your name and email address</span></div>
+      <div class="row muted"><span class="no">&ndash;</span><span>It never sees your connector passwords or API keys</span></div>${
+        consent.scopeText && consent.scopeText !== DEFAULT_SCOPE
+          ? `
+      <div class="row muted"><span class="no">&middot;</span><span>Requested scope: <span class="host">${this.escapeHtml(consent.scopeText)}</span></span></div>`
+          : ''
+      }
+      <div class="returns${known ? '' : ' unknown'}">${sessionUser ? 'If you allow it, access' : 'After you sign in, access'} is sent to <span class="host">${this.escapeHtml(consent.redirectHost)}</span>
+        <p class="warn">Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>
+      </div>
     </div>`
       : '';
 
@@ -939,7 +1001,7 @@ export class LoginController {
       ? `<button type="submit" name="action" value="deny" formnovalidate class="secondary">Cancel</button>`
       : '';
 
-    const submitLabel = consent ? 'Sign In &amp; Authorize' : 'Sign In';
+    const submitLabel = consent ? 'Sign in &amp; allow' : 'Sign in';
 
     // Someone arriving here from an AI client (e.g. the Claude directory)
     // without an account would otherwise hit a dead end: the only way off this
@@ -962,8 +1024,8 @@ export class LoginController {
       offerSignup && !error
         ? `
     <div class="signup">
-      <p class="signup-lead"><strong>New to ${this.escapeHtml(serverName)}?</strong> Create your account first.
-        You come straight back here to finish connecting${consent ? ` ${this.escapeHtml(consent.clientName)}` : ''}.</p>
+      <p class="signup-lead"><strong>New to ${server}?</strong> Create your account first.
+        You come straight back here to finish connecting${consent ? ` ${client}` : ''}.</p>
       <a class="signup-btn" href="${signupHref}">Create an account</a>
     </div>
     <div class="divider"><span>Already have an account? Sign in</span></div>`
@@ -971,262 +1033,59 @@ export class LoginController {
     const preAuthLinks = sessionUser
       ? ''
       : `
-      <p class="switch"><a href="/forgot-password">Forgot your password?</a></p>` +
+      <p class="links"><a href="/forgot-password">Forgot your password?</a></p>` +
         (offerSignup && error
           ? `
-      <p class="switch">New to ${this.escapeHtml(serverName)}? <a href="${signupHref}">Create an account</a></p>`
+      <p class="links">New to ${server}? <a href="${signupHref}">Create an account</a></p>`
           : '');
+
+    // Allow comes before Cancel in the markup: Enter in a field submits the
+    // first button. CSS puts Cancel on the left.
+    const buttons = (approve: string) =>
+      denyButton ? `<div class="btns">${approve}${denyButton}</div>` : approve;
 
     // Signed in to the dashboard already: approve as that account, or switch.
     // `switch=1` keeps the pending OAuth session (it lives in a cookie) and
     // shows the password form instead.
     const formHtml = sessionUser
       ? `
-      <p class="signed-in">Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></p>
-      <button type="submit" name="action" value="approve-session" autofocus>Approve</button>
-      ${denyButton}
-      <p class="switch"><a href="/auth/login?switch=1">Use a different account</a></p>`
+      <div class="acct"><span>Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></span><a href="/auth/login?switch=1">Switch account</a></div>
+      ${buttons('<button type="submit" name="action" value="approve-session" autofocus>Allow access</button>')}`
       : `
       ${ssoHtml}
       <label for="email">Email</label>
-      <input type="email" id="email" name="email" required autofocus placeholder="you@example.com">
+      <input type="email" id="email" name="email" required autofocus autocomplete="email" placeholder="you@company.com">
       <label for="password">Password</label>
-      <input type="password" id="password" name="password" required placeholder="Your password">
-      <button type="submit" name="action" value="approve">${submitLabel}</button>
-      ${denyButton}
+      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Your password">
+      ${buttons(`<button type="submit" name="action" value="approve">${submitLabel}</button>`)}
       ${preAuthLinks}`;
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${sessionUser ? 'Authorize' : 'Sign In'} — ${this.escapeHtml(serverName)}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      color: #333;
-      padding: 20px;
-    }
-    .card {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
-      padding: 40px;
-      width: 100%;
-      max-width: 400px;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 8px;
-      text-align: center;
-    }
-    .subtitle {
-      color: #666;
-      text-align: center;
-      margin-bottom: 24px;
-      font-size: 0.9rem;
-    }
-    .error {
-      background: #fef2f2;
-      color: #dc2626;
-      border: 1px solid #fecaca;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 16px;
-      font-size: 0.875rem;
-    }
-    .consent {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 20px;
-      font-size: 0.875rem;
-    }
-    .consent-lead { color: #555; margin-bottom: 8px; }
-    .consent-app {
-      font-weight: 600;
-      font-size: 1rem;
-      color: #111;
-      margin-bottom: 12px;
-    }
-    .consent-redirect { color: #555; margin-bottom: 4px; }
-    .consent-host {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-weight: 600;
-      color: #b45309;
-      word-break: break-all;
-      margin-bottom: 12px;
-    }
-    .consent-scope { color: #666; font-size: 0.8rem; margin-bottom: 12px; }
-    .consent-warn { color: #92400e; font-size: 0.8rem; }
-    label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 500;
-      margin-bottom: 6px;
-      color: #555;
-    }
-    input[type="email"],
-    input[type="password"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 1rem;
-      margin-bottom: 16px;
-      transition: border-color 0.2s;
-    }
-    input:focus {
-      outline: none;
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:hover { background: #1d4ed8; }
-    button:active { background: #1e40af; }
-    button.secondary {
-      background: transparent;
-      color: #64748b;
-      margin-top: 8px;
-    }
-    button.secondary:hover { background: #f1f5f9; }
-    button.sso {
-      background: #fff;
-      color: #0f172a;
-      border: 1px solid #cbd5e1;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-    }
-    button.sso:hover { background: #f8fafc; }
-    .signed-in { font-size: 0.875rem; color: #555; margin-bottom: 12px; text-align: center; }
-    .switch { text-align: center; margin-top: 14px; font-size: 0.875rem; }
-    .switch a { color: #2563eb; text-decoration: none; }
-    .switch a:hover { text-decoration: underline; }
-    .sso-mark { display: inline-flex; flex: none; width: 18px; height: 18px; }
-    .sso-mark svg { width: 100%; height: 100%; }
-    .divider {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 14px 0 4px;
-      color: #94a3b8;
-      font-size: 12px;
-    }
-    .divider::before, .divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: #e2e8f0;
-    }
-    .signup {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 6px;
-    }
-    .signup-lead { font-size: 0.875rem; color: #334155; margin-bottom: 10px; line-height: 1.45; }
-    .signup-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 46px;
-      padding: 12px;
-      background: #fff;
-      color: #1d4ed8;
-      border: 1.5px solid #2563eb;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: background 0.2s;
-    }
-    .signup-btn:hover { background: #dbeafe; }
-    .signup + .divider { margin: 16px 0 16px; }
-    button { min-height: 46px; }
-    @media (max-width: 480px) {
-      body { padding: 12px; align-items: flex-start; }
-      .card { padding: 24px 18px; border-radius: 10px; }
-      h1 { font-size: 1.3rem; }
-      .subtitle { margin-bottom: 16px; }
-      .consent { padding: 12px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>${sessionUser ? 'Authorize' : 'Sign In'}</h1>
-    <p class="subtitle">Authorize access to ${this.escapeHtml(serverName)} MCP Server</p>${signupHtml}
+    const card = `
+    ${top}
+    <h1>${heading}</h1>
+    <p class="sub">${sub}</p>${directoryPill}${signupHtml}
     ${errorHtml}
     ${consentHtml}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
-    </form>
-  </div>
-</body>
-</html>`;
+    </form>`;
+
+    return renderAuthPage({
+      title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
+      card,
+      trust: this.trust(),
+    });
   }
 
   private renderDeniedPage(serverName: string): string {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Request Cancelled — ${this.escapeHtml(serverName)}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      color: #333;
-      margin: 0;
-    }
-    .card {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
-      padding: 40px;
-      max-width: 400px;
-      text-align: center;
-    }
-    h1 { font-size: 1.25rem; margin-bottom: 12px; }
-    p { color: #666; font-size: 0.9rem; }
-  </style>
-</head>
-<body>
-  <div class="card">
+    return renderAuthPage({
+      title: `Request Cancelled — ${serverName}`,
+      card: `
+    <div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>
     <h1>Request Cancelled</h1>
-    <p>The authorization request was declined. No access was granted. You can
-      safely close this window.</p>
-  </div>
-</body>
-</html>`;
+    <p class="sub" style="margin-bottom:0">The authorization request was declined. No access was granted. You can safely close this window.</p>`,
+      trust: this.trust(),
+    });
   }
 
   private escapeHtml(str: string): string {
