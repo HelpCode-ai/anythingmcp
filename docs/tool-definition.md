@@ -321,6 +321,38 @@ instead of a text field containing the URL. Declare the parameter with `"type": 
 "format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
 configuration error — that encoding cannot carry a file at all.
 
+### XML bodies
+
+APIs that take an XML request (TallyPrime, SOAP-like endpoints) get their body
+from a `__raw` string, or from a `bodyTemplate`, with `${param}` placeholders.
+Set `"bodyEncoding": "xml"` on the mapping and every substituted value is
+XML-escaped (`&` `<` `>` `"` `'`), so a name such as `Sharma & Sons` cannot
+break the document:
+
+```json
+{
+  "method": "POST",
+  "path": "/",
+  "bodyEncoding": "xml",
+  "bodyMapping": {
+    "__raw": "<ENVELOPE><SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY></ENVELOPE>"
+  }
+}
+```
+
+- Connector variables (`{{VAR}}`) in the body are escaped the same way.
+- An `&` that already starts an entity (`&amp;`, `&#38;`, `&lt;` ...) is left
+  as it is, so a value escaped by hand is not escaped twice.
+- A whole-value `"__raw": "$param"` is the caller's own document and goes out
+  unchanged.
+- With `bodyEncoding: "xml"` a `bodyTemplate` is sent as text; it is not
+  parsed as JSON. A missing placeholder becomes empty.
+- The body is labelled `application/xml; charset=utf-8` unless the connector
+  or the tool sets its own `Content-Type`.
+
+Without `bodyEncoding: "xml"`, `__raw` values are inserted as they are, as
+before.
+
 ### Response headers and pagination (`exposeHeaders`)
 
 By default a tool receives the response **body** and nothing else. Some APIs put

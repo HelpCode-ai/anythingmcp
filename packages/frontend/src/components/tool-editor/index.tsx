@@ -60,7 +60,7 @@ export interface ToolEditorData {
   bodyMappingJson?: string;
   /** When true, send bodyMappingJson verbatim as the bodyMapping */
   useBodyMappingJson?: boolean;
-  /** Body encoding: 'json' (default), 'form-urlencoded', or 'form-data' */
+  /** Body encoding: 'json' (default), 'form-urlencoded', 'form-data', or 'xml' */
   bodyEncoding?: string;
   /** Static text response (returned directly without any API/DB call) */
   staticResponse?: string;
@@ -462,6 +462,9 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
     }
   } else if (data.useBodyTemplate && data.bodyTemplate) {
     endpointMapping.bodyTemplate = data.bodyTemplate;
+    // An XML template keeps its encoding: it is what makes the engine send
+    // the template as markup with escaped values instead of parsing JSON.
+    if (data.bodyEncoding === 'xml') endpointMapping.bodyEncoding = 'xml';
   } else if (Object.keys(bodyMapping).length > 0) {
     endpointMapping.bodyMapping = bodyMapping;
     if (data.bodyEncoding && data.bodyEncoding !== 'json') {
