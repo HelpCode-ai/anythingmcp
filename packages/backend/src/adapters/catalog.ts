@@ -272,6 +272,8 @@ import * as uptimeRobot from './intl/uptime-robot.json';
 import * as uzumMarket from './intl/uzum-market.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
 import * as vinted from './intl/vinted.json';
+import * as wanotifier from './intl/wanotifier.json';
+import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as wildberries from './intl/wildberries.json';
@@ -290,6 +292,7 @@ import * as zenhub from './intl/zenhub.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
+import * as zApi from './br/z-api.json';
 import * as doubletick from './in/doubletick.json';
 import * as razorpay from './in/razorpay.json';
 import * as tallyprime from './in/tallyprime.json';
@@ -772,6 +775,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   uzumMarket as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
   vinted as unknown as AdapterDefinition,
+  wanotifier as unknown as AdapterDefinition,
+  wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
@@ -790,6 +795,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zohoCrm as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
+  zApi as unknown as AdapterDefinition,
   doubletick as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,
   tallyprime as unknown as AdapterDefinition,

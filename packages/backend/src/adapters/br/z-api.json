@@ -1,0 +1,188 @@
+{
+  "slug": "z-api",
+  "name": "Z-API",
+  "description": "Z-API WhatsApp gateway from Brazil: check the instance connection, browse chats and contacts, verify numbers on WhatsApp and send text, image and document messages through a WhatsApp number linked by QR code.",
+  "instructions": "Z-API is a third-party WhatsApp gateway: it runs a WhatsApp Web session for a number you link yourself. It is not Meta's official WhatsApp Business API, and WhatsApp may restrict or ban numbers that send in bulk.\n\n**Getting credentials**\n1. In the Z-API panel, open Instances, create or pick an instance and click edit. Copy the instance ID into `ZAPI_INSTANCE_ID` and the instance token into `ZAPI_INSTANCE_TOKEN`.\n2. Open the Security tab, module Account Security Token, click Set Up Now and copy the token into `ZAPI_CLIENT_TOKEN`. Then click Activate Token so every request must carry it.\n3. Link the phone first: scan the instance QR code in the panel with WhatsApp (Linked devices). Until then every send fails.\n\n**Workflow**: call `z_api_get_status` first. `connected: false` means the QR code must be scanned again; `smartphoneConnected: false` means the phone is offline. Use `z_api_list_chats` or `z_api_check_phone_exists` to find the right recipient before sending.\n\n**Formats**: phone numbers are digits only, country code + area code + number, no `+`, spaces or dashes: `5511999999999`. Group chats use their ID from `z_api_list_chats`, e.g. `120363019502650977-group`. Text supports `*bold*`, `_italic_` and `~strike~`. Images and documents are sent by public HTTPS URL; Z-API downloads them (files up to 100 MB).\n\n**Sending**: the send tools write real WhatsApp messages. Always confirm the recipient and the exact text with the user before calling them, and never retry a send that returned a `messageId`. Messages go through a queue; `z_api_list_queue` shows what is still waiting.\n\n**Pagination and limits**: chats and contacts take `page` and `pageSize` (both required by Z-API; the tools default to page 1). Ask for the next page until fewer results than `pageSize` come back. The queue uses the `pagingState` cursor until `hasMore` is false. Z-API sets no message cap, but WhatsApp watches the number: keep volumes modest and space sends minutes apart. Plans are billed per instance, with a 2-day free trial.\n\n**Cloud reachability**: `api.z-api.io` is a public HTTPS API, reachable from AnythingMCP Cloud. If you enabled IP restriction in the Z-API Security tab, allow the AnythingMCP outbound address or turn the restriction off.",
+  "region": "br",
+  "category": "messaging",
+  "icon": "z-api",
+  "docsUrl": "https://developer.z-api.io/en/api-reference/introduction",
+  "requiredEnvVars": ["ZAPI_INSTANCE_ID", "ZAPI_INSTANCE_TOKEN", "ZAPI_CLIENT_TOKEN"],
+  "envVarMeta": {
+    "ZAPI_INSTANCE_ID": {
+      "label": "Instance ID",
+      "kind": "setting",
+      "help": "In the Z-API panel, open Instances and click edit on your instance; the ID is shown there.",
+      "example": "3E98A1B2C3D4E5F6A7B8C9D0E1F5DDF",
+      "pattern": "^[A-Za-z0-9-]+$",
+      "patternMessage": "Paste only the instance ID (letters and digits), not the full API URL.",
+      "link": "https://app.z-api.io"
+    },
+    "ZAPI_INSTANCE_TOKEN": {
+      "label": "Instance token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the instance ID when you edit the instance in the Z-API panel.",
+      "pattern": "^[A-Za-z0-9-]+$",
+      "patternMessage": "Paste only the instance token, not the full API URL.",
+      "link": "https://app.z-api.io"
+    },
+    "ZAPI_CLIENT_TOKEN": {
+      "label": "Account security token (Client-Token)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Z-API panel, Security tab, Account Security Token: Set Up Now, copy the token, then Activate Token.",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "patternMessage": "Paste only the security token, without spaces or a header name.",
+      "link": "https://app.z-api.io"
+    }
+  },
+  "connector": {
+    "name": "Z-API",
+    "type": "REST",
+    "baseUrl": "https://api.z-api.io/instances/{{ZAPI_INSTANCE_ID}}/token/{{ZAPI_INSTANCE_TOKEN}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Client-Token",
+      "apiKey": "{{ZAPI_CLIENT_TOKEN}}"
+    }
+  },
+  "probe": { "tool": "z_api_get_status" },
+  "tools": [
+    {
+      "name": "z_api_get_status",
+      "description": "Check whether the Z-API instance is linked to a WhatsApp account and whether the phone is online. Call this first: connected false means the QR code must be scanned again in the Z-API panel.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/status" }
+    },
+    {
+      "name": "z_api_get_instance",
+      "description": "Get the Z-API instance name, connection flag, payment status and expiry date (Unix timestamp in `due`). Use it to explain why sending stopped, e.g. an unpaid or expired instance.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" },
+      "responseMapping": {
+        "transform": { "mode": "select", "select": { "id": "$.id", "name": "$.name", "connected": "$.connected", "paymentStatus": "$.paymentStatus", "due": "$.due", "created": "$.created" } }
+      }
+    },
+    {
+      "name": "z_api_get_device",
+      "description": "Get the phone linked to the instance: its number, profile name, device model and whether it is a WhatsApp Business account. Tells you which number messages are sent from.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/device" }
+    },
+    {
+      "name": "z_api_check_phone_exists",
+      "description": "Check whether a phone number has a WhatsApp account. Returns exists, the number as WhatsApp formats it and its private lid. Use it to validate a number a user typed, not before every send.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Digits only: country code + area code + number, no + or spaces, e.g. 5511999999999." }
+        },
+        "required": ["phone"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/phone-exists/{phone}" }
+    },
+    {
+      "name": "z_api_list_chats",
+      "description": "List the WhatsApp chats of the linked number (people and groups) with phone or group ID, name, unread count and last message time. Page through with page and pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "default": 1, "description": "Page number to fetch: 1, then 2, 3 and so on." },
+          "pageSize": { "type": "integer", "default": 20, "description": "Chats per page, e.g. 20." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/chats", "queryParams": { "page": "$page", "pageSize": "$pageSize" } }
+    },
+    {
+      "name": "z_api_get_chat",
+      "description": "Get metadata of one chat: unread count, last message time, mute and spam flags, profile status and notes (WhatsApp Business only). Chat message history is not available through Z-API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Contact number in digits only (e.g. 5511999999999) or a group ID from z_api_list_chats." }
+        },
+        "required": ["phone"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/chats/{phone}" }
+    },
+    {
+      "name": "z_api_list_contacts",
+      "description": "List WhatsApp contacts known to the linked number, including people from shared groups, with phone, saved name and WhatsApp profile name. Page through with page and pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "default": 1, "description": "Page number to fetch: 1, then 2, 3 and so on." },
+          "pageSize": { "type": "integer", "default": 50, "description": "Contacts per page, e.g. 50." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts", "queryParams": { "page": "$page", "pageSize": "$pageSize" } }
+    },
+    {
+      "name": "z_api_list_queue",
+      "description": "List messages still waiting in the instance's send queue, with phone, text and IDs. Read-only. Continue with pagingState from the previous answer while hasMore is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": { "type": "integer", "description": "Messages per page, up to 30 (default 20)." },
+          "pagingState": { "type": "string", "description": "Cursor returned by the previous call; omit for the first page." }
+        }
+      },
+      "endpointMapping": { "method": "POST", "path": "/queue", "bodyMapping": { "pageSize": "$pageSize", "pagingState": "$pagingState" } },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "z_api_send_text",
+      "description": "Send a WhatsApp text message to a contact or group from the linked number. This sends a real message: confirm the recipient number and the exact text with the user before calling, and do not retry after a messageId is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Recipient in digits only (country code + area code + number, e.g. 5511999999999) or a group ID." },
+          "message": { "type": "string", "description": "Text to send. Supports *bold*, _italic_, ~strike~ and line breaks." },
+          "delayMessage": { "type": "integer", "description": "Optional wait before sending, 1 to 15 seconds." },
+          "delayTyping": { "type": "integer", "description": "Optional seconds to show 'typing...' before sending, 1 to 15." }
+        },
+        "required": ["phone", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send-text",
+        "bodyMapping": { "phone": "$phone", "message": "$message", "delayMessage": "$delayMessage", "delayTyping": "$delayTyping" }
+      }
+    },
+    {
+      "name": "z_api_send_image",
+      "description": "Send an image by public HTTPS URL to a contact or group, with an optional caption. This sends a real message: confirm the recipient, the image and the caption with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "Recipient in digits only (e.g. 5511999999999) or a group ID." },
+          "image": { "type": "string", "format": "uri", "description": "Public HTTPS URL of the image, reachable by Z-API." },
+          "caption": { "type": "string", "description": "Optional text shown under the image." }
+        },
+        "required": ["phone", "image"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/send-image", "bodyMapping": { "phone": "$phone", "image": "$image", "caption": "$caption" } }
+    },
+    {
+      "name": "z_api_send_document",
+      "description": "Send a document (PDF, XLSX, DOCX...) by public HTTPS URL to a contact or group. This sends a real message: confirm the recipient and the file with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extension": { "type": "string", "description": "File extension without the dot, e.g. pdf, xlsx or docx." },
+          "phone": { "type": "string", "description": "Recipient in digits only (e.g. 5511999999999) or a group ID." },
+          "document": { "type": "string", "format": "uri", "description": "Public HTTPS URL of the file, reachable by Z-API." },
+          "fileName": { "type": "string", "description": "Optional name shown to the recipient, e.g. Invoice 1042." },
+          "caption": { "type": "string", "description": "Optional description sent with the file." }
+        },
+        "required": ["extension", "phone", "document"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/send-document/{extension}",
+        "bodyMapping": { "phone": "$phone", "document": "$document", "fileName": "$fileName", "caption": "$caption" }
+      }
+    }
+  ]
+}

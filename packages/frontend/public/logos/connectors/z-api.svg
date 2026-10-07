@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Z-API connector">
+  <rect width="128" height="128" rx="24" fill="#10231a"/>
+  <path d="M34 34h62l-4 13-41 34h37l-4 13H22l4-13 41-34H30Z" fill="#97e060"/>
+  <path d="M74 40h30M70 50h26" stroke="#10231a" stroke-width="4" stroke-linecap="round"/>
+</svg>

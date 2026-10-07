@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="WANotifier connector">
+  <rect width="128" height="128" rx="24" fill="#0396a1"/>
+  <path d="M64 24a40 40 0 0 0-34.6 60L24 104l20.6-5.3A40 40 0 1 0 64 24Z" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M42 50l7 30 8-22 7 22 7-22 8 22 7-30" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

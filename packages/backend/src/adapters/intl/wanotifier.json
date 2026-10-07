@@ -1,0 +1,176 @@
+{
+  "slug": "wanotifier",
+  "name": "WANotifier",
+  "description": "WANotifier on the official WhatsApp Business API: browse and update contacts, lists and tags, and send WhatsApp text, image and document replies inside the 24-hour conversation window.",
+  "instructions": "WANotifier is a WhatsApp marketing and notification tool built on Meta's official WhatsApp Business (Cloud) API. There is no QR code: your number is connected to the API inside WANotifier during onboarding, and Meta bills its per-message fees directly.\n\n**Getting credentials**: in WANotifier open Automations, then Integrations. Under Direct Integrations click Manage on API Integration, open the API Keys tab and copy My API Key into `WANOTIFIER_API_KEY`. The key is sent as the `key` query parameter.\n\n**Workflow**: start with `wanotifier_list_contact_lists` and `wanotifier_list_contact_tags` to learn the IDs, then `wanotifier_list_contacts` to find people. `wanotifier_upsert_contact` creates or updates a contact by WhatsApp number.\n\n**Sending**: `wanotifier_send_text_message`, `wanotifier_send_image_message` and `wanotifier_send_document_message` only work inside an active 24-hour conversation window, i.e. the contact wrote to your number in the last 24 hours. Outside it WhatsApp only accepts approved templates. The REST API has no endpoint for templates: create a Transactional / Integration / API Notification in WANotifier and call its own webhook URL from your system instead. Every send is a real message, so confirm the recipient and the exact content with the user first.\n\n**Formats**: WhatsApp numbers are E.164 with the plus sign and country code, e.g. `+919876543210`. Media must be a static public HTTPS file URL (no Google Drive pages): images jpeg or png up to 5 MB, documents txt, pdf, doc(x), xls(x), ppt(x) up to 100 MB.\n\n**Pagination and limits**: `wanotifier_list_contacts` takes `page` and `per_page` (WANotifier's own default is 1, so the tool asks for 50) and returns `total`. The API allows 300 requests per minute per key; beyond that it answers 429. WhatsApp separately limits business-initiated conversations per day (250 for a new number, rising with quality and verification) and throughput to 80 messages per second. Paid plans are sized by contact tier, with a 7-day free trial.\n\n**Cloud reachability**: `app.wanotifier.com` is a public HTTPS API, reachable from AnythingMCP Cloud and from self-hosted installs with internet access.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "wanotifier",
+  "docsUrl": "https://help.wanotifier.com/en/category/api-documentation-1it16hf/",
+  "requiredEnvVars": ["WANOTIFIER_API_KEY"],
+  "envVarMeta": {
+    "WANOTIFIER_API_KEY": {
+      "label": "WANotifier API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Automations, Integrations, Manage under API Integration, API Keys tab: copy My API Key.",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "patternMessage": "Paste only the API key, not a URL with ?key=.",
+      "link": "https://app.wanotifier.com/integrations/api/"
+    }
+  },
+  "connector": {
+    "name": "WANotifier API",
+    "type": "REST",
+    "baseUrl": "https://app.wanotifier.com/api/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{WANOTIFIER_API_KEY}}"
+    }
+  },
+  "probe": { "tool": "wanotifier_list_contact_lists" },
+  "tools": [
+    {
+      "name": "wanotifier_list_contact_lists",
+      "description": "List the contact lists in the WANotifier account with their numeric IDs and names. Use the IDs to filter contacts or to add a contact to a list.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/contacts/lists" }
+    },
+    {
+      "name": "wanotifier_list_contact_tags",
+      "description": "List the contact tags in the WANotifier account with their numeric IDs and names. Use the IDs to filter contacts or to tag a contact.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/contacts/tags" }
+    },
+    {
+      "name": "wanotifier_list_contacts",
+      "description": "List or search WANotifier contacts with ID, name, WhatsApp number, subscription status and dates. Filter by search term, list IDs or tag IDs; the answer carries total for paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Search term matched against contacts, e.g. a name or number." },
+          "list_ids": { "type": "string", "description": "Comma-separated list IDs from wanotifier_list_contact_lists, e.g. 12345,23456." },
+          "tag_ids": { "type": "string", "description": "Comma-separated tag IDs from wanotifier_list_contact_tags." },
+          "per_page": { "type": "integer", "default": 50, "description": "Contacts per page." },
+          "page": { "type": "integer", "description": "Page number of the results, e.g. 2 for the second page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": { "search": "$search", "list_ids": "$list_ids", "tag_ids": "$tag_ids", "per_page": "$per_page", "page": "$page" }
+      }
+    },
+    {
+      "name": "wanotifier_get_contact",
+      "description": "Get one WANotifier contact by numeric ID, including WhatsApp number, subscription status, lists, tags and custom attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "integer", "description": "Numeric contact ID from wanotifier_list_contacts." }
+        },
+        "required": ["contact_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{contact_id}" }
+    },
+    {
+      "name": "wanotifier_upsert_contact",
+      "description": "Create a contact, or update the existing contact with the same WhatsApp number: name, custom attributes, lists, tags and subscription status. Confirm the changes with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": { "type": "string", "description": "E.164 number with + and country code, e.g. +919876543210." },
+          "first_name": { "type": "string", "description": "First name of the contact." },
+          "last_name": { "type": "string", "description": "Last name of the contact." },
+          "attributes": { "type": "object", "description": "Custom attributes as key/value pairs; keys lowercase with underscores, e.g. {\"city\": \"Pune\"}." },
+          "list_ids": { "type": "array", "items": { "type": "integer" }, "description": "List IDs to add the contact to." },
+          "tag_ids": { "type": "array", "items": { "type": "integer" }, "description": "Tag IDs to assign." },
+          "status": { "type": "string", "enum": ["subscribed", "unsubscribed"], "description": "Subscription status; WANotifier defaults to subscribed." },
+          "replace": { "type": "boolean", "description": "True replaces existing attributes, lists and tags with the ones sent; false (default) adds to them." }
+        },
+        "required": ["whatsapp_number"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "whatsapp_number": "$whatsapp_number",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "attributes": "$attributes",
+          "list_ids": "$list_ids",
+          "tag_ids": "$tag_ids",
+          "status": "$status",
+          "replace": "$replace"
+        }
+      }
+    },
+    {
+      "name": "wanotifier_send_text_message",
+      "description": "Send a free-form WhatsApp text to a contact inside the 24-hour conversation window. This sends a real message: confirm the recipient and the exact text with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": { "type": "string", "description": "Recipient as E.164 with +, e.g. +919876543210. Needed unless contact_id is given." },
+          "contact_id": { "type": "integer", "description": "Recipient contact ID; takes priority over whatsapp_number." },
+          "body": { "type": "string", "description": "Message text." },
+          "preview_url": { "type": "boolean", "description": "Show a link preview for the first URL in the text." }
+        },
+        "required": ["body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": {
+          "recipient": { "whatsapp_number": "$whatsapp_number", "contact_id": "$contact_id" },
+          "message": { "type": "text", "text": { "body": "$body", "preview_url": "$preview_url" } }
+        }
+      }
+    },
+    {
+      "name": "wanotifier_send_image_message",
+      "description": "Send an image (jpeg or png, up to 5 MB, static public HTTPS URL) to a contact inside the 24-hour window. This sends a real message: confirm the recipient, image and caption with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": { "type": "string", "description": "Recipient as E.164 with +, e.g. +919876543210. Needed unless contact_id is given." },
+          "contact_id": { "type": "integer", "description": "Recipient contact ID; takes priority over whatsapp_number." },
+          "link": { "type": "string", "format": "uri", "description": "Static public HTTPS URL of the image file." },
+          "caption": { "type": "string", "description": "Optional caption." }
+        },
+        "required": ["link"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": {
+          "recipient": { "whatsapp_number": "$whatsapp_number", "contact_id": "$contact_id" },
+          "message": { "type": "image", "image": { "link": "$link", "caption": "$caption" } }
+        }
+      }
+    },
+    {
+      "name": "wanotifier_send_document_message",
+      "description": "Send a document (pdf, doc(x), xls(x), ppt(x) or txt, up to 100 MB, static public HTTPS URL) inside the 24-hour window. This sends a real message: confirm the recipient and the file with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "whatsapp_number": { "type": "string", "description": "Recipient as E.164 with +, e.g. +919876543210. Needed unless contact_id is given." },
+          "contact_id": { "type": "integer", "description": "Recipient contact ID; takes priority over whatsapp_number." },
+          "link": { "type": "string", "format": "uri", "description": "Static public HTTPS URL of the document." },
+          "filename": { "type": "string", "description": "File name shown to the recipient, e.g. Invoice-1042.pdf." },
+          "caption": { "type": "string", "description": "Optional caption." }
+        },
+        "required": ["link"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": {
+          "recipient": { "whatsapp_number": "$whatsapp_number", "contact_id": "$contact_id" },
+          "message": { "type": "document", "document": { "link": "$link", "filename": "$filename", "caption": "$caption" } }
+        }
+      }
+    }
+  ]
+}
