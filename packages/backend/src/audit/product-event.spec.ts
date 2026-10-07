@@ -63,3 +63,17 @@ describe('scrubProviderMessage', () => {
     expect(scrubProviderMessage('   ')).toBeNull();
   });
 });
+
+describe('ProductEventService.log — server-written metadata', () => {
+  it('keeps cardTrialOffered on the empty-workspace prompt (the #920 measurement)', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'empty_workspace_prompt',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata: { client: 'Claude', cardTrialOffered: true },
+    });
+    expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
+  });
+});

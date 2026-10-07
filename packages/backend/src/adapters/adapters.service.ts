@@ -376,6 +376,7 @@ export class AdaptersService {
       headers: prepared.resolvedHeaders,
       envVars: prepared.envVarsToPersist,
       config: { adapterSlug: slug },
+      toolMappings: adapter.tools.map((t) => t.endpointMapping),
     });
     if (state.status === 'needs_input') {
       return {

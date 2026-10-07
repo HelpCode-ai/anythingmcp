@@ -46,6 +46,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
         headers: null,
         envVars: settings,
         config: { adapterSlug: slug },
+        tools: def.tools.map((t: any) => ({ endpointMapping: t.endpointMapping })),
       };
       return { connectorId: id, toolsCreated: def.tools.length, probe: opts.importResult ?? null };
     }),
@@ -163,6 +164,19 @@ describe('ConnectorSetupService — install', () => {
     // Only the hash is stored.
     const token = out.body.finishSetupUrl.split('/s/')[1];
     expect(JSON.stringify(links)).not.toContain(token);
+  });
+
+  it('asks for the key of an Odoo JSON-RPC connector, which only its tools use', async () => {
+    // The key lives in the request body. Before, the install answered "ready"
+    // without a link and every call came back "Access Denied".
+    const { service, ctx } = build();
+    const out: any = await service.install(ctx, {
+      adapter: 'odoo-jsonrpc',
+      settings: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod', ODOO_UID: '2' },
+    });
+    expect(out.body.status).toBe('needs_input');
+    expect(out.body.whatTheUserDoes).toContain('API key');
+    expect(out.body.finishSetupUrl).toBeDefined();
   });
 
   it('asks for the sign-in when an OAuth connector has its app keys', async () => {

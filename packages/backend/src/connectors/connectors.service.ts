@@ -565,6 +565,11 @@ export class ConnectorsService {
         queryParams: resolvedMapping.queryParams,
         headers: resolved.headers,
         authConfig,
+        body: {
+          template: resolvedMapping.bodyTemplate,
+          mapping: resolvedMapping.bodyMapping,
+          headers: resolvedMapping.headers,
+        },
       },
       toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
       connectorPageUrl(connector.id),

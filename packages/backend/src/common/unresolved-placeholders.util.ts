@@ -12,12 +12,23 @@
  * something completely different.
  *
  * So: refuse to make the call, and name the variables the workspace has to set.
- * Only auth, base URL, path, query and headers are checked. A body may legitimately
- * carry braces (a template the upstream itself renders), and a wrong body is
- * the caller's business, not a missing credential.
+ * Auth, base URL, path, query and headers are checked for any placeholder. In
+ * a body only names shaped like a connector variable (`{{ODOO_API_KEY}}`) count:
+ * a body may legitimately carry braces (a template the upstream itself
+ * renders, usually `{{name}}`), but Odoo's JSON-RPC adapter, among others,
+ * carries its credentials in the body and sent `{{ODOO_API_KEY}}` to Odoo when
+ * the key was never set.
  */
 
 const VAR_PATTERN = /\{\{([^{}]+)\}\}/g;
+
+/** A connector variable name: upper case, digits and underscores. */
+const VARIABLE_NAME = /^[A-Z][A-Z0-9_]*$/;
+
+/** The `{{VAR}}` names in a value that are shaped like a connector variable. */
+export function findUnresolvedVariables(value: unknown): string[] {
+  return findUnresolvedPlaceholders(value).filter((name) => VARIABLE_NAME.test(name));
+}
 
 /** Every `{{VAR}}` name still present anywhere in the value, deduplicated. */
 export function findUnresolvedPlaceholders(value: unknown): string[] {
@@ -50,6 +61,8 @@ export interface RequestShape {
   queryParams?: Record<string, unknown> | null;
   headers?: Record<string, string> | null;
   authConfig?: unknown;
+  /** The tool's body template / mapping and its own headers; see the note above. */
+  body?: unknown;
 }
 
 /**
@@ -65,13 +78,18 @@ export function assertNoUnresolvedPlaceholders(
   /** The connector's page in the dashboard, so the reader can go straight there. */
   fixUrl?: string,
 ): void {
-  const missing = findUnresolvedPlaceholders({
-    baseUrl: request.baseUrl,
-    path: request.path,
-    queryParams: request.queryParams ?? undefined,
-    headers: request.headers ?? undefined,
-    authConfig: request.authConfig,
-  });
+  const missing = [
+    ...new Set([
+      ...findUnresolvedPlaceholders({
+        baseUrl: request.baseUrl,
+        path: request.path,
+        queryParams: request.queryParams ?? undefined,
+        headers: request.headers ?? undefined,
+        authConfig: request.authConfig,
+      }),
+      ...findUnresolvedVariables(request.body),
+    ]),
+  ];
   if (missing.length === 0) return;
 
   const names = missing.sort().join(', ');
