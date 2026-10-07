@@ -1,20 +1,31 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import axios from 'axios';
 import { SiteSettingsService } from './site-settings.service';
 import { OrgSettingsService } from './org-settings.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
+import { TrustStatsService } from '../public-stats/trust-stats.service';
+import { EMPTY_TRUST_STATS, TrustStats, formatTrustStats } from '../public-stats/trust-stats.format';
+import type { EmailBrandContext } from './email-layout';
+import {
+  MarketingContext,
+  RenderedEmail,
+  WinbackOffer,
+  activationReminderEmail,
+  existingAccountEmail,
+  invitationEmail,
+  licenseKeyEmail,
+  onboardingReminderEmail,
+  passwordResetEmail,
+  trialLifecycleEmail,
+  trialWinbackEmail,
+  verificationEmail,
+} from './email-templates';
+import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 
-/** Escape text placed into an email's HTML (names and client names are user-chosen). */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+/** The longest an email waits for the trust numbers before going out without fresh ones. */
+const STATS_WAIT_MS = 3000;
 
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
@@ -36,7 +47,69 @@ export class EmailService {
     private readonly orgSettings: OrgSettingsService,
     private readonly prisma: PrismaService,
     private readonly deployment: DeploymentService,
+    @Optional() private readonly trustStats?: TrustStatsService,
   ) {}
+
+  /** Trust numbers and deployment claims for the shared layout. Never throws. */
+  private async brand(): Promise<EmailBrandContext> {
+    let stats: TrustStats = EMPTY_TRUST_STATS;
+    if (this.trustStats) {
+      stats = await Promise.race([
+        this.trustStats.get().catch(() => this.trustStats!.peek()),
+        new Promise<TrustStats>((resolve) =>
+          setTimeout(() => resolve(this.trustStats!.peek()), STATS_WAIT_MS).unref?.(),
+        ),
+      ]);
+    }
+    return { stats: formatTrustStats(stats), cloud: this.deployment.isCloud() };
+  }
+
+  private cloudUrl(): string {
+    return (process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com').replace(/\/+$/, '');
+  }
+
+  private marketingUrl(): string {
+    return (process.env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+  }
+
+  /**
+   * Context for a marketing email: the layout's, plus a signed one-click
+   * unsubscribe link for this recipient (RFC 8058) and the headers that
+   * advertise it. Without a signing secret or a matching account, the footer
+   * falls back to the account settings and no one-click header is sent.
+   */
+  private async marketing(to: string): Promise<{ ctx: MarketingContext; headers: Record<string, string> }> {
+    const base = await this.brand();
+    const cloudUrl = this.cloudUrl();
+    const secret = unsubscribeSecret();
+    const user = secret
+      ? await this.prisma.user
+          .findUnique({ where: { email: to }, select: { id: true } })
+          .catch(() => null)
+      : null;
+    if (secret && user) {
+      const url = buildUnsubscribeUrl(cloudUrl, user.id, secret);
+      return {
+        ctx: { ...base, unsubscribeUrl: url },
+        headers: {
+          'List-Unsubscribe': `<${url}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      };
+    }
+    const settingsUrl = `${cloudUrl}/settings#email-preferences`;
+    return { ctx: { ...base, unsubscribeUrl: settingsUrl }, headers: { 'List-Unsubscribe': `<${settingsUrl}>` } };
+  }
+
+  /** nodemailer fields for a rendered email. */
+  private mail(email: RenderedEmail, headers?: Record<string, string>) {
+    return {
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      ...(headers ? { headers } : {}),
+    };
+  }
 
   /**
    * Build a transport with aggressive timeouts. Cloud droplets black-hole the
@@ -143,21 +216,7 @@ export class EmailService {
         await transporter.sendMail({
           from: smtp.from || `AnythingMCP <${smtp.user}>`,
           to,
-          subject: 'Password Reset — AnythingMCP',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">Password Reset</h2>
-              <p>You requested a password reset for your AnythingMCP account.</p>
-              <p>Click the button below to set a new password. This link expires in 1 hour.</p>
-              <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-                Reset Password
-              </a>
-              <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `Password Reset\n\nYou requested a password reset. Click here to set a new password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
+          ...this.mail(passwordResetEmail({ resetUrl }, await this.brand())),
         });
 
         this.logger.log(`Password reset email sent to ${to}`);
@@ -245,27 +304,16 @@ export class EmailService {
   ): Promise<{ sent: boolean; error?: string }> {
     const candidates = await this.transportCandidates(organizationId);
     let workspaceError: string | undefined;
+    const email = candidates.length
+      ? invitationEmail({ inviteUrl, invitedByName, roleName }, await this.brand())
+      : null;
 
     for (const transport of candidates) {
       try {
         await transport.transporter.sendMail({
           from: transport.from,
           to,
-          subject: 'You\'ve been invited to AnythingMCP',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">You're Invited!</h2>
-              <p><strong>${invitedByName}</strong> has invited you to join the AnythingMCP workspace as <strong>${roleName}</strong>.</p>
-              <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
-              <a href="${inviteUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-                Accept Invitation
-              </a>
-              <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `You're Invited!\n\n${invitedByName} has invited you to join AnythingMCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
+          ...this.mail(email!),
         });
 
         this.logger.log(`Invitation email sent to ${to} (via ${transport.source} SMTP)`);
@@ -333,21 +381,7 @@ export class EmailService {
         await transport.transporter.sendMail({
           from: transport.from,
           to,
-          subject: 'Welcome to AnythingMCP — Your License Key',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">Welcome to AnythingMCP!</h2>
-              <p>Hi ${name},</p>
-              <p>Your license key is:</p>
-              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px; margin: 16px 0;">
-                ${licenseKey}
-              </div>
-              <p>Keep this key safe — you'll need it to activate your AnythingMCP instance.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `Welcome to AnythingMCP!\n\nHi ${name},\n\nYour license key is: ${licenseKey}\n\nKeep this key safe — you'll need it to activate your AnythingMCP instance.`,
+          ...this.mail(licenseKeyEmail({ name, licenseKey }, await this.brand())),
         });
 
         this.logger.log(`Welcome email sent to ${to}`);
@@ -392,27 +426,7 @@ export class EmailService {
         await transport.transporter.sendMail({
           from: transport.from,
           to,
-          // Code first: it is what the inbox preview shows, and what iOS
-          // reads to offer it above the keyboard (autocomplete one-time-code).
-          subject: `${code} is your AnythingMCP verification code`,
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">Verify Your Email</h2>
-              <p>Your verification code is:</p>
-              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; letter-spacing: 8px; margin: 16px 0; font-weight: bold;">
-                ${code}
-              </div>
-              <p>This code expires in 15 minutes.</p>
-              <p>Or click the button below to verify:</p>
-              <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-                Verify Email
-              </a>
-              <p style="color: #737373; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `Verify Your Email\n\nYour verification code: ${code}\n\nOr verify here: ${verifyUrl}\n\nThis code expires in 15 minutes.`,
+          ...this.mail(verificationEmail({ code, verifyUrl }, await this.brand())),
         });
 
         this.logger.log(`Verification email sent to ${to}`);
@@ -451,21 +465,7 @@ export class EmailService {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
-        subject: 'You already have an AnythingMCP account',
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #2563eb;">You already have an account</h2>
-            <p>Someone — probably you — just tried to create a new AnythingMCP account with this email address. There already is one, so no new account was created.</p>
-            <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-              Sign in
-            </a>
-            <p>Forgot your password? <a href="${resetUrl}" style="color: #2563eb;">Reset it here</a>.</p>
-            <p style="color: #737373; font-size: 14px;">If this wasn't you, you can ignore this email; nothing has changed on your account.</p>
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-          </div>
-        `,
-        text: `You already have an account\n\nSomeone — probably you — just tried to create a new AnythingMCP account with this email address. There already is one, so no new account was created.\n\nSign in: ${loginUrl}\nForgot your password? ${resetUrl}\n\nIf this wasn't you, you can ignore this email; nothing has changed on your account.`,
+        ...this.mail(existingAccountEmail({ loginUrl, resetUrl }, await this.brand())),
       });
       return true;
     } catch (err) {
@@ -494,63 +494,17 @@ export class EmailService {
       return false;
     }
 
-    const cloudUrl =
-      process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
-    const welcomeUrl = `${cloudUrl}/welcome`;
-    const storeUrl = `${cloudUrl}/connectors/store`;
-    const unsubUrl = `${cloudUrl}/settings/profile`;
-    const client = opts?.aiClient ? escapeHtml(opts.aiClient) : undefined;
-    const safeName = escapeHtml(name);
-
-    const button = (href: string, label: string) =>
-      `<p><a href="${href}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">${label}</a></p>`;
-    const askExamples = '<em>"Connect my Shopify store"</em> or <em>"Add HubSpot"</em>';
-
-    const subject = client
-      ? `${opts!.aiClient} is connected. Now ask it for your first app`
-      : dayNumber === 1
-        ? 'Connect your first app in two minutes: AnythingMCP'
-        : 'Still here? Pick a tool to try — AnythingMCP';
-
-    const body = client
-      ? `<p>Hi ${safeName},</p>
-           <p>You connected ${client} to AnythingMCP, but your workspace has no apps yet, so ${client} has nothing to reach.</p>
-           <p><strong>Ask ${client} for one, in the chat:</strong> ${askExamples}. It finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat. (This works when ${client} is connected through <code>${cloudUrl}/mcp</code>, which is what Claude's connector directory uses.)</p>
-           <p>Prefer clicking? Etsy, Odoo, weclapp, Lexware, Shopify and 260 more are in the dashboard.</p>
-           ${button(storeUrl, 'Add your first app →')}`
-      : dayNumber === 1
-        ? `<p>Hi ${safeName},</p>
-           <p>Your AnythingMCP workspace is ready but has no apps yet. Two ways to add one:</p>
-           <p><strong>From the chat.</strong> Add AnythingMCP to Claude (it is in <a href="https://claude.ai/directory/anythingmcp">Claude's connector directory</a>) or to ChatGPT with <code>${cloudUrl}/mcp</code>. Then ask: ${askExamples}. The assistant installs the connector and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.</p>
-           <p><strong>From the dashboard.</strong> Pick one of 265 ready-made connectors: Etsy, Odoo, weclapp, Lexware, Sendcloud, GitHub…</p>
-           ${button(welcomeUrl, 'Open the welcome wizard →')}
-           <p style="font-size:13px;color:#666;">Stuck, or the app you need is missing? Reply and tell us which one.</p>`
-        : `<p>Hi ${safeName},</p>
-           <p>Just checking in — your AnythingMCP account is still waiting for its first connector. If anything got in your way, hit reply and tell us what; we read every reply.</p>
-           ${button(welcomeUrl, 'Pick a connector →')}`;
+    const { ctx, headers } = await this.marketing(to);
+    const email = onboardingReminderEmail(
+      { name, dayNumber, aiClient: opts?.aiClient, cloudUrl: this.cloudUrl() },
+      ctx,
+    );
 
     try {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
-        subject,
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            ${body}
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 11px;">
-              You're receiving this because you signed up at cloud.anythingmcp.com.
-              <a href="${unsubUrl}" style="color: #a3a3a3;">Unsubscribe from these nudges</a>.
-            </p>
-          </div>
-        `,
-        text: `Hi ${name},\n\n${
-          opts?.aiClient
-            ? `You connected ${opts.aiClient} to AnythingMCP, but your workspace has no apps yet. Ask ${opts.aiClient} in the chat, e.g. "Connect my Shopify store": it installs the connector and gives you a one-time link to sign in to the app.\n\nOr add one in the dashboard: ${storeUrl}`
-            : dayNumber === 1
-              ? `Your AnythingMCP workspace is ready but has no apps yet.\n\nFrom the chat: add AnythingMCP to Claude (connector directory) or ChatGPT with ${cloudUrl}/mcp, then ask "Connect my Shopify store". The assistant installs the connector and gives you a one-time link to sign in to the app.\n\nFrom the dashboard: ${welcomeUrl}`
-              : `Your AnythingMCP account is still waiting for its first connector.\n\nOpen the wizard: ${welcomeUrl}`
-        }\n\nUnsubscribe: ${unsubUrl}`,
+        ...this.mail(email, headers),
       });
       this.logger.log(
         `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${to}`,
@@ -564,16 +518,13 @@ export class EmailService {
     }
   }
 
-  // ── Activation Reminder (SMTP only) ───────────────────────────────────
-  // Sent once to a user who built a connector but never got a single
-  // successful tool call — the biggest drop-off point. Links straight to
-  // their connector so they can run a test in one click.
-
   /**
    * Trial lifecycle (cloud-only, SMTP-only): value-oriented nudges as the trial
    * winds down. Unlike the activation drip, these connect what the user has
    * BUILT to the upgrade. Stages: warn3 (~3 days left), warn1 (last day),
    * expired (trial over, data preserved). Returns false if no SMTP (skipped).
+   * Lifecycle, not marketing: the cron sends them regardless of the marketing
+   * opt-out, so they carry no unsubscribe line.
    */
   async sendTrialLifecycleEmail(
     to: string,
@@ -587,56 +538,13 @@ export class EmailService {
       return false;
     }
 
-    const cloudUrl = process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
-    const marketingUrl = process.env.MARKETING_URL || 'https://anythingmcp.com';
-    const pricingUrl = `${marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`;
-
-    const built =
-      recap.connectors > 0
-        ? `You've wired up <strong>${recap.connectors} connector${recap.connectors === 1 ? '' : 's'}</strong>` +
-          (recap.successfulCalls > 0
-            ? ` and made <strong>${recap.successfulCalls} successful tool call${recap.successfulCalls === 1 ? '' : 's'}</strong>`
-            : '') +
-          `.`
-        : '';
-
-    const subject =
-      stage === 'expired'
-        ? 'Your AnythingMCP trial has ended — your work is saved'
-        : stage === 'warn1'
-          ? 'Last day of your AnythingMCP trial'
-          : `Your AnythingMCP trial ends in ${recap.daysLeft} days`;
-
-    const intro =
-      stage === 'expired'
-        ? `<p>Hi ${name},</p>
-           <p>Your 7-day trial has ended. ${built} <strong>Nothing was deleted</strong> — your connectors, MCP servers and configuration are preserved. Upgrade to pick up exactly where you left off.</p>`
-        : stage === 'warn1'
-          ? `<p>Hi ${name},</p>
-             <p>Your AnythingMCP trial ends <strong>tomorrow</strong>. ${built} Upgrade now so your agents keep calling your tools without interruption.</p>`
-          : `<p>Hi ${name},</p>
-             <p>Your AnythingMCP trial ends in <strong>${recap.daysLeft} days</strong>. ${built} Pick a plan to keep it all running.</p>`;
-
-    const html = `
-      <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-        ${intro}
-        <p><a href="${pricingUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">View plans &amp; upgrade →</a></p>
-        <p style="font-size:13px;color:#666;">Already have a key? Enter it at <a href="${cloudUrl}/settings/license">${cloudUrl.replace(/^https?:\/\//, '')}/settings/license</a>.</p>
-        <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-        <p style="color: #a3a3a3; font-size: 11px;">You're receiving this because your workspace is on a trial at cloud.anythingmcp.com.</p>
-      </div>
-    `;
-    const text =
-      `Hi ${name},\n\n` +
-      (stage === 'expired'
-        ? `Your 7-day AnythingMCP trial has ended. Nothing was deleted — your connectors and configuration are preserved. Upgrade to continue.\n\n`
-        : stage === 'warn1'
-          ? `Your AnythingMCP trial ends tomorrow. Upgrade so your agents keep working.\n\n`
-          : `Your AnythingMCP trial ends in ${recap.daysLeft} days. Upgrade to keep it running.\n\n`) +
-      `View plans: ${pricingUrl}\nEnter a key: ${cloudUrl}/settings/license`;
+    const email = trialLifecycleEmail(
+      { name, stage, recap, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      await this.brand(),
+    );
 
     try {
-      await transport.transporter.sendMail({ from: transport.from, to, subject, html, text });
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
       this.logger.log(`Trial-${stage} email sent to ${to}`);
       return true;
     } catch (err) {
@@ -644,6 +552,11 @@ export class EmailService {
       return false;
     }
   }
+
+  // ── Activation Reminder (SMTP only) ───────────────────────────────────
+  // Sent once to a user who built a connector but never got a single
+  // successful tool call — the biggest drop-off point. Links straight to
+  // their connector so they can run a test in one click.
 
   async sendActivationReminderEmail(
     to: string,
@@ -659,45 +572,17 @@ export class EmailService {
       return false;
     }
 
-    const cloudUrl =
-      process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
-    const connectorUrl = `${cloudUrl}${connectorPath}`;
-    const unsubUrl = `${cloudUrl}/settings/profile`;
-
-    const connectClient = variant === 'connect-client';
-    const subject = connectClient
-      ? 'Your MCP server is ready — one paste connects Claude, Cursor or ChatGPT'
-      : "You're one call away — finish setting up your connector";
-    const body = connectClient
-      ? `<p>Hi ${name},</p>
-      <p>Your connector is set up and sitting on an MCP server, but no client has talked to it yet. The last step is a copy and paste.</p>
-      <p>Open the server page, copy the endpoint, and pick your client under <strong>Quick Connect</strong> — Claude, Cursor, ChatGPT, Meta Muse and Claude Code each have a short recipe there.</p>
-      <p><a href="${connectorUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Connect your client →</a></p>
-      <p style="font-size:13px;color:#666;">Stuck? Reply to this email — we read every one.</p>`
-      : `<p>Hi ${name},</p>
-      <p>You created a connector in AnythingMCP but it hasn't made a successful call yet. That last step — running one tool — is where everything clicks.</p>
-      <p>Open your connector and hit <strong>Run test</strong> on any tool. If it returns an error, the message now tells you exactly what to fix (a missing API key, a wrong URL, etc.).</p>
-      <p><a href="${connectorUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Test your connector →</a></p>
-      <p style="font-size:13px;color:#666;">Stuck? Reply to this email — we read every one.</p>`;
+    const { ctx, headers } = await this.marketing(to);
+    const email = activationReminderEmail(
+      { name, connectorUrl: `${this.cloudUrl()}${connectorPath}`, variant },
+      ctx,
+    );
 
     try {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
-        subject,
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            ${body}
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 11px;">
-              You're receiving this because you signed up at cloud.anythingmcp.com.
-              <a href="${unsubUrl}" style="color: #a3a3a3;">Unsubscribe from these nudges</a>.
-            </p>
-          </div>
-        `,
-        text: connectClient
-          ? `Hi ${name},\n\nYour connector is set up on an MCP server, but no client has talked to it yet. Open the server page, copy the endpoint and pick your client under Quick Connect.\n\nConnect your client: ${connectorUrl}\n\nUnsubscribe: ${unsubUrl}`
-          : `Hi ${name},\n\nYou created a connector in AnythingMCP but it hasn't made a successful call yet. Open it and hit "Run test" on any tool — error messages now tell you exactly what to fix.\n\nTest your connector: ${connectorUrl}\n\nUnsubscribe: ${unsubUrl}`,
+        ...this.mail(email, headers),
       });
       this.logger.log(`Activation-reminder email sent to ${to}`);
       return true;
@@ -719,9 +604,7 @@ export class EmailService {
   async sendTrialWinbackEmail(
     to: string,
     name: string,
-    offer:
-      | { kind: 'discount'; percentOff: number; promoCode: string; endedAgo: 'week' | 'month'; successfulCalls: number }
-      | { kind: 'help' },
+    offer: WinbackOffer,
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
@@ -729,70 +612,17 @@ export class EmailService {
       return false;
     }
 
-    const cloudUrl = process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
-    const marketingUrl = process.env.MARKETING_URL || 'https://anythingmcp.com';
-    const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
-    const unsubUrl = `${cloudUrl}/settings/profile`;
-    const button = (href: string, label: string) =>
-      `<p><a href="${href}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">${label}</a></p>`;
-
-    let subject: string;
-    let body: string;
-    let text: string;
-    if (offer.kind === 'discount') {
-      const promo = encodeURIComponent(offer.promoCode);
-      const pricingUrl = `${marketingUrl}/pricing?promo=${promo}&return_url=${returnUrl}`;
-      const calls =
-        offer.successfulCalls > 0
-          ? ` Your agents made <strong>${offer.successfulCalls} successful tool call${offer.successfulCalls === 1 ? '' : 's'}</strong> during the trial, and your connectors are still there.`
-          : ' Your connectors are still there.';
-      subject =
-        offer.endedAgo === 'week'
-          ? `${offer.percentOff}% off your first 3 months of AnythingMCP`
-          : `One more try? ${offer.percentOff}% off AnythingMCP for 3 months`;
-      body = `<p>Hi ${name},</p>
-        <p>Your AnythingMCP trial ended a ${offer.endedAgo} ago.${calls}</p>
-        <p>If you'd like to pick up where you left off, here is <strong>${offer.percentOff}% off your first 3 months</strong> on any Cloud plan. The code is applied when you use the button, or enter it at checkout:</p>
-        <p style="background:#f5f5f5;padding:12px;border-radius:6px;text-align:center;font-family:monospace;font-size:16px;font-weight:bold;letter-spacing:2px;">${offer.promoCode}</p>
-        ${button(pricingUrl, `Reactivate with ${offer.percentOff}% off →`)}
-        <p style="font-size:13px;color:#666;">Not the right time, or something was missing? Reply and tell us; we read every answer.</p>`;
-      text =
-        `Hi ${name},\n\nYour AnythingMCP trial ended a ${offer.endedAgo} ago. Here is ${offer.percentOff}% off your first 3 months on any Cloud plan.\n\n` +
-        `Code: ${offer.promoCode}\nReactivate: ${pricingUrl}\n\nUnsubscribe: ${unsubUrl}`;
-    } else {
-      const pricingUrl = `${marketingUrl}/pricing?return_url=${returnUrl}`;
-      const connectorsUrl = `${cloudUrl}/connectors`;
-      subject = 'Connect your first app to Claude in two minutes';
-      body = `<p>Hi ${name},</p>
-        <p>Your AnythingMCP trial ended last week before you connected an app, so you never saw the part that matters. It is quicker than it looks.</p>
-        <p><strong>You can set it up from the chat.</strong> Add AnythingMCP to Claude (it is in Claude's connector directory) or to ChatGPT with <code>${cloudUrl}/mcp</code>, then just ask: <em>"Connect my Shopify store"</em> or <em>"Add HubSpot"</em>. The assistant finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.</p>
-        <p>You can also pick from 200+ apps in the dashboard: <a href="${connectorsUrl}">${connectorsUrl.replace(/^https?:\/\//, '')}</a>.</p>
-        <p>Your workspace is still there. To use it again, choose a plan:</p>
-        ${button(pricingUrl, 'See plans →')}
-        <p style="font-size:13px;color:#666;">Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly.</p>`;
-      text =
-        `Hi ${name},\n\nYour AnythingMCP trial ended last week before you connected an app.\n\n` +
-        `You can set it up from the chat: add AnythingMCP to Claude (connector directory) or ChatGPT with ${cloudUrl}/mcp and ask "Connect my Shopify store". ` +
-        `The assistant installs the connector and gives you a one-time link to sign in to the app.\n\n` +
-        `Or pick from 200+ apps: ${connectorsUrl}\nPlans: ${pricingUrl}\n\nUnsubscribe: ${unsubUrl}`;
-    }
+    const { ctx, headers } = await this.marketing(to);
+    const email = trialWinbackEmail(
+      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      ctx,
+    );
 
     try {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
-        subject,
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            ${body}
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 11px;">
-              You're receiving this because you tried AnythingMCP at cloud.anythingmcp.com.
-              <a href="${unsubUrl}" style="color: #a3a3a3;">Unsubscribe from these emails</a>.
-            </p>
-          </div>
-        `,
-        text,
+        ...this.mail(email, headers),
       });
       this.logger.log(`Trial win-back (${offer.kind}) email sent to ${to}`);
       return true;

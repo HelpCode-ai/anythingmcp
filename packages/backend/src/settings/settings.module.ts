@@ -4,9 +4,10 @@ import { OrgSettingsService } from './org-settings.service';
 import { EmailService } from './email.service';
 import { SiteSettingsPublicController, SiteSettingsAdminController } from './site-settings.controller';
 import { SsrfPolicyService } from '../common/ssrf-policy.service';
+import { UnsubscribeController } from './unsubscribe.controller';
 
 @Module({
-  controllers: [SiteSettingsPublicController, SiteSettingsAdminController],
+  controllers: [SiteSettingsPublicController, SiteSettingsAdminController, UnsubscribeController],
   providers: [SiteSettingsService, OrgSettingsService, EmailService, SsrfPolicyService],
   exports: [SiteSettingsService, OrgSettingsService, EmailService, SsrfPolicyService],
 })

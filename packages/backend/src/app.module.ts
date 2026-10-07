@@ -41,6 +41,7 @@ import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor
 import { EmailVerifiedGuard } from './auth/email-verified.guard';
 import { AdaptersModule } from './adapters/adapters.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { PublicStatsModule } from './public-stats/public-stats.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { LicensingModule } from './ee/licensing/licensing.module';
 import { getRequiredSecret } from './common/secrets.util';
@@ -138,6 +139,10 @@ if (useOAuth) {
 
     // Cache
     RedisModule,
+
+    // Public aggregate numbers (GitHub stars, downloads, ...) for emails and
+    // the sign-in pages. Global: EmailService and LoginController use it.
+    PublicStatsModule,
 
     // Rate limiting — single default bucket (100 req/min). Sensitive routes
     // (login, register, password reset) override this with @Throttle() so
