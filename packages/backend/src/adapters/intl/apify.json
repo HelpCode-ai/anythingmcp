@@ -23,7 +23,6 @@
     }
   },
   "prerequisites": "- An Apify account; the free plan includes monthly platform credit, and every Actor run spends credits.\n- An Apify API token from Apify Console under Settings > API & Integrations.\n- Paid Actors from Apify Store bill per result or per event on top of platform usage, so check prices before running them.",
-  "unlisted": true,
   "connector": {
     "name": "Apify",
     "type": "MCP",
