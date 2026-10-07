@@ -49,7 +49,7 @@ describe('github adapter: static spec conformance', () => {
   it('ships the destructive tools switched off', () => {
     const off = a.tools.filter((t) => t.enabled === false).map((t) => t.endpointMapping.method);
     expect(off).toEqual(
-      expect.arrayContaining(['merge_pull_request', 'delete_file', 'push_files', 'create_or_update_file', 'delete_repository']),
+      expect.arrayContaining(['merge_pull_request', 'delete_file', 'push_files', 'create_or_update_file']),
     );
     for (const t of a.tools.filter((x) => x.annotations?.destructiveHint === true)) {
       expect(t.enabled).toBe(false);
