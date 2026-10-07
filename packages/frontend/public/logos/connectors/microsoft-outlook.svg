@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Outlook">
+  <rect x="20" y="10" width="38" height="44" rx="5" fill="#28A8EA"/>
+  <path d="M20 30l19 11 19-11v19a5 5 0 0 1-5 5H25a5 5 0 0 1-5-5z" fill="#0078D4"/>
+  <rect x="4" y="16" width="32" height="32" rx="5" fill="#0F6CBD"/>
+  <ellipse cx="20" cy="32" rx="8" ry="9.5" fill="none" stroke="#fff" stroke-width="4"/>
+</svg>
