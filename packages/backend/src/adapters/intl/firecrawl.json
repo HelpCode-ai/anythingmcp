@@ -23,7 +23,6 @@
     }
   },
   "prerequisites": "- A Firecrawl account; the free plan includes a small credit allowance, and every scrape, search, crawl and agent run spends credits.\n- A Firecrawl API key from API Keys in the Firecrawl dashboard.\n- Some tools (monitors, research, Alexandria data providers) depend on your plan and team policy; the server only lists the tools your key may use.",
-  "unlisted": true,
   "connector": {
     "name": "Firecrawl",
     "type": "MCP",

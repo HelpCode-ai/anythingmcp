@@ -23,7 +23,6 @@
     }
   },
   "prerequisites": "- A Linear account in the workspace you want to reach; the key works with whatever that account can see.\n- Personal API keys must be allowed in the workspace (admins can restrict them under Settings > Security).\n- Network access from the AnythingMCP server to mcp.linear.app over HTTPS.",
-  "unlisted": true,
   "connector": {
     "name": "Linear",
     "type": "MCP",

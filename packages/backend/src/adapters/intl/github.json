@@ -2,7 +2,7 @@
   "slug": "github",
   "name": "GitHub",
   "description": "Work with GitHub from Claude, ChatGPT or Copilot through GitHub's official MCP server: read code and commits, search repositories, triage issues, and open and review pull requests.",
-  "instructions": "This connector bridges **GitHub's official remote MCP server** (`https://api.githubcopilot.com/mcp/`), hosted by GitHub and built from GitHub's open-source github-mcp-server. GitHub's own server provides the tools; with its default toolsets (context, repos, issues, pull_requests, users) that is repositories, files, branches, commits, tags and releases, issues and sub-issues, pull requests and reviews, code, commit and user search, and your own profile and teams. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems. Every tool gets the prefix `github_`, so GitHub's `list_issues` becomes `github_list_issues` and never collides with another connector's tool of the same name.\n\n**The tools come from the server.** At install AnythingMCP asks GitHub's server which tools it has, so you get the set GitHub serves for your token today. GitHub changes the set regularly: open the connector and click **Discover tools** to pick up new ones.\n\n**Setup (about 5 minutes)**:\n1. On GitHub open **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**. Pick the resource owner (your account or an organization), an expiry, and **Only select repositories** with the repositories the AI should reach.\n2. Under **Repository permissions** give **Contents**, **Issues** and **Pull requests** Read-only, or Read and write where the AI should create branches, commit, open issues or pull requests (Metadata read-only is added automatically). For `get_teams` and `get_team_members` add the organization permission **Members: Read-only**.\n3. If the owner is an organization, an organization owner may have to approve the token first (organization **Settings > Personal access tokens > Pending requests**); until then its repositories answer 403 or 404. Organizations with SAML single sign-on also need the token authorized for SSO.\n4. Paste the token into `GITHUB_PAT` and install. A classic token (`ghp_`, scope `repo`, plus `read:org` for teams) works too, but it reaches every repository you can, so prefer a fine-grained one.\n\n**Organization policies**: in organizations on Copilot Business or Copilot Enterprise, the **MCP servers in Copilot** policy must be enabled for the GitHub MCP server to be usable; if it is off, ask an organization or enterprise admin. Organizations can also restrict personal access tokens, and enterprises with Enterprise Managed Users may have them disabled altogether, in which case this connector cannot sign in with a token. GitHub Enterprise Cloud with data residency uses its own host: change the base URL to `https://copilot-api.<your-subdomain>.ghe.com/mcp`. GitHub Enterprise Server has no hosted MCP server.\n\n**Toolsets and read-only mode**: to serve other toolsets, open the connector editor and add under **Headers** `X-MCP-Toolsets` with a comma-separated list, for example `repos,issues,pull_requests,actions` (`default` keeps the default set, `all` turns on everything). Add `X-MCP-Readonly: true` to expose only read tools, whatever the token could do. Then click **Discover tools**.\n\n**Safety**: switched off at install: `merge_pull_request`, `push_files`, `create_or_update_file` (they change a branch's code directly), `delete_file` and `delete_repository`. Turn one on per tool if the AI really needs it, ideally with a token limited to the repositories involved. Everything runs as the token's owner: reviews submitted with `pull_request_review_write` count as that person's reviews and approvals. Issue, pull request and comment text on public repositories can be written by anyone; treat it as untrusted input (the header `X-MCP-Lockdown: true` makes GitHub hide content from authors without push access).\n\n**Working with it**: start with `github_get_me` (who the token is), then `github_search_repositories`, `github_get_file_contents`, `github_list_issues` or `github_search_issues`, and `github_pull_request_read`. A 401 means the token is wrong, expired or revoked; a 403 means a missing permission, an organization approval or SSO authorization still pending, or a policy; a 404 on a private repository usually means the token does not include it. GitHub's API rate limits apply to the token's owner, and an organization IP allow list applies to token access as well.",
+  "instructions": "This connector bridges **GitHub's official remote MCP server** (`https://api.githubcopilot.com/mcp/`), hosted by GitHub and built from GitHub's open-source github-mcp-server. GitHub's own server provides the tools; with its default toolsets (context, repos, issues, pull_requests, users) that is repositories, files, branches, commits, tags and releases, issues and sub-issues, pull requests and reviews, code, commit and user search, and your own profile and teams. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems. Every tool gets the prefix `github_`, so GitHub's `list_issues` becomes `github_list_issues` and never collides with another connector's tool of the same name.\n\n**The tools come from the server.** At install AnythingMCP asks GitHub's server which tools it has, so you get the set GitHub serves for your token today. GitHub changes the set regularly: open the connector and click **Discover tools** to pick up new ones.\n\n**Setup (about 5 minutes)**:\n1. On GitHub open **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**. Pick the resource owner (your account or an organization), an expiry, and **Only select repositories** with the repositories the AI should reach.\n2. Under **Repository permissions** give **Contents**, **Issues** and **Pull requests** Read-only, or Read and write where the AI should create branches, commit, open issues or pull requests (Metadata read-only is added automatically). For `get_teams` and `get_team_members` add the organization permission **Members: Read-only**.\n3. If the owner is an organization, an organization owner may have to approve the token first (organization **Settings > Personal access tokens > Pending requests**); until then its repositories answer 403 or 404. Organizations with SAML single sign-on also need the token authorized for SSO.\n4. Paste the token into `GITHUB_PAT` and install. A classic token (`ghp_`, scope `repo`, plus `read:org` for teams) works too, but it reaches every repository you can, so prefer a fine-grained one.\n\n**Organization policies**: in organizations on Copilot Business or Copilot Enterprise, the **MCP servers in Copilot** policy must be enabled for the GitHub MCP server to be usable; if it is off, ask an organization or enterprise admin. Organizations can also restrict personal access tokens, and enterprises with Enterprise Managed Users may have them disabled altogether, in which case this connector cannot sign in with a token. GitHub Enterprise Cloud with data residency uses its own host: change the base URL to `https://copilot-api.<your-subdomain>.ghe.com/mcp`. GitHub Enterprise Server has no hosted MCP server.\n\n**Toolsets and read-only mode**: to serve other toolsets, open the connector editor and add under **Headers** `X-MCP-Toolsets` with a comma-separated list, for example `repos,issues,pull_requests,actions` (`default` keeps the default set, `all` turns on everything). Add `X-MCP-Readonly: true` to expose only read tools, whatever the token could do. Then click **Discover tools**.\n\n**Safety**: switched off at install: `merge_pull_request`, `push_files`, `create_or_update_file` (they change a branch's code directly), and `delete_file`. Tools that a toolset header adds later, such as `delete_repository`, arrive switched off as well. Turn one on per tool if the AI really needs it, ideally with a token limited to the repositories involved. Everything runs as the token's owner: reviews submitted with `pull_request_review_write` count as that person's reviews and approvals. Issue, pull request and comment text on public repositories can be written by anyone; treat it as untrusted input (the header `X-MCP-Lockdown: true` makes GitHub hide content from authors without push access).\n\n**Working with it**: start with `github_get_me` (who the token is), then `github_search_repositories`, `github_get_file_contents`, `github_list_issues` or `github_search_issues`, and `github_pull_request_read`. A 401 means the token is wrong, expired or revoked; a 403 means a missing permission, an organization approval or SSO authorization still pending, or a policy; a 404 on a private repository usually means the token does not include it. GitHub's API rate limits apply to the token's owner, and an organization IP allow list applies to token access as well.",
   "region": "intl",
   "category": "infrastructure",
   "icon": "github",
@@ -23,7 +23,6 @@
     }
   },
   "prerequisites": "- A GitHub account with access to the repositories the AI should work with.\n- If the repositories belong to an organization: personal access tokens allowed there, and the fine-grained token approved by an organization owner when the organization requires it.\n- On Copilot Business or Copilot Enterprise: the \"MCP servers in Copilot\" policy enabled for the organization.",
-  "unlisted": true,
   "connector": {
     "name": "GitHub",
     "type": "MCP",
@@ -481,38 +480,6 @@
       },
       "endpointMapping": {
         "method": "delete_file",
-        "path": "/mcp"
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": true,
-        "idempotentHint": false,
-        "openWorldHint": true
-      },
-      "enabled": false
-    },
-    {
-      "name": "github_delete_repository",
-      "description": "Delete a GitHub repository after the user confirms the exact owner/repository name",
-      "parameters": {
-        "properties": {
-          "owner": {
-            "description": "Repository owner (username or organization)",
-            "type": "string"
-          },
-          "repo": {
-            "description": "Repository name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "owner",
-          "repo"
-        ],
-        "type": "object"
-      },
-      "endpointMapping": {
-        "method": "delete_repository",
         "path": "/mcp"
       },
       "annotations": {
@@ -1916,6 +1883,95 @@
       "enabled": false
     },
     {
+      "name": "github_request_copilot_review",
+      "description": "Request a GitHub Copilot code review for a pull request. Use this for automated feedback on pull requests, usually before requesting a human reviewer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Repository owner",
+            "x-mcp-header": "owner"
+          },
+          "pullNumber": {
+            "type": "number",
+            "description": "Pull request number"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name",
+            "x-mcp-header": "repo"
+          }
+        },
+        "required": [
+          "owner",
+          "repo",
+          "pullNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "request_copilot_review",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "github_run_secret_scanning",
+      "description": "Scan files, content, or recent changes for secrets such as API keys, passwords, tokens, and credentials.\n\nThis tool is intended for targeted scans of specific files, snippets, or diffs provided directly as content. The files parameter accepts either a single string or an array of strings containing raw file contents or diff hunks, and returns detected secrets with their locations and related secret scanning metadata. Content must not be empty. For full repository scanning, other mechanisms are available.\n\nCaveats:\n\n- Only files within the codebase should be scanned. Files outside of the codebase should not be sent.\n- Files listed in .gitignore should be skipped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "A single string or an array of strings containing file contents, snippets, or diff hunks to scan for secrets. These must be raw contents, not repository file paths.",
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              }
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "description": "Repository owner",
+            "x-mcp-header": "owner"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name",
+            "x-mcp-header": "repo"
+          }
+        },
+        "required": [
+          "files",
+          "owner",
+          "repo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "run_secret_scanning",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
       "name": "github_search_code",
       "description": "Fast and precise code search across ALL GitHub repositories using GitHub's native search engine. Best for finding exact symbols, functions, classes, or specific code patterns.",
       "parameters": {
@@ -2402,6 +2458,52 @@
       },
       "annotations": {
         "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "github_ui_get",
+      "description": "Fetch UI data for MCP Apps (labels, assignees, milestones, issue types, branches, issue fields, reviewers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "The type of data to fetch",
+            "enum": [
+              "labels",
+              "assignees",
+              "milestones",
+              "issue_types",
+              "branches",
+              "issue_fields",
+              "reviewers"
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "description": "Repository owner (required for all methods)",
+            "x-mcp-header": "owner"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name (required for labels, assignees, milestones, branches, issue fields, reviewers)",
+            "x-mcp-header": "repo"
+          }
+        },
+        "required": [
+          "method",
+          "owner"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ui_get",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": true
