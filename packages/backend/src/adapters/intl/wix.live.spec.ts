@@ -46,8 +46,8 @@ const refs = (v: unknown, out: Set<string>) => {
 };
 
 describe('wix adapter: static spec conformance', () => {
-  it('ships unlisted until verified against a real site', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified against a real site on 7 Oct 2026', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the API key bare in Authorization plus the wix-site-id header', () => {
