@@ -7,7 +7,6 @@
   "category": "e-commerce",
   "icon": "gelato",
   "docsUrl": "https://dashboard.gelato.com/docs/",
-  "unlisted": true,
   "requiredEnvVars": [
     "GELATO_API_KEY"
   ],
