@@ -60,7 +60,12 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
   },
 ];
 
-export const DEFAULT_SELECTION: PlanSelection = { plan: 'team', period: 'monthly' };
+/**
+ * Preselected when the pricing page left no intent. Starter, not Team: with
+ * Team preselected, 77 of 80 card-trial checkouts (1-6 Oct 2026) were left
+ * unfinished, against 51 of 113 for Starter. Team keeps its "Most popular" badge.
+ */
+export const DEFAULT_SELECTION: PlanSelection = { plan: 'starter', period: 'monthly' };
 
 export function planById(id: CloudPlanId): CloudPlan {
   return CLOUD_PLANS.find((p) => p.id === id) ?? CLOUD_PLANS[1];
