@@ -45,7 +45,7 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
-import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
+import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -1719,10 +1719,13 @@ export class ConnectorsController {
     // anything else with the variable's name. Catalog connectors store the
     // resolved URL, so the template comes from the catalog; a hand-built
     // connector keeps its template as the base URL itself.
-    const envVars = normalizeBaseUrlVariables(
-      adapter ? adapter.connector.baseUrl : connector.baseUrl,
-      kept,
-      connector.type,
+    // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) pasted as the
+    // whole address keeps only the label it stands for, as at install;
+    // without it the edit stored `acme.freshdesk.com/api/v2.freshdesk.com/…`.
+    const baseTemplate = adapter ? adapter.connector.baseUrl : connector.baseUrl;
+    const envVars = normalizeSubdomainVariables(
+      baseTemplate,
+      normalizeBaseUrlVariables(baseTemplate, kept, connector.type),
     );
 
     const updateData: {
