@@ -1,0 +1,633 @@
+{
+  "slug": "google-drive",
+  "name": "Google Drive",
+  "description": "Let your AI work in Google Drive: search files and folders in My Drive and shared drives, read Google Docs, Sheets and Slides as text, see details, comments and who has access, create folders and text files (or new Docs and Sheets from text), copy, rename, move, share and trash. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Drive\nThis connector searches, reads and organises the signed-in user's Google Drive through the **Google Drive API v3** (`https://www.googleapis.com/drive/v3`): My Drive, files shared with the user and shared drives. It exports Google Docs, Sheets and Slides as text, creates folders and text files, copies, renames, moves, shares and trashes. It works with personal Google accounts and Google Workspace, as the Google account that authorized the connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Drive API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose Drive the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Google verification (restricted scope)**: Google classifies `drive` and `drive.readonly` as *restricted* scopes. An **External** app that other people use needs Google's OAuth app verification, which for restricted scopes includes a security assessment; until then Google shows a \"Google hasn't verified this app\" warning and caps the app at 100 users. An **Internal** app, used only by accounts of the Workspace organisation that owns the Cloud project, needs no verification. For your own account, an External app *In production* works after you continue past the warning.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/drive`, because searching and reading files the connector did not create needs full Drive access; narrower scopes such as `drive.file` only see files the app created itself. For a read-only setup, change the scope to `https://www.googleapis.com/auth/drive.readonly` in the connector's OAuth settings, authorize again, and disable `gdrive_create_folder`, `gdrive_create_text_file`, `gdrive_copy_file`, `gdrive_update_file`, `gdrive_share_file` and `gdrive_trash_file`.\n\n**Switched off at install**: `gdrive_trash_file`. Turn it on per tool if the AI should move files to the trash. Nothing here deletes permanently. `gdrive_share_file` is on: it gives other people access, so consider turning it off if the AI should never share.\n\n**Ids**: every file and folder has an id, the long string in its link: `https://docs.google.com/document/d/<id>/edit`, `https://docs.google.com/spreadsheets/d/<id>/edit`, `https://drive.google.com/file/d/<id>/view`, `https://drive.google.com/drive/folders/<id>`. The root of My Drive is `root`. Shared drives have ids from `gdrive_list_shared_drives`.\n\n**Searching (`q`)**: combine conditions with `and`, `or`, `not` and parentheses; strings use single quotes.\n- `name contains 'invoice'`, `name = 'Budget 2026'`, `fullText contains 'purchase order'` (searches content too).\n- `mimeType = 'application/vnd.google-apps.folder'` (folders), `'application/vnd.google-apps.document'` (Docs), `'application/vnd.google-apps.spreadsheet'` (Sheets), `'application/vnd.google-apps.presentation'` (Slides), `'application/pdf'`.\n- `'<folderId>' in parents` lists a folder's direct children (`'root' in parents` for the top of My Drive); `'ana@example.com' in owners`; `sharedWithMe`; `starred`.\n- `modifiedTime > '2026-10-01T00:00:00'` (RFC 3339, UTC unless an offset is given).\n- Add `trashed = false` unless the user asks about the trash: without it results include trashed files.\nSearches include shared drives the user belongs to. With `corpora: \"allDrives\"` Google may answer `incompleteSearch: true`; narrow the query or search one shared drive with `corpora: \"drive\"` and `drive_id`.\n\n**Reading content**: `gdrive_export_file` returns Google Docs as `text/plain`, `text/markdown` or `text/html`, Sheets as `text/csv` or `text/tab-separated-values` (first sheet only; the Google Sheets connector reads any range of any sheet), Slides as `text/plain`. Google allows exports up to 10 MB; this connector cuts the answer at 200 KB and marks it `_truncated`. Uploaded files such as PDFs, Word documents or images cannot be read or downloaded through this connector: give the user the `webViewLink`. For Office files, `gdrive_copy_file` does not convert, so ask the user to open the file with Google Docs or Sheets first.\n\n**Creating and organising**\n- `gdrive_create_text_file` uploads text in one call. Set `content_type` to the text's format and `drive_mime_type` to the same value to keep it as a file, or to `application/vnd.google-apps.document` (from plain text, Markdown or HTML) or `application/vnd.google-apps.spreadsheet` (from CSV) to create a Google Doc or Sheet. `folder_id` defaults to `root`. File names cannot contain double quotes or backslashes.\n- `gdrive_update_file` renames or moves: to move, pass the target folder in `add_parents` and the current parent (from `gdrive_get_file`) in `remove_parents`. Items on a shared drive have exactly one parent.\n- `gdrive_trash_file` moves an item to the trash, restorable from drive.google.com for 30 days; only the owner (or a shared drive organizer) can do it.\n\n**Sharing**: `gdrive_list_permissions` shows who has access. `gdrive_share_file` adds access: `type: \"user\"` with `email_address` and `role` `reader`, `commenter` or `writer`; `type: \"anyone\"` makes it available to anyone with the link. Google emails the person unless `send_notification_email` is false. Ownership transfer and removing access are not available here.\n\n**Pagination**: list responses carry `nextPageToken` while more results exist; call the same tool with the same arguments and `page_token` set to it. `page_size` goes up to 1000 for files and 100 for permissions, comments and shared drives.\n\n**Quotas**: Drive allows about 12,000 requests per minute per project and per user. Over the limit Google answers 403 `userRateLimitExceeded` / `rateLimitExceeded` or 429: wait a little and retry.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `insufficientPermissions` / `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: the scope does not allow the call (a write on a read-only setup). 403 `accessNotConfigured`: enable the Google Drive API in the Cloud project. 403 `insufficientFilePermissions`: the user may not change that file.\n- 404 `notFound`: the id is wrong or the file is not visible to this account.\n- 400 `invalid` on export: the format does not suit the file type (e.g. text/csv for a Doc). 403 `exportSizeLimitExceeded`: the file is over 10 MB as an export.\n- 400 `invalidQuery` / `Invalid Value` on search: check quoting in `q`, and do not combine `order_by` with `fullText contains`.\n\n**Out of scope here**: downloading or uploading binary files, permanent deletion, removing access, revisions, labels and Drive activity.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "google-drive",
+  "docsUrl": "https://developers.google.com/workspace/drive/api/reference/rest/v3",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Drive API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Drive is throttling this account or project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gdrive_about"
+  },
+  "prerequisites": "A Google Cloud project with the **Google Drive API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The Drive scope is restricted: outside a single Workspace organisation, Google shows an unverified-app warning until the app passes its verification. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Drive",
+    "type": "REST",
+    "baseUrl": "https://www.googleapis.com/drive/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/drive"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/about?fields=user"
+  },
+  "tools": [
+    {
+      "name": "gdrive_about",
+      "description": "Who is signed in and how much storage is used: user name, email and permissionId, storage limit and usage in bytes (Drive, Gmail and Photos share it), and the maximum upload size.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/about",
+        "queryParams": {
+          "fields": "user(displayName,emailAddress,permissionId),storageQuota,maxUploadSize,canCreateDrives"
+        }
+      }
+    },
+    {
+      "name": "gdrive_search_files",
+      "description": "Search or list files and folders in My Drive, files shared with the user and shared drives, with Drive's query language, e.g. \"name contains 'invoice' and trashed = false\" or \"'<folderId>' in parents and trashed = false\". Returns id, name, mimeType, parents, modifiedTime, size, owners and webViewLink; paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Drive query, e.g. \"name contains 'budget' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false\". Quote values with single quotes; escape a ' inside a value as \\'. Omit to list everything (including the trash)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, with the same other arguments."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort keys, comma-separated, each optionally followed by \" desc\": createdTime, folder, modifiedByMeTime, modifiedTime, name, quotaBytesUsed, recency, sharedWithMeTime, starred, viewedByMeTime. E.g. \"modifiedTime desc\". Not allowed together with a fullText search."
+          },
+          "corpora": {
+            "type": "string",
+            "description": "Where to search: \"user\" (default: My Drive and shared with me), \"drive\" (one shared drive, needs drive_id), \"allDrives\" (everything, may set incompleteSearch).",
+            "enum": [
+              "user",
+              "drive",
+              "allDrives"
+            ]
+          },
+          "drive_id": {
+            "type": "string",
+            "description": "Shared drive id from gdrive_list_shared_drives, with corpora \"drive\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files",
+        "queryParams": {
+          "q": "$q",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "orderBy": "$order_by",
+          "corpora": "$corpora",
+          "driveId": "$drive_id",
+          "supportsAllDrives": true,
+          "includeItemsFromAllDrives": true,
+          "fields": "nextPageToken,incompleteSearch,files(id,name,mimeType,parents,modifiedTime,size,owners(displayName,emailAddress),webViewLink,driveId,shared,starred,trashed)"
+        }
+      }
+    },
+    {
+      "name": "gdrive_get_file",
+      "description": "Get one file's or folder's metadata: name, mimeType, parents, owners, last modifier, dates, size, webViewLink, what the user may do with it (capabilities) and, for Google Docs, Sheets and Slides, the available export formats. Does not return content: read Google files with gdrive_export_file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "supportsAllDrives": true,
+          "fields": "id,name,mimeType,description,parents,createdTime,modifiedTime,size,md5Checksum,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),webViewLink,driveId,shared,starred,trashed,capabilities(canEdit,canComment,canShare,canDownload,canTrash),exportLinks"
+        }
+      }
+    },
+    {
+      "name": "gdrive_export_file",
+      "description": "Read the content of a Google Doc, Sheet or Slides file as text: Docs as text/plain, text/markdown or text/html, Sheets as text/csv or text/tab-separated-values (first sheet only), Slides as text/plain. Output over 200 KB is cut and marked _truncated. Uploaded files (PDF, Word, images) cannot be read here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "Format to export to; must suit the file type.",
+            "enum": [
+              "text/plain",
+              "text/markdown",
+              "text/html",
+              "text/csv",
+              "text/tab-separated-values"
+            ]
+          }
+        },
+        "required": [
+          "file_id",
+          "mime_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}/export",
+        "encodePathParams": true,
+        "queryParams": {
+          "mimeType": "$mime_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gdrive_create_folder",
+      "description": "Create a folder, at the root of My Drive or inside the given parent folder or shared drive. Returns the new folder's id, name, parents and webViewLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name."
+          },
+          "parent_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder ids the new item goes into, normally one, e.g. [\"1AbC...\"]; a shared drive's id puts it at that drive's top level. Omit for the root of My Drive."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional folder description."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files",
+        "queryParams": {
+          "supportsAllDrives": true,
+          "fields": "id,name,mimeType,parents,webViewLink"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "mimeType": "application/vnd.google-apps.folder",
+          "parents": "$parent_ids",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "gdrive_create_text_file",
+      "description": "Create a file from text in one call: a plain file (.txt, .md, .csv, .html, .json), or a Google Doc converted from plain text, Markdown or HTML, or a Google Sheet converted from CSV. Returns id, name, mimeType and webViewLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "File name, e.g. \"Meeting notes.md\" or \"Q3 figures\". No double quotes or backslashes.",
+            "pattern": "^[^\"\\\\\\u0000-\\u001f]+$"
+          },
+          "content": {
+            "type": "string",
+            "description": "The full text content (UTF-8), not empty."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "Format of content.",
+            "enum": [
+              "text/plain",
+              "text/markdown",
+              "text/csv",
+              "text/html",
+              "application/json"
+            ]
+          },
+          "drive_mime_type": {
+            "type": "string",
+            "description": "What the file becomes in Drive: the same value as content_type to keep it as that file type, \"application/vnd.google-apps.document\" to convert plain text, Markdown or HTML into a Google Doc, \"application/vnd.google-apps.spreadsheet\" to convert CSV into a Google Sheet.",
+            "enum": [
+              "text/plain",
+              "text/markdown",
+              "text/csv",
+              "text/html",
+              "application/json",
+              "application/vnd.google-apps.document",
+              "application/vnd.google-apps.spreadsheet"
+            ]
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id to create the file in (default \"root\", the top of My Drive).",
+            "default": "root",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "name",
+          "content",
+          "content_type",
+          "drive_mime_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://www.googleapis.com/upload/drive/v3/files",
+        "headers": {
+          "Content-Type": "multipart/related; boundary=amcp_7f3a9c2e5b1d4086"
+        },
+        "queryParams": {
+          "uploadType": "multipart",
+          "supportsAllDrives": true,
+          "fields": "id,name,mimeType,parents,webViewLink"
+        },
+        "bodyMapping": {
+          "__raw": "--amcp_7f3a9c2e5b1d4086\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"name\": \"${name}\", \"mimeType\": \"${drive_mime_type}\", \"parents\": [\"${folder_id}\"]}\r\n--amcp_7f3a9c2e5b1d4086\r\nContent-Type: ${content_type}; charset=UTF-8\r\n\r\n${content}\r\n--amcp_7f3a9c2e5b1d4086--\r\n"
+        }
+      }
+    },
+    {
+      "name": "gdrive_copy_file",
+      "description": "Copy a file (not a folder), optionally with a new name and into other folders. Google Docs, Sheets and Slides stay Google files. Returns the copy's id, name, parents and webViewLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the copy (default: \"Copy of <name>\")."
+          },
+          "parent_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder ids for the copy (default: the original's folder)."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/{file_id}/copy",
+        "encodePathParams": true,
+        "queryParams": {
+          "supportsAllDrives": true,
+          "fields": "id,name,mimeType,parents,webViewLink"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "parents": "$parent_ids"
+        }
+      }
+    },
+    {
+      "name": "gdrive_update_file",
+      "description": "Rename, move, describe or star a file or folder. To move, give add_parents (the target folder id) and remove_parents (the current parent ids from gdrive_get_file). Returns id, name, parents and webViewLink. Does not change content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "starred": {
+            "type": "boolean",
+            "description": "true to star, false to unstar."
+          },
+          "add_parents": {
+            "type": "string",
+            "description": "Comma-separated folder ids to add the item to (move target)."
+          },
+          "remove_parents": {
+            "type": "string",
+            "description": "Comma-separated folder ids to take the item out of (current parents, when moving)."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/files/{file_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "addParents": "$add_parents",
+          "removeParents": "$remove_parents",
+          "supportsAllDrives": true,
+          "fields": "id,name,mimeType,parents,webViewLink"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "starred": "$starred"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gdrive_trash_file",
+      "description": "Move a file or folder to the trash (a folder takes its contents along). It stays restorable from Drive's trash for 30 days. Only the owner, or an organizer on a shared drive, can trash. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/files/{file_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "supportsAllDrives": true,
+          "fields": "id,name,trashed"
+        },
+        "bodyMapping": {
+          "trashed": true
+        }
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "gdrive_list_permissions",
+      "description": "List who has access to a file or folder: each permission's id, type (user, group, domain, anyone), role (owner, organizer, fileOrganizer, writer, commenter, reader), email address or domain, and expiry. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Permissions per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}/permissions",
+        "encodePathParams": true,
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "supportsAllDrives": true,
+          "fields": "nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,expirationTime,deleted)"
+        }
+      }
+    },
+    {
+      "name": "gdrive_share_file",
+      "description": "Share a file or folder: give a person or group (type user/group + email_address), a whole domain (type domain + domain) or anyone with the link (type anyone) a role: reader, commenter, writer (or fileOrganizer/organizer on shared drives). Google emails people unless send_notification_email is false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Who gets access.",
+            "enum": [
+              "user",
+              "group",
+              "domain",
+              "anyone"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "description": "Access level.",
+            "enum": [
+              "reader",
+              "commenter",
+              "writer",
+              "fileOrganizer",
+              "organizer"
+            ]
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Email of the person or group, for type user or group."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain, e.g. example.com, for type domain."
+          },
+          "allow_file_discovery": {
+            "type": "boolean",
+            "description": "For type domain or anyone: true lets people find it by search; false (default) means link only."
+          },
+          "expiration_time": {
+            "type": "string",
+            "description": "RFC 3339 time when the access ends, e.g. 2026-12-31T23:00:00Z (users and groups, roles reader, commenter, writer)."
+          },
+          "send_notification_email": {
+            "type": "boolean",
+            "description": "false to share silently (allowed only for type user or group). Default: Google sends an email."
+          },
+          "email_message": {
+            "type": "string",
+            "description": "Short personal message in the notification email."
+          }
+        },
+        "required": [
+          "file_id",
+          "type",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/{file_id}/permissions",
+        "encodePathParams": true,
+        "queryParams": {
+          "sendNotificationEmail": "$send_notification_email",
+          "emailMessage": "$email_message",
+          "supportsAllDrives": true,
+          "fields": "id,type,role,emailAddress,domain,expirationTime"
+        },
+        "bodyMapping": {
+          "type": "$type",
+          "role": "$role",
+          "emailAddress": "$email_address",
+          "domain": "$domain",
+          "allowFileDiscovery": "$allow_file_discovery",
+          "expirationTime": "$expiration_time"
+        }
+      }
+    },
+    {
+      "name": "gdrive_list_comments",
+      "description": "List the comments on a file (Docs, Sheets, Slides, PDFs...): author, text, the quoted passage, created and modified time, resolved state and replies. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File or folder id: from gdrive_search_files, or from a link (https://docs.google.com/document/d/<id>/edit, https://drive.google.com/file/d/<id>/view, .../folders/<id>)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Comments per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted comments and replies."
+          },
+          "start_modified_time": {
+            "type": "string",
+            "description": "Only comments modified after this RFC 3339 time."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}/comments",
+        "encodePathParams": true,
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "includeDeleted": "$include_deleted",
+          "startModifiedTime": "$start_modified_time",
+          "fields": "nextPageToken,comments(id,content,author(displayName,emailAddress),createdTime,modifiedTime,resolved,quotedFileContent(value),replies(id,content,author(displayName,emailAddress),createdTime,action))"
+        }
+      }
+    },
+    {
+      "name": "gdrive_list_shared_drives",
+      "description": "List the shared drives the user is a member of, with id and name. Use an id as drive_id in gdrive_search_files (corpora \"drive\") or as a parent folder id. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Optional filter, e.g. \"name contains 'Sales'\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Shared drives per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives",
+        "queryParams": {
+          "q": "$q",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    }
+  ]
+}

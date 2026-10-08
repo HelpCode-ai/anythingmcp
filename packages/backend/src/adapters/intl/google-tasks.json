@@ -1,0 +1,432 @@
+{
+  "slug": "google-tasks",
+  "name": "Google Tasks",
+  "description": "Let your AI manage Google Tasks: see your task lists and what is open or due, add tasks and subtasks with due dates, update, complete and reorder them or move them to another list. The same tasks you see in Gmail, Google Calendar and the Tasks app. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Tasks\nThis connector reads and manages the signed-in user's Google Tasks through the **Google Tasks API v1** (`https://tasks.googleapis.com/tasks/v1`): task lists, tasks and subtasks, due dates, completing, moving and creating. These are the tasks shown in Gmail, Calendar and the Google Tasks app. It works with personal Google accounts and Google Workspace.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Tasks API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose tasks the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/tasks` (read and change the user's tasks and lists). For a read-only setup, change the scope to `https://www.googleapis.com/auth/tasks.readonly` in the connector's OAuth settings, authorize again, and disable `gtasks_create_tasklist`, `gtasks_create_task`, `gtasks_update_task`, `gtasks_complete_task` and `gtasks_move_task`.\n\n**Switched off at install**: `gtasks_delete_task`. Turn it on per tool if the AI should delete tasks; completing a task is usually what the user means.\n\n**Ids**: list ids come from `gtasks_list_tasklists`; `@default` always means the default list (\"My Tasks\"). Task ids come from `gtasks_list_tasks` and belong to their list: every task call needs both ids.\n\n**Listing**\n- `gtasks_list_tasks` returns open and completed tasks by default. Tasks completed in the Google apps are *hidden*, so to see them pass `show_completed: true` and `show_hidden: true`; `show_completed: false` gives only open tasks.\n- `due_min` / `due_max` filter on the due date (RFC 3339, e.g. `2026-10-15T00:00:00Z`), `completed_min` / `completed_max` on completion time.\n- A subtask carries `parent`, the id of its parent task; `position` orders siblings.\n- Tasks assigned from Google Docs or Chat spaces appear only with `show_assigned: true`.\n\n**Writing**\n- `gtasks_create_task` adds a task at the top of the list; `parent` makes it a subtask, `previous` places it after a sibling.\n- `due` is a date: Google stores only the day, so `2026-10-15T00:00:00.000Z` is \"15 October\"; a time of day cannot be set through the API.\n- `gtasks_complete_task` marks a task done; `gtasks_update_task` with `status: \"needsAction\"` reopens it and changes title, notes or due date (only the fields given).\n- `gtasks_move_task` re-parents, reorders or moves a task to another list (`destination_tasklist_id`).\n\n**Pagination**: list responses carry `nextPageToken` while more results exist; call the same tool with the same arguments and `page_token` set to it. Tasks come 20 per page by default, up to 100 with `max_results`.\n\n**Limits and quotas**: the Tasks API has a daily request quota per project (50,000 by default) and per-user rate limits. Over the limit Google answers 403 `rateLimitExceeded` or 429: wait and retry. A user can have up to 2,000 lists and 20,000 tasks per list.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `insufficientPermissions`: the scope does not allow the call (a write on a read-only setup). 403 `accessNotConfigured`: enable the Google Tasks API in the Cloud project.\n- 404: the list or task id is wrong, or the task belongs to another list.\n- 400 `Invalid Value` on `due`: write it as a full RFC 3339 timestamp, e.g. `2026-10-15T00:00:00.000Z`.\n\n**Out of scope here**: renaming or deleting task lists, clearing completed tasks, and recurring task rules.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "google-tasks",
+  "docsUrl": "https://developers.google.com/workspace/tasks/reference/rest",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Tasks API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Tasks is throttling this account or project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gtasks_list_tasklists",
+    "params": {
+      "max_results": 1
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google Tasks API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Tasks",
+    "type": "REST",
+    "baseUrl": "https://tasks.googleapis.com/tasks/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/tasks"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/@me/lists?maxResults=1"
+  },
+  "tools": [
+    {
+      "name": "gtasks_list_tasklists",
+      "description": "List the user's task lists with id, title and updated time. The first one is usually \"My Tasks\", also reachable as \"@default\". Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "description": "Task lists per page, 1 to 1000 (default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/@me/lists",
+        "queryParams": {
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "gtasks_create_tasklist",
+      "description": "Create a new task list with a title. Returns its id, which tasks can then be created in. Google allows up to 2,000 lists per user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Name of the new list."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/@me/lists",
+        "bodyMapping": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "gtasks_list_tasks",
+      "description": "List the tasks of one list with id, title, notes, status (needsAction or completed), due date, completed time, parent (for subtasks) and position. Filter by due or completion dates; open and completed tasks are both returned unless show_completed is false. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "show_completed": {
+            "type": "boolean",
+            "description": "false to return only open tasks (default true)."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true to include hidden tasks: tasks completed in the Google apps are hidden, so set this with show_completed to see them."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted tasks."
+          },
+          "show_assigned": {
+            "type": "boolean",
+            "description": "true to include tasks assigned to the user from Google Docs or Chat spaces."
+          },
+          "due_min": {
+            "type": "string",
+            "description": "Only tasks due on or after this RFC 3339 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "due_max": {
+            "type": "string",
+            "description": "Only tasks due before this RFC 3339 time."
+          },
+          "completed_min": {
+            "type": "string",
+            "description": "Only tasks completed on or after this RFC 3339 time (implies completed tasks)."
+          },
+          "completed_max": {
+            "type": "string",
+            "description": "Only tasks completed before this RFC 3339 time."
+          },
+          "updated_min": {
+            "type": "string",
+            "description": "Only tasks changed after this RFC 3339 time."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Tasks per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "tasklist_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{tasklist_id}/tasks",
+        "encodePathParams": true,
+        "queryParams": {
+          "showCompleted": "$show_completed",
+          "showHidden": "$show_hidden",
+          "showDeleted": "$show_deleted",
+          "showAssigned": "$show_assigned",
+          "dueMin": "$due_min",
+          "dueMax": "$due_max",
+          "completedMin": "$completed_min",
+          "completedMax": "$completed_max",
+          "updatedMin": "$updated_min",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "gtasks_get_task",
+      "description": "Get one task with title, notes, status, due date, completed time, parent, position, links and webViewLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gtasks_list_tasks."
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{tasklist_id}/tasks/{task_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gtasks_create_task",
+      "description": "Create a task in a list, at the top by default; with parent it becomes a subtask, with previous it goes after that sibling. Returns the task with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the task (up to 1,024 characters)."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Details (up to 8,192 characters)."
+          },
+          "due": {
+            "type": "string",
+            "description": "Due date as RFC 3339, e.g. \"2026-10-15T00:00:00.000Z\". Google keeps only the date; a time of day is dropped."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Id of the parent task, to create a subtask."
+          },
+          "previous": {
+            "type": "string",
+            "description": "Id of the sibling task the new task should follow (default: first position)."
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{tasklist_id}/tasks",
+        "encodePathParams": true,
+        "queryParams": {
+          "parent": "$parent",
+          "previous": "$previous"
+        },
+        "bodyMapping": {
+          "title": "$title",
+          "notes": "$notes",
+          "due": "$due"
+        }
+      }
+    },
+    {
+      "name": "gtasks_update_task",
+      "description": "Change a task: only the fields given are changed. status \"completed\" marks it done, \"needsAction\" reopens it. Returns the updated task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gtasks_list_tasks."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "notes": {
+            "type": "string",
+            "description": "New details; replaces the current notes."
+          },
+          "due": {
+            "type": "string",
+            "description": "Due date as RFC 3339, e.g. \"2026-10-15T00:00:00.000Z\". Google keeps only the date; a time of day is dropped."
+          },
+          "status": {
+            "type": "string",
+            "description": "\"needsAction\" (open) or \"completed\".",
+            "enum": [
+              "needsAction",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/lists/{tasklist_id}/tasks/{task_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "notes": "$notes",
+          "due": "$due",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "gtasks_complete_task",
+      "description": "Mark a task as completed (Google sets the completed time). Undo with gtasks_update_task and status \"needsAction\". Returns the updated task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gtasks_list_tasks."
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/lists/{tasklist_id}/tasks/{task_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "completed"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gtasks_move_task",
+      "description": "Move a task: make it a subtask (parent), reorder it after a sibling (previous), move it to the top level (neither), or to another list (destination_tasklist_id). Returns the moved task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gtasks_list_tasks."
+          },
+          "parent": {
+            "type": "string",
+            "description": "New parent task id; omit to move to the top level."
+          },
+          "previous": {
+            "type": "string",
+            "description": "Sibling task id to place it after; omit for the first position."
+          },
+          "destination_tasklist_id": {
+            "type": "string",
+            "description": "Id of another list to move the task to (subtasks follow; not for recurring tasks)."
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{tasklist_id}/tasks/{task_id}/move",
+        "encodePathParams": true,
+        "queryParams": {
+          "parent": "$parent",
+          "previous": "$previous",
+          "destinationTasklist": "$destination_tasklist_id"
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gtasks_delete_task",
+      "description": "Delete a task (its subtasks go with it). Prefer gtasks_complete_task for finished work. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": {
+            "type": "string",
+            "description": "Task list id from gtasks_list_tasklists; \"@default\" is the user's default list (\"My Tasks\")."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gtasks_list_tasks."
+          }
+        },
+        "required": [
+          "tasklist_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/lists/{tasklist_id}/tasks/{task_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}
