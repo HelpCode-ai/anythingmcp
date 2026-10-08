@@ -302,6 +302,138 @@ describe('WsdlParser', () => {
     });
   });
 
+  describe('required and optional parameters', () => {
+    it('makes WCF parameters with minOccurs="0" optional, leaving the rest of the tool as before', async () => {
+      const [tool] = await parser.parse(fixture('wrapped-operation-name'));
+
+      expect(tool.parameters).toEqual({
+        type: 'object',
+        properties: {
+          itemId: { type: 'number', description: 'SOAP parameter: itemId (xs:int)' },
+          language: { type: 'string', description: 'SOAP parameter: language (xs:string)' },
+        },
+      });
+    });
+
+    it('keeps elements without minOccurs required', async () => {
+      const [tool] = await parser.parse(fixture('request-element'));
+      expect((tool.parameters as any).required).toEqual(['itemId', 'language']);
+    });
+
+    it('keeps RPC parts required (they have no minOccurs)', async () => {
+      const [tool] = await parser.parse(fixture('rpc-literal'));
+      expect((tool.parameters as any).required).toEqual(['itemId', 'language']);
+    });
+
+    it('reads a JAX-WS schema: optional elements, enumerations, dates, no describe() metadata', async () => {
+      const [tool] = await parser.parse(fixture('jaxws-unqualified'));
+
+      expect(tool.parameters).toEqual({
+        type: 'object',
+        properties: {
+          customerId: { type: 'string', description: 'SOAP parameter: customerId (xs:string)' },
+          status: {
+            type: 'string',
+            enum: ['NEW', 'SHIPPED'],
+            description: 'SOAP parameter: status (orderStatus|xs:string|NEW,SHIPPED)',
+          },
+          deliveryDate: {
+            type: 'string',
+            format: 'date-time',
+            description: 'SOAP parameter: deliveryDate (xs:dateTime)',
+          },
+          address: {
+            type: 'object',
+            properties: { street: { type: 'string' }, city: { type: 'string' } },
+            additionalProperties: true,
+            description: 'SOAP parameter: address (complex type)',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'SOAP parameter: tags (xs:string), repeated: pass a list',
+          },
+          // nillable, but without minOccurs="0": it must be sent.
+          note: { type: 'string', description: 'SOAP parameter: note (xs:string)' },
+        },
+        required: ['customerId', 'note'],
+      });
+      expect(tool.endpointMapping).toEqual({
+        method: 'createOrder',
+        path: 'OrderServicePort',
+        bodyMapping: {
+          customerId: '$customerId',
+          status: '$status',
+          deliveryDate: '$deliveryDate',
+          address: '$address',
+          tags: '$tags',
+          note: '$note',
+        },
+        paramOrder: ['customerId', 'status', 'deliveryDate', 'address', 'tags', 'note'],
+        endpoint: 'http://orders.example.com/OrderService',
+        targetNamespace: 'http://example.com/orders',
+        elementOrder: { address: ['street', 'city'] },
+        childElementsQualified: false,
+      });
+    });
+
+    const inlineWsdl = (content: string) => `<?xml version="1.0" encoding="utf-8"?>
+<definitions name="S" targetNamespace="urn:s" xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="urn:s" xmlns:ext="urn:not-in-this-wsdl">
+  <types>
+    <xs:schema targetNamespace="urn:s" elementFormDefault="qualified">
+      <xs:element name="Op"><xs:complexType>${content}</xs:complexType></xs:element>
+      <xs:element name="OpResponse"><xs:complexType><xs:sequence/></xs:complexType></xs:element>
+    </xs:schema>
+  </types>
+  <message name="OpIn"><part name="parameters" element="tns:Op"/></message>
+  <message name="OpOut"><part name="parameters" element="tns:OpResponse"/></message>
+  <portType name="PT"><operation name="Op"><input message="tns:OpIn"/><output message="tns:OpOut"/></operation></portType>
+  <binding name="B" type="tns:PT">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Op"><soap:operation soapAction="urn:Op"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://s.example.com/"/></port></service>
+</definitions>`;
+
+    it('makes the elements of a choice, or of an optional group, optional', async () => {
+      const [tool] = await parser.parse(
+        inlineWsdl(`<xs:sequence>
+          <xs:element name="id" type="xs:string"/>
+          <xs:choice><xs:element name="byName" type="xs:string"/><xs:element name="byCode" type="xs:string"/></xs:choice>
+          <xs:sequence minOccurs="0"><xs:element name="page" type="xs:int"/></xs:sequence>
+        </xs:sequence>`),
+      );
+      expect(Object.keys((tool.parameters as any).properties)).toEqual(['id', 'byName', 'byCode', 'page']);
+      expect((tool.parameters as any).required).toEqual(['id']);
+    });
+
+    it('keeps every parameter required when the schema cannot be resolved', async () => {
+      const [tool] = await parser.parse(
+        inlineWsdl(`<xs:complexContent><xs:extension base="ext:Base"><xs:sequence>
+          <xs:element name="a" type="xs:string" minOccurs="0"/>
+        </xs:sequence></xs:extension></xs:complexContent>`),
+      );
+      expect((tool.parameters as any).required).toEqual(['a']);
+      expect(tool.endpointMapping).not.toHaveProperty('childElementsQualified');
+    });
+
+    it('reads the elements an extension inherits from its base type', async () => {
+      const wsdl = inlineWsdl(`<xs:complexContent><xs:extension base="tns:Base"><xs:sequence>
+          <xs:element name="own" type="xs:string" minOccurs="0"/>
+        </xs:sequence></xs:extension></xs:complexContent>`).replace(
+        '<xs:element name="OpResponse">',
+        `<xs:complexType name="Base"><xs:sequence>
+          <xs:element name="inherited" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+        <xs:element name="OpResponse">`,
+      );
+      const [tool] = await parser.parse(wsdl);
+      expect((tool.parameters as any).required).toEqual(['inherited']);
+    });
+  });
+
   describe('complex and repeated parameters (JAX-WS)', () => {
     it('describes a complex parameter as an object and a repeated one as an array', async () => {
       const [tool] = await parser.parse(fixture('jaxws-unqualified'));

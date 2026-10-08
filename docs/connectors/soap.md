@@ -101,6 +101,10 @@ Each parameter becomes an element in the body. Values are written as follows:
 
 Values may nest up to 20 levels; field names must be valid XML names. Attributes and `xsi:type` are not written.
 
+### Required and optional parameters
+
+On import, a parameter is required only when its schema element has no `minOccurs` or `minOccurs` of at least 1, and is not one branch of an `xs:choice`. WCF marks nearly every element `minOccurs="0"`, so its parameters are optional and the AI client no longer has to invent values for them; `nillable` alone does not make an element optional. RPC parts, and every parameter of an operation whose schema cannot be resolved, stay required. `xs:enumeration` values become the parameter's `enum`, and `xs:dateTime`, `xs:date` and `xs:time` parameters get the JSON Schema format `date-time`, `date` and `time`. Tools imported earlier keep the parameters they were stored with: re-import the WSDL to update them.
+
 ---
 
 ## WCF Service Support

@@ -12,6 +12,13 @@ const MAX_INPUT_DEPTH = 6;
 const MAX_INPUT_FIELDS = 200;
 const MAX_ELEMENT_ORDER_PATHS = 200;
 
+/** JSON Schema `format` of XSD date and time types. */
+const XSD_FORMATS = new Map([
+  ['dateTime', 'date-time'],
+  ['date', 'date'],
+  ['time', 'time'],
+]);
+
 /** A describe() shape: a plain object, not one of node-soap's raw schema elements. */
 function isDescribeShape(node: unknown): node is Record<string, unknown> {
   return (
@@ -487,6 +494,7 @@ export class WsdlParser {
                 decls,
               ),
               soapVersion,
+              decls,
             },
           );
           tools.push(tool);
@@ -533,7 +541,12 @@ export class WsdlParser {
     operation: any,
     info: WsdlOperationInfo,
     targetNamespace: string | undefined,
-    schema: { childElementsQualified?: false; soapVersion?: '1.2' },
+    facts: {
+      childElementsQualified?: false;
+      soapVersion?: '1.2';
+      /** The input element's children from the schema; undefined when unresolved. */
+      decls?: InputElementDecl[];
+    },
   ): ParsedTool {
     const { soapAction, endpoint } = info;
     // Stored only where they differ from what the engine assumes (the
@@ -553,15 +566,21 @@ export class WsdlParser {
     const paramOrder: string[] = [];
     const elementOrder: Record<string, string[]> = {};
 
+    const declByName = new Map((facts.decls ?? []).map((d) => [d.name, d]));
+
     if (operation.input) {
       for (const [key, paramType] of Object.entries(operation.input)) {
+        // describe() adds the namespace of a named complex type to its
+        // shape; they are not elements (unless the schema says so).
+        if (DESCRIBE_METADATA_KEYS.has(key) && !declByName.has(key)) continue;
         // describe() names a repeated element (maxOccurs > 1) `name[]`.
         const repeated = key.endsWith('[]');
         const paramName = repeated ? key.slice(0, -2) : key;
+        const decl = declByName.get(paramName);
         let schema: Record<string, unknown>;
         if (typeof paramType === 'string') {
           schema = {
-            type: this.soapTypeToJsonType(paramType),
+            ...this.scalarJsonSchema(paramType, decl?.enum),
             description: `SOAP parameter: ${paramName} (${paramType})`,
           };
         } else {
@@ -581,7 +600,10 @@ export class WsdlParser {
         }
         properties[paramName] = schema;
         bodyMapping[paramName] = `$${paramName}`;
-        required.push(paramName);
+        // minOccurs="0" (WCF writes it on almost every element) makes a
+        // parameter optional. Without the schema, or for RPC parts, every
+        // parameter stays required, as before.
+        if (!decl || decl.required) required.push(paramName);
         paramOrder.push(paramName);
       }
     }
@@ -611,9 +633,9 @@ export class WsdlParser {
         ...(inputNamespace ? { inputNamespace } : {}),
         ...(Object.keys(elementOrder).length > 0 ? { elementOrder } : {}),
         // Only written when false: tools without it keep qualified elements.
-        ...(schema.childElementsQualified === false ? { childElementsQualified: false } : {}),
+        ...(facts.childElementsQualified === false ? { childElementsQualified: false } : {}),
         // Only for SOAP 1.2 ports: tools without it are sent as SOAP 1.1.
-        ...(schema.soapVersion ? { soapVersion: schema.soapVersion } : {}),
+        ...(facts.soapVersion ? { soapVersion: facts.soapVersion } : {}),
       },
     };
 
@@ -664,7 +686,7 @@ export class WsdlParser {
     path: string,
     elementOrder: Record<string, string[]>,
   ): Record<string, unknown> {
-    if (typeof node === 'string') return { type: this.soapTypeToJsonType(node) };
+    if (typeof node === 'string') return this.scalarJsonSchema(node);
     // Deep or recursive types (describe() shares one object per type, so a
     // recursive type is a cycle) and node-soap's raw elements (RPC parts of
     // a complex type) stay an open object.
@@ -687,6 +709,31 @@ export class WsdlParser {
       elementOrder[path] = names;
     }
     return { type: 'object', properties, additionalProperties: true };
+  }
+
+  /**
+   * JSON Schema of a scalar input type as describe() writes it: `xs:int`, or
+   * for a simple type `name|base|enumerations` (`orderStatus|xs:string|NEW,SHIPPED`),
+   * typed by its base. xs:dateTime, xs:date and xs:time get their JSON
+   * Schema format, and the schema's enumeration values (read from the
+   * schema, not from this string) become `enum`.
+   */
+  private scalarJsonSchema(soapType: string, enumValues?: string[]): Record<string, unknown> {
+    const segments = soapType.split('|');
+    const base = segments.length > 1 ? segments[1] : segments[0];
+    const type = this.soapTypeToJsonType(base);
+    const schema: Record<string, unknown> = { type };
+    const format = XSD_FORMATS.get(base.slice(base.indexOf(':') + 1));
+    if (format && type === 'string') schema.format = format;
+    if (enumValues?.length) {
+      if (type === 'string') {
+        schema.enum = enumValues;
+      } else if (type === 'number') {
+        const numbers = enumValues.map(Number);
+        if (numbers.every(Number.isFinite)) schema.enum = numbers;
+      }
+    }
+    return schema;
   }
 
   private soapTypeToJsonType(soapType: string): string {
