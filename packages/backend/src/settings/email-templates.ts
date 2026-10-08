@@ -335,8 +335,8 @@ export function trialLifecycleEmail(
     subject,
     preheader:
       stage === 'expired'
-        ? 'Nothing was deleted. Cloud plans from €19/month.'
-        : 'Keep your connectors and everything you built. Cloud plans from €19/month.',
+        ? 'Nothing was deleted: your connectors are ready when you pick a plan.'
+        : 'Keep your connectors and everything you built.',
     bodyHtml:
       heading +
       usageIntro +
@@ -352,7 +352,7 @@ export function trialLifecycleEmail(
           ? 'Your AnythingMCP trial ends tomorrow.'
           : `Your AnythingMCP trial ends in ${days} ${plural(days, 'day')}.`) +
       `\n\n${usageText}${outcome}\n\n` +
-      `Choose a plan (Cloud plans from €19/month): ${pricingUrl}\nAlready have a key? ${licenseUrl}\n\n` +
+      `Choose a plan: ${pricingUrl}\nAlready have a key? ${licenseUrl}\n\n` +
       `Questions before you decide? Just reply: a person reads every email.`,
     ctx,
   });

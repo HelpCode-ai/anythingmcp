@@ -5,7 +5,9 @@ import type { TrustStatsDisplay } from '@/lib/trust-stats';
  * Trust content next to the sign-up and sign-in forms. The numbers are live
  * (GET /api/public/stats) and simply left out when unknown; badges and claims
  * are true statements only, and the Cloud-only ones (EU hosting, DPA, trial,
- * Claude Directory listing) are never shown on a self-hosted instance.
+ * Claude Directory listing) are never shown on a self-hosted instance. The
+ * Claude Directory badge is also left out for someone connecting ChatGPT or
+ * Muse: it is Anthropic's listing.
  */
 
 const CLIENTS = [
@@ -25,7 +27,13 @@ function Tick() {
 }
 
 /** The dark panel beside the Cloud sign-up form. */
-export function TrustPanel({ stats }: { stats: TrustStatsDisplay | null }) {
+export function TrustPanel({
+  stats,
+  directoryBadge = true,
+}: {
+  stats: TrustStatsDisplay | null;
+  directoryBadge?: boolean;
+}) {
   const tiles = [
     stats?.stars ? { n: stats.stars, l: 'stars on GitHub', star: true } : null,
     stats?.downloads ? { n: stats.downloads, l: 'downloads' } : null,
@@ -70,15 +78,17 @@ export function TrustPanel({ stats }: { stats: TrustStatsDisplay | null }) {
         )}
 
         <div className="mb-7 flex flex-wrap gap-2">
-          <a
-            href={CLAUDE_DIRECTORY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-[7px] rounded-full border border-[rgba(217,119,87,.55)] bg-[rgba(217,119,87,.10)] px-2.5 py-1.5 text-[11.5px] text-[#ffd9c9] hover:bg-[rgba(217,119,87,.18)] sm:px-3 sm:text-[12.5px]"
-          >
-            <img src="/logos/clients/claude.svg" width={14} height={14} alt="" />
-            Listed in the Claude Directory
-          </a>
+          {directoryBadge && (
+            <a
+              href={CLAUDE_DIRECTORY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-[7px] rounded-full border border-[rgba(217,119,87,.55)] bg-[rgba(217,119,87,.10)] px-2.5 py-1.5 text-[11.5px] text-[#ffd9c9] hover:bg-[rgba(217,119,87,.18)] sm:px-3 sm:text-[12.5px]"
+            >
+              <img src="/logos/clients/claude.svg" width={14} height={14} alt="" />
+              Listed in the Claude Directory
+            </a>
+          )}
           {['🇪🇺 EU-hosted · Frankfurt', 'GDPR · DPA included', 'AES-256-GCM', 'Open source · AGPL-3.0'].map((b) => (
             <span
               key={b}
