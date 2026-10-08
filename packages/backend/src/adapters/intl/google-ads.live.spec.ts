@@ -33,7 +33,7 @@ jest.mock('axios', () => {
   const mocked = jest.fn();
   return {
     __esModule: true,
-    default: Object.assign(mocked, { __actual: actual.default }),
+    default: Object.assign(mocked, actual.default, { __actual: actual.default }),
     AxiosError: actual.AxiosError,
   };
 });
