@@ -50,8 +50,8 @@ const tool = (name: string) => {
 };
 
 describe('gmail adapter: static spec conformance', () => {
-  it('stays unlisted until tested against a real mailbox', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in with Google OAuth2 like the other Google adapters', () => {

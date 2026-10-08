@@ -7,7 +7,6 @@
   "category": "email",
   "icon": "gmail",
   "docsUrl": "https://developers.google.com/workspace/gmail/api/reference/rest",
-  "unlisted": true,
   "requiredEnvVars": [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET"
