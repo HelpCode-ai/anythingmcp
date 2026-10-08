@@ -60,14 +60,16 @@ test('self-hosted sign-up makes no Cloud claims', async ({ page }) => {
   await expect(page.getByText('984 on GitHub · open source')).toBeVisible();
 });
 
-test('the Claude Directory badge is shown to Claude users and hidden for other AI clients', async ({ page }) => {
+test('the Claude Directory badge is hidden for ChatGPT and Muse only', async ({ page }) => {
   await mock(page, 'cloud', { message: 'down' }, 503);
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
 
-  await page.goto('/login?mode=register&redirect=%2Fauth%2Flogin&client=claude');
-  await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
+  for (const client of ['claude', 'other']) {
+    await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
+    await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
+  }
 
-  for (const client of ['chatgpt', 'other']) {
+  for (const client of ['chatgpt', 'muse']) {
     await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
     await expect(panel.getByText('AES-256-GCM')).toBeVisible();
     await expect(panel.getByText('Listed in the Claude Directory')).toHaveCount(0);

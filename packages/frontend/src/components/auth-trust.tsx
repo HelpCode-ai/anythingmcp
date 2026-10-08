@@ -6,8 +6,8 @@ import type { TrustStatsDisplay } from '@/lib/trust-stats';
  * (GET /api/public/stats) and simply left out when unknown; badges and claims
  * are true statements only, and the Cloud-only ones (EU hosting, DPA, trial,
  * Claude Directory listing) are never shown on a self-hosted instance. The
- * Claude Directory badge is also left out for someone connecting another AI
- * client (ChatGPT, Muse…): it is Anthropic's listing, not theirs.
+ * Claude Directory badge is also left out for someone connecting ChatGPT or
+ * Muse: it is Anthropic's listing.
  */
 
 const CLIENTS = [
