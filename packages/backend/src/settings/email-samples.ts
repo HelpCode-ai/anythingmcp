@@ -20,6 +20,8 @@ import {
 
 export const SAMPLE_CLOUD_URL = 'https://cloud.anythingmcp.com';
 export const SAMPLE_MARKETING_URL = 'https://anythingmcp.com';
+/** When the sample trials ended: the first win-back goes out a day later. */
+const SAMPLE_TRIAL_ENDED_AT = new Date('2026-10-07T09:30:00Z');
 
 /** Placeholder numbers for previews only; real emails use TrustStatsService. */
 export const SAMPLE_TRUST_STATS: TrustStats = {
@@ -126,12 +128,19 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
-    id: 'winback-discount-week',
+    id: 'winback-discount-first',
     render: (ctx, n) =>
       trialWinbackEmail(
         {
           name: n.name,
-          offer: { kind: 'discount', percentOff: 30, promoCode: 'START30', endedAgo: 'week', successfulCalls: 148 },
+          offer: {
+            kind: 'discount',
+            percentOff: 30,
+            promoCode: 'START30',
+            stage: 'first',
+            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+            successfulCalls: 148,
+          },
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -139,12 +148,40 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
-    id: 'winback-discount-month',
+    // A/B test arm of the first win-back: private users without a business app.
+    id: 'winback-discount-first-month',
     render: (ctx, n) =>
       trialWinbackEmail(
         {
           name: n.name,
-          offer: { kind: 'discount', percentOff: 50, promoCode: 'WINBACK50', endedAgo: 'month', successfulCalls: 0 },
+          offer: {
+            kind: 'firstMonth',
+            price: '€5.99',
+            regularPrice: '€19',
+            promoCode: 'STARTER599',
+            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+            successfulCalls: 37,
+          },
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    id: 'winback-discount-final',
+    render: (ctx, n) =>
+      trialWinbackEmail(
+        {
+          name: n.name,
+          offer: {
+            kind: 'discount',
+            percentOff: 50,
+            promoCode: 'WINBACK50',
+            stage: 'final',
+            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+            successfulCalls: 0,
+          },
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -155,7 +192,12 @@ export const EMAIL_SAMPLES: EmailSample[] = [
     id: 'winback-help',
     render: (ctx, n) =>
       trialWinbackEmail(
-        { name: n.name, offer: { kind: 'help' }, cloudUrl: SAMPLE_CLOUD_URL, marketingUrl: SAMPLE_MARKETING_URL },
+        {
+          name: n.name,
+          offer: { kind: 'help', trialEndedAt: SAMPLE_TRIAL_ENDED_AT },
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
         unsub(ctx),
       ),
   },
@@ -168,7 +210,8 @@ export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-client-connected',
   'activation-connect-client',
   'activation-test-connector',
-  'winback-discount-week',
-  'winback-discount-month',
+  'winback-discount-first',
+  'winback-discount-first-month',
+  'winback-discount-final',
   'winback-help',
 ]);
