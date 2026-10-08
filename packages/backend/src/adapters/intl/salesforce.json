@@ -1,0 +1,440 @@
+{
+  "slug": "salesforce",
+  "name": "Salesforce",
+  "description": "Let your AI work in Salesforce: find accounts, contacts, leads, opportunities and cases, answer questions with SOQL queries, search across all records, open list views and recently viewed records, and create or update records. Signed in with your own Salesforce user, so it sees and changes exactly what you can.",
+  "instructions": "## Salesforce\nThis connector reads and writes your Salesforce org through the **Salesforce REST API v67.0** (Summer '26) on your org's own address, `https://<My Domain>.my.salesforce.com/services/data/v67.0`. Every call runs as the Salesforce user who authorized the connector: that user's profile, permission sets and sharing rules decide which objects, fields and records the AI can see and change.\n\n**Who can use it**: API access is included in Enterprise, Unlimited, Performance and Developer Edition. Professional Edition needs the API add-on from Salesforce; without it every call answers `API_DISABLED_FOR_ORG`. The user also needs the **API Enabled** permission (on by default for the standard profiles of those editions). A free Developer Edition org from https://developer.salesforce.com/signup is the quickest way to try it.\n\n**Setup (one-time, about 10 minutes, needs a Salesforce admin)**\nSince Spring '26 Salesforce no longer lets orgs create new Connected Apps unless Support re-enables it; their replacement is the **External Client App**. An existing Connected App with the same settings works too.\n1. In Salesforce: **Setup**, type `App Manager` in Quick Find, then **New External Client App**. Name it (e.g. \"AnythingMCP\"), enter a contact email and keep **Distribution State: Local**.\n2. Open **API (Enable OAuth Settings)** and tick **Enable OAuth**.\n3. **Callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (`redirect_uri_mismatch` otherwise).\n4. **OAuth Scopes**: add **Manage user data via APIs (api)** and **Perform requests at any time (refresh_token, offline_access)**. Without the second one Salesforce issues no refresh token and the connector stops when the session expires.\n5. **Security**: tick **Require Proof Key for Code Exchange (PKCE) extension for Supported Authorization Flows** (AnythingMCP always sends a PKCE challenge) and keep **Require secret for Web Server Flow** and **Require secret for Refresh Token Flow** ticked: AnythingMCP is a server-side client and keeps the secret encrypted. Leave the client credentials, JWT bearer and device flows off. Click **Create**.\n6. Back in **External Client App Manager**, open the app → **Settings** tab → **OAuth Settings** → **Consumer Key and Secret** (Salesforce may ask for a verification code). Paste the **Consumer Key** into `SALESFORCE_CLIENT_ID` and the **Consumer Secret** into `SALESFORCE_CLIENT_SECRET`.\n7. Set `SALESFORCE_MY_DOMAIN` to the first part of your org's address (Setup → My Domain): `acme` for `acme.my.salesforce.com`. A pasted full address such as `https://acme.my.salesforce.com/lightning/page/home` is shortened to it when saved. The address must end in `.my.salesforce.com`; the Lightning address `acme.lightning.force.com` is not the API host.\n8. On the connector page click **Authorize with Provider**, log in as the Salesforce user the AI should act as and click **Allow**. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Sandboxes, Developer Edition, scratch orgs**: each org has its own My Domain and needs its own connector, with an External Client App that exists in that org. Enter everything before `.my.salesforce.com`: `acme--uat.sandbox` for the sandbox `acme--uat.sandbox.my.salesforce.com`, `acme-dev-ed.develop` for a Developer Edition org. Sign-in and token renewal use the same My Domain, so the old `test.salesforce.com` login host is never involved.\n\n**Access policies**: by default the app lets every user authorize it themselves (Policies → OAuth Policies → Permitted Users: all users can self-authorize). If your admin set it to *Admin approved users are pre-authorized*, assign the user's profile or a permission set to the app first. If the user's profile has Login IP Ranges, either relax IP restrictions in the app's OAuth policies or allow the AnythingMCP server's address. Refresh tokens stay valid until revoked unless the app's policy sets an expiry; after it the connector answers 401 and needs **Authorize with Provider** again.\n\n**How to work with the data**\n- Start with `salesforce_list_objects` to see the objects of the org (standard and custom, custom ones end in `__c`), then `salesforce_describe_object` for the API field names, types, required fields, picklist values and relationship names of one object. Field and object names in queries and writes are API names (`AnnualRevenue`, `Region__c`), never labels.\n- `salesforce_query` runs SOQL, the read workhorse: `SELECT Id, Name, Industry FROM Account WHERE Industry = 'Banking' ORDER BY Name LIMIT 50`. Strings use single quotes; dates and date-times are unquoted (`CloseDate >= 2026-01-01`, `CreatedDate = LAST_N_DAYS:30`, `THIS_QUARTER`); `LIKE 'Acme%'` matches text; parent fields use the relationship name (`Account.Name` from Contact, `Owner.Name`), child records a subquery (`SELECT Name, (SELECT LastName FROM Contacts) FROM Account`); aggregates with `COUNT()`, `SUM(Amount)` and `GROUP BY`. There is no `SELECT *`: list the fields, or use `FIELDS(STANDARD)` (with `LIMIT 200` at most for `FIELDS(ALL)` and `FIELDS(CUSTOM)`).\n- **Paging**: a query returns up to 2,000 records per page. When the answer has `\"done\": false`, it carries `nextRecordsUrl`, e.g. `/services/data/v67.0/query/01gRO0000016PIAYA2-500`; pass its last part (`01gRO0000016PIAYA2-500`) to `salesforce_query_more` and repeat until `done` is true. `totalSize` is the full count. For a count only, `SELECT COUNT() FROM Lead WHERE IsConverted = false` returns `totalSize` without records.\n- `salesforce_search_text` finds a word or name across objects without writing SOSL; `salesforce_search_sosl` takes a full SOSL statement (`FIND {Acme*} IN NAME FIELDS RETURNING Account(Id, Name), Contact(Id, Name, Email) LIMIT 20`). Search uses the search index, so a record created a moment ago may not be found yet; SOQL sees it at once.\n- `salesforce_list_recently_viewed`, `salesforce_list_list_views` and `salesforce_get_list_view_results` show what the user works with in the Salesforce UI.\n- **Writes**: `salesforce_create_record` and `salesforce_update_record` take a `fields` object with API names, e.g. `{\"LastName\": \"Rossi\", \"Email\": \"ana@example.com\", \"AccountId\": \"001...\"}`. An update changes only the fields sent and answers with no content (HTTP 204) when it worked. Picklist fields take the picklist value, lookups take a record ID, dates `YYYY-MM-DD`, date-times ISO 8601 in UTC. Validation rules, required fields, duplicate rules, flows and triggers of the org apply as in the UI. `salesforce_create_record_tree` creates up to 200 records, or an account with its contacts and opportunities, in one all-or-nothing call. Deleting records is not part of this connector.\n- Record IDs are 15 or 18 characters; their first three characters name the object (`001` Account, `003` Contact, `00Q` Lead, `006` Opportunity, `500` Case; `keyPrefix` in `salesforce_list_objects`).\n\n**API limits**: every call counts against the org's rolling 24-hour API request allowance, shared by all integrations. `salesforce_get_org_limits` shows the remaining calls (`DailyApiRequests`) and storage; it needs the **View Setup and Configuration** permission.\n\n**Common errors**\n- 401 `INVALID_SESSION_ID` (\"Session expired or invalid\"): the access token expired. AnythingMCP renews it with the refresh token and retries once by itself. If it still fails, the refresh token was revoked (the app's refresh token policy, or an admin revoking access under Setup → Connected Apps OAuth Usage): click **Authorize with Provider** again.\n- 400 `MALFORMED_QUERY`: a SOQL syntax error, e.g. double quotes around a string, a quoted date, a missing `FROM` or a `LIMIT` above what the clause allows. The message names the position.\n- 400 `INVALID_FIELD` / `INVALID_TYPE`: a field or object name does not exist, is spelled as a label, lacks the `__c` suffix, or is hidden from this user by field-level security. Check it with `salesforce_describe_object`.\n- 400 `REQUIRED_FIELD_MISSING`, `FIELD_CUSTOM_VALIDATION_EXCEPTION`, `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`, `DUPLICATES_DETECTED`: the org refused a write; the message says which field and why.\n- 403 `REQUEST_LIMIT_EXCEEDED`: the org used up its daily API allowance (or too many long-running requests run at once). Wait, or ask Salesforce for more.\n- `API_DISABLED_FOR_ORG`: the org's edition has no API access (Professional without the API add-on). A user without the **API Enabled** permission is refused as well.\n- 404 `NOT_FOUND`: the record ID does not exist, was deleted, or is not shared with this user.\n- At sign-in: `redirect_uri_mismatch` (callback URL differs), `invalid_client_id` (consumer key wrong, or the app was created minutes ago and is not active yet), or a message that the user is not approved for the app (see Access policies).\n\n**Out of scope here**: deleting records, Bulk API jobs, Apex, Metadata and Tooling API, reports and dashboards, files and attachments.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "salesforce",
+  "docsUrl": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm",
+  "requiredEnvVars": [
+    "SALESFORCE_MY_DOMAIN",
+    "SALESFORCE_CLIENT_ID",
+    "SALESFORCE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "SALESFORCE_MY_DOMAIN": {
+      "label": "My Domain",
+      "kind": "address",
+      "help": "The part of your org's address before .my.salesforce.com (Setup → My Domain): acme for acme.my.salesforce.com, acme--uat.sandbox for a sandbox, acme-dev-ed.develop for a Developer Edition org. A pasted full address is shortened to it.",
+      "link": "https://help.salesforce.com/s/articleView?id=xcloud.domain_name_overview.htm&type=5",
+      "example": "acme"
+    },
+    "SALESFORCE_CLIENT_ID": {
+      "label": "Consumer Key",
+      "kind": "credential",
+      "help": "Setup → External Client App Manager → your app → Settings → OAuth Settings → Consumer Key and Secret: the Consumer Key.",
+      "link": "https://help.salesforce.com/s/articleView?id=xcloud.external_client_apps.htm&type=5"
+    },
+    "SALESFORCE_CLIENT_SECRET": {
+      "label": "Consumer Secret",
+      "kind": "credential",
+      "help": "Same page as the Consumer Key: the Consumer Secret.",
+      "link": "https://help.salesforce.com/s/articleView?id=xcloud.external_client_apps.htm&type=5"
+    }
+  },
+  "verifyHints": {
+    "401": "Salesforce refused the session. Click Authorize with Provider again; if the sign-in itself fails, check the Consumer Key and Secret and the callback URL of the External Client App.",
+    "403": "Salesforce refused the call. The org may have used up its daily API requests (REQUEST_LIMIT_EXCEEDED), its edition may lack API access, or the user may lack the API Enabled permission.",
+    "404": "Nothing answered at this address. Check SALESFORCE_MY_DOMAIN: it is the part before .my.salesforce.com, e.g. acme or acme--uat.sandbox.",
+    "rate_limited": "Salesforce is limiting requests for this org. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "salesforce_get_api_resources"
+  },
+  "prerequisites": "A Salesforce org with API access (Enterprise, Unlimited, Performance or Developer Edition; Professional with the API add-on), a user with the API Enabled permission, and an External Client App created by an admin with OAuth enabled, the callback URL below, the scopes `api` and `refresh_token, offline_access`, and PKCE required.",
+  "connector": {
+    "name": "Salesforce (REST API)",
+    "type": "REST",
+    "baseUrl": "https://{{SALESFORCE_MY_DOMAIN}}.my.salesforce.com/services/data/v67.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{SALESFORCE_CLIENT_ID}}",
+      "clientSecret": "{{SALESFORCE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://{{SALESFORCE_MY_DOMAIN}}.my.salesforce.com/services/oauth2/authorize",
+      "tokenUrl": "https://{{SALESFORCE_MY_DOMAIN}}.my.salesforce.com/services/oauth2/token",
+      "scopes": "api refresh_token offline_access"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "salesforce_get_api_resources",
+      "description": "List the REST API resources available to the signed-in user in API version 67.0 (sobjects, query, search, recent, limits and others). The identity entry is the user's identity URL, ending in the org ID and the user ID (e.g. .../id/00D.../005...). Confirms that the connection and the authorization work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      }
+    },
+    {
+      "name": "salesforce_get_org_limits",
+      "description": "Return the org's limits with the maximum and the remaining amount of each: DailyApiRequests (API calls left in the rolling 24 hours), DataStorageMB, FileStorageMB, DailyBulkApiBatches, SingleEmail and others. Requires the View Setup and Configuration permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/limits"
+      }
+    },
+    {
+      "name": "salesforce_list_objects",
+      "description": "List the objects (sObjects) of the org that the user can query, standard and custom, with API name, label, custom flag, createable and updateable flags and the 3-character key prefix of their record IDs. The automatic companion objects (names ending in Share, History, Feed or ChangeEvent) are left out; they can still be queried by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sobjects"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{encoding: encoding, maxBatchSize: maxBatchSize, sobjects: sobjects[?queryable && !ends_with(name, 'Share') && !ends_with(name, 'History') && !ends_with(name, 'Feed') && !ends_with(name, 'ChangeEvent')].{name: name, label: label, custom: custom, createable: createable, updateable: updateable, keyPrefix: keyPrefix}}"
+        }
+      }
+    },
+    {
+      "name": "salesforce_describe_object",
+      "description": "Describe one object: its fields with API name, label, type, length, whether a value is required on create, whether it can be set on create or update, picklist values (active ones), lookup targets (referenceTo) and relationship names, plus its child relationships (for subqueries) and record types. Use the API names it returns in SOQL queries and writes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object, e.g. Account, Contact, Opportunity, Case, or a custom object such as Invoice__c."
+          }
+        },
+        "required": ["sobject"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sobjects/{sobject}/describe",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{name: name, label: label, labelPlural: labelPlural, keyPrefix: keyPrefix, custom: custom, createable: createable, updateable: updateable, queryable: queryable, searchable: searchable, fields: fields[].{name: name, label: label, type: type, length: length, required: !nillable && createable && !defaultedOnCreate, createable: createable, updateable: updateable, custom: custom, calculated: calculated, unique: unique, nameField: nameField, referenceTo: referenceTo, relationshipName: relationshipName, restrictedPicklist: restrictedPicklist, picklistValues: picklistValues[?active].value}, childRelationships: childRelationships[?relationshipName].{relationshipName: relationshipName, childSObject: childSObject, field: field}, recordTypeInfos: recordTypeInfos[].{name: name, developerName: developerName, recordTypeId: recordTypeId, active: active, available: available, defaultRecordTypeMapping: defaultRecordTypeMapping, master: master}}"
+        }
+      }
+    },
+    {
+      "name": "salesforce_query",
+      "description": "Run a SOQL query and return the matching records with totalSize and done. Queries the Salesforce REST API, see https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_query.htm. Returns up to 2,000 records per page; when done is false the response has nextRecordsUrl, whose last path segment is the locator for salesforce_query_more. Excludes deleted and archived records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "A SOQL statement with API names, e.g. SELECT Id, Name, StageName, Amount, CloseDate FROM Opportunity WHERE IsClosed = false AND CloseDate = THIS_QUARTER ORDER BY Amount DESC LIMIT 50. Strings in single quotes, dates unquoted."
+          },
+          "batch_size": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 2000,
+            "description": "Records per page, 200 to 2000 (default 2000). Salesforce may return fewer."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "q": "$q"
+        },
+        "headers": {
+          "Sforce-Query-Options": "batchSize=${batch_size}"
+        }
+      }
+    },
+    {
+      "name": "salesforce_query_more",
+      "description": "Fetch the next page of a SOQL query result from its query locator. Returns records, totalSize, done and, while more pages remain, a new nextRecordsUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locator": {
+            "type": "string",
+            "description": "The last path segment of nextRecordsUrl, e.g. 01gRO0000016PIAYA2-500 from /services/data/v67.0/query/01gRO0000016PIAYA2-500."
+          }
+        },
+        "required": ["locator"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query/{locator}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "salesforce_search_text",
+      "description": "Search the org's search index for a word, name, email or phone number across objects without writing SOSL, optionally limited to some objects and returning chosen fields. Returns searchRecords, each with its object type and ID plus the requested fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Text to search for, e.g. Acme or ana@example.com. * matches the end of a word (Acm*). At least two characters besides the wildcards: a* or ? alone is refused (INVALID_SEARCH)."
+          },
+          "sobject": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Objects to search, e.g. [\"Account\", \"Contact\", \"Lead\"]. Without it all searchable objects are searched and only IDs come back."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated API names returned for every object in sobject, e.g. Id,Name. Needs sobject."
+          },
+          "in": {
+            "type": "string",
+            "enum": ["ALL", "NAME", "EMAIL", "PHONE", "SIDEBAR"],
+            "description": "Which fields are searched (default ALL)."
+          },
+          "overall_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "Maximum number of results across all objects."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parameterizedSearch",
+        "queryParams": {
+          "q": "$q",
+          "sobject": "$sobject",
+          "fields": "$fields",
+          "in": "$in",
+          "overallLimit": "$overall_limit"
+        }
+      }
+    },
+    {
+      "name": "salesforce_search_sosl",
+      "description": "Run a SOSL search statement across several objects at once and return the matching records (searchRecords) with the fields listed in its RETURNING clause. Queries the Salesforce REST API, see https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_search.htm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "A SOSL statement, e.g. FIND {Acme*} IN NAME FIELDS RETURNING Account(Id, Name, Phone), Contact(Id, Name, Email WHERE MailingCountry = 'Germany') LIMIT 20. The search term goes in braces."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q"
+        }
+      }
+    },
+    {
+      "name": "salesforce_get_record",
+      "description": "Get one record by object and record ID with all fields the user can read, or only the listed fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object, e.g. Account or Invoice__c."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "15- or 18-character record ID, e.g. 001RO000002ab3XYAQ."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated API names to return, e.g. Name,Industry,AnnualRevenue,OwnerId. Without it every readable field is returned."
+          }
+        },
+        "required": ["sobject", "record_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sobjects/{sobject}/{record_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "salesforce_create_record",
+      "description": "Create one record of the given object with the given field values. Returns the new record's id and success, or the errors (missing required field, validation rule, duplicate rule) that stopped it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object, e.g. Lead, Contact, Task or Invoice__c."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values by API name, e.g. {\"LastName\": \"Rossi\", \"Company\": \"Acme\", \"Email\": \"ana@example.com\"}. Lookups take a record ID, dates YYYY-MM-DD, date-times ISO 8601 UTC. Must not contain Id."
+          }
+        },
+        "required": ["sobject", "fields"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sobjects/{sobject}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "salesforce_update_record",
+      "description": "Update fields of one existing record. Only the fields sent change; a field set to null is cleared. Returns no content (HTTP 204) when the update worked, or the errors that stopped it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object, e.g. Opportunity."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "15- or 18-character ID of the record to update."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values to change by API name, e.g. {\"StageName\": \"Closed Won\", \"Amount\": 12000}. Must not contain Id."
+          }
+        },
+        "required": ["sobject", "record_id", "fields"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/sobjects/{sobject}/{record_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "salesforce_create_record_tree",
+      "description": "Create up to 200 records in one all-or-nothing call: several records of one object, or a root record with nested child records (e.g. an Account with its Contacts and Opportunities), up to five levels and five object types. Returns the ID of every record created under its referenceId, or the error of the record that failed (then nothing is created).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the root records' object, e.g. Account."
+          },
+          "records": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Root records. Each has attributes with type and a unique referenceId, its fields by API name, and child records under the child relationship name, e.g. [{\"attributes\": {\"type\": \"Account\", \"referenceId\": \"acc1\"}, \"Name\": \"Acme\", \"Contacts\": {\"records\": [{\"attributes\": {\"type\": \"Contact\", \"referenceId\": \"con1\"}, \"LastName\": \"Rossi\"}]}}]."
+          }
+        },
+        "required": ["sobject", "records"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/composite/tree/{sobject}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "records": "$records"
+        }
+      }
+    },
+    {
+      "name": "salesforce_list_recently_viewed",
+      "description": "List the records the signed-in user most recently viewed or referenced in Salesforce, newest first, with object type, ID and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Maximum number of records (Salesforce keeps up to 200)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recent",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "salesforce_list_list_views",
+      "description": "List the list views of one object that the user can see (e.g. My Opportunities, All Open Leads) with ID, label and developer name. The ID is needed for salesforce_get_list_view_results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object, e.g. Opportunity."
+          }
+        },
+        "required": ["sobject"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sobjects/{sobject}/listviews",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "salesforce_get_list_view_results",
+      "description": "Run a list view as the user sees it in Salesforce and return its columns and records. Pages with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sobject": {
+            "type": "string",
+            "description": "API name of the object the list view belongs to, e.g. Lead."
+          },
+          "list_view_id": {
+            "type": "string",
+            "description": "List view ID from salesforce_list_list_views (starts with 00B)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "Records to return, 1 to 2000 (default 25)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of the first record to return (default 0)."
+          }
+        },
+        "required": ["sobject", "list_view_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sobjects/{sobject}/listviews/{list_view_id}/results",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

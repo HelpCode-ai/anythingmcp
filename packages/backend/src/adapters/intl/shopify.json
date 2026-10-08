@@ -1,0 +1,610 @@
+{
+  "slug": "shopify",
+  "name": "Shopify",
+  "description": "Connect your Shopify store: search products, orders and customers, check stock per location, change variant prices, adjust inventory and mark orders as shipped with tracking. Shopify GraphQL Admin API with a custom app from the Dev Dashboard.",
+  "instructions": "## Shopify\nThis connector reads and updates a Shopify store through the **GraphQL Admin API** (`https://<store>.myshopify.com/admin/api/2026-10/graphql.json`, API version 2026-10): shop settings, products and variants, stock per location, orders with their fulfillment orders, and customers. It can change a variant's price, adjust stock and mark items as shipped with tracking.\n\n## Setup (store owner, about 10 minutes)\nSince 1 January 2026 new custom apps can no longer be created inside the store admin; they are made in the **Dev Dashboard**. A custom app installed on a store of your own organization gets its access token through the **client credentials grant**, which is what this connector uses. Nothing is published to the Shopify App Store and no review is needed.\n\n1. Open the Dev Dashboard at https://dev.shopify.com/dashboard/ with the account that owns the store (or a staff account with the **App development → Develop** permission). The store must belong to the same Shopify organization as the app.\n2. **Apps → Create app → Start from Dev Dashboard**, give it a name (for example \"AnythingMCP\") and click **Create**.\n3. Open **Versions**, fill in the **App URL** (any https URL, for example your shop's address; this connector does not use it), pick the newest webhooks API version, add the **Admin API scopes** from the table below, then click **Release**.\n4. On the app's overview, click **Install app** in the **Installs** card, pick your store and confirm **Install**. Until the app is installed the token request fails.\n5. Open **App settings** and copy the **Client ID** and **Client secret** into `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`.\n6. Set `SHOPIFY_STORE` to the store's myshopify handle: for `acme-shop.myshopify.com` enter `acme-shop`. It is in the admin URL (`admin.shopify.com/store/<handle>`) and under Settings → Domains. A custom domain such as `acme.com` does not work here.\n\nThe connector exchanges the client ID and secret at `https://<store>.myshopify.com/admin/oauth/access_token` for an access token, which Shopify issues for 24 hours, and fetches a new one before it expires. The token is sent in the `X-Shopify-Access-Token` header. Changing scopes means releasing a new app version; the next token carries the new scopes.\n\nApps created in the store admin before 2026 (with a `shpat_…` token) keep working in Shopify, but this connector uses the Dev Dashboard flow above.\n\n## Scopes\n| Scope | Used by |\n|---|---|\n| `read_products` | shopify_search_products, shopify_get_product, shopify_list_inventory_levels |\n| `write_products` | shopify_update_variant_price |\n| `read_inventory`, `read_locations` | shopify_list_inventory_levels, shopify_list_locations |\n| `write_inventory` | shopify_adjust_inventory |\n| `read_orders` | shopify_search_orders, shopify_get_order (orders of the last 60 days) |\n| `read_merchant_managed_fulfillment_orders` | fulfillment orders in shopify_get_order |\n| `write_merchant_managed_fulfillment_orders` | shopify_create_fulfillment |\n| `read_customers` | shopify_search_customers, shopify_get_customer |\n\nFor a read-only setup leave out the `write_*` scopes and switch the three write tools off on the connector page. `read_orders` only reaches orders from the **last 60 days**; older orders also need `read_all_orders`, which Shopify grants on request. Fulfillment orders assigned to a fulfilment app or third-party warehouse need the `*_assigned_fulfillment_orders` or `*_third_party_fulfillment_orders` scopes instead of the merchant-managed ones.\n\n**Customer data**: names, emails, phone numbers and addresses are protected customer data. If customer or order tools fail with \"This app is not approved to access the Customer object\" (or a similar message for name, email, phone or address fields), request access once: Partner Dashboard (partners.shopify.com) → **Apps** → the app → **API access requests** → **Protected customer data access** → **Request access**, tick the fields the AI should read (name, email, phone, address) with a short reason each, and **Save**. For an app used only on your own or a development store that is enough: no review is needed and the calls work right away.\n\n## Ids\nEvery id is a global id (GID) such as `gid://shopify/Product/1234567890`, `gid://shopify/ProductVariant/…`, `gid://shopify/Order/…` or `gid://shopify/Location/…`. Pass them whole. The order number customers see (`#1001`) is the order's `name`: find the order with `shopify_search_orders` and `query: \"name:#1001\"`.\n\nA variant's stock lives on its **inventory item** (`inventoryItem.id` in shopify_get_product), with one level per **location**. To change stock: shopify_get_product → shopify_list_inventory_levels (current quantities and location ids) → shopify_adjust_inventory.\n\nTo ship an order: shopify_get_order → take the `id` of an open fulfillment order (and, for a partial shipment, the ids of its line items) → shopify_create_fulfillment with carrier and tracking number.\n\n## Searching and paging\nThe search tools take Shopify's search syntax in `query`: `field:value` terms joined by spaces (AND) or `OR`, comparisons such as `created_at:>=2026-10-01` or `inventory_total:<5`, `-` to negate a term, and `*` as a wildcard (`title:*hoodie*`). Dates are ISO 8601, read in the store's time zone.\n\nLists are cursor-paged: `first` sets the page size (at most 250) and the answer carries `pageInfo { hasNextPage endCursor }`. Pass `endCursor` as `after` for the next page while `hasNextPage` is true.\n\n## Money\nPrices are decimal strings in the store currency (`\"29.90\"`). Order amounts are money bags; `shopMoney` is in the store currency.\n\n## Errors\n- The GraphQL API answers HTTP 200 for most problems. Errors in the query itself, missing scopes (\"Access denied for … field\") and throttling come back in `errors`: the tool call then fails with `GraphQL errors: [...]` and Shopify's message.\n- A mutation Shopify refuses (unknown variant, invalid price, stale quantity, fulfillment order already closed) does **not** fail the call: the result has a non-empty `userErrors` list with `field` and `message`. Check it after every write.\n- 401: the token request was refused (wrong client ID or secret, or the app is not installed on this store). 402: the store is frozen for unpaid bills. 423: the store is locked. 404: wrong store handle.\n\n## Rate limits\nThe Admin GraphQL API is limited by **query cost**, not by the number of requests: each app and store pair refills 100 points per second on the Standard plans (200 on Advanced, 1,000 on Plus, 2,000 on Enterprise), and no single query may cost more than 1,000 points. A list costs roughly its `first` value, so large pages and nested lists cost more. When the budget runs out Shopify answers with a `THROTTLED` error: wait a few seconds and retry, or ask for smaller pages. This connector returns only the `data` part of each answer, so the cost figures Shopify reports in `extensions.cost` are not shown.\n\n## Other operations\nThe generated `shopify_graphql_query` and `shopify_graphql_mutation` tools run any other Admin API operation (draft orders, discounts, collections, metafields…) within the scopes the app was given; `shopify_graphql_schema` looks up types and fields first.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shopify",
+  "docsUrl": "https://shopify.dev/docs/api/admin-graphql",
+  "requiredEnvVars": [
+    "SHOPIFY_STORE",
+    "SHOPIFY_CLIENT_ID",
+    "SHOPIFY_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "SHOPIFY_STORE": {
+      "label": "Store handle",
+      "kind": "address",
+      "help": "The part before .myshopify.com, e.g. acme-shop for acme-shop.myshopify.com. It is in your admin URL (admin.shopify.com/store/<handle>) and under Settings → Domains. Not your custom domain.",
+      "example": "acme-shop",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "patternMessage": "Enter only the handle in lower case, e.g. acme-shop, without https:// and without .myshopify.com."
+    },
+    "SHOPIFY_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Dev Dashboard → your app → App settings → Client ID. The app must be released with the Admin API scopes and installed on the store.",
+      "link": "https://dev.shopify.com/dashboard/"
+    },
+    "SHOPIFY_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Dev Dashboard → your app → App settings → Client secret.",
+      "link": "https://dev.shopify.com/dashboard/"
+    }
+  },
+  "prerequisites": "You need to be the store owner, or a staff member with the **App development → Develop** permission, to create a custom app in the Shopify **Dev Dashboard** (dev.shopify.com), release it with the Admin API scopes and install it on the store. No app review or App Store listing is involved.",
+  "verifyHints": {
+    "401": "Shopify refused the client ID or secret. Copy both again from Dev Dashboard → your app → App settings, and check that the app is installed on this store (Installs card → Install app).",
+    "403": "The app is installed but lacks a scope. Add the Admin API scopes listed in the setup steps under Versions, release a new version and try again.",
+    "404": "No store answers at this handle. Use the myshopify handle (acme-shop for acme-shop.myshopify.com), not a custom domain.",
+    "rate_limited": "Shopify throttled the request (query cost budget used up). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "shopify_get_shop"
+  },
+  "connector": {
+    "name": "Shopify Admin GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://{{SHOPIFY_STORE}}.myshopify.com/admin/api/2026-10/graphql.json",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://{{SHOPIFY_STORE}}.myshopify.com/admin/oauth/access_token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "client_credentials",
+        "client_id": "${username}",
+        "client_secret": "${password}"
+      },
+      "username": "{{SHOPIFY_CLIENT_ID}}",
+      "password": "{{SHOPIFY_CLIENT_SECRET}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 86399,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "X-Shopify-Access-Token",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "shopify_get_shop",
+      "description": "Get the store the connector is linked to: name, owner and contact email, myshopify and primary domain, store currency and enabled presentment currencies, time zone, weight unit, whether prices include tax, and the Shopify plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Shop { shop { id name email contactEmail shopOwnerName myshopifyDomain primaryDomain { url host } currencyCode enabledPresentmentCurrencies ianaTimezone timezoneAbbreviation weightUnit taxesIncluded createdAt plan { publicDisplayName partnerDevelopment shopifyPlus } } }"
+      }
+    },
+    {
+      "name": "shopify_search_products",
+      "description": "Search the store's products with Shopify search syntax (for example `title:*hoodie* status:active`, `sku:ABC-1`, `vendor:Acme`, `tag:sale`, `product_type:Shoes`, `inventory_total:<5`). Returns id, title, handle, status, vendor, product type, tags, total inventory, variant count and price range, a page at a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Shopify search query. Omit to list all products. Fields include title, handle, sku, barcode, vendor, product_type, tag, status (active, draft, archived), created_at, updated_at, inventory_total."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of products to return, 1 to 250 (default 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page, to fetch the next page."
+          },
+          "sort_key": {
+            "type": "string",
+            "enum": [
+              "TITLE",
+              "CREATED_AT",
+              "UPDATED_AT",
+              "INVENTORY_TOTAL",
+              "PRODUCT_TYPE",
+              "VENDOR",
+              "PUBLISHED_AT",
+              "ID",
+              "RELEVANCE"
+            ],
+            "description": "Sort field (default ID). RELEVANCE only applies with a query."
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "Reverse the sort order, e.g. newest first with CREATED_AT."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchProducts($query: String, $first: Int = 50, $after: String, $sortKey: ProductSortKeys, $reverse: Boolean = false) { products(query: $query, first: $first, after: $after, sortKey: $sortKey, reverse: $reverse) { pageInfo { hasNextPage endCursor } nodes { id title handle status vendor productType tags totalInventory tracksInventory createdAt updatedAt variantsCount { count } priceRangeV2 { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } } } } }",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after",
+          "sortKey": "$sort_key",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "shopify_get_product",
+      "description": "Get one product with its description, options, SEO title, online store URL and its variants: variant id, title, SKU, price, compare-at price, inventory quantity, availability, selected options and inventory item id (needed to read or adjust stock).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product GID, e.g. gid://shopify/Product/1234567890, from shopify_search_products."
+          },
+          "variants_first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of variants to return, 1 to 250 (default 100)."
+          },
+          "variants_after": {
+            "type": "string",
+            "description": "Cursor from variants.pageInfo.endCursor, for products with more variants than one page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetProduct($id: ID!, $first: Int = 100, $after: String) { product(id: $id) { id title handle status vendor productType tags description totalInventory tracksInventory createdAt updatedAt publishedAt onlineStoreUrl seo { title description } options { id name position values } variants(first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { id title sku price compareAtPrice inventoryQuantity availableForSale position taxable inventoryPolicy selectedOptions { name value } inventoryItem { id tracked } } } } }",
+        "queryParams": {
+          "id": "$product_id",
+          "first": "$variants_first",
+          "after": "$variants_after"
+        }
+      }
+    },
+    {
+      "name": "shopify_list_inventory_levels",
+      "description": "List the stock of one variant at every location that stocks it: available, on hand, committed, incoming and reserved quantities per location, with the inventory item id and location ids that shopify_adjust_inventory needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "description": "Variant GID, e.g. gid://shopify/ProductVariant/1234567890, from shopify_get_product."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of locations to return, 1 to 250 (default 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page, to fetch the next page."
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query InventoryLevels($id: ID!, $first: Int = 50, $after: String) { productVariant(id: $id) { id title sku product { id title } inventoryItem { id tracked inventoryLevels(first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { id updatedAt location { id name } quantities(names: [\"available\", \"on_hand\", \"committed\", \"incoming\", \"reserved\"]) { name quantity } } } } } }",
+        "queryParams": {
+          "id": "$variant_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "shopify_list_locations",
+      "description": "List the store's locations (warehouses, shops, fulfilment centres) with id, name, address, whether each is active, fulfils online orders and ships inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of locations to return, 1 to 250 (default 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page, to fetch the next page."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Also return deactivated locations (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Locations($first: Int = 50, $after: String, $includeInactive: Boolean = false) { locations(first: $first, after: $after, includeInactive: $includeInactive) { pageInfo { hasNextPage endCursor } nodes { id name isActive fulfillsOnlineOrders shipsInventory hasActiveInventory address { address1 address2 city province provinceCode zip country countryCode phone } } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "includeInactive": "$include_inactive"
+        }
+      }
+    },
+    {
+      "name": "shopify_search_orders",
+      "description": "Search orders with Shopify search syntax (for example `financial_status:paid fulfillment_status:unfulfilled`, `created_at:>=2026-10-01`, `name:#1001`, `email:anna@example.com`, `tag:wholesale`, `sku:ABC-1`). Returns order number, dates, financial and fulfilment status, total, customer and tags, a page at a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Shopify search query. Fields include name, email, financial_status, fulfillment_status, status (open, closed, cancelled), created_at, processed_at, updated_at, tag, sku, customer_id, test. Omit to list all orders."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of orders to return, 1 to 250 (default 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page, to fetch the next page."
+          },
+          "sort_key": {
+            "type": "string",
+            "enum": [
+              "PROCESSED_AT",
+              "CREATED_AT",
+              "UPDATED_AT",
+              "ORDER_NUMBER",
+              "TOTAL_PRICE",
+              "CURRENT_TOTAL_PRICE",
+              "CUSTOMER_NAME",
+              "FINANCIAL_STATUS",
+              "FULFILLMENT_STATUS",
+              "ID",
+              "RELEVANCE"
+            ],
+            "description": "Sort field (default PROCESSED_AT)."
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "Reverse the sort order. With a date sort key, true returns the newest orders first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchOrders($query: String, $first: Int = 50, $after: String, $sortKey: OrderSortKeys, $reverse: Boolean = false) { orders(query: $query, first: $first, after: $after, sortKey: $sortKey, reverse: $reverse) { pageInfo { hasNextPage endCursor } nodes { id name createdAt processedAt cancelledAt closed test email displayFinancialStatus displayFulfillmentStatus currencyCode currentTotalPriceSet { shopMoney { amount currencyCode } } customer { id displayName } tags } } }",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after",
+          "sortKey": "$sort_key",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "shopify_get_order",
+      "description": "Get one order: status, totals (subtotal, shipping, tax, discounts, refunded), customer, shipping and billing address, shipping lines, line items with SKU, quantities and prices, fulfillment orders with their line items and assigned location, and fulfillments with tracking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order GID, e.g. gid://shopify/Order/1234567890, from shopify_search_orders (search `name:#1001` to find it by order number)."
+          },
+          "line_items_first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of line items to return, 1 to 250 (default 50)."
+          },
+          "line_items_after": {
+            "type": "string",
+            "description": "Cursor from lineItems.pageInfo.endCursor, for orders with more line items than one page."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetOrder($id: ID!, $first: Int = 50, $after: String) { order(id: $id) { id name createdAt processedAt updatedAt cancelledAt cancelReason closed confirmed test email phone note tags sourceName paymentGatewayNames statusPageUrl displayFinancialStatus displayFulfillmentStatus currencyCode subtotalPriceSet { shopMoney { amount currencyCode } } totalShippingPriceSet { shopMoney { amount currencyCode } } totalTaxSet { shopMoney { amount currencyCode } } totalDiscountsSet { shopMoney { amount currencyCode } } totalPriceSet { shopMoney { amount currencyCode } } currentTotalPriceSet { shopMoney { amount currencyCode } } totalRefundedSet { shopMoney { amount currencyCode } } customer { id displayName defaultEmailAddress { emailAddress } } shippingAddress { name company address1 address2 city province provinceCode zip country countryCodeV2 phone } billingAddress { name company address1 address2 city province provinceCode zip country countryCodeV2 phone } shippingLines(first: 5) { nodes { title code originalPriceSet { shopMoney { amount currencyCode } } } } lineItems(first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { id name sku vendor quantity currentQuantity unfulfilledQuantity requiresShipping variant { id } product { id } originalUnitPriceSet { shopMoney { amount currencyCode } } discountedTotalSet { shopMoney { amount currencyCode } } } } fulfillmentOrders(first: 5) { nodes { id status requestStatus fulfillAt assignedLocation { name location { id } } deliveryMethod { methodType } supportedActions { action } lineItems(first: 20) { nodes { id sku productTitle variantTitle totalQuantity remainingQuantity lineItem { id } } } } } fulfillments(first: 10) { id name status displayStatus createdAt trackingInfo { company number url } } } }",
+        "queryParams": {
+          "id": "$order_id",
+          "first": "$line_items_first",
+          "after": "$line_items_after"
+        }
+      }
+    },
+    {
+      "name": "shopify_search_customers",
+      "description": "Search customers with Shopify search syntax (for example `email:anna@example.com`, `phone:+4930123456`, `country:Germany`, `tag:vip`, `orders_count:>5`, `amount_spent:>=500`, or plain text matching name and email). Returns name, email, phone, number of orders, amount spent, state, tags and default address city and country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Shopify search query. Omit to list all customers."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "Number of customers to return, 1 to 250 (default 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page, to fetch the next page."
+          },
+          "sort_key": {
+            "type": "string",
+            "enum": [
+              "CREATED_AT",
+              "UPDATED_AT",
+              "NAME",
+              "LOCATION",
+              "ID",
+              "RELEVANCE"
+            ],
+            "description": "Sort field (default ID)."
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "Reverse the sort order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchCustomers($query: String, $first: Int = 50, $after: String, $sortKey: CustomerSortKeys, $reverse: Boolean = false) { customers(query: $query, first: $first, after: $after, sortKey: $sortKey, reverse: $reverse) { pageInfo { hasNextPage endCursor } nodes { id displayName firstName lastName defaultEmailAddress { emailAddress } defaultPhoneNumber { phoneNumber } numberOfOrders amountSpent { amount currencyCode } state tags createdAt updatedAt defaultAddress { city provinceCode countryCodeV2 } } } }",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after",
+          "sortKey": "$sort_key",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "shopify_get_customer",
+      "description": "Get one customer: email (with marketing consent) and phone, state, tags, note, tax exemption, locale, number of orders and amount spent, default address, up to 10 saved addresses and the 10 most recent orders with status and total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer GID, e.g. gid://shopify/Customer/1234567890, from shopify_search_customers or an order."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetCustomer($id: ID!) { customer(id: $id) { id displayName firstName lastName defaultEmailAddress { emailAddress marketingState } defaultPhoneNumber { phoneNumber } verifiedEmail state tags note taxExempt locale numberOfOrders amountSpent { amount currencyCode } createdAt updatedAt defaultAddress { name company address1 address2 city province provinceCode zip country countryCodeV2 phone } addressesV2(first: 10) { nodes { name company address1 address2 city province provinceCode zip country countryCodeV2 phone } } lastOrder { id name } orders(first: 10, sortKey: CREATED_AT, reverse: true) { nodes { id name createdAt displayFinancialStatus displayFulfillmentStatus currentTotalPriceSet { shopMoney { amount currencyCode } } } } } }",
+        "queryParams": {
+          "id": "$customer_id"
+        }
+      }
+    },
+    {
+      "name": "shopify_update_variant_price",
+      "description": "Change the price, and optionally the compare-at price, of one product variant. Returns the updated variant, or userErrors explaining why Shopify refused the change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "GID of the product the variant belongs to, e.g. gid://shopify/Product/1234567890."
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "Variant GID, e.g. gid://shopify/ProductVariant/1234567890, from shopify_get_product."
+          },
+          "price": {
+            "type": "string",
+            "description": "New price in the store currency as a decimal string, e.g. \"29.90\"."
+          },
+          "compare_at_price": {
+            "type": "string",
+            "description": "Optional compare-at (original) price shown struck through, e.g. \"39.90\". Leave out to keep the current one."
+          }
+        },
+        "required": [
+          "product_id",
+          "variant_id",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateVariantPrice($productId: ID!, $variantId: ID!, $price: Money!, $compareAtPrice: Money) { productVariantsBulkUpdate(productId: $productId, variants: [{ id: $variantId, price: $price, compareAtPrice: $compareAtPrice }]) { productVariants { id title sku price compareAtPrice } userErrors { field message code } } }",
+        "queryParams": {
+          "productId": "$product_id",
+          "variantId": "$variant_id",
+          "price": "$price",
+          "compareAtPrice": "$compare_at_price"
+        }
+      }
+    },
+    {
+      "name": "shopify_adjust_inventory",
+      "description": "Add to or subtract from the stock of one inventory item at one location by a delta (for example +10 after a delivery, -2 for damaged goods). Optionally only applies when the current quantity still equals change_from_quantity. Returns the adjustment, or userErrors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_item_id": {
+            "type": "string",
+            "description": "Inventory item GID, e.g. gid://shopify/InventoryItem/1234567890, from shopify_get_product or shopify_list_inventory_levels."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location GID, e.g. gid://shopify/Location/1234567890, from shopify_list_locations or shopify_list_inventory_levels."
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Quantity to add (positive) or remove (negative)."
+          },
+          "quantity_name": {
+            "type": "string",
+            "enum": [
+              "available",
+              "damaged",
+              "quality_control",
+              "reserved",
+              "safety_stock"
+            ],
+            "description": "Which quantity to change (default available)."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "correction",
+              "cycle_count_available",
+              "damaged",
+              "movement_created",
+              "movement_updated",
+              "movement_received",
+              "movement_canceled",
+              "other",
+              "promotion",
+              "quality_control",
+              "received",
+              "reservation_created",
+              "reservation_deleted",
+              "reservation_updated",
+              "restock",
+              "shrinkage"
+            ],
+            "description": "Reason recorded in the inventory history (default correction)."
+          },
+          "change_from_quantity": {
+            "type": "integer",
+            "description": "Optional. The quantity you expect the item to have now; Shopify refuses the change with CHANGE_FROM_QUANTITY_STALE if it differs. Leave out to apply the delta unconditionally."
+          },
+          "reference_document_uri": {
+            "type": "string",
+            "description": "Optional URI recorded with the change, e.g. gid://myapp/PurchaseOrder/42 or a URL to the delivery note."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A new unique string for each adjustment, for example a UUID. Sending the same key again does not apply the change a second time."
+          }
+        },
+        "required": [
+          "inventory_item_id",
+          "location_id",
+          "delta",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AdjustInventory($inventoryItemId: ID!, $locationId: ID!, $delta: Int!, $name: String! = \"available\", $reason: String! = \"correction\", $changeFromQuantity: Int = null, $referenceDocumentUri: String, $idempotencyKey: String!) { inventoryAdjustQuantities(input: { name: $name, reason: $reason, referenceDocumentUri: $referenceDocumentUri, changes: [{ inventoryItemId: $inventoryItemId, locationId: $locationId, delta: $delta, changeFromQuantity: $changeFromQuantity }] }) @idempotent(key: $idempotencyKey) { inventoryAdjustmentGroup { createdAt reason referenceDocumentUri changes { name delta quantityAfterChange location { id name } } } userErrors { field message code } } }",
+        "queryParams": {
+          "inventoryItemId": "$inventory_item_id",
+          "locationId": "$location_id",
+          "delta": "$delta",
+          "name": "$quantity_name",
+          "reason": "$reason",
+          "changeFromQuantity": "$change_from_quantity",
+          "referenceDocumentUri": "$reference_document_uri",
+          "idempotencyKey": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "shopify_create_fulfillment",
+      "description": "Mark the items of a fulfillment order as shipped, optionally with a carrier, tracking number and tracking URL, and optionally email the customer. Without line_items every remaining item of the fulfillment order is fulfilled. Returns the fulfillment, or userErrors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulfillment_order_id": {
+            "type": "string",
+            "description": "Fulfillment order GID, e.g. gid://shopify/FulfillmentOrder/1234567890, from fulfillmentOrders in shopify_get_order. It must be open or in progress."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Optional. Fulfill only these fulfillment order line items (ids from the fulfillment order's lineItems, not the order's line items). Leave out to fulfill everything still open.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Fulfillment order line item GID, e.g. gid://shopify/FulfillmentOrderLineItem/1234567890."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Quantity to fulfill, at most its remainingQuantity."
+                }
+              },
+              "required": [
+                "id",
+                "quantity"
+              ]
+            }
+          },
+          "tracking_company": {
+            "type": "string",
+            "description": "Carrier name, e.g. DHL Express, UPS, USPS, FedEx. With a carrier Shopify knows, it builds the tracking link itself; the name must match Shopify's spelling."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking URL (needs tracking_number). Only needed for carriers Shopify does not know."
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "Send the shipping confirmation email to the customer (default false)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional note stored with the fulfillment."
+          }
+        },
+        "required": [
+          "fulfillment_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateFulfillment($fulfillmentOrderId: ID!, $lineItems: [FulfillmentOrderLineItemInput!], $company: String, $number: String, $url: URL, $notifyCustomer: Boolean = false, $message: String) { fulfillmentCreate(fulfillment: { lineItemsByFulfillmentOrder: [{ fulfillmentOrderId: $fulfillmentOrderId, fulfillmentOrderLineItems: $lineItems }], trackingInfo: { company: $company, number: $number, url: $url }, notifyCustomer: $notifyCustomer }, message: $message) { fulfillment { id name status displayStatus createdAt trackingInfo { company number url } } userErrors { field message } } }",
+        "queryParams": {
+          "fulfillmentOrderId": "$fulfillment_order_id",
+          "lineItems": "$line_items",
+          "company": "$tracking_company",
+          "number": "$tracking_number",
+          "url": "$tracking_url",
+          "notifyCustomer": "$notify_customer",
+          "message": "$message"
+        }
+      }
+    }
+  ]
+}
