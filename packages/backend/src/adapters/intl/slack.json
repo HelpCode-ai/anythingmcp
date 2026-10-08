@@ -1,0 +1,513 @@
+{
+  "slug": "slack",
+  "name": "Slack",
+  "description": "Let your AI work in Slack: find channels and people, read channel history and threads, catch up on what was said, post messages and thread replies, and react with emoji. One workspace, through a Slack app you install yourself.",
+  "instructions": "## Slack\nThis connector works in one Slack workspace through the **Slack Web API** (`https://slack.com/api`): list channels and people, read channel history and threads, post messages and replies, and add reactions. It authenticates with a token from a Slack app that you create and install in your own workspace (about 5 minutes).\n\n**Setup**\n1. Open https://api.slack.com/apps → **Create New App** → **From a manifest** → pick the workspace.\n2. Paste this manifest (JSON) and click **Create**:\n```json\n{\n  \"display_information\": {\n    \"name\": \"AnythingMCP\"\n  },\n  \"features\": {\n    \"bot_user\": {\n      \"display_name\": \"AnythingMCP\",\n      \"always_online\": false\n    }\n  },\n  \"oauth_config\": {\n    \"scopes\": {\n      \"bot\": [\n        \"channels:read\",\n        \"channels:history\",\n        \"channels:join\",\n        \"groups:read\",\n        \"groups:history\",\n        \"im:read\",\n        \"im:history\",\n        \"mpim:read\",\n        \"mpim:history\",\n        \"chat:write\",\n        \"reactions:write\",\n        \"users:read\"\n      ]\n    }\n  },\n  \"settings\": {\n    \"org_deploy_enabled\": false,\n    \"socket_mode_enabled\": false,\n    \"token_rotation_enabled\": false\n  }\n}\n```\n3. **Install App → Install to Workspace** and allow. If the workspace only lets admins install apps, Slack sends an approval request to a workspace admin instead.\n4. **OAuth & Permissions → Bot User OAuth Token** (starts with `xoxb-`): paste it into `SLACK_TOKEN` and install the connector.\n5. Keep **token rotation** off (as in the manifest): with rotation on, the token expires every 12 hours and a pasted token stops working.\n\n**Bot token or user token**\n- A **bot token** (`xoxb-`, the default) acts as the app: messages are posted by \"AnythingMCP\", and it reads the history of a channel only once the app is a member. Public channels: `slack_join_channel`, or `/invite @AnythingMCP` in the channel. Private channels, group DMs: invite the app with `/invite @AnythingMCP`.\n- A **user token** (`xoxp-`) acts as the person who installed the app: it sees every conversation that person sees and posts in their name. To get one, add the same scopes plus `search:read` under `oauth_config.scopes.user` in the manifest (App Manifest page), reinstall, and paste the **User OAuth Token** instead. Only a user token can search, so `slack_search_messages` is installed switched off: turn it on when you use a user token.\n- Add `users:read.email` to the scopes if the AI should see people's email addresses.\n\n**Conversations and ids**: every call takes ids, not names: channel ids start with `C` (public), `G` (some private), `D` (direct messages); user ids with `U` or `W`. Look them up with `slack_list_conversations` and `slack_list_users`. `types` chooses what is listed: `public_channel` (default), `private_channel`, `mpim` (group DMs), `im` (direct messages), comma-separated.\n\n**Messages, threads and timestamps**: a message is identified by its channel and its `ts` (e.g. `1712345678.123456`), which is also its time in Unix seconds. A reply to a thread has `thread_ts` set to the parent's `ts`; `slack_get_thread_replies` with the parent's `ts` returns the parent followed by the replies, and `slack_post_message` with `thread_ts` replies in the thread. `oldest` and `latest` bound the history in Unix seconds. Messages use Slack mrkdwn (`*bold*`, `_italic_`, `<https://example.com|link text>`, `<@U123>` to mention someone); `text` should stay under 4,000 characters.\n\n**Pagination**: lists return `response_metadata.next_cursor`; pass it as `cursor` with the same other arguments while it is not empty. `has_more` says whether more history exists. Search pages with `page` (see `messages.paging`).\n\n**Rate limits**: per method and per workspace. `conversations.list` and `users.list` allow about 20 calls a minute, `conversations.history` and `conversations.replies` about 50 a minute for an app installed in your own workspace, `chat.postMessage` about one message per second per channel. Over a limit Slack answers HTTP 429 with a `Retry-After` header.\n\n**Errors**: Slack answers HTTP 200 with `\"ok\": false` and an `error` code; the connector reports these as errors.\n- `invalid_auth`, `not_authed`, `token_revoked`, `token_expired`, `account_inactive`: the token is wrong, was revoked, or the app was uninstalled. Paste a fresh token.\n- `missing_scope` (the `needed` field names the scope): add the scope to the app, reinstall it, and paste the new token if it changed.\n- `not_in_channel`: the app is not a member of the channel; join it or invite the app.\n- `channel_not_found`: a wrong id, or a private conversation the token cannot see.\n- `not_allowed_token_type`: the method needs the other kind of token (search needs a user token).\n- `is_archived`, `msg_too_long`, `no_text`, `already_reacted`, `invalid_name` (emoji names go without colons): fix the input.\n\n**Out of scope here**: editing or deleting messages, files, channel management beyond joining, user groups, Slack Connect administration and Enterprise Grid org-wide installs.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "slack",
+  "docsUrl": "https://docs.slack.dev/reference/methods",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "SLACK_TOKEN"
+  ],
+  "envVarMeta": {
+    "SLACK_TOKEN": {
+      "label": "Slack token",
+      "kind": "credential",
+      "secret": true,
+      "help": "api.slack.com/apps → your app → OAuth & Permissions: the Bot User OAuth Token (xoxb-…), or the User OAuth Token (xoxp-…) to act as yourself and search.",
+      "link": "https://api.slack.com/apps",
+      "pattern": "^xox[bp]-\\S+$",
+      "patternMessage": "Paste the Bot User OAuth Token (xoxb-…) or the User OAuth Token (xoxp-…), without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Slack refused the token (invalid_auth or token_revoked). Copy it again from OAuth & Permissions in your Slack app; if the app was reinstalled or uninstalled, the old token no longer works.",
+    "403": "The token lacks a scope this call needs, or the app is not in the channel. Add the scope in the app settings and reinstall, or invite the app to the channel.",
+    "rate_limited": "Slack is rate limiting this method. Wait for the Retry-After time and try again."
+  },
+  "probe": {
+    "tool": "slack_auth_test"
+  },
+  "prerequisites": "A Slack app created from the manifest below and installed in your workspace (about 5 minutes). Workspaces that restrict app installs need a workspace admin to approve it.",
+  "connector": {
+    "name": "Slack Web API",
+    "type": "REST",
+    "baseUrl": "https://slack.com/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SLACK_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/auth.test",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": [
+            "error",
+            "needed"
+          ],
+          "messageMatches": "^(not_authed|invalid_auth|account_inactive|token_revoked|token_expired|org_login_required)\\b",
+          "status": 401
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": [
+            "error",
+            "needed"
+          ],
+          "messageMatches": "^(missing_scope|not_allowed_token_type|no_permission|access_denied|ekm_access_denied|team_access_not_granted|not_in_channel)\\b",
+          "status": 403
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": [
+            "error",
+            "needed"
+          ],
+          "messageMatches": "^ratelimited\\b",
+          "status": 429
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": [
+            "error",
+            "needed"
+          ],
+          "messageMatches": "^(channel_not_found|user_not_found|thread_not_found|message_not_found)\\b",
+          "status": 404
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": [
+            "error",
+            "needed"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "slack_auth_test",
+      "description": "Check the token and return who it acts as: workspace name, URL and id, the user id, and for a bot token the bot id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/auth.test"
+      }
+    },
+    {
+      "name": "slack_list_conversations",
+      "description": "List the workspace's conversations the token can see: public channels by default, and private channels, group DMs or direct messages on request. Returns id, name, topic, purpose, archive and membership state per conversation, plus next_cursor for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "string",
+            "description": "Comma-separated conversation types: public_channel (default), private_channel, mpim, im, e.g. \"public_channel,private_channel\"."
+          },
+          "exclude_archived": {
+            "type": "boolean",
+            "description": "true to leave out archived channels (default false)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum conversations per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous response, to fetch the next page with the same other arguments."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Workspace id; only needed with a token of an org-wide Enterprise Grid app."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations.list",
+        "queryParams": {
+          "types": "$types",
+          "exclude_archived": "$exclude_archived",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "team_id": "$team_id"
+        }
+      }
+    },
+    {
+      "name": "slack_get_conversation_info",
+      "description": "Get the details of one channel or conversation by id: name, topic, purpose, creator, creation time, archive state and whether the token is a member, optionally with the member count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Conversation id, e.g. C0123456789."
+          },
+          "include_num_members": {
+            "type": "boolean",
+            "description": "true to add num_members (default false)."
+          }
+        },
+        "required": [
+          "channel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations.info",
+        "queryParams": {
+          "channel": "$channel",
+          "include_num_members": "$include_num_members"
+        }
+      }
+    },
+    {
+      "name": "slack_get_conversation_history",
+      "description": "Read the messages of a channel or conversation, newest first, optionally within a time window. Each message has its ts, user, text, thread_ts and reply count when it starts a thread, and reactions; has_more and next_cursor page further back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Conversation id, e.g. C0123456789."
+          },
+          "oldest": {
+            "type": "string",
+            "description": "Only messages after this Unix timestamp in seconds, e.g. \"1759276800\" or a message ts."
+          },
+          "latest": {
+            "type": "string",
+            "description": "Only messages before this Unix timestamp in seconds (default now)."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true to include messages exactly at oldest or latest."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum messages per page, 1 to 999 (default 100).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous response, to fetch the next page with the same other arguments."
+          }
+        },
+        "required": [
+          "channel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations.history",
+        "queryParams": {
+          "channel": "$channel",
+          "oldest": "$oldest",
+          "latest": "$latest",
+          "inclusive": "$inclusive",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "slack_get_thread_replies",
+      "description": "Read a thread: the parent message followed by its replies in order, for a channel and the parent message's ts. has_more and next_cursor page through long threads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Conversation id the thread is in."
+          },
+          "ts": {
+            "type": "string",
+            "description": "ts of the thread's parent message (its thread_ts), e.g. \"1712345678.123456\"."
+          },
+          "oldest": {
+            "type": "string",
+            "description": "Only replies after this Unix timestamp in seconds."
+          },
+          "latest": {
+            "type": "string",
+            "description": "Only replies before this Unix timestamp in seconds."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true to include replies exactly at oldest or latest."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum messages per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous response, to fetch the next page with the same other arguments."
+          }
+        },
+        "required": [
+          "channel",
+          "ts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations.replies",
+        "queryParams": {
+          "channel": "$channel",
+          "ts": "$ts",
+          "oldest": "$oldest",
+          "latest": "$latest",
+          "inclusive": "$inclusive",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "slack_list_users",
+      "description": "List the members of the workspace, including bots, invited and deactivated accounts, with id, name, real name, display name, title, time zone and flags such as deleted, is_bot and is_admin. Email addresses appear only with the users:read.email scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum users per page, 1 to 1000 (Slack recommends 200 or fewer for large workspaces).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous response, to fetch the next page with the same other arguments."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Workspace id; only needed with a token of an org-wide Enterprise Grid app."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users.list",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "team_id": "$team_id"
+        }
+      }
+    },
+    {
+      "name": "slack_get_user_info",
+      "description": "Get one person's profile by user id: name, real and display name, title, time zone, status, and whether the account is deleted, a bot or an admin. The email address appears only with the users:read.email scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "User id, e.g. U0123456789."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users.info",
+        "queryParams": {
+          "user": "$user"
+        }
+      }
+    },
+    {
+      "name": "slack_join_channel",
+      "description": "Make the app a member of a public channel so it can read the channel's history. Private channels cannot be joined this way: someone in the channel invites the app instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Id of the public channel, e.g. C0123456789."
+          }
+        },
+        "required": [
+          "channel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations.join",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "channel": "$channel"
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "slack_post_message",
+      "description": "Post a message to a channel or conversation, or as a reply in a thread when thread_ts is given. Returns the posted message with its ts and the channel id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Conversation id to post in, e.g. C0123456789."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text in Slack mrkdwn, up to 4,000 characters."
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "ts of the parent message to reply in its thread."
+          },
+          "reply_broadcast": {
+            "type": "boolean",
+            "description": "With thread_ts: true to also show the reply in the channel (default false)."
+          },
+          "unfurl_links": {
+            "type": "boolean",
+            "description": "false to stop link previews for text links."
+          },
+          "unfurl_media": {
+            "type": "boolean",
+            "description": "false to stop previews of media links."
+          }
+        },
+        "required": [
+          "channel",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat.postMessage",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "channel": "$channel",
+          "text": "$text",
+          "thread_ts": "$thread_ts",
+          "reply_broadcast": "$reply_broadcast",
+          "unfurl_links": "$unfurl_links",
+          "unfurl_media": "$unfurl_media"
+        }
+      }
+    },
+    {
+      "name": "slack_add_reaction",
+      "description": "Add an emoji reaction to a message, identified by its channel and ts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Conversation id of the message."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ts of the message, e.g. \"1712345678.123456\"."
+          },
+          "name": {
+            "type": "string",
+            "description": "Emoji name without colons, e.g. \"thumbsup\", \"white_check_mark\" or \"thumbsup::skin-tone-3\"."
+          }
+        },
+        "required": [
+          "channel",
+          "timestamp",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reactions.add",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "channel": "$channel",
+          "timestamp": "$timestamp",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "slack_search_messages",
+      "description": "Search messages across the workspace with Slack search syntax (in:#channel, from:@name, before:, after:, has:link). Works only with a user token (xoxp-) that has the search:read scope. Returns matches with channel, user, ts, text and permalink, and paging information.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query, e.g. \"invoice in:#finance after:2026-10-01\"."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by relevance (score, default) or time (timestamp).",
+            "enum": [
+              "score",
+              "timestamp"
+            ]
+          },
+          "sort_dir": {
+            "type": "string",
+            "description": "Sort direction (default desc).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search.messages",
+        "queryParams": {
+          "query": "$query",
+          "count": "$count",
+          "page": "$page",
+          "sort": "$sort",
+          "sort_dir": "$sort_dir"
+        }
+      }
+    }
+  ]
+}

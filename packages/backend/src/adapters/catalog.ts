@@ -150,6 +150,7 @@ import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as github from './intl/github.json';
 import * as glpi from './intl/glpi.json';
+import * as gmail from './intl/gmail.json';
 import * as gocardless from './intl/gocardless.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
@@ -262,6 +263,7 @@ import * as serply from './intl/serply.json';
 import * as shipstation from './intl/shipstation.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
+import * as slack from './intl/slack.json';
 import * as snov from './intl/snov.json';
 import * as snowflake from './intl/snowflake.json';
 import * as sorare from './intl/sorare.json';
@@ -678,6 +680,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gitbook as unknown as AdapterDefinition,
   github as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
+  gmail as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
@@ -790,6 +793,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shipstation as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
+  slack as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
   snowflake as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
