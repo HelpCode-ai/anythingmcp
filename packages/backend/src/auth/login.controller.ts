@@ -36,6 +36,8 @@ import {
   clientTilePair,
   knownClientFor,
   renderAuthPage,
+  showsDirectoryBadge,
+  signupClientFor,
   type TrustRowOptions,
 } from './auth-page';
 
@@ -928,6 +930,7 @@ export class LoginController {
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
     const known = consent ? knownClientFor(consent.redirectHost) : null;
+    const signupClient = consent ? signupClientFor(consent.clientName, consent.redirectHost) : null;
 
     const errorHtml = error
       ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>`
@@ -966,9 +969,9 @@ export class LoginController {
       : `Authorize access to ${server} MCP Server`;
 
     // Claude's directory lists AnythingMCP Cloud, so the badge appears only
-    // there, and only when the code really goes back to Claude.
+    // there, and not to someone connecting ChatGPT or Muse.
     const directoryPill =
-      known === 'claude' && this.deployment.isCloud()
+      signupClient && showsDirectoryBadge(signupClient) && this.deployment.isCloud()
         ? `<div class="verified">${claudeMark(12)}<span>Listed in Anthropic&#39;s Claude Directory</span></div>`
         : '';
 
@@ -1018,7 +1021,11 @@ export class LoginController {
     // consent box: as a text link under the form it sat below the fold on a
     // phone. After a failed sign-in (that person has an account and is fixing a
     // typo) it shrinks back to the small link under the form.
-    const signupHref = '/login?mode=register&amp;redirect=%2Fauth%2Flogin';
+    //
+    // `client` tells the sign-up page who sent them: it leaves the Claude
+    // Directory badge out for ChatGPT and Muse, as this page does.
+    const signupHref =
+      '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (signupClient ? `&amp;client=${signupClient}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();
     const signupHtml =
       offerSignup && !error

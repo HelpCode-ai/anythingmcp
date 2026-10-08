@@ -42,4 +42,19 @@ describe('boundPayload', () => {
     expect(boundText('a'.repeat(50), 10)).toMatch(/^a{10}… \[truncated, 50 chars\]$/);
     expect(boundText(undefined, 10)).toBeUndefined();
   });
+
+  it('never hands Postgres a NUL or half an emoji, which would lose the whole row', () => {
+    const stored = (v: unknown) => JSON.stringify(v);
+    const nul = { title: 'a\u0000b' };
+    expect(stored(boundPayload(nul, { maxBytes: 1024 }))).not.toMatch(/\\u0000/);
+
+    const titles = Array.from({ length: 200 }, () => ({ title: '🙂'.repeat(600) }));
+    for (const maxBytes of [16 * 1024, 2 * 1024, 300]) {
+      const out = stored(boundPayload({ items: titles }, { maxBytes }));
+      expect(out).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    }
+    const clean = { title: 'ok 🙂' };
+    expect(boundPayload(clean, { maxBytes: 1024 })).toBe(clean);
+    expect(boundText('x🙂', 2)).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
+  });
 });

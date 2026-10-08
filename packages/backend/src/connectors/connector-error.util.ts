@@ -27,7 +27,9 @@ const AUTH_HINTS: Record<string, string> = {
   LOGIN_TOKEN:
     'Login failed — the email/password used to mint the session token was rejected.',
   QUERY_AUTH: 'The API key sent as a query parameter was rejected.',
-  NONE: 'This API requires authentication, but the connector has no credentials configured. Set an auth type and credentials.',
+  // Auth type NONE also covers keys carried in the address or the body (a
+  // Telegram bot token is part of the URL), so "no credentials" can be wrong.
+  NONE: 'The API refused the request as unauthenticated. If the key or token is part of the address or the request (a bot token in the URL, for example), check that value; otherwise set an auth type and credentials.',
 };
 
 export function classifyToolExecutionError(input: {
@@ -78,7 +80,7 @@ export function classifyToolExecutionError(input: {
       return {
         kind: 'auth_failed',
         // With credentials in the body the auth type is NONE, whose hint
-        // ("no credentials configured") would be wrong here.
+        // (about credentials in the address) would be wrong here.
         hint:
           authType && authType !== 'NONE'
             ? AUTH_HINTS[authType] ?? 'Credentials were rejected.'

@@ -23,7 +23,7 @@ async function mock(page: Page, mode: 'cloud' | 'self-hosted', stats: unknown, s
   });
 }
 
-test('cloud sign-up shows the live numbers, rounded down', async ({ page }) => {
+test('cloud sign-up shows the numbers, never below their floors', async ({ page }) => {
   await mock(page, 'cloud', {
     githubStars: 984,
     dockerPulls: 32_456,
@@ -34,20 +34,21 @@ test('cloud sign-up shows the live numbers, rounded down', async ({ page }) => {
   await page.goto('/login?mode=register');
   await expect(page.getByRole('heading', { name: 'Create your free account' })).toBeVisible();
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
-  await expect(panel.getByText('984')).toBeVisible();
-  await expect(panel.getByText('32,000+')).toBeVisible();
-  await expect(panel.getByText('650,000+')).toBeVisible();
+  await expect(panel.getByText('1,000+')).toBeVisible();
+  await expect(panel.getByText('200,000+')).toBeVisible();
+  await expect(panel.getByText('1M+')).toBeVisible();
   await expect(panel.getByText('3,800+')).toBeVisible();
   await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
   await expect(panel.getByText('Your 7-day trial includes')).toBeVisible();
 });
 
-test('without numbers the tiles are hidden and the badges stay', async ({ page }) => {
+test('without live numbers the floors are shown and workspaces left out', async ({ page }) => {
   await mock(page, 'cloud', { message: 'down' }, 503);
   await page.goto('/login?mode=register');
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
   await expect(panel.getByText('AES-256-GCM')).toBeVisible();
-  await expect(page.getByTestId('trust-stats')).toHaveCount(0);
+  await expect(panel.getByText('200,000+')).toBeVisible();
+  await expect(panel.getByText(/workspaces on/)).toHaveCount(0);
 });
 
 test('self-hosted sign-up makes no Cloud claims', async ({ page }) => {
@@ -57,5 +58,21 @@ test('self-hosted sign-up makes no Cloud claims', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.getByText(/Frankfurt|7-day|DPA/)).toHaveCount(0);
-  await expect(page.getByText('984 on GitHub · open source')).toBeVisible();
+  await expect(page.getByText('1,000+ on GitHub · open source')).toBeVisible();
+});
+
+test('the Claude Directory badge is hidden for ChatGPT and Muse only', async ({ page }) => {
+  await mock(page, 'cloud', { message: 'down' }, 503);
+  const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
+
+  for (const client of ['claude', 'other']) {
+    await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
+    await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
+  }
+
+  for (const client of ['chatgpt', 'muse']) {
+    await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
+    await expect(panel.getByText('AES-256-GCM')).toBeVisible();
+    await expect(panel.getByText('Listed in the Claude Directory')).toHaveCount(0);
+  }
 });
