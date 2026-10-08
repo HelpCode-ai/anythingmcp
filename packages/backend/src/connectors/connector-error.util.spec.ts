@@ -13,9 +13,10 @@ describe('classifyToolExecutionError', () => {
     );
   });
 
-  it('gives a NONE-auth hint when the API needs credentials but none are set', () => {
+  it('gives a NONE-auth hint that covers both a missing auth type and a key in the address', () => {
     const r = classifyToolExecutionError({ status: 401, authType: 'NONE' });
-    expect(r.hint).toMatch(/no credentials|no auth|requires authentication/i);
+    expect(r.hint).toMatch(/unauthenticated/);
+    expect(r.hint).toMatch(/set an auth type and credentials/);
   });
 
   it('maps 400/422 to bad_request', () => {
@@ -43,6 +44,12 @@ describe('classifyToolExecutionError', () => {
     expect(r.hint).toMatch(/base URL|reach the host/i);
   });
 
+  it('does not claim there are no credentials when the key is in the address (Telegram)', () => {
+    const out = classifyToolExecutionError({ status: 401, authType: 'NONE' });
+    expect(out.kind).toBe('auth_failed');
+    expect(out.hint).toMatch(/part of the address/);
+  });
+
   it('falls back to a generic error otherwise', () => {
     expect(classifyToolExecutionError({ message: 'boom' }).kind).toBe('error');
   });
@@ -50,7 +57,7 @@ describe('classifyToolExecutionError', () => {
   it('reads a JSON-RPC "Access Denied" answered with 200 as auth_failed', () => {
     const out = classifyToolExecutionError({ status: 200, authType: 'NONE', message: 'Odoo error: Access Denied' });
     expect(out.kind).toBe('auth_failed');
-    expect(out.hint).not.toMatch(/no credentials configured/);
+    expect(out.hint).not.toMatch(/part of the address/);
     expect(classifyToolExecutionError({ message: 'odoo.exceptions.AccessDenied' }).kind).toBe('auth_failed');
   });
 

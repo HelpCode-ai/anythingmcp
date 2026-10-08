@@ -226,6 +226,27 @@ describe('KgObservationalService.ingestOrganization', () => {
     expect(kinds).toEqual(['produces_consumes', 'same_identity']);
   });
 
+  it('skips values left by a deleted connector instead of aborting the run', async () => {
+    const { svc, prisma } = make({
+      pages: [[row('r1', 'c2', 1, 'erp_get_order')]],
+      payloads: { r1: { input: {}, output: { order: { customer_id: 'CUST-12345' } } } },
+      valueSeen: [
+        { valueHash: 'h1', connectorId: 'c2', entity: 'order', field: 'customer_id', direction: 'output' },
+        { valueHash: 'h1', connectorId: 'gone', entity: 'customer', field: 'id', direction: 'input' },
+      ],
+    });
+    prisma.kgNode.upsert.mockImplementation(async (args: any) => {
+      if (args.create.connectorId === 'gone') {
+        throw Object.assign(new Error('Foreign key constraint violated: kg_nodes_connector_id_fkey'), { code: 'P2003' });
+      }
+      return { id: `node-${args.create.connectorId}-${args.create.entity}` };
+    });
+
+    await expect(svc.ingestOrganization(ORG)).resolves.toBeDefined();
+    expect(prisma.kgEdge.create).not.toHaveBeenCalled();
+    expect(prisma.kgConnectorState.upsert).toHaveBeenCalled();
+  });
+
   it('writes each edge once per pass, however many values link the same nodes', async () => {
     const occ = (hash: string) => [
       { valueHash: hash, connectorId: 'c2', entity: 'order', field: 'customer_id', direction: 'output' },
