@@ -321,6 +321,45 @@ describe('normalizeSubdomainVariables — weclapp tenant (#733)', () => {
   });
 });
 
+describe('normalizeSubdomainVariables — the web address of an API host with an extra label', () => {
+  const strict = { singleLabel: true };
+  const kustomer = 'https://{{KUSTOMER_SUBDOMAIN}}.api.kustomerapp.com/v1';
+  const mailchimp = 'https://{{MAILCHIMP_DC}}.api.mailchimp.com/3.0';
+
+  it.each([
+    ['acme.kustomerapp.com', 'acme'],
+    ['https://ACME.kustomerapp.com/app/customers', 'acme'],
+    ['acme.api.kustomerapp.com', 'acme'],
+  ])('Kustomer %j → %s', (value, expected) => {
+    expect(normalizeSubdomainVariables(kustomer, { KUSTOMER_SUBDOMAIN: value }, strict).KUSTOMER_SUBDOMAIN).toBe(expected);
+  });
+
+  it.each([
+    ['us6.admin.mailchimp.com', 'us6'],
+    ['https://us6.admin.mailchimp.com/lists/', 'us6'],
+    ['us6.api.mailchimp.com', 'us6'],
+    ['us6', 'us6'],
+  ])('Mailchimp %j → %s', (value, expected) => {
+    expect(normalizeSubdomainVariables(mailchimp, { MAILCHIMP_DC: value }, strict).MAILCHIMP_DC).toBe(expected);
+  });
+
+  it.each(['acme.example.com', 'us6.admin.mailchimp.org', 'mailchimp.com'])(
+    'still refuses %j, which is not on the parent domain',
+    (value) => {
+      expect(() => normalizeSubdomainVariables(mailchimp, { MAILCHIMP_DC: value }, strict)).toThrow(
+        /^MAILCHIMP_DC must be only the part before \.api\.mailchimp\.com/,
+      );
+    },
+  );
+
+  it('never reduces a two-label suffix to its top-level domain', () => {
+    // `.weclapp.com` minus its first label is `.com`: no parent-domain rule.
+    expect(() =>
+      normalizeSubdomainVariables('https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v2', { WECLAPP_TENANT: 'acme.example.com' }, strict),
+    ).toThrow(/does not end in \.weclapp\.com/);
+  });
+});
+
 describe('catalog adapters whose host starts with a variable', () => {
   // Every `https://{{VAR}}.rest-of-host` template in the catalog: an
   // already-correct single label must survive unchanged, and the address the

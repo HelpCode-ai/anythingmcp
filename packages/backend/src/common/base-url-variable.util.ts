@@ -294,8 +294,10 @@ export function normalizeSubdomainVariable(
  * `https://acme.freshdesk.com/a/tickets` → `acme` for the suffix
  * `.freshdesk.com`; `acme` stays `acme`. Scheme, path, query, fragment, a port
  * the suffix does not have and a trailing dot are dropped, and the result is
- * lower-cased. A host on another domain keeps its full name, for
- * {@link normalizeSubdomainVariable} to judge.
+ * lower-cased. A host on the suffix's parent domain gives its first label
+ * (`acme.kustomerapp.com` → `acme` for `.api.kustomerapp.com`). A host on
+ * another domain keeps its full name, for {@link normalizeSubdomainVariable}
+ * to judge.
  */
 export function subdomainOf(value: string, suffix: string): string {
   const host = value
@@ -312,6 +314,14 @@ export function subdomainOf(value: string, suffix: string): string {
   const bareTail = tail.replace(/:\d{1,5}$/, '');
   if (bare.endsWith(bareTail) && bare.length > bareTail.length) {
     return bare.slice(0, -bareTail.length);
+  }
+  // The web address of a service whose API host has an extra label:
+  // `acme.kustomerapp.com` for `.api.kustomerapp.com`, `us6.admin.mailchimp.com`
+  // for `.api.mailchimp.com`. Only when the parent (the suffix minus its first
+  // label) still has two labels, so it is never reduced to a bare `.com`.
+  const parent = bareTail.replace(/^\.[^.]+/, '');
+  if (parent.split('.').length > 2 && bare.endsWith(parent) && bare.length > parent.length) {
+    return bare.split('.')[0];
   }
   return bare || value.trim();
 }
