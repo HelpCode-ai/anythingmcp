@@ -577,19 +577,29 @@ export class KgObservationalService {
     const key = `${connectorId}::${entity}`;
     const cached = cache.get(key);
     if (cached) return cached;
-    const node = await this.prisma.kgNode.upsert({
-      where: { organizationId_connectorId_entity: { organizationId, connectorId, entity } },
-      create: {
-        organizationId,
-        connectorId,
-        entity,
-        label: entity.charAt(0).toUpperCase() + entity.slice(1).replace(/_/g, ' '),
-        source: 'OBSERVED',
-        confidence: 0.4,
-      },
-      update: {},
-      select: { id: true },
-    });
+    let node: { id: string };
+    try {
+      node = await this.prisma.kgNode.upsert({
+        where: { organizationId_connectorId_entity: { organizationId, connectorId, entity } },
+        create: {
+          organizationId,
+          connectorId,
+          entity,
+          label: entity.charAt(0).toUpperCase() + entity.slice(1).replace(/_/g, ' '),
+          source: 'OBSERVED',
+          confidence: 0.4,
+        },
+        update: {},
+        select: { id: true },
+      });
+    } catch (e: any) {
+      // kg_value_seen keeps the values of a connector after it is deleted (no
+      // foreign key there), so a match can name a connector that is gone. A
+      // node for it would violate kg_nodes_connector_id_fkey and abort the
+      // whole run for the organization, on every call: skip it instead.
+      if (e?.code === 'P2003') return null;
+      throw e;
+    }
     cache.set(key, node.id);
     return node.id;
   }

@@ -60,6 +60,25 @@ function shrink(value: unknown, shape: Shape, depth: number): unknown {
  * The value itself when it serializes under `maxBytes`; otherwise a
  * structure-preserving excerpt marked with `_amcp_truncated`.
  */
+/**
+ * Postgres refuses U+0000 and unpaired UTF-16 surrogates in jsonb ("invalid
+ * input syntax for type json"), and the whole invocation row was lost. Vendors
+ * send the first; cutting a string in the middle of an emoji (Etsy listing
+ * titles) makes the second. JSON.stringify writes both as \u escapes, which
+ * is how they are spotted without walking every value.
+ */
+const UNSTORABLE_ESCAPE = /\\u0000|\\ud[89a-f][0-9a-f]{2}/i;
+const UNSTORABLE_CHARS = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+function cleanText(s: string): string {
+  return s.replace(UNSTORABLE_CHARS, '\ufffd');
+}
+
+function storable<T>(value: T, json: string): T {
+  if (!UNSTORABLE_ESCAPE.test(json)) return value;
+  return JSON.parse(JSON.stringify(value, (_k, v) => (typeof v === 'string' ? cleanText(v) : v)));
+}
+
 export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string, unknown> {
   if (value === undefined || value === null) return value;
   let json: string;
@@ -70,7 +89,7 @@ export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string
   }
   if (json === undefined) return value;
   const originalBytes = byteLength(json);
-  if (originalBytes <= opts.maxBytes) return value;
+  if (originalBytes <= opts.maxBytes) return storable(value, json);
 
   const marker = { originalBytes };
   for (const shape of SHAPES) {
@@ -79,7 +98,8 @@ export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string
       shrunk && typeof shrunk === 'object' && !Array.isArray(shrunk)
         ? { [TRUNCATION_MARKER]: marker, ...(shrunk as Record<string, unknown>) }
         : { [TRUNCATION_MARKER]: marker, value: shrunk };
-    if (byteLength(JSON.stringify(wrapped)) <= opts.maxBytes) return wrapped;
+    const wrappedJson = JSON.stringify(wrapped);
+    if (byteLength(wrappedJson) <= opts.maxBytes) return storable(wrapped, wrappedJson);
   }
   // Pathological shapes (thousands of keys): keep a plain text excerpt. The
   // excerpt is itself JSON, so escaping makes it grow once stored: shorten
@@ -87,7 +107,8 @@ export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string
   let chars = Math.max(0, opts.maxBytes - 200);
   for (;;) {
     const fallback = { [TRUNCATION_MARKER]: marker, excerpt: json.slice(0, chars) };
-    if (chars === 0 || byteLength(JSON.stringify(fallback)) <= opts.maxBytes) return fallback;
+    const fallbackJson = JSON.stringify(fallback);
+    if (chars === 0 || byteLength(fallbackJson) <= opts.maxBytes) return storable(fallback, fallbackJson);
     chars = Math.floor(chars * 0.8);
   }
 }
@@ -95,5 +116,7 @@ export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string
 /** Errors are free text; keep the beginning, where the useful part is. */
 export function boundText(text: string | undefined, maxChars: number): string | undefined {
   if (text === undefined || text === null) return text;
-  return text.length > maxChars ? `${text.slice(0, maxChars)}… [truncated, ${text.length} chars]` : text;
+  return cleanText(
+    text.length > maxChars ? `${text.slice(0, maxChars)}… [truncated, ${text.length} chars]` : text,
+  );
 }
