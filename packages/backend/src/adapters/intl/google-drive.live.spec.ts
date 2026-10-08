@@ -154,9 +154,9 @@ describe('google-drive adapter: static spec conformance', () => {
     expect(tool('gdrive_search_files').endpointMapping.queryParams?.includeItemsFromAllDrives).toBe(true);
   });
 
-  it('installs only the trash tool switched off, and has no permanent delete', () => {
-    expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name)).toEqual(['gdrive_trash_file']);
-    expect(a.instructions).toMatch(/Switched off at install\*\*: `gdrive_trash_file`/);
+  it('installs the trash and share tools switched off, and has no permanent delete', () => {
+    expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual(['gdrive_share_file', 'gdrive_trash_file']);
+    expect(a.instructions).toMatch(/Switched off at install\*\*: `gdrive_trash_file` and `gdrive_share_file`/);
     expect(annotationsOf(tool('gdrive_trash_file')).destructiveHint).toBe(true);
     expect(a.tools.some((t) => t.endpointMapping.method === 'DELETE')).toBe(false);
   });
