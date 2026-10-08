@@ -8,6 +8,10 @@
   "icon": "telegram",
   "docsUrl": "https://core.telegram.org/bots/api",
   "requiredEnvVars": ["TELEGRAM_BOT_TOKEN"],
+  "verifyHints": {
+    "401": "Telegram refused the bot token. Copy it again from @BotFather (send /mybots, pick the bot, API Token): the whole value, digits, colon and the part after it. A token that was revoked or regenerated stops working.",
+    "404": "Telegram did not recognise the bot token's format. Paste the full token from @BotFather, like 123456789:AAH..., with nothing before or after it."
+  },
   "envVarMeta": {
     "TELEGRAM_BOT_TOKEN": {
       "label": "Bot token",
