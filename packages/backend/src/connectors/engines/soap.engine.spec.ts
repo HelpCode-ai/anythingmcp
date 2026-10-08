@@ -708,5 +708,36 @@ describe('SoapEngine', () => {
       expect(headers['Content-Type']).toBe('text/xml; charset=utf-8');
       expect(headers.SOAPAction).toBe('http://tempuri.org/IService/GetUser');
     });
+
+    it('sends an empty SOAPAction as "" (SOAP 1.1 requires the header)', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+      // No soapAction stored and none in the WSDL (it cannot be read here).
+      (soap.createClientAsync as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+      await engine.execute(
+        { ...baseConfig, specUrl: 'http://example.com/empty-action?wsdl' },
+        { ...baseMapping, soapAction: '' },
+        { userId: '1' },
+      );
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers.SOAPAction).toBe('""');
+      expect(headers['Content-Type']).toBe('text/xml; charset=utf-8');
+    });
+
+    it('keeps a non-empty SOAPAction unquoted', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+
+      await engine.execute(baseConfig, { ...baseMapping, soapAction: 'urn:GetUser' }, { userId: '1' });
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers.SOAPAction).toBe('urn:GetUser');
+    });
   });
 });

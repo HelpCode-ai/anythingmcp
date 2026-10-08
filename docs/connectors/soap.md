@@ -94,6 +94,7 @@ AnythingMCP handles WCF-specific requirements:
 - **Parameter ordering** — WSDL-defined parameter order is preserved (WCF services are order-sensitive)
 - **Endpoint override** — The connector's `baseUrl` overrides the WSDL endpoint host, useful for internal networks where the WSDL advertises external IPs
 - **Multiple bindings** — Each port/binding generates separate tools
+- **SOAPAction header** — Sent with the operation's `soapAction` from the WSDL; when the WSDL declares an empty action, the header is sent as `SOAPAction: ""`, as SOAP 1.1 requires
 
 ---
 

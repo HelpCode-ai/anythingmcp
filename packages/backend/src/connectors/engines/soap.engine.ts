@@ -160,10 +160,12 @@ export class SoapEngine {
         ? data.replace(SECURITY_HEADER_BLOCK, REDACTED_SECURITY_HEADER)
         : data;
 
-    // Build headers
+    // Build headers. SOAP 1.1 requires the SOAPAction header even when the
+    // action is empty: it is then sent as `""` (two double quotes), as WCF,
+    // Axis and node-soap do. A non-empty action is sent as stored.
     const headers: Record<string, string> = {
       'Content-Type': 'text/xml; charset=utf-8',
-      ...(soapAction ? { SOAPAction: soapAction } : {}),
+      SOAPAction: soapAction || '""',
       ...config.headers,
     };
 
