@@ -9,6 +9,7 @@ import { decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
+import { toolSchemaProperties } from './tool-schema.util';
 import { RolesService } from '../roles/roles.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
@@ -583,10 +584,9 @@ export class McpServerService implements OnModuleInit {
    * validation signal where it matters.
    */
   private jsonSchemaToZod(schema: Record<string, unknown>): any {
-    const properties = schema?.properties as Record<string, any> | undefined;
+    const { properties, required } = toolSchemaProperties(schema);
     if (!properties) return z.object({});
 
-    const required = (schema?.required as string[]) || [];
     const shape: Record<string, z.ZodType> = {};
 
     for (const [key, prop] of Object.entries(properties)) {

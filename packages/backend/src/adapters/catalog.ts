@@ -109,6 +109,7 @@ import * as clickup from './intl/clickup.json';
 import * as clockify from './intl/clockify.json';
 import * as close from './intl/close.json';
 import * as coda from './intl/coda.json';
+import * as cohesivity from './intl/cohesivity.json';
 import * as coingecko from './intl/coingecko.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
@@ -647,6 +648,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   clockify as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
+  cohesivity as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
