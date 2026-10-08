@@ -28,7 +28,9 @@ jest.mock('axios', () => {
   const mocked = jest.fn();
   return {
     __esModule: true,
-    default: Object.assign(mocked, { __actual: actual.default }),
+    // The outbound helper also calls axios.getUri, getAdapter and friends:
+    // keep every real static, only the call itself is mocked.
+    default: Object.assign(mocked, actual.default, { __actual: actual.default }),
     AxiosError: actual.AxiosError,
   };
 });
