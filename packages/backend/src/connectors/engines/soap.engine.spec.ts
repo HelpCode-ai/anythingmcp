@@ -1,5 +1,6 @@
 import { SoapEngine } from './soap.engine';
 import axios from 'axios';
+import * as soap from 'soap';
 import { createHash } from 'crypto';
 import { Logger } from '@nestjs/common';
 
@@ -153,6 +154,51 @@ describe('SoapEngine', () => {
       await expect(
         engine.execute(baseConfig, baseMapping, { userId: '1' }),
       ).rejects.toThrow('SOAP Fault');
+    });
+
+    it.each([
+      [
+        'a single Text with xml:lang',
+        '<env:Reason><env:Text xml:lang="en">Item 7 does not exist</env:Text></env:Reason>',
+        'Item 7 does not exist',
+      ],
+      [
+        'one Text per language',
+        '<env:Reason><env:Text xml:lang="en">Not found</env:Text><env:Text xml:lang="de">Nicht gefunden</env:Text></env:Reason>',
+        'Not found; Nicht gefunden',
+      ],
+      [
+        'a Text without attributes',
+        '<env:Reason><env:Text>Plain reason</env:Text></env:Reason>',
+        'Plain reason',
+      ],
+    ])('reads the message of a SOAP 1.2 fault with %s', async (_label, reason, message) => {
+      const xml = `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+          <env:Body>
+            <env:Fault>
+              <env:Code><env:Value>env:Sender</env:Value></env:Code>
+              ${reason}
+            </env:Fault>
+          </env:Body>
+        </env:Envelope>`;
+      mockedAxios.post.mockResolvedValue({ status: 200, data: xml });
+
+      const err: any = await engine
+        .execute(baseConfig, baseMapping, { userId: '1' })
+        .catch((e) => e);
+      expect(err.message).toBe(`SOAP Fault: ${message}`);
+      expect(err.message).not.toContain('[object Object]');
+    });
+
+    it('reads a SOAP 1.1 faultstring that carries an xml:lang attribute', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring xml:lang="en-US">Invalid itemId</faultstring></s:Fault></s:Body></s:Envelope>',
+      });
+
+      await expect(
+        engine.execute(baseConfig, baseMapping, { userId: '1' }),
+      ).rejects.toThrow(/^SOAP Fault: Invalid itemId$/);
     });
 
     it('should return non-string data as-is', async () => {
@@ -494,6 +540,158 @@ describe('SoapEngine', () => {
       await expect(
         engine.execute(baseConfig, baseMapping, { userId: '1' }),
       ).rejects.toThrow('SOAP call failed with HTTP 500');
+    });
+
+    it('names the SOAP fault returned with HTTP 500', async () => {
+      const data =
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>a:ActionNotSupported</faultcode><faultstring xml:lang="en-US">The message with Action \'\' cannot be processed</faultstring></s:Fault></s:Body></s:Envelope>';
+      mockedAxios.post.mockResolvedValue({
+        status: 500,
+        statusText: 'Internal Server Error',
+        data,
+      });
+
+      const err: any = await engine
+        .execute(baseConfig, baseMapping, { userId: '1' })
+        .catch((e) => e);
+      expect(err.message).toBe(
+        "SOAP call failed with HTTP 500: The message with Action '' cannot be processed",
+      );
+      expect(err.soapDetail).toMatchObject({ status: 500, responseBody: data });
+    });
+  });
+
+  describe('WSDL metadata cache', () => {
+    const mockedCreateClient = soap.createClientAsync as jest.Mock;
+    const fakeClient = {
+      wsdl: {
+        definitions: {
+          $targetNamespace: 'http://tempuri.org/',
+          services: {
+            UserService: {
+              ports: {
+                BasicHttpBinding_IService: {
+                  location: 'http://example.com/service',
+                  binding: {
+                    methods: {
+                      GetUser: {
+                        style: 'document',
+                        soapAction: '',
+                        input: { name: 'element', $name: 'GetUser', targetNamespace: 'http://tempuri.org/' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      describe: () => ({
+        UserService: {
+          BasicHttpBinding_IService: { GetUser: { input: { userId: 's:string' } } },
+        },
+      }),
+    };
+    // A document/literal tool whose soapAction is legitimately empty: it
+    // reads the WSDL on every call.
+    const mapping = { ...baseMapping, soapAction: undefined };
+    const wsdlConfig = {
+      ...baseConfig,
+      specUrl: 'https://user:pw@example.com/service?wsdl&token=s3cret',
+    };
+
+    class ManualClockSoapEngine extends SoapEngine {
+      now = Date.parse('2026-10-08T07:00:00Z');
+      protected currentTime(): Date {
+        return new Date(this.now);
+      }
+    }
+    let clocked: ManualClockSoapEngine;
+
+    beforeEach(() => {
+      clocked = new ManualClockSoapEngine();
+      mockedCreateClient.mockReset();
+      mockedCreateClient.mockResolvedValue(fakeClient);
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+    });
+
+    it('reads the WSDL once for repeated calls, without the soap library cache', async () => {
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      await clocked.execute(wsdlConfig, mapping, { userId: '2' });
+
+      expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+      expect(mockedCreateClient).toHaveBeenCalledWith(
+        wsdlConfig.specUrl,
+        expect.objectContaining({ disableCache: true }),
+      );
+      const envelope = mockedAxios.post.mock.calls[1][1] as string;
+      expect(envelope).toContain('<tns:GetUser>');
+      expect(envelope).toContain('<tns:userId>2</tns:userId>');
+    });
+
+    it('shares one read between concurrent calls', async () => {
+      await Promise.all([
+        clocked.execute(wsdlConfig, mapping, { userId: '1' }),
+        clocked.execute(wsdlConfig, mapping, { userId: '2' }),
+      ]);
+      expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads the WSDL again after ten minutes', async () => {
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      clocked.now += 9 * 60_000;
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+      clocked.now += 60_000;
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a WSDL that could not be read after a minute, not on every call', async () => {
+      mockedCreateClient.mockRejectedValueOnce(new Error('getaddrinfo ENOTFOUND'));
+
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+      clocked.now += 60_000;
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+      expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps at most 100 WSDLs, dropping the oldest', async () => {
+      for (let i = 0; i <= 100; i++) {
+        await clocked.execute({ ...baseConfig, specUrl: `http://example.com/${i}?wsdl` }, mapping, {});
+      }
+      expect(mockedCreateClient).toHaveBeenCalledTimes(101);
+
+      await clocked.execute({ ...baseConfig, specUrl: 'http://example.com/100?wsdl' }, mapping, {});
+      expect(mockedCreateClient).toHaveBeenCalledTimes(101);
+      await clocked.execute({ ...baseConfig, specUrl: 'http://example.com/0?wsdl' }, mapping, {});
+      expect(mockedCreateClient).toHaveBeenCalledTimes(102);
+    });
+
+    it('logs the WSDL URL without credentials or query string', async () => {
+      const lines: string[] = [];
+      const spies = (['debug', 'warn'] as const).map((level) =>
+        jest.spyOn(Logger.prototype, level).mockImplementation((message: unknown) => {
+          lines.push(String(message));
+        }),
+      );
+      mockedCreateClient.mockRejectedValueOnce(new Error('boom'));
+
+      await clocked.execute(wsdlConfig, mapping, { userId: '1' });
+
+      spies.forEach((s) => s.mockRestore());
+      const log = lines.join('\n');
+      expect(log).toContain('https://example.com/service');
+      expect(log).not.toContain('s3cret');
+      expect(log).not.toContain('pw@');
     });
   });
 

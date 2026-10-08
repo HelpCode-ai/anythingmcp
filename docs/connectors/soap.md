@@ -182,6 +182,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 | WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
 | "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style and nested complex-type parameters are not supported yet |
+| A changed WSDL is not picked up | Tools keep the metadata read at import: re-import the WSDL. A tool that lacks some of it (an empty `soapAction` is common) reads it from the WSDL at call time and keeps it for up to 10 minutes (1 minute when the WSDL could not be read) |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
 | Authentication failures | Check the credentials and the auth type. For WS-Security, try the other password type, set `includeNonce` or `includeTimestamp` if the service asks for them, and check the backend's clock for `PasswordDigest`. A service that requires signed WS-Security messages or a client certificate cannot be called yet (see Authentication) |
 

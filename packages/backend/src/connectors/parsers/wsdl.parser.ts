@@ -19,6 +19,20 @@ export interface WsdlOperationInfo {
   inputNamespace?: string;
 }
 
+/**
+ * A WSDL URL as it may be logged: without user info and query string, which
+ * may carry credentials (`?wsdl&token=…`). Anything that is not a URL (a
+ * local path in tests) is not logged at all.
+ */
+export function wsdlUrlForLog(wsdlUrl: string): string {
+  try {
+    const url = new URL(wsdlUrl);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return '(not a URL)';
+  }
+}
+
 /** The targetNamespace of the WSDL definitions element. */
 export function wsdlTargetNamespace(wsdl: any): string {
   return (
@@ -80,13 +94,17 @@ export class WsdlParser {
   private readonly logger = new Logger(WsdlParser.name);
 
   async parse(wsdlUrl: string): Promise<ParsedTool[]> {
-    this.logger.debug(`Parsing WSDL from: ${wsdlUrl}`);
+    this.logger.debug(`Parsing WSDL from: ${wsdlUrlForLog(wsdlUrl)}`);
 
     // The URL comes from the user: check it, and keep checking WSDL/XSD
     // imports and redirects through the guarded client.
     await assertSafeOutboundUrl(wsdlUrl);
     const client = await soap.createClientAsync(wsdlUrl, {
       request: outboundAxios() as any,
+      // Without this the library answers a re-import from a process-wide
+      // cache that never expires, so a changed WSDL was only seen after a
+      // restart (and every WSDL ever imported stayed in memory).
+      disableCache: true,
     });
     const description = client.describe();
     const wsdl = client.wsdl;

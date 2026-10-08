@@ -8,6 +8,7 @@ import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http'
 import {
   resolveWsdlOperation,
   wsdlTargetNamespace,
+  wsdlUrlForLog,
   WsdlOperationInfo,
 } from '../parsers/wsdl.parser';
 import { SoapEndpointMapping } from './engine-types';
@@ -17,6 +18,24 @@ type WsdlOperationMeta = WsdlOperationInfo & {
   targetNamespace: string;
   paramOrder: string[];
 };
+
+/** What the engine keeps of a parsed WSDL: strings only, not the parsed document. */
+interface WsdlMetadata {
+  targetNamespace: string;
+  portEndpoints: Map<string, string>;
+  /** Keyed by `${port}\n${operation}`. */
+  operations: Map<string, WsdlOperationMeta>;
+}
+
+interface WsdlCacheEntry {
+  expiresAt: number;
+  /** null when the WSDL could not be read. */
+  metadata: Promise<WsdlMetadata | null>;
+}
+
+const WSDL_CACHE_TTL_MS = 10 * 60_000;
+const WSDL_FAILURE_TTL_MS = 60_000;
+const WSDL_CACHE_MAX_ENTRIES = 100;
 
 // OASIS WSS 1.0 UsernameToken profile.
 const WSSE_NS =
@@ -49,6 +68,13 @@ const SECURITY_HEADER_BLOCK = /<([\w.-]+:)?Security\b[\s\S]*?<\/([\w.-]+:)?Secur
 @Injectable()
 export class SoapEngine {
   private readonly logger = new Logger(SoapEngine.name);
+  /**
+   * WSDL metadata by WSDL URL, oldest first. Keyed by the URL as configured
+   * (it may carry credentials in its query string, so it stays in memory and
+   * is logged without them). A WSDL is the same for every tenant that uses
+   * the same URL; no tenant secret is part of it.
+   */
+  private readonly wsdlCache = new Map<string, WsdlCacheEntry>();
 
   async execute(
     config: {
@@ -76,7 +102,6 @@ export class SoapEngine {
 
     if (!soapAction || !endpoint || !targetNamespace || paramOrder.length === 0) {
       const wsdlUrl = config.specUrl || config.baseUrl;
-      this.logger.debug(`Fetching WSDL metadata from: ${wsdlUrl}`);
       const meta = await this.extractWsdlMetadata(
         wsdlUrl,
         endpointMapping.path,
@@ -176,13 +201,18 @@ export class SoapEngine {
 
       // Parse the SOAP response
       if (response.status >= 400) {
+        // Some servers echo the request (and its Security header) in a fault.
+        const responseBody = shownResponse(response.data);
+        // SOAP 1.1 returns its faults with HTTP 500: say what the fault is
+        // (in full in responseBody; Java stacks may put a stack trace in it).
+        let fault = this.faultMessageOf(responseBody);
+        if (fault && fault.length > 500) fault = `${fault.slice(0, 500)}…`;
         const detail: Record<string, unknown> = {
-          error: `SOAP call failed with HTTP ${response.status}`,
+          error: `SOAP call failed with HTTP ${response.status}${fault ? `: ${fault}` : ''}`,
           status: response.status,
           statusText: response.statusText,
           endpoint,
-          // Some servers echo the request (and its Security header) in a fault.
-          responseBody: shownResponse(response.data),
+          responseBody,
           requestBody: shownEnvelope,
         };
         const enrichedError = new Error(String(detail.error));
@@ -348,11 +378,7 @@ ${paramXml}
     if (typeof data !== 'string') return data;
 
     try {
-      const parser = new XMLParser({
-        ignoreAttributes: false,
-        removeNSPrefix: true,
-      });
-      const parsed = parser.parse(data);
+      const parsed = this.parseXml(data);
 
       // Navigate: Envelope → Body → first child (operation result)
       const envelope = parsed.Envelope || parsed['soap:Envelope'] || parsed;
@@ -362,9 +388,7 @@ ${paramXml}
       // Check for SOAP fault
       if (body.Fault || body['soap:Fault']) {
         const fault = body.Fault || body['soap:Fault'];
-        throw new Error(
-          `SOAP Fault: ${fault.faultstring || fault.Reason || JSON.stringify(fault)}`,
-        );
+        throw new Error(`SOAP Fault: ${this.faultText(fault)}`);
       }
 
       // Return the first child of Body (the operation response)
@@ -378,47 +402,129 @@ ${paramXml}
     }
   }
 
+  private parseXml(data: string): any {
+    return new XMLParser({ ignoreAttributes: false, removeNSPrefix: true }).parse(data);
+  }
+
   /**
-   * Extract SOAP metadata from WSDL using the soap library (parsing only).
+   * The message of a SOAP fault: `faultstring` in SOAP 1.1, `Reason/Text` in
+   * SOAP 1.2 (an element with an xml:lang attribute, possibly one per
+   * language), which the XML parser turns into objects.
+   */
+  private faultText(fault: any): string {
+    const text = (node: unknown): string => {
+      if (node == null) return '';
+      if (Array.isArray(node)) return node.map(text).filter(Boolean).join('; ');
+      if (typeof node === 'object') {
+        const obj = node as Record<string, unknown>;
+        return text(obj['#text'] ?? obj.Text);
+      }
+      return String(node).trim();
+    };
+    return text(fault?.faultstring) || text(fault?.Reason) || JSON.stringify(fault);
+  }
+
+  /** The fault message of a SOAP response body, when it is a fault. */
+  private faultMessageOf(data: unknown): string | undefined {
+    if (typeof data !== 'string') return undefined;
+    try {
+      const parsed = this.parseXml(data);
+      const fault = (parsed?.Envelope ?? parsed)?.Body?.Fault;
+      return fault ? this.faultText(fault) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * SOAP metadata of one operation, read from the WSDL. Cached per WSDL URL
+   * (see wsdlCache), so a tool whose stored metadata is incomplete (an empty
+   * soapAction is common for document/literal services) does not parse the
+   * whole WSDL on every call.
    */
   private async extractWsdlMetadata(
     wsdlUrl: string,
     portName: string,
     operationName: string,
   ): Promise<WsdlOperationMeta> {
+    const now = this.currentTime().getTime();
+    let entry = this.wsdlCache.get(wsdlUrl);
+    if (entry && entry.expiresAt <= now) {
+      this.wsdlCache.delete(wsdlUrl);
+      entry = undefined;
+    }
+    if (!entry) {
+      this.logger.debug(`Fetching WSDL metadata from: ${wsdlUrlForLog(wsdlUrl)}`);
+      const created: WsdlCacheEntry = {
+        expiresAt: now + WSDL_CACHE_TTL_MS,
+        metadata: this.readWsdlMetadata(wsdlUrl),
+      };
+      // A WSDL that could not be read is retried sooner.
+      void created.metadata.then((metadata) => {
+        if (!metadata) created.expiresAt = this.currentTime().getTime() + WSDL_FAILURE_TTL_MS;
+      });
+      entry = created;
+      this.wsdlCache.set(wsdlUrl, entry);
+      while (this.wsdlCache.size > WSDL_CACHE_MAX_ENTRIES) {
+        this.wsdlCache.delete(this.wsdlCache.keys().next().value as string);
+      }
+    }
+
+    const metadata = await entry.metadata;
+    const empty = { soapAction: '', endpoint: '', targetNamespace: '', paramOrder: [] };
+    if (!metadata) return empty;
+    return (
+      metadata.operations.get(`${portName}\n${operationName}`) ?? {
+        ...empty,
+        endpoint: metadata.portEndpoints.get(portName) ?? '',
+        targetNamespace: metadata.targetNamespace,
+      }
+    );
+  }
+
+  /** Read every operation of a WSDL, using the soap library for parsing only. */
+  private async readWsdlMetadata(wsdlUrl: string): Promise<WsdlMetadata | null> {
     try {
       await assertSafeOutboundUrl(wsdlUrl);
       const client = await soap.createClientAsync(wsdlUrl, {
         request: outboundAxios() as any,
+        // The library's own cache keeps every WSDL it ever parsed for the life
+        // of the process, with no limit; wsdlCache above is bounded.
+        disableCache: true,
       });
       const wsdl = client.wsdl;
-
       const targetNamespace = wsdlTargetNamespace(wsdl);
-      const { soapAction, endpoint, inputElement, inputNamespace } =
-        resolveWsdlOperation(wsdl, portName, operationName);
 
-      // Extract parameter order from WSDL description
-      const paramOrder: string[] = [];
-      const description = client.describe();
-      for (const svc of Object.values(description)) {
-        const port = (svc as any)[portName];
-        if (port?.[operationName]?.input) {
-          paramOrder.push(...Object.keys(port[operationName].input));
-          break;
+      const portEndpoints = new Map<string, string>();
+      for (const service of Object.values(wsdl.definitions?.services || {}) as any[]) {
+        for (const [portName, port] of Object.entries((service?.ports || {}) as Record<string, any>)) {
+          if (port?.location && !portEndpoints.has(portName)) {
+            portEndpoints.set(portName, port.location);
+          }
         }
       }
 
-      return {
-        soapAction,
-        endpoint,
-        targetNamespace,
-        paramOrder,
-        inputElement,
-        inputNamespace,
-      };
+      const operations = new Map<string, WsdlOperationMeta>();
+      for (const service of Object.values(client.describe())) {
+        for (const [portName, port] of Object.entries(service as Record<string, any>)) {
+          for (const [operationName, operation] of Object.entries(port as Record<string, any>)) {
+            const key = `${portName}\n${operationName}`;
+            // The first service with an input for the operation wins, as before.
+            if (operations.get(key)?.paramOrder.length) continue;
+            operations.set(key, {
+              ...resolveWsdlOperation(wsdl, portName, operationName),
+              targetNamespace,
+              paramOrder: operation?.input ? Object.keys(operation.input) : [],
+            });
+          }
+        }
+      }
+      return { targetNamespace, portEndpoints, operations };
     } catch (err: any) {
-      this.logger.warn(`Failed to extract WSDL metadata: ${err.message}`);
-      return { soapAction: '', endpoint: '', targetNamespace: '', paramOrder: [] };
+      this.logger.warn(
+        `Failed to extract WSDL metadata from ${wsdlUrlForLog(wsdlUrl)}: ${err.message}`,
+      );
+      return null;
     }
   }
 
