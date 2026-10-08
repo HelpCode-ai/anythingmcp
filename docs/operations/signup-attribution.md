@@ -13,6 +13,41 @@ Which channel brings AnythingMCP Cloud sign-ups, and which of them verify and pa
 
 `GET /api/auth/attribution/click-ids` (signed in, cloud only; `{}` on self-hosted) returns the caller's own click id from their `signup_attributed` row, e.g. `{ "gclid": "…", "ad_consent": "granted", "captured_at": "…" }`: one id (last touch before first; gclid before gbraid before wbraid), and only if it was stored with consent. The cloud app appends it to its links to the pricing page (`?return_url=…&gclid=…`); the pricing page puts it into the Stripe checkout metadata and the site's Stripe webhook uploads the purchase to Google Ads.
 
+## Activations as Google Ads offline conversions
+
+A sign-up is cheap; a workspace that runs a tool is what the campaigns should buy. When a Cloud workspace's tool call succeeds and is stored in `tool_invocations`, the backend (`packages/backend/src/audit/ads-activation.service.ts`, in the background, never delaying the call) checks once per workspace:
+
+1. no `ads_activation_reported` event exists yet for the workspace;
+2. its `signup_attributed` row carries a click id stored with `ad_consent: "granted"` (the same selection as above: last touch before first, gclid before gbraid before wbraid).
+
+If both hold, it sends `POST https://anythingmcp.com/api/ads/activation` with the service token (`x-amcp-service-token`):
+
+```json
+{
+  "organizationId": "…",
+  "activatedAt": "<time of the workspace's earliest SUCCESS invocation>",
+  "gclid": "…",
+  "adConsent": "granted",
+  "email": "<the address that signed up>"
+}
+```
+
+One click id only (`gclid`, `gbraid` or `wbraid`); `email` only with consent granted, and left out if that account was deleted. The site queues the upload to Google Ads and is idempotent per `organizationId`. A 2xx, or a 4xx other than 401/429 (a refusal for good), records `ads_activation_reported` (`metadata.kind` = which click id, `metadata.status` = the site's answer), so a restart never reports twice. 401, 429, 5xx and network errors are retried three times with backoff; if all fail nothing is recorded, and the next successful call after a ten-minute pause (or after a restart) tries again. Workspaces without a consented click id are only remembered in memory, so the check runs at most once per workspace and process. Neither the email nor the click id is ever logged.
+
+Inert on self-hosted (`DEPLOYMENT_MODE` other than `cloud`) and when `LICENSE_SERVICE_TOKEN` is unset (one warning at the first success).
+
+Activations reported, by click-id type:
+
+```sql
+SELECT metadata->>'kind' AS kind, metadata->>'status' AS status, count(*)
+FROM product_events
+WHERE event = 'ads_activation_reported'
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+```
+
+## Stored metadata
+
 Stored metadata (the channel is derived on the server, see `packages/backend/src/audit/signup-attribution.ts`):
 
 ```json

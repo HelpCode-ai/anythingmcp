@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。321 のコネクター、うち 17 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。326 のコネクター、うち 17 は API キー不要。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Etsy、weclapp、Amazon Seller などを含む 321 種類の既製アダプターを同梱しており、うち 17 は API キー不要です。
+  SAP、Etsy、weclapp、Amazon Seller などを含む 326 種類の既製アダプターを同梱しており、うち 17 は API キー不要です。
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-321 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+326 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|
@@ -265,7 +265,7 @@ AI による処理は既定でオフで、お手持ちの OpenAI、OpenRouter、
 REST コネクターを作成し、仕様を URL か貼り付けでインポートします。各操作がサーバーの `/mcp` エンドポイント上の MCP ツールになり、コードは不要です。[仕組み](docs/connectors/rest.md#from-openapi--swagger)
 
 ### SOAP/WSDL サービスを Claude に接続できますか？
-はい。AnythingMCP は WSDL を解析して各操作をツールにし、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーです。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
+はい。AnythingMCP は WSDL を解析して各操作をツールにし、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダー、WS-Security UsernameToken です。署名付きの WS-Security メッセージにはまだ対応していません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
 
 ### Claude で SQL Server、Oracle、PostgreSQL を安全にクエリできますか？
 クエリツールは既定で読み取り専用です。加えて、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを渡す静的クエリを優先し、ロールごとにツールをホワイトリスト化してください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリが監査ログに記録されます。

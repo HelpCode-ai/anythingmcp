@@ -1,0 +1,686 @@
+{
+  "slug": "gmail",
+  "name": "Gmail",
+  "description": "Let your AI work in Gmail: search the mailbox with Gmail's own search syntax, read messages and conversations as plain text, see labels and unread counts, mark mail as read, archive, star or label it, write and send new mail, reply in a conversation, and save or send drafts. Personal Gmail and Google Workspace, signed in with your Google account.",
+  "instructions": "## Gmail\nThis connector reads, organises and writes the signed-in user's Gmail mailbox through the **Gmail API v1** (`https://gmail.googleapis.com/gmail/v1/users/me`). It works with personal Gmail accounts and with Google Workspace mailboxes. Everything runs as the Google account that authorized the connector: the AI sees exactly what that account can see.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Gmail API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if the mailbox is on Google Workspace (simplest, see *Google verification* below), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Gmail account the AI should work with. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Google verification (restricted scopes)**: Google classifies `gmail.modify` and `gmail.readonly` as *restricted* scopes. An **External** app that other people use needs Google's OAuth app verification, which for restricted scopes includes a security assessment; until then Google shows a \"Google hasn't verified this app\" warning and caps the app at 100 users. An **Internal** app, used only by accounts of the Google Workspace organisation that owns the Cloud project, needs no verification: it is the straightforward route for a company. For a single personal Gmail account, an External app *In production* that only you use works after you continue past the warning.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/gmail.modify`: read mail, change labels (mark read, archive, star), create drafts and send mail. It cannot permanently delete anything. For a read-only setup, change the scope to `https://www.googleapis.com/auth/gmail.readonly` in the connector's OAuth settings, authorize again, and disable `gmail_modify_message_labels`, `gmail_modify_thread_labels`, `gmail_create_draft`, `gmail_send_draft`, `gmail_send_message` and `gmail_reply`.\n\n**Finding mail**: `gmail_list_messages` and `gmail_list_threads` take `q` in the same syntax as the Gmail search box, e.g. `from:ana@example.com`, `is:unread`, `newer_than:7d`, `after:2026/10/01 before:2026/10/08`, `has:attachment`, `subject:offer`, `label:invoices`, `in:inbox`, `-category:promotions`. They return ids only (messages: `id` and `threadId`; threads: `id`, `snippet`, `historyId`); fetch the content with `gmail_get_message` or `gmail_get_thread`. `label_ids` filters on labels that must all be present.\n\n**Reading a message**\n- `gmail_get_message`, `gmail_get_thread` and `gmail_get_draft` return each message decoded: `from`, `to`, `cc`, `replyTo`, `subject`, `date`, `messageId`, `inReplyTo`, `references`, `labelIds`, `snippet`, and `text`, the body as plain text (the `text/plain` part when there is one, otherwise the HTML part converted to text; `textFormat` says which). A very long body is cut at 20,000 characters (100,000 across a thread) and then carries `textTruncated: true` and the full `textLength`.\n- Attachments are listed under `attachments` with `filename`, `mimeType`, `size` and `attachmentId`; this connector does not download them.\n- `format: \"metadata\"` with `metadata_headers` (e.g. `[\"From\", \"To\", \"Subject\", \"Date\"]`) returns those headers, labels and `snippet` without the body. It is the cheapest way to triage many messages.\n- `format: \"minimal\"` returns only ids and labels; `raw` returns the whole message as one base64url string, undecoded, and is rarely useful here.\n\n**Labels**: system labels have fixed ids: `INBOX`, `UNREAD`, `STARRED`, `IMPORTANT`, `SENT`, `DRAFT`, `SPAM`, `TRASH`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`. User labels have ids such as `Label_12`: take them from `gmail_list_labels`, not from the label name. `gmail_get_label` adds the message and unread counts. With `gmail_modify_message_labels` / `gmail_modify_thread_labels`: mark as read = remove `UNREAD`; mark as unread = add `UNREAD`; archive = remove `INBOX`; star = add `STARRED`; file = add the label id (and remove `INBOX` to move it out of the inbox). Up to 100 label ids per call.\n\n**Writing mail**\n- `gmail_send_message` writes and sends a new email at once. `gmail_create_draft` saves the same kind of message as a draft instead, for the user to check in Gmail; `gmail_send_draft` later sends a draft exactly as it is, Gmail then removes the draft and the message gets the `SENT` label. When the user has not clearly asked to send, prefer a draft.\n- Recipients (`to`, `cc`, `bcc`) are lists of addresses, each `name@example.com` or `Ana Müller <ana@example.com>`. Subjects and names may use any language and emoji; the connector encodes them for mail headers. `body` is plain text with line breaks; `html_body` optionally adds an HTML version that mail clients show instead.\n- **Replying**: read the message first with `gmail_get_message` (or the last message of `gmail_get_thread`), then call `gmail_reply` with its `threadId` as `thread_id`, its `messageId` as `in_reply_to`, its `references` (when present) as `references`, its `subject` as `subject` (\"Re: \" is added when missing) and its `replyTo`, or else `from`, as `to`. For reply-all, add the other `to` and `cc` addresses, except the user's own, to `cc`. Without `thread_id` and `in_reply_to` Gmail starts a new conversation. A reply draft is `gmail_create_draft` with the same `thread_id`, `in_reply_to`, `references` and a `Re:` subject.\n- Sending cannot be undone. Gmail sends from the signed-in address and adds Date and Message-ID itself.\n\n**Pagination**: list responses carry `nextPageToken` while more results exist; call the same tool again with the same arguments and `page_token` set to it. `max_results` goes up to 500 (default 100). `resultSizeEstimate` is an estimate, not an exact count.\n\n**Rate limits**: Gmail meters quota units: 6,000 per minute per user and 1,200,000 per minute per project. A list costs 5 units, `gmail_get_message` 20, `gmail_get_thread` 40, a label change 5 (10 on a thread), creating a draft 10, sending a message or a draft 100, the profile and labels 1. Over the limit Gmail answers 429 (or 403 `userRateLimitExceeded`): wait a minute and retry. One message reaches at most 500 recipients.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `insufficientPermissions` / `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: the scope does not allow the call, e.g. a label change on a read-only setup. 403 `accessNotConfigured` / \"Gmail API has not been used in project\": enable the Gmail API in the Cloud project (step 1).\n- 404: the id does not exist in this mailbox, or the message was deleted. A draft id (`r-…`) is not a message id.\n- 400 `invalidArgument`: a label id that does not exist, or an invalid query parameter. 400 \"Recipient address required\": `gmail_send_message` or `gmail_reply` without a `to`.\n- An error about an e-mail address, a Message-ID or a line break comes from the connector before anything is sent: fix the argument it names.\n\n**Out of scope here**: sending or downloading attachments, forwarding with the original attachments, trash and deletion, filters, settings, send-as aliases, other users' mailboxes.",
+  "region": "intl",
+  "category": "email",
+  "icon": "gmail",
+  "docsUrl": "https://developers.google.com/workspace/gmail/api/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Gmail API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable the Gmail API under APIs & Services → Library and authorize again.",
+    "rate_limited": "Gmail is throttling this mailbox (6,000 quota units per minute per user). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gmail_get_profile"
+  },
+  "prerequisites": "A Google Cloud project with the **Gmail API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. Gmail scopes are restricted: outside a single Workspace organisation, Google shows an unverified-app warning until the app passes its verification. About 10 minutes.",
+  "connector": {
+    "name": "Gmail",
+    "type": "REST",
+    "baseUrl": "https://gmail.googleapis.com/gmail/v1/users/me",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/gmail.modify"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/profile"
+  },
+  "tools": [
+    {
+      "name": "gmail_get_profile",
+      "description": "Return the Gmail account the connector works with: its email address, the total number of messages and threads in the mailbox, and the current history id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profile"
+      }
+    },
+    {
+      "name": "gmail_list_messages",
+      "description": "Search or list messages in the mailbox with Gmail search syntax and optional label filters. Returns message ids and thread ids (no content), nextPageToken while more results exist, and an estimated total; read a message with gmail_get_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Gmail search query, same syntax as the Gmail search box, e.g. \"from:ana@example.com is:unread newer_than:7d\" or \"subject:invoice has:attachment\"."
+          },
+          "label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only messages that carry all of these label ids, e.g. [\"INBOX\", \"UNREAD\"]. User label ids come from gmail_list_labels."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Maximum number of messages per page, 1 to 500 (default 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page with the same other arguments."
+          },
+          "include_spam_trash": {
+            "type": "boolean",
+            "description": "true to include messages in Spam and Trash (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "q": "$q",
+          "labelIds": "$label_ids",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "includeSpamTrash": "$include_spam_trash"
+        }
+      }
+    },
+    {
+      "name": "gmail_get_message",
+      "description": "Get one message by id, decoded: sender, recipients, subject, date, Message-ID and References, labels and the body as plain text (HTML-only mail converted to text), plus a list of attachments. Use format \"metadata\" for headers only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id from gmail_list_messages or gmail_get_thread."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "minimal",
+              "raw"
+            ],
+            "description": "How much of the message to return: \"full\" (default) headers plus the decoded plain-text body and attachment list; \"metadata\" headers, labels and snippet only; \"minimal\" ids and labels only; \"raw\" the whole RFC 822 message as one undecoded base64url string."
+          },
+          "metadata_headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "With format \"metadata\": only these headers, e.g. [\"From\", \"To\", \"Subject\", \"Date\"]."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{message_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "$format",
+          "metadataHeaders": "$metadata_headers"
+        }
+      },
+      "responseMapping": {
+        "decode": "gmail-message"
+      }
+    },
+    {
+      "name": "gmail_list_threads",
+      "description": "Search or list conversations (threads) with Gmail search syntax and optional label filters. Returns thread ids with a snippet and history id, nextPageToken while more results exist, and an estimated total; read a thread's messages with gmail_get_thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Gmail search query, same syntax as the Gmail search box, e.g. \"from:ana@example.com is:unread newer_than:7d\" or \"subject:invoice has:attachment\"."
+          },
+          "label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only threads that carry all of these label ids, e.g. [\"INBOX\", \"UNREAD\"]. User label ids come from gmail_list_labels."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Maximum number of threads per page, 1 to 500 (default 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page with the same other arguments."
+          },
+          "include_spam_trash": {
+            "type": "boolean",
+            "description": "true to include threads in Spam and Trash (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/threads",
+        "queryParams": {
+          "q": "$q",
+          "labelIds": "$label_ids",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "includeSpamTrash": "$include_spam_trash"
+        }
+      }
+    },
+    {
+      "name": "gmail_get_thread",
+      "description": "Get one conversation by thread id with all its messages in order, each decoded like gmail_get_message: sender, recipients, subject, date, Message-ID, labels and the body as plain text. The last message's threadId, messageId and references are what gmail_reply needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id from gmail_list_threads or the threadId of a message."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "minimal"
+            ],
+            "description": "How much of the messages to return: \"full\" (default) headers plus the decoded plain-text bodies; \"metadata\" headers, labels and snippet only; \"minimal\" ids and labels only."
+          },
+          "metadata_headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "With format \"metadata\": only these headers, e.g. [\"From\", \"To\", \"Subject\", \"Date\"]."
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/threads/{thread_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "$format",
+          "metadataHeaders": "$metadata_headers"
+        }
+      },
+      "responseMapping": {
+        "decode": "gmail-message"
+      }
+    },
+    {
+      "name": "gmail_list_labels",
+      "description": "List all labels of the mailbox, system labels (INBOX, UNREAD, STARRED, SENT, SPAM, TRASH, categories) and the user's own, with id, name and type. Label ids are what the search filters and the label tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels"
+      }
+    },
+    {
+      "name": "gmail_get_label",
+      "description": "Get one label by id with its message and thread counts, total and unread, plus its visibility settings and colour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label_id": {
+            "type": "string",
+            "description": "Label id, e.g. INBOX, UNREAD or Label_12 from gmail_list_labels."
+          }
+        },
+        "required": [
+          "label_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/labels/{label_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gmail_modify_message_labels",
+      "description": "Add and remove labels on one message: mark it read (remove UNREAD) or unread (add UNREAD), archive it (remove INBOX), star it (add STARRED) or file it under a user label. Returns the message's id, thread id and resulting labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id."
+          },
+          "add_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids to add, e.g. [\"STARRED\"] or [\"Label_12\"]. Up to 100."
+          },
+          "remove_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids to remove, e.g. [\"UNREAD\"] to mark as read or [\"INBOX\"] to archive. Up to 100."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/{message_id}/modify",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "addLabelIds": "$add_label_ids",
+          "removeLabelIds": "$remove_label_ids"
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gmail_modify_thread_labels",
+      "description": "Add and remove labels on every message of a conversation at once, e.g. archive a whole thread (remove INBOX) or mark it read (remove UNREAD). Returns the thread with its messages' ids and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id."
+          },
+          "add_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids to add to all messages of the thread. Up to 100."
+          },
+          "remove_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids to remove from all messages of the thread. Up to 100."
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/threads/{thread_id}/modify",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "addLabelIds": "$add_label_ids",
+          "removeLabelIds": "$remove_label_ids"
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gmail_list_drafts",
+      "description": "List the drafts in the mailbox, optionally filtered with Gmail search syntax. Returns each draft's id with its message id and thread id, and nextPageToken while more exist; read one with gmail_get_draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Gmail search query applied to the drafts, e.g. \"to:ana@example.com\" or \"subject:offer\"."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Maximum number of drafts per page, 1 to 500 (default 100)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          },
+          "include_spam_trash": {
+            "type": "boolean",
+            "description": "true to include drafts in Spam and Trash (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drafts",
+        "queryParams": {
+          "q": "$q",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "includeSpamTrash": "$include_spam_trash"
+        }
+      }
+    },
+    {
+      "name": "gmail_get_draft",
+      "description": "Get one draft by draft id with its message decoded: recipients, subject and the body as plain text, to check it before it is sent with gmail_send_draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "description": "Draft id (it starts with r-) from gmail_list_drafts; not a message id."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "minimal",
+              "raw"
+            ],
+            "description": "How much of the draft to return: \"full\" (default) headers plus the decoded plain-text body; \"metadata\" headers, labels and snippet only; \"minimal\" ids and labels only; \"raw\" the whole RFC 822 message as one undecoded base64url string."
+          }
+        },
+        "required": [
+          "draft_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drafts/{draft_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "$format"
+        }
+      },
+      "responseMapping": {
+        "decode": "gmail-message"
+      }
+    },
+    {
+      "name": "gmail_create_draft",
+      "description": "Save a new email as a draft in the mailbox without sending it, so the user can review it in Gmail; send it later with gmail_send_draft. Also for reply drafts: pass thread_id, in_reply_to and references from the message being answered. Returns the draft id and its message id and thread id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recipients, each \"name@example.com\" or \"Ana Müller <ana@example.com>\"."
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cc recipients, same format as to."
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bcc recipients, same format as to; the other recipients do not see them."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line, one line. For a reply draft, \"Re: \" followed by the original subject."
+          },
+          "body": {
+            "type": "string",
+            "description": "The message text, plain text with line breaks."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Optional HTML version of the same message; mail clients that show HTML display it instead of body. Always send body as well."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "For a reply draft: the threadId of the conversation."
+          },
+          "in_reply_to": {
+            "type": "string",
+            "description": "For a reply draft: the messageId (Message-ID header, e.g. <abc@mail.gmail.com>) of the message being answered, from gmail_get_message."
+          },
+          "references": {
+            "type": "string",
+            "description": "For a reply draft: the references of the message being answered, from gmail_get_message, when it has any. in_reply_to is appended automatically."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drafts",
+        "bodyMapping": {
+          "message": {
+            "raw": {
+              "__mime": {
+                "to": "$to",
+                "cc": "$cc",
+                "bcc": "$bcc",
+                "subject": "$subject",
+                "text": "$body",
+                "html": "$html_body",
+                "inReplyTo": "$in_reply_to",
+                "references": "$references"
+              }
+            },
+            "threadId": "$thread_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "gmail_send_draft",
+      "description": "Send an existing draft to its recipients exactly as it is written. Gmail removes the draft and returns the sent message with its id, thread id and the SENT label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "description": "Draft id from gmail_list_drafts."
+          }
+        },
+        "required": [
+          "draft_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drafts/send",
+        "bodyMapping": {
+          "id": "$draft_id"
+        }
+      }
+    },
+    {
+      "name": "gmail_send_message",
+      "description": "Write and send a new email from the signed-in Gmail account right away. Subject and names may use any language; body is plain text, html_body an optional HTML version. Returns the sent message's id, thread id and labels. Sending cannot be undone: use gmail_create_draft when the user wants to check first, gmail_reply to answer a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recipients, each \"name@example.com\" or \"Ana Müller <ana@example.com>\"."
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cc recipients, same format as to."
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bcc recipients, same format as to; the other recipients do not see them."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line, one line."
+          },
+          "body": {
+            "type": "string",
+            "description": "The message text, plain text with line breaks."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Optional HTML version of the same message; mail clients that show HTML display it instead of body. Always send body as well."
+          }
+        },
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/send",
+        "bodyMapping": {
+          "raw": {
+            "__mime": {
+              "to": "$to",
+              "cc": "$cc",
+              "bcc": "$bcc",
+              "subject": "$subject",
+              "text": "$body",
+              "html": "$html_body"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "gmail_reply",
+      "description": "Send a reply inside an existing conversation. Read the message being answered with gmail_get_message first and pass its threadId as thread_id, messageId as in_reply_to, references (if any) as references, subject as subject (\"Re: \" is added when missing) and replyTo or from as to. Sends at once and returns the sent message's id and thread id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "threadId of the message being answered."
+          },
+          "in_reply_to": {
+            "type": "string",
+            "description": "messageId (Message-ID header, e.g. <abc@mail.gmail.com>) of the message being answered, from gmail_get_message."
+          },
+          "references": {
+            "type": "string",
+            "description": "references of the message being answered, from gmail_get_message, when it has any. in_reply_to is appended automatically."
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recipients of the reply: the original replyTo, or else from. For reply-all, put the other original recipients in cc."
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cc recipients, same format as to."
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bcc recipients, same format as to; the other recipients do not see them."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject of the message being answered; \"Re: \" is added when it does not start with it."
+          },
+          "body": {
+            "type": "string",
+            "description": "The reply text, plain text with line breaks. The original message is not quoted automatically."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Optional HTML version of the same message; mail clients that show HTML display it instead of body. Always send body as well."
+          }
+        },
+        "required": [
+          "thread_id",
+          "in_reply_to",
+          "to",
+          "subject",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/send",
+        "bodyMapping": {
+          "raw": {
+            "__mime": {
+              "to": "$to",
+              "cc": "$cc",
+              "bcc": "$bcc",
+              "subject": "$subject",
+              "subjectPrefix": "Re: ",
+              "text": "$body",
+              "html": "$html_body",
+              "inReplyTo": "$in_reply_to",
+              "references": "$references"
+            }
+          },
+          "threadId": "$thread_id"
+        }
+      }
+    }
+  ]
+}

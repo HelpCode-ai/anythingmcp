@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 321 Connectors, 17 davon ohne API-Schlüssel." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 326 Connectors, 17 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: selbst gehostetes MCP-Gateway</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das jedes REST-/OpenAPI-, SOAP-, GraphQL-, OData- oder SQL-System in MCP-Tools für Claude, ChatGPT und Copilot verwandelt, ohne dass du einen MCP-Server programmierst.</strong><br/>
-  Es bringt 321 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 17 davon kommen ohne API-Schlüssel aus.
+  Es bringt 326 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 17 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-321 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+326 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
@@ -265,7 +265,7 @@ Installiere den Adapter deines ERP aus dem [Katalog](#connector-catalog), trage 
 Leg einen REST-Connector an und importiere die Spezifikation per URL oder durch Einfügen. Jede Operation wird ein MCP-Tool auf dem `/mcp`-Endpunkt deines Servers, ohne Code. [So funktioniert es](docs/connectors/rest.md#from-openapi--swagger)
 
 ### Kann ich einen SOAP-/WSDL-Dienst mit Claude verbinden?
-Ja. AnythingMCP liest die WSDL, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer oder API-Key-Header; WS-Security-Header sind noch nicht implementiert. [SOAP-Connector](docs/connectors/soap.md)
+Ja. AnythingMCP liest die WSDL, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer, API-Key-Header oder WS-Security-UsernameToken; signierte WS-Security-Nachrichten werden noch nicht unterstützt. [SOAP-Connector](docs/connectors/soap.md)
 
 ### Kann Claude meine SQL-Server-, Oracle- oder PostgreSQL-Datenbank sicher abfragen?
 Abfrage-Tools sind standardmäßig nur lesend. Zusätzlich: einen Datenbankbenutzer nur mit SELECT-Rechten verwenden, statische Abfragen bevorzugen, bei denen das Modell nur die Parameter liefert, und die Tools pro Rolle freigeben. Das Response-Mapping entfernt Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet in deinem Audit-Log.

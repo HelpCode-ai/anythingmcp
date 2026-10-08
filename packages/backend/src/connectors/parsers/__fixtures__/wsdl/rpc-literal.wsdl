@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RPC/literal: the parts are typed and there is no input element; the wrapper is the operation name. -->
+<definitions name="ItemService"
+    targetNamespace="http://example.com/items/rpc"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/items/rpc">
+  <message name="GetItemInput">
+    <part name="itemId" type="xs:int"/>
+    <part name="language" type="xs:string"/>
+  </message>
+  <message name="GetItemOutput">
+    <part name="name" type="xs:string"/>
+  </message>
+  <portType name="ItemPortType">
+    <operation name="GetItem">
+      <input message="tns:GetItemInput"/>
+      <output message="tns:GetItemOutput"/>
+    </operation>
+  </portType>
+  <binding name="ItemRpcBinding" type="tns:ItemPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetItem">
+      <soap:operation soapAction="urn:GetItem"/>
+      <input><soap:body use="literal" namespace="http://example.com/items/rpc"/></input>
+      <output><soap:body use="literal" namespace="http://example.com/items/rpc"/></output>
+    </operation>
+  </binding>
+  <service name="ItemService">
+    <port name="ItemRpcPort" binding="tns:ItemRpcBinding">
+      <soap:address location="http://items.example.com/rpc"/>
+    </port>
+  </service>
+</definitions>

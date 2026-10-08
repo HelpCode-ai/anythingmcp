@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：321 个连接器，其中 17 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：326 个连接器，其中 17 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 321 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 17 个无需 API 密钥。
+  它自带 326 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 17 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 321 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 326 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|
@@ -265,7 +265,7 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 创建一个 REST 连接器，通过 URL 或粘贴方式导入规范。每个操作都会成为服务器 `/mcp` 端点上的一个 MCP 工具，无需编写代码。[工作原理](docs/connectors/rest.md#from-openapi--swagger)
 
 ### 能把 SOAP/WSDL 服务连接到 Claude 吗？
-可以。AnythingMCP 解析 WSDL，把每个操作变成工具，并在每次调用时构建 SOAP 信封，也支持 WCF 服务。认证方式为 HTTP Basic、Bearer 或 API Key 请求头；WS-Security 头尚未实现。[SOAP 连接器文档](docs/connectors/soap.md)
+可以。AnythingMCP 解析 WSDL，把每个操作变成工具，并在每次调用时构建 SOAP 信封，也支持 WCF 服务。认证方式为 HTTP Basic、Bearer、API Key 请求头或 WS-Security UsernameToken；尚不支持签名的 WS-Security 消息。[SOAP 连接器文档](docs/connectors/soap.md)
 
 ### Claude 能安全地查询我的 SQL Server、Oracle 或 PostgreSQL 数据库吗？
 查询工具默认只读。此外，请使用仅有 SELECT 权限的数据库用户，优先使用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你的审计日志中。

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 321 connectors, 16 of them with no API key." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 326 connectors, 16 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
-  It ships 321 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 17 of them need no API key.
+  It ships 326 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 17 of them need no API key.
 </p>
 
 <p align="center">
@@ -103,7 +103,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-321 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+326 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
@@ -247,7 +247,7 @@ Install the ERP's adapter from the [catalog](#connector-catalog), enter the API 
 Create a REST connector and import the spec by URL or by pasting it. Every operation becomes an MCP tool on your server's `/mcp` endpoint, with no code. [How it works](docs/connectors/rest.md#from-openapi--swagger)
 
 ### Can I connect a SOAP/WSDL service to Claude?
-Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer or an API-key header; WS-Security headers are not implemented yet. [SOAP connector docs](docs/connectors/soap.md)
+Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer, an API-key header or a WS-Security UsernameToken; signed WS-Security messages are not supported yet. [SOAP connector docs](docs/connectors/soap.md)
 
 ### Can Claude query my SQL Server, Oracle or PostgreSQL database safely?
 Query tools are read-only by default. On top of that, use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in your audit log.

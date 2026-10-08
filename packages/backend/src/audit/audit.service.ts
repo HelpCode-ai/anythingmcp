@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { boundPayload, boundText } from './bound-payload';
 
 /** Bytes of a call's input / output kept in tool_invocations, and error chars. */
@@ -27,6 +27,7 @@ const INVOCATION_LOG_VOLUME_EXCERPT_BYTES = 512;
 const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
 import { InvocationStatus, Prisma } from '../generated/prisma/client';
+import { AdsActivationService } from './ads-activation.service';
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -37,7 +38,10 @@ export class AuditService implements OnModuleDestroy {
   private volume = { hour: -1, perOrg: new Map<string, number>() };
   private readonly flushTimer: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly adsActivation?: AdsActivationService,
+  ) {
     this.flushTimer = setInterval(() => void this.flushRepeats(false), 30_000);
     this.flushTimer.unref?.();
   }
@@ -116,6 +120,7 @@ export class AuditService implements OnModuleDestroy {
       if (data.status === 'SUCCESS' && resolvedUserId) {
         await this.stampFirstSuccess(resolvedUserId);
       }
+      if (data.status === 'SUCCESS') this.reportActivation(data.organizationId);
     } catch (error: any) {
       // FK violation should be impossible after resolveUserId, but
       // keep the safety net: if it still trips, retry without user_id
@@ -137,6 +142,7 @@ export class AuditService implements OnModuleDestroy {
               clientInfo: data.clientInfo,
             },
           });
+          if (data.status === 'SUCCESS') this.reportActivation(data.organizationId);
           return;
         } catch (retryError: any) {
           this.logger.warn(
@@ -152,6 +158,18 @@ export class AuditService implements OnModuleDestroy {
     this.logger.debug(
       `Tool invocation: ${data.toolId} [${data.status}] ${data.durationMs ?? 0}ms`,
     );
+  }
+
+  /**
+   * Cloud: a workspace's first success may be a Google Ads activation (see
+   * ads-activation.service.ts). Runs in the background and never throws here.
+   */
+  private reportActivation(organizationId?: string): void {
+    try {
+      void this.adsActivation?.onSuccessfulInvocation(organizationId);
+    } catch (err: any) {
+      this.logger.debug(`Ads activation hook failed: ${err?.message ?? err}`);
+    }
   }
 
   /**

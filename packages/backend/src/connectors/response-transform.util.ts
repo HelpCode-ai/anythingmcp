@@ -26,6 +26,7 @@ import {
   search as jmespathSearch,
 } from '@jmespath-community/jmespath';
 import type { ResponseMapping } from './engines/engine-types';
+import { applyDecode, readDecode, type DecodeConfig } from './mime-decode.util';
 
 /* ------------------------------------------------------------------ */
 /*  Public contract                                                    */
@@ -626,12 +627,25 @@ export function applyResponseTransform(
   responseMapping: ResponseMapping | Record<string, unknown> | null | undefined,
 ): TransformOutcome {
   const transform = readTransform(responseMapping);
-  if (!transform) return { value: raw, applied: false };
+  // `decode` (mime-decode.util) is a separate opt-in key, read only when the
+  // mapping has one, so every other tool keeps the single check above.
+  const hasDecode =
+    isPlainObject(responseMapping) &&
+    responseMapping.decode !== undefined &&
+    responseMapping.decode !== null;
+  if (!transform && !hasDecode) return { value: raw, applied: false };
 
-  const fallbackToRaw = transform.fallbackToRaw !== false;
+  const fallbackToRaw = transform?.fallbackToRaw !== false;
 
   try {
     let work: unknown = raw;
+
+    if (hasDecode) {
+      // Decoded first, so a transform can select from the decoded fields.
+      work = applyDecode(work, readDecode(responseMapping) as DecodeConfig);
+      if (!transform) return { value: work, applied: work !== raw };
+    }
+    if (!transform) return { value: raw, applied: false };
 
     if (transform.exclude !== undefined) {
       work = omitPaths(work, assertPathList(transform.exclude, 'exclude'));

@@ -4,7 +4,8 @@ import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
-import { SoapEngine } from './engines/soap.engine';
+import { SoapEngine, WsdlReadError } from './engines/soap.engine';
+import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -28,6 +29,15 @@ import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { connectorErrorWhen } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
+
+/** Whether a URL has a query string (`?singleWsdl`), so `?wsdl` cannot simply be added. */
+function hasQueryString(url: string): boolean {
+  try {
+    return new URL(url).search !== '' || url.includes('?');
+  } catch {
+    return url.includes('?');
+  }
+}
 
 @Injectable()
 export class ConnectorsService {
@@ -342,6 +352,9 @@ export class ConnectorsService {
               : `Connection successful — the service has ${out.entitySets?.length ?? 0} entity sets`,
           };
         }
+        case 'SOAP':
+          // specUrl is used as stored, as the engine uses it.
+          return await this.testSoapConnection(connector.specUrl || undefined, baseUrl);
         case 'MCP': {
           const tools = await this.mcpClientEngine.listTools({
             baseUrl: connector.baseUrl,
@@ -419,6 +432,107 @@ export class ConnectorsService {
       outputSchema: (rt.outputSchema as Record<string, unknown>) ?? null,
       annotations: (rt.annotations as Record<string, unknown>) ?? null,
     }));
+  }
+
+  /**
+   * Test a SOAP connector by reading its WSDL through the guarded path and
+   * cache a tool call uses: specUrl, else the base URL and, when that is not
+   * a WSDL and has no query string, the base URL with `?wsdl` (WCF, JAX-WS).
+   * No operation is called, since any of them may change data, so the
+   * credentials are not checked; the WSDL is read without them, as an
+   * import reads it.
+   *
+   * This also feeds the health check, which only looks at `ok`. Many
+   * connectors have the service address as base URL and work without a
+   * WSDL (their tools carry what they need), so a service that answers over
+   * HTTP below 500 is reported ok even when no WSDL could be read there.
+   * Only an unreachable service (DNS, connection, timeout, TLS, SSRF block)
+   * or a server error (HTTP 500 and above) is not ok.
+   */
+  private async testSoapConnection(
+    specUrl: string | undefined,
+    baseUrl: string,
+  ): Promise<Awaited<ReturnType<ConnectorsService['testConnection']>>> {
+    const notChecked =
+      'No operation was called, so the credentials (HTTP Basic, WS-Security, ...) were not checked.';
+    const candidates = [specUrl ?? baseUrl];
+    if (!specUrl && !hasQueryString(baseUrl)) candidates.push(`${baseUrl}?wsdl`);
+
+    const failures: WsdlReadError[] = [];
+    for (const [index, wsdlUrl] of candidates.entries()) {
+      try {
+        const wsdl = await this.soapEngine.inspectWsdl(wsdlUrl);
+        if (wsdl.operations === 0) {
+          return {
+            ok: true,
+            kind: 'ok',
+            message: `The WSDL at ${wsdlUrlForLog(wsdlUrl)} was read, but it declares no SOAP operations. ${notChecked}`,
+          };
+        }
+        const soap12 = wsdl.soap12Ports > 0 ? `, ${wsdl.soap12Ports} of them SOAP 1.2` : '';
+        const where =
+          index > 0
+            ? ` The WSDL was found at the base URL with ?wsdl: set it as the connector's WSDL URL to import tools from it.`
+            : '';
+        return {
+          ok: true,
+          kind: 'ok',
+          message:
+            `WSDL read: ${wsdl.operations} operation${wsdl.operations === 1 ? '' : 's'} on ` +
+            `${wsdl.ports} port${wsdl.ports === 1 ? '' : 's'}${soap12}.${where} ${notChecked}`,
+        };
+      } catch (error: any) {
+        if (!(error instanceof WsdlReadError)) throw error;
+        failures.push(error);
+        // A host that cannot be reached will not be reached with ?wsdl either.
+        if (!error.reachedServer) break;
+      }
+    }
+
+    const where = wsdlUrlForLog(candidates[0]);
+    const triedWsdl = failures.length > 1 ? ' (also with ?wsdl)' : '';
+    // The service answered: report it reachable, with what was found.
+    const answered = failures.find((f) => f.reachedServer && !(f.status && f.status >= 500));
+    if (answered) {
+      const refused = failures.find((f) => f.status === 401 || f.status === 403);
+      if (refused) {
+        return {
+          ok: true,
+          kind: 'ok',
+          httpStatus: refused.status,
+          message:
+            `The service at ${where} answered, but refused the WSDL download with HTTP ${refused.status}${triedWsdl}. ` +
+            "AnythingMCP reads the WSDL without the connector's credentials; a WSDL that requires them " +
+            `cannot be downloaded. ${notChecked}`,
+        };
+      }
+      const answer = answered.status ? `HTTP ${answered.status}` : `a document that is not a WSDL (${answered.message})`;
+      return {
+        ok: true,
+        kind: 'ok',
+        ...(answered.status ? { httpStatus: answered.status } : {}),
+        message:
+          `The service at ${where} answered with ${answer}, but no WSDL could be read there${triedWsdl}. ` +
+          (specUrl
+            ? "Check the connector's WSDL URL to import or refresh tools. "
+            : "Set the connector's WSDL URL to import or refresh tools. ") +
+          notChecked,
+      };
+    }
+
+    const [first] = failures;
+    if (first.status) {
+      return {
+        ok: false,
+        kind: 'error',
+        httpStatus: first.status,
+        message: `The service at ${where} answered with HTTP ${first.status}: a server error. No WSDL could be read.`,
+      };
+    }
+    // DNS, connection, timeout, TLS and SSRF errors, classified like any
+    // other connector's.
+    const result = this.classifyTestError(first, '/');
+    return { ...result, message: `The service at ${where} could not be reached: ${result.message}` };
   }
 
   private classifyTestError(
