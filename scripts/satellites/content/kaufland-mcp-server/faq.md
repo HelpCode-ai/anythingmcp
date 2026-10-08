@@ -1,5 +1,5 @@
 ### Is there a Kaufland Marketplace MCP server?
-Yes, this one. It connects the Kaufland Marketplace seller API to Claude, ChatGPT and Copilot through AnythingMCP: 8 tools for orders, order units, units (offers), shipments, tickets, storefronts and warehouses.
+Yes, this one. It connects the Kaufland Marketplace seller API to Claude, ChatGPT and Copilot through AnythingMCP: 7 tools for orders, order units, units (offers), tickets, storefronts and warehouses.
 
 ### What do I need to connect it?
 A Kaufland seller account and an API key pair from the Seller Portal (Settings → API keys): the Client Key and the Secret Key.
