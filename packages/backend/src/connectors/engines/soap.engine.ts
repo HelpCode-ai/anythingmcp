@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import { XMLParser } from 'fast-xml-parser';
-import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { assertSafeOutboundUrl, SsrfBlockedError } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import {
   openWsdl,
@@ -26,6 +26,8 @@ interface WsdlMetadata {
   portEndpoints: Map<string, string>;
   /** Keyed by `${port}\n${operation}`. */
   operations: Map<string, WsdlOperationMeta>;
+  /** What a connection test reports. */
+  summary: WsdlSummary;
 }
 
 interface WsdlCacheEntry {
@@ -80,9 +82,15 @@ export interface WsdlSummary {
 export class WsdlReadError extends Error {
   constructor(
     message: string,
-    /** HTTP status of the WSDL response, when the server answered. */
-    readonly status?: number,
-    /** Network error code (ENOTFOUND, ECONNREFUSED, …), when there was one. */
+    /** HTTP status of the WSDL response, when the server answered with one other than 200. */
+    readonly status: number | undefined,
+    /**
+     * Whether the server answered over HTTP: with a status, or with a 200
+     * that is not a WSDL. False for DNS, connection, timeout and TLS
+     * failures, and for a host the SSRF guard blocks.
+     */
+    readonly reachedServer: boolean,
+    /** Network error code (ENOTFOUND, ECONNREFUSED, ...), when there was one. */
     readonly code?: string,
   ) {
     super(message);
@@ -90,11 +98,14 @@ export class WsdlReadError extends Error {
   }
 }
 
+/** Error codes that come with an HTTP answer (a redirect the client would not follow), not a transport failure. */
+const ANSWERED_ERROR_CODES = new Set(['ERR_FR_TOO_MANY_REDIRECTS', 'ERR_BAD_RESPONSE', 'ERR_BAD_REQUEST']);
+
 /**
- * The error of a WSDL download or parse, safe to show: node-soap's message
- * for a non-200 answer quotes the full URL (whose query may carry a token)
- * and the response body, so it is replaced by the status; any other message
- * gets the URL without user info and query string, and is shortened.
+ * The error of a WSDL download or parse, safe to show and log: node-soap's
+ * message for a non-200 answer quotes the full URL (whose query may carry a
+ * token) and the response body, so it is replaced by the status; any other
+ * message gets the URL without user info and query string, and is shortened.
  */
 function toWsdlReadError(err: any, wsdlUrl: string): WsdlReadError {
   const raw = String(err?.message ?? err ?? 'unknown error');
@@ -103,10 +114,16 @@ function toWsdlReadError(err: any, wsdlUrl: string): WsdlReadError {
       ? err.response.status
       : Number(/\bCode: (\d{3})\b/.exec(raw)?.[1]) || undefined;
   const code = typeof err?.code === 'string' ? err.code : undefined;
-  if (status) return new WsdlReadError(`The WSDL request returned HTTP ${status}`, status, code);
+  if (status) {
+    return new WsdlReadError(`The WSDL request returned HTTP ${status}`, status, true, code);
+  }
+  const blocked = err instanceof SsrfBlockedError || /SSRF guard/.test(raw);
+  // No code and not blocked: a document arrived, but it is not a WSDL (an
+  // HTML page, a parse error).
+  const reachedServer = !blocked && (!code || ANSWERED_ERROR_CODES.has(code));
   let message = raw.split(wsdlUrl).join(wsdlUrlForLog(wsdlUrl));
   if (message.length > 300) message = `${message.slice(0, 300)}…`;
-  return new WsdlReadError(message, undefined, code);
+  return new WsdlReadError(message, undefined, reachedServer, code);
 }
 
 /** How deep parameter values may nest (objects and arrays) before the call is refused. */
@@ -670,27 +687,10 @@ ${paramXml}
     portName: string,
     operationName: string,
   ): Promise<WsdlOperationMeta> {
-    const now = this.currentTime().getTime();
-    let entry = this.wsdlCache.get(wsdlUrl);
-    if (entry && entry.expiresAt <= now) {
-      this.wsdlCache.delete(wsdlUrl);
-      entry = undefined;
-    }
+    let entry = this.cachedWsdl(wsdlUrl);
     if (!entry) {
       this.logger.debug(`Fetching WSDL metadata from: ${wsdlUrlForLog(wsdlUrl)}`);
-      const created: WsdlCacheEntry = {
-        expiresAt: now + WSDL_CACHE_TTL_MS,
-        metadata: this.readWsdlMetadata(wsdlUrl),
-      };
-      // A WSDL that could not be read is retried sooner.
-      void created.metadata.then((metadata) => {
-        if (!metadata) created.expiresAt = this.currentTime().getTime() + WSDL_FAILURE_TTL_MS;
-      });
-      entry = created;
-      this.wsdlCache.set(wsdlUrl, entry);
-      while (this.wsdlCache.size > WSDL_CACHE_MAX_ENTRIES) {
-        this.wsdlCache.delete(this.wsdlCache.keys().next().value as string);
-      }
+      entry = this.cacheWsdl(wsdlUrl, this.readWsdlMetadata(wsdlUrl));
     }
 
     const metadata = await entry.metadata;
@@ -705,72 +705,111 @@ ${paramXml}
     );
   }
 
+  /** The cache entry of a WSDL, unless it has expired. */
+  private cachedWsdl(wsdlUrl: string): WsdlCacheEntry | undefined {
+    const entry = this.wsdlCache.get(wsdlUrl);
+    if (entry && entry.expiresAt <= this.currentTime().getTime()) {
+      this.wsdlCache.delete(wsdlUrl);
+      return undefined;
+    }
+    return entry;
+  }
+
+  private cacheWsdl(wsdlUrl: string, metadata: Promise<WsdlMetadata | null>): WsdlCacheEntry {
+    const entry: WsdlCacheEntry = {
+      expiresAt: this.currentTime().getTime() + WSDL_CACHE_TTL_MS,
+      metadata,
+    };
+    // A WSDL that could not be read is retried sooner.
+    void metadata.then((read) => {
+      if (!read) entry.expiresAt = this.currentTime().getTime() + WSDL_FAILURE_TTL_MS;
+    });
+    this.wsdlCache.delete(wsdlUrl);
+    this.wsdlCache.set(wsdlUrl, entry);
+    while (this.wsdlCache.size > WSDL_CACHE_MAX_ENTRIES) {
+      this.wsdlCache.delete(this.wsdlCache.keys().next().value as string);
+    }
+    return entry;
+  }
+
   /** Read every operation of a WSDL, using the soap library for parsing only. */
   private async readWsdlMetadata(wsdlUrl: string): Promise<WsdlMetadata | null> {
     try {
       // Without the library's own cache (see openWsdl): wsdlCache is bounded.
-      const client = await openWsdl(wsdlUrl);
-      const wsdl = client.wsdl;
-      const targetNamespace = wsdlTargetNamespace(wsdl);
-
-      const portEndpoints = new Map<string, string>();
-      for (const service of Object.values(wsdl.definitions?.services || {}) as any[]) {
-        for (const [portName, port] of Object.entries((service?.ports || {}) as Record<string, any>)) {
-          if (port?.location && !portEndpoints.has(portName)) {
-            portEndpoints.set(portName, port.location);
-          }
-        }
-      }
-
-      const operations = new Map<string, WsdlOperationMeta>();
-      for (const service of Object.values(client.describe())) {
-        for (const [portName, port] of Object.entries(service as Record<string, any>)) {
-          for (const [operationName, operation] of Object.entries(port as Record<string, any>)) {
-            const key = `${portName}\n${operationName}`;
-            // The first service with an input for the operation wins, as before.
-            if (operations.get(key)?.paramOrder.length) continue;
-            operations.set(key, {
-              ...resolveWsdlOperation(wsdl, portName, operationName),
-              targetNamespace,
-              paramOrder: operation?.input ? Object.keys(operation.input) : [],
-            });
-          }
-        }
-      }
-      return { targetNamespace, portEndpoints, operations };
+      return this.wsdlMetadataOf(await openWsdl(wsdlUrl));
     } catch (err: any) {
+      // The library's message may quote the URL with its query string.
       this.logger.warn(
-        `Failed to extract WSDL metadata from ${wsdlUrlForLog(wsdlUrl)}: ${err.message}`,
+        `Failed to extract WSDL metadata from ${wsdlUrlForLog(wsdlUrl)}: ${toWsdlReadError(err, wsdlUrl).message}`,
       );
       return null;
     }
   }
 
-  /**
-   * Download and parse a WSDL for a connection test, through the same
-   * guarded path as an import, without the cache: the test should see the
-   * WSDL as it is now. Calls no operation. Throws a WsdlReadError whose
-   * message carries neither the URL's credentials nor the response body.
-   */
-  async inspectWsdl(wsdlUrl: string): Promise<WsdlSummary> {
-    let client: Awaited<ReturnType<typeof openWsdl>>;
-    try {
-      client = await openWsdl(wsdlUrl);
-    } catch (err: any) {
-      throw toWsdlReadError(err, wsdlUrl);
-    }
-    const soap12 = soap12Ports(client.wsdl);
-    const operations = new Set<string>();
-    let ports = 0;
-    for (const [serviceName, service] of Object.entries(client.describe())) {
-      for (const port of Object.values(service as Record<string, object>)) {
-        ports++;
-        for (const operationName of Object.keys(port)) {
-          operations.add(`${serviceName}\n${operationName}`);
+  private wsdlMetadataOf(client: Awaited<ReturnType<typeof openWsdl>>): WsdlMetadata {
+    const wsdl = client.wsdl;
+    const targetNamespace = wsdlTargetNamespace(wsdl);
+
+    const portEndpoints = new Map<string, string>();
+    for (const service of Object.values(wsdl.definitions?.services || {}) as any[]) {
+      for (const [portName, port] of Object.entries((service?.ports || {}) as Record<string, any>)) {
+        if (port?.location && !portEndpoints.has(portName)) {
+          portEndpoints.set(portName, port.location);
         }
       }
     }
-    return { operations: operations.size, ports, soap12Ports: soap12.size };
+
+    const operations = new Map<string, WsdlOperationMeta>();
+    const operationNames = new Set<string>();
+    let ports = 0;
+    for (const [serviceName, service] of Object.entries(client.describe())) {
+      for (const [portName, port] of Object.entries(service as Record<string, any>)) {
+        ports++;
+        for (const [operationName, operation] of Object.entries(port as Record<string, any>)) {
+          operationNames.add(`${serviceName}\n${operationName}`);
+          const key = `${portName}\n${operationName}`;
+          // The first service with an input for the operation wins, as before.
+          if (operations.get(key)?.paramOrder.length) continue;
+          operations.set(key, {
+            ...resolveWsdlOperation(wsdl, portName, operationName),
+            targetNamespace,
+            paramOrder: operation?.input ? Object.keys(operation.input) : [],
+          });
+        }
+      }
+    }
+    return {
+      targetNamespace,
+      portEndpoints,
+      operations,
+      summary: {
+        operations: operationNames.size,
+        ports,
+        soap12Ports: soap12Ports(wsdl).size,
+      },
+    };
+  }
+
+  /**
+   * Download and parse a WSDL for a connection test, through the same
+   * guarded path and cache as a tool call: a WSDL read in the last ten
+   * minutes is not downloaded again (the health check runs on every
+   * dashboard load), and one read here serves the next tool call. A WSDL
+   * that could not be read is always tried again. Calls no operation.
+   * Throws a WsdlReadError whose message carries neither the URL's
+   * credentials nor the response body.
+   */
+  async inspectWsdl(wsdlUrl: string): Promise<WsdlSummary> {
+    const cached = await this.cachedWsdl(wsdlUrl)?.metadata;
+    if (cached) return cached.summary;
+    let metadata: WsdlMetadata;
+    try {
+      metadata = this.wsdlMetadataOf(await openWsdl(wsdlUrl));
+    } catch (err: any) {
+      throw toWsdlReadError(err, wsdlUrl);
+    }
+    this.cacheWsdl(wsdlUrl, Promise.resolve(metadata));
+    return metadata.summary;
   }
 
   private injectAuth(

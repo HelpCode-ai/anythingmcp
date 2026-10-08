@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as soap from 'soap';
 import { createHash } from 'crypto';
 import { Logger } from '@nestjs/common';
+import { SsrfBlockedError } from '../../common/ssrf.util';
 
 jest.mock('axios');
 jest.mock('soap');
@@ -1043,6 +1044,101 @@ describe('SoapEngine', () => {
       expect(err.status).toBeUndefined();
       expect(err.message).toBe('getaddrinfo ENOTFOUND for https://example.com/service');
       expect(err.message).not.toMatch(/s3cret|pw@/);
+    });
+
+    it.each([
+      ['an HTTP status', new Error('Invalid WSDL URL: x\n\n\r Code: 404\n\n\r Response Body: '), true],
+      ['a 200 that is not a WSDL', new Error('Root element of WSDL was <html>. This is likely an authentication issue.'), true],
+      ['a redirect loop', Object.assign(new Error('Maximum number of redirects exceeded'), { code: 'ERR_FR_TOO_MANY_REDIRECTS' }), true],
+      ['DNS', Object.assign(new Error('getaddrinfo ENOTFOUND example.com'), { code: 'ENOTFOUND' }), false],
+      ['a timeout', Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' }), false],
+      ['TLS', Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' }), false],
+      ['the SSRF guard', new SsrfBlockedError("SSRF guard: hostname 'example.com' is blocked"), false],
+    ])('tells whether the server answered: %s', async (_label, error, reached) => {
+      mockedCreateClient.mockRejectedValue(error);
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.reachedServer).toBe(reached);
+    });
+
+    describe('cache', () => {
+      class ClockedEngine extends SoapEngine {
+        now = Date.parse('2026-10-08T07:00:00Z');
+        protected currentTime(): Date {
+          return new Date(this.now);
+        }
+      }
+      const client = {
+        wsdl: {
+          definitions: {
+            $targetNamespace: 'http://tempuri.org/',
+            services: { S: { ports: { P: { location: 'http://example.com/service', binding: { methods: {} } } } } },
+            bindings: {},
+          },
+        },
+        describe: () => ({ S: { P: { GetUser: { input: { userId: 's:string' } } } } }),
+      };
+
+      it('reads a WSDL once for repeated tests within ten minutes, and again after', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockResolvedValue(client);
+
+        await clocked.inspectWsdl(url);
+        await clocked.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+        clocked.now += 10 * 60_000;
+        await clocked.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+      });
+
+      it('shares the read with tool calls, both ways', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockResolvedValue(client);
+        mockedAxios.post.mockResolvedValue({ status: 200, data: '<Envelope><Body><R/></Body></Envelope>' });
+
+        await clocked.inspectWsdl(url);
+        await clocked.execute(
+          { ...baseConfig, specUrl: url },
+          { method: 'GetUser', path: 'P', paramOrder: ['userId'] },
+          { userId: '1' },
+        );
+        expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+        const other = new ClockedEngine();
+        await other.execute(
+          { ...baseConfig, specUrl: url },
+          { method: 'GetUser', path: 'P', paramOrder: ['userId'] },
+          { userId: '1' },
+        );
+        await other.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+      });
+
+      it('tries a WSDL that could not be read again on the next test', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockRejectedValueOnce(new Error('Root element of WSDL was <html>.'));
+        mockedCreateClient.mockResolvedValueOnce(client);
+
+        await expect(clocked.inspectWsdl(url)).rejects.toThrow('Root element');
+        await expect(clocked.inspectWsdl(url)).resolves.toMatchObject({ operations: 1, ports: 1 });
+      });
+    });
+
+    it('logs a failed metadata read without the query string or the response body', async () => {
+      const lines: string[] = [];
+      const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
+        lines.push(String(message));
+      });
+      mockedCreateClient.mockRejectedValue(
+        new Error(`Invalid WSDL URL: ${url}\n\n\r Code: 404\n\n\r Response Body: secret-body`),
+      );
+      mockedAxios.post.mockResolvedValue({ status: 200, data: '<Envelope><Body><R/></Body></Envelope>' });
+
+      await engine.execute({ ...baseConfig, specUrl: url }, { ...baseMapping, soapAction: undefined }, { userId: '1' });
+
+      spy.mockRestore();
+      expect(lines.join('\n')).toContain('https://example.com/service: The WSDL request returned HTTP 404');
+      expect(lines.join('\n')).not.toMatch(/s3cret|pw@|secret-body/);
     });
   });
 
