@@ -52,6 +52,28 @@ export function knownClientFor(redirectHost: string): KnownClient {
   return null;
 }
 
+/**
+ * The AI client named on the sign-up link from this page, for the Claude
+ * Directory badge: it is left out only for ChatGPT and Meta's Muse, and shown
+ * to everyone else. Muse is not recognised by host yet (no Muse client has
+ * registered with us), so a client called "Muse" or one on Meta's domains
+ * counts too. Only a badge depends on it, so a self-declared name is enough.
+ */
+export type SignupClient = 'claude' | 'chatgpt' | 'muse' | 'other';
+
+export function signupClientFor(clientName: string, redirectHost: string): SignupClient {
+  const known = knownClientFor(redirectHost);
+  if (known) return known;
+  const host = (redirectHost || '').toLowerCase().replace(/:\d+$/, '');
+  if (['muse.ai', 'meta.ai', 'meta.com'].some((d) => hostMatches(host, d)) || /\bmuse\b/i.test(clientName || '')) {
+    return 'muse';
+  }
+  return 'other';
+}
+
+/** Whether the Claude Directory badge is shown to someone connecting this client. */
+export const showsDirectoryBadge = (client: SignupClient) => client !== 'chatgpt' && client !== 'muse';
+
 /** The two tiles at the top of the card: the client, dots, AnythingMCP. */
 export function clientTilePair(clientName: string, redirectHost: string): string {
   const known = knownClientFor(redirectHost);
