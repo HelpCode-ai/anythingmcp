@@ -259,8 +259,7 @@ ${a(`${MARKETING}/guides`, 'Guides')} &nbsp;&middot;&nbsp;
 ${a(`${MARKETING}/docs`, 'Help')} &nbsp;&middot;&nbsp;
 ${a(GITHUB_URL, '&#9733; Star on GitHub')} &nbsp;&middot;&nbsp;
 ${a(`${MARKETING}/datenschutz`, 'Privacy')}<br><br>
-AnythingMCP is made by helpcode.ai GmbH &middot; Hanferstra&szlig;e 26 &middot; 79108 Freiburg, Germany<br>
-In production at KOCH Freiburg GmbH, connecting its ERP to Claude.${unsub}
+AnythingMCP is made by helpcode.ai GmbH &middot; Hanferstra&szlig;e 26 &middot; 79108 Freiburg, Germany${unsub}
 </td></tr>
 `;
 }
@@ -328,7 +327,6 @@ export function renderEmailText(input: {
     `Privacy: ${MARKETING}/datenschutz`,
     '',
     'AnythingMCP is made by helpcode.ai GmbH · Hanferstraße 26 · 79108 Freiburg, Germany',
-    'In production at KOCH Freiburg GmbH, connecting its ERP to Claude.',
   ];
   if (input.marketing) lines.push('', `Unsubscribe from tips and offers: ${input.marketing.unsubscribeUrl}`);
   return lines.join('\n') + '\n';

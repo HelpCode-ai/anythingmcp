@@ -5,8 +5,9 @@ import { publicStats, type PublicStats } from './api';
 
 /**
  * The public trust numbers (GET /api/public/stats) and how they are shown.
- * Same rules as the backend's trust-stats.format.ts: always rounded DOWN, and
- * a value below its rounding unit, or unknown, is not shown at all.
+ * Same rules as the backend's trust-stats.format.ts: stars, downloads and tool
+ * calls never below TRUST_FLOORS, live numbers above them rounded DOWN;
+ * workspaces live only, left out below their rounding unit or when unknown.
  */
 export interface TrustStatsDisplay {
   stars: string | null;
@@ -23,6 +24,17 @@ function floorPlus(n: unknown, unit: number): string | null {
   return `${thousands(Math.floor(n / unit) * unit)}+`;
 }
 
+/** Mirrors TRUST_FLOORS in the backend's trust-stats.format.ts. */
+export const TRUST_FLOORS = { githubStars: 1_000, dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
+
+const atLeast = (n: unknown, floor: number) => (usable(n) && n > floor ? n : floor);
+
+/** Below a million: "650,000+"; from a million: whole millions, "1M+". */
+function formatToolCalls(n: unknown): string | null {
+  if (usable(n) && n >= 1_000_000) return `${Math.floor(n / 1_000_000)}M+`;
+  return floorPlus(n, 10_000);
+}
+
 export function formatStars(n: unknown): string | null {
   if (!usable(n)) return null;
   const whole = Math.floor(n);
@@ -31,14 +43,14 @@ export function formatStars(n: unknown): string | null {
 
 export function formatTrustStats(s: Partial<PublicStats> | null | undefined): TrustStatsDisplay {
   return {
-    stars: formatStars(s?.githubStars),
-    downloads: floorPlus(s?.dockerPulls, 1000),
+    stars: formatStars(atLeast(s?.githubStars, TRUST_FLOORS.githubStars)),
+    downloads: floorPlus(atLeast(s?.dockerPulls, TRUST_FLOORS.dockerPulls), 1000),
     workspaces: floorPlus(s?.workspaces, 100),
-    toolCalls: floorPlus(s?.toolCalls30d, 10_000),
+    toolCalls: formatToolCalls(atLeast(s?.toolCalls30d, TRUST_FLOORS.toolCalls30d)),
   };
 }
 
-/** The formatted numbers, or null while loading / when the endpoint is unavailable. */
+/** The formatted numbers: null while loading, the floors alone when the endpoint is unavailable. */
 export function useTrustStats(enabled = true): TrustStatsDisplay | null {
   const [stats, setStats] = useState<TrustStatsDisplay | null>(null);
   useEffect(() => {
@@ -50,7 +62,7 @@ export function useTrustStats(enabled = true): TrustStatsDisplay | null {
         if (!cancelled) setStats(formatTrustStats(s));
       })
       .catch(() => {
-        if (!cancelled) setStats(null);
+        if (!cancelled) setStats(formatTrustStats(null));
       });
     return () => {
       cancelled = true;
