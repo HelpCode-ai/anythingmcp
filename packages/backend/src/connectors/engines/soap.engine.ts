@@ -57,6 +57,52 @@ const REDACTED_SECURITY_HEADER = '<wsse:Security><!-- redacted --></wsse:Securit
 /** Any Security header block, whatever its prefix, in a server's response. */
 const SECURITY_HEADER_BLOCK = /<([\w.-]+:)?Security\b[\s\S]*?<\/([\w.-]+:)?Security\s*>/g;
 
+/** How deep parameter values may nest (objects and arrays) before the call is refused. */
+const MAX_NESTING_DEPTH = 20;
+/** An XML element name without a prefix (NCName, close enough). */
+const XML_NAME = /^[\p{L}_][\p{L}\p{N}\p{M}_.\-\u00B7\u203F\u2040]*$/u;
+
+interface EnvelopeOptions {
+  /** Child element order of nested parameters, by path (`address`, `order/lines`). */
+  elementOrder?: Record<string, string[]>;
+}
+
+interface SerializeContext {
+  /** `tns:` for qualified elements. */
+  prefix: string;
+  elementOrder: Record<string, string[]>;
+}
+
+/**
+ * The element name of a parameter. soap's describe() marks a repeated
+ * element (maxOccurs > 1) with `[]`, which older imports kept in the
+ * parameter name; `[]` is not valid in an XML name.
+ */
+function elementName(key: string): string {
+  return key.endsWith('[]') ? key.slice(0, -2) : key;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** The keys of an object: those named in `order` first, in that order, then the rest. */
+function orderedFields(value: Record<string, unknown>, order?: string[]): string[] {
+  const keys = Object.keys(value);
+  if (!order || order.length === 0) return keys;
+  const used = new Set<string>();
+  for (const name of order) {
+    for (const key of keys) {
+      if (!used.has(key) && elementName(key) === name) used.add(key);
+    }
+  }
+  // A Set iterates in insertion order: the schema's order, then the rest.
+  for (const key of keys) used.add(key);
+  return [...used];
+}
+
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
  *
@@ -142,6 +188,7 @@ export class SoapEngine {
         : undefined;
 
     // Build the SOAP envelope (respecting WSDL parameter order for WCF)
+    const elementOrder = this.validElementOrder(endpointMapping.elementOrder);
     const buildEnvelope = (header?: string) =>
       this.buildEnvelope(
         inputElement || operationName,
@@ -149,6 +196,7 @@ export class SoapEngine {
         soapParams,
         paramOrder,
         header,
+        { elementOrder },
       );
     const envelope = buildEnvelope(securityHeader);
     // The envelope as it may be shown in error details: never the credentials.
@@ -254,6 +302,7 @@ export class SoapEngine {
     params: Record<string, unknown>,
     paramOrder: string[] = [],
     headerXml?: string,
+    options: EnvelopeOptions = {},
   ): string {
     const ns = targetNamespace || 'http://tempuri.org/';
     const header = headerXml
@@ -266,8 +315,15 @@ export class SoapEngine {
         ? paramOrder.filter((k) => params[k] !== undefined)
         : Object.keys(params);
 
+    const context: SerializeContext = {
+      prefix: 'tns:',
+      elementOrder: options.elementOrder ?? {},
+    };
     const paramXml = orderedKeys
-      .map((key) => `      <tns:${key}>${this.escapeXml(String(params[key]))}</tns:${key}>`)
+      .map((key) =>
+        this.elementXml(key, params[key], context, '      ', 0, elementName(key), []),
+      )
+      .filter(Boolean)
       .join('\n');
 
     return `<?xml version="1.0" encoding="utf-8"?>
@@ -279,6 +335,99 @@ ${paramXml}
     </tns:${wrapperElement}>
   </soapenv:Body>
 </soapenv:Envelope>`;
+  }
+
+  /**
+   * One parameter as XML, '' when it is left out.
+   *
+   * - null / undefined: left out
+   * - an array: the element once per item (maxOccurs > 1 in the schema)
+   * - a plain object: its fields as child elements, in the schema's order
+   *   when the tool has one (`elementOrder`, set on import; a JSON column
+   *   does not keep key order), then any other fields in the object's order
+   * - a Date: its ISO 8601 form
+   * - anything else: its text
+   *
+   * Every text is escaped and every name checked, since nested names come
+   * from the caller. `ancestors` holds the objects and arrays being written,
+   * to stop on a cycle.
+   */
+  private elementXml(
+    rawName: string,
+    value: unknown,
+    context: SerializeContext,
+    indent: string,
+    depth: number,
+    path: string,
+    ancestors: object[],
+  ): string {
+    const name = elementName(rawName);
+    if (!XML_NAME.test(name)) {
+      throw new Error(`SOAP parameter "${rawName}" is not a valid XML element name`);
+    }
+    if (value === undefined || value === null) return '';
+
+    if (typeof value === 'object' && !(value instanceof Date)) {
+      if (ancestors.includes(value)) {
+        throw new Error(`SOAP parameter "${path}" contains a circular reference`);
+      }
+      if (depth >= MAX_NESTING_DEPTH) {
+        throw new Error(
+          `SOAP parameter "${path}" is nested more than ${MAX_NESTING_DEPTH} levels deep`,
+        );
+      }
+    }
+
+    const tag = `${context.prefix}${name}`;
+    if (Array.isArray(value)) {
+      const inner = [...ancestors, value];
+      return value
+        .map((item) => this.elementXml(name, item, context, indent, depth + 1, path, inner))
+        .filter(Boolean)
+        .join('\n');
+    }
+    if (isPlainObject(value)) {
+      const inner = [...ancestors, value];
+      const children = orderedFields(value, context.elementOrder[path])
+        .map((key) =>
+          this.elementXml(
+            key,
+            value[key],
+            context,
+            `${indent}  `,
+            depth + 1,
+            `${path}/${elementName(key)}`,
+            inner,
+          ),
+        )
+        .filter(Boolean);
+      return children.length > 0
+        ? `${indent}<${tag}>\n${children.join('\n')}\n${indent}</${tag}>`
+        : `${indent}<${tag}/>`;
+    }
+
+    let text: string;
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) {
+        throw new Error(`SOAP parameter "${path}" is an invalid date`);
+      }
+      text = value.toISOString();
+    } else {
+      text = String(value);
+    }
+    return `${indent}<${tag}>${this.escapeXml(text)}</${tag}>`;
+  }
+
+  /** `elementOrder` of a stored tool, when it has the expected shape. */
+  private validElementOrder(raw: unknown): Record<string, string[]> {
+    const order: Record<string, string[]> = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return order;
+    for (const [path, names] of Object.entries(raw as Record<string, unknown>)) {
+      if (Array.isArray(names) && names.every((n) => typeof n === 'string')) {
+        order[path] = names as string[];
+      }
+    }
+    return order;
   }
 
   private escapeXml(str: string): string {

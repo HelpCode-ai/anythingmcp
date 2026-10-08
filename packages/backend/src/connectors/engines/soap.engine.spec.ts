@@ -122,6 +122,174 @@ describe('SoapEngine', () => {
     });
   });
 
+  describe('nested parameter values', () => {
+    const okResponse = { status: 200, data: '<Envelope><Body><Resp/></Body></Envelope>' };
+    const orderMapping = {
+      ...baseMapping,
+      method: 'CreateOrder',
+      paramOrder: ['customer', 'lines', 'tags', 'note'],
+    };
+
+    async function envelopeFor(mapping: Record<string, unknown>, params: Record<string, unknown>) {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, mapping as any, params);
+      return mockedAxios.post.mock.calls[0][1] as string;
+    }
+
+    it('writes objects as child elements and arrays as repeated elements', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: { name: 'Ada & Co', address: { street: 'Main St 1', city: 'Basel' } },
+        lines: [
+          { sku: 'A-1', quantity: 2, gift: false },
+          { sku: 'B-2', quantity: 1, gift: true },
+        ],
+        tags: ['urgent', 'b2b'],
+        note: 'x',
+      });
+
+      expect(envelope).toContain(
+        [
+          '    <tns:CreateOrder>',
+          '      <tns:customer>',
+          '        <tns:name>Ada &amp; Co</tns:name>',
+          '        <tns:address>',
+          '          <tns:street>Main St 1</tns:street>',
+          '          <tns:city>Basel</tns:city>',
+          '        </tns:address>',
+          '      </tns:customer>',
+          '      <tns:lines>',
+          '        <tns:sku>A-1</tns:sku>',
+          '        <tns:quantity>2</tns:quantity>',
+          '        <tns:gift>false</tns:gift>',
+          '      </tns:lines>',
+          '      <tns:lines>',
+          '        <tns:sku>B-2</tns:sku>',
+          '        <tns:quantity>1</tns:quantity>',
+          '        <tns:gift>true</tns:gift>',
+          '      </tns:lines>',
+          '      <tns:tags>urgent</tns:tags>',
+          '      <tns:tags>b2b</tns:tags>',
+          '      <tns:note>x</tns:note>',
+          '    </tns:CreateOrder>',
+        ].join('\n'),
+      );
+      expect(envelope).not.toContain('[object Object]');
+    });
+
+    it('orders child elements by the stored elementOrder, then the remaining keys', async () => {
+      const envelope = await envelopeFor(
+        {
+          ...orderMapping,
+          elementOrder: { customer: ['name', 'address'], 'customer/address': ['street', 'city'] },
+        },
+        {
+          // Keys in the "wrong" order, as a JSON client may send them.
+          customer: { extra: 1, address: { city: 'Basel', street: 'Main St 1' }, name: 'Ada' },
+        },
+      );
+
+      expect(envelope).toContain(
+        [
+          '      <tns:customer>',
+          '        <tns:name>Ada</tns:name>',
+          '        <tns:address>',
+          '          <tns:street>Main St 1</tns:street>',
+          '          <tns:city>Basel</tns:city>',
+          '        </tns:address>',
+          '        <tns:extra>1</tns:extra>',
+          '      </tns:customer>',
+        ].join('\n'),
+      );
+    });
+
+    it('leaves out null and undefined values at any level and writes dates as ISO 8601', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: {
+          name: null,
+          since: new Date('2026-10-08T07:00:00.000Z'),
+          address: undefined,
+          vip: true,
+        },
+        lines: [null, { sku: 'A-1' }],
+        tags: [],
+        note: null,
+      });
+
+      expect(envelope).toContain(
+        [
+          '    <tns:CreateOrder>',
+          '      <tns:customer>',
+          '        <tns:since>2026-10-08T07:00:00.000Z</tns:since>',
+          '        <tns:vip>true</tns:vip>',
+          '      </tns:customer>',
+          '      <tns:lines>',
+          '        <tns:sku>A-1</tns:sku>',
+          '      </tns:lines>',
+          '    </tns:CreateOrder>',
+        ].join('\n'),
+      );
+      expect(envelope).not.toContain('null');
+      expect(envelope).not.toContain('tags');
+    });
+
+    it('writes an empty object as an empty element', async () => {
+      const envelope = await envelopeFor(orderMapping, { customer: {} });
+      expect(envelope).toContain('      <tns:customer/>\n    </tns:CreateOrder>');
+    });
+
+    it('writes a parameter an older import named "tags[]" as <tns:tags>', async () => {
+      const envelope = await envelopeFor(
+        { ...baseMapping, paramOrder: ['tags[]'], bodyMapping: { 'tags[]': '$tags[]' } },
+        { 'tags[]': ['a', 'b'] },
+      );
+      expect(envelope).toContain('      <tns:tags>a</tns:tags>\n      <tns:tags>b</tns:tags>');
+      expect(envelope).not.toContain('[]');
+    });
+
+    it('escapes nested text', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: { name: '<b>"x"</b>' },
+        tags: ["it's"],
+      });
+      expect(envelope).toContain('<tns:name>&lt;b&gt;&quot;x&quot;&lt;/b&gt;</tns:name>');
+      expect(envelope).toContain('<tns:tags>it&apos;s</tns:tags>');
+    });
+
+    it('refuses a nested key that is not an XML name', async () => {
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, {
+          customer: { 'a><evil/><b': 'x' },
+        }),
+      ).rejects.toThrow('SOAP parameter "a><evil/><b" is not a valid XML element name');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses a value that refers to itself', async () => {
+      const customer: Record<string, unknown> = { name: 'Ada' };
+      customer.self = customer;
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, { customer }),
+      ).rejects.toThrow('SOAP parameter "customer/self" contains a circular reference');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses values nested more than 20 levels deep', async () => {
+      let deep: Record<string, unknown> = { leaf: 'x' };
+      for (let i = 0; i < 20; i++) deep = { level: deep };
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, { customer: deep }),
+      ).rejects.toThrow(/is nested more than 20 levels deep/);
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+
+      // 20 levels are fine.
+      let ok: Record<string, unknown> = { leaf: 'x' };
+      for (let i = 0; i < 19; i++) ok = { level: ok };
+      await expect(envelopeFor(orderMapping, { customer: ok })).resolves.toContain(
+        '<tns:leaf>x</tns:leaf>',
+      );
+    });
+  });
+
   describe('SOAP response parsing', () => {
     it('should extract body content from SOAP response XML', async () => {
       const xml = `

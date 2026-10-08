@@ -148,6 +148,52 @@ describe('WsdlParser', () => {
     });
   });
 
+  describe('complex and repeated parameters (JAX-WS)', () => {
+    it('describes a complex parameter as an object and a repeated one as an array', async () => {
+      const [tool] = await parser.parse(fixture('jaxws-unqualified'));
+      const properties = (tool.parameters as any).properties;
+
+      expect(properties.address).toEqual({
+        type: 'object',
+        properties: { street: { type: 'string' }, city: { type: 'string' } },
+        additionalProperties: true,
+        description: 'SOAP parameter: address (complex type)',
+      });
+      expect(properties.tags).toEqual({
+        type: 'array',
+        items: { type: 'string' },
+        description: 'SOAP parameter: tags (xs:string), repeated: pass a list',
+      });
+      expect(properties).not.toHaveProperty(['tags[]']);
+      expect(tool.endpointMapping).toMatchObject({
+        elementOrder: { address: ['street', 'city'] },
+      });
+      expect((tool.endpointMapping as any).paramOrder).toContain('tags');
+      expect((tool.endpointMapping as any).bodyMapping).toMatchObject({ tags: '$tags' });
+    });
+
+    it('sends the nested values in schema order', async () => {
+      const wsdl = fixture('jaxws-unqualified');
+      const [tool] = await parser.parse(wsdl);
+
+      await engine.execute(
+        { baseUrl: 'http://orders.example.com/OrderService', authType: 'NONE', specUrl: wsdl },
+        tool.endpointMapping as any,
+        {
+          customerId: 'C-1',
+          address: { city: 'Basel', street: 'Main St 1' },
+          tags: ['urgent', 'b2b'],
+        },
+      );
+      const envelope = post.mock.calls[0][1] as string;
+
+      expect(envelope).toMatch(
+        /<(tns:)?address>\s*<(tns:)?street>Main St 1<\/(tns:)?street>\s*<(tns:)?city>Basel<\/(tns:)?city>\s*<\/(tns:)?address>/,
+      );
+      expect(envelope).toMatch(/<(tns:)?tags>urgent<\/(tns:)?tags>\s*<(tns:)?tags>b2b<\/(tns:)?tags>/);
+    });
+  });
+
   it('keeps the envelope of a tool with complete metadata unchanged and does not read the WSDL', async () => {
     const createClient = jest.spyOn(require('soap'), 'createClientAsync');
     const envelope = await envelopeFor('http://unused.example.com/?wsdl', {

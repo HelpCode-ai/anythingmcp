@@ -84,6 +84,20 @@ SOAP tools use a specific endpoint mapping format:
 | `bodyMapping` | Maps tool params to SOAP envelope parameters |
 | `inputElement` | Body element that wraps the parameters, when the WSDL's input element is not named after the operation (set on import) |
 | `inputNamespace` | Namespace of that element, when it differs from the WSDL `targetNamespace` (set on import) |
+| `elementOrder` | Order of the child elements of complex parameters, by path (`{"address": ["street", "city"]}`), because the schema's `xs:sequence` is order-sensitive and a stored tool does not keep the key order of objects (set on import) |
+
+### Parameter values
+
+Each parameter becomes an element in the body. Values are written as follows:
+
+| Value | XML |
+|-------|-----|
+| Text, number, boolean | The element with the value as text, escaped |
+| Object | The element with one child element per field, in the order the schema declares them (`elementOrder`); fields the schema does not list follow in the order sent |
+| List | The element repeated once per item, for elements with `maxOccurs` above 1 (imported as array parameters) |
+| `null` or missing | Left out |
+
+Values may nest up to 20 levels; field names must be valid XML names. Attributes and `xsi:type` are not written.
 
 ---
 
@@ -182,7 +196,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 |-------|----------|
 | WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
-| "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style and nested complex-type parameters are not supported yet |
+| "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style is not supported. Tools imported before nested values were supported describe complex parameters as text: re-import the WSDL so they take objects and lists |
 | A changed WSDL is not picked up | Tools keep the metadata read at import: re-import the WSDL. A tool that lacks some of it (an empty `soapAction` is common) reads it from the WSDL at call time and keeps it for up to 10 minutes (1 minute when the WSDL could not be read) |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
 | Authentication failures | Check the credentials and the auth type. For WS-Security, try the other password type, set `includeNonce` or `includeTimestamp` if the service asks for them, and check the backend's clock for `PasswordDigest`. A service that requires signed WS-Security messages or a client certificate cannot be called yet (see Authentication) |

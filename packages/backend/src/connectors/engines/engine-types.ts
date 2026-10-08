@@ -46,6 +46,14 @@ export interface SoapEndpointMapping {
   inputElement?: string;
   /** Namespace of the body element and its parameters, when it differs from `targetNamespace`. */
   inputNamespace?: string;
+  /**
+   * Child element order of complex (nested) parameters, from the schema, by
+   * path of element names: `{ "address": ["street", "city"] }`. Needed
+   * because a JSON column does not keep object key order and an xs:sequence
+   * is order-sensitive. Fields not listed follow in the order given. Set on
+   * import; absent: the order of the value's keys.
+   */
+  elementOrder?: Record<string, string[]>;
 }
 
 export interface DatabaseEndpointMapping {
