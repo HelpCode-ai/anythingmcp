@@ -768,7 +768,7 @@
         "kaufland"
       ],
       "wave": 1,
-      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, shipments, tickets and storefronts.",
+      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, tickets, warehouses and storefronts.",
       "topics": [
         "kaufland",
         "marketplace",
@@ -787,8 +787,11 @@
         "billbee-mcp-server",
         "jtl-wawi-mcp-server"
       ],
-      "lastVerified": null,
-      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
+      "lastVerified": {
+        "date": "2026-10-08",
+        "against": "a live Kaufland seller account on AnythingMCP Cloud",
+        "how": "read-only calls of all 7 tools through the production connector"
+      }
     },
     {
       "repo": "otto-market-mcp-server",

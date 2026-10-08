@@ -1341,14 +1341,87 @@ describe('RestEngine', () => {
       expect(Number(ts)).toBeLessThanOrEqual(after);
       expect(cfg.headers['Shop-Client-Key']).toBe('sh-client');
 
-      // Recompute independently, from the vendor's documented string.
+      // Recompute independently, from the vendor's documented string: the
+      // four parts joined by newlines, nothing after the timestamp.
       const expected = crypto
         .createHmac('sha256', 'sh-secret')
-        .update(`GET\n${cfg.url}\n\n${ts}\n`, 'utf8')
+        .update(`GET\n${cfg.url}\n\n${ts}`, 'utf8')
         .digest('hex');
       expect(cfg.headers['Shop-Signature']).toBe(expected);
       // The secret itself must appear nowhere on the wire.
       expect(JSON.stringify(cfg)).not.toContain('sh-secret');
+    });
+
+    it("reproduces the signature in Kaufland's documentation", async () => {
+      // sellerapi.kaufland.com, "Signing requests": POST /v2/units/, empty
+      // body, timestamp 1411055926 → da0b65f5…2e2a. A trailing newline after
+      // the timestamp (the shipped template until Oct 2026) gives a different
+      // digest, and Kaufland answers 401 "Request signature is corrupted".
+      mockedAxios.mockResolvedValue({ data: {} });
+      const kaufland = require('../../adapters/de/kaufland.json') as {
+        connector: { authConfig: Record<string, unknown> };
+      };
+      const authConfig = JSON.parse(
+        JSON.stringify(kaufland.connector.authConfig)
+          .replace(
+            '{{KAUFLAND_SECRET_KEY}}',
+            'a7d0cb1da1ddbc86c96ee5fedd341b7d8ebfbb2f5c83cfe0909f4e57f05dd403',
+          )
+          .replace('{{KAUFLAND_CLIENT_KEY}}', 'client'),
+      ) as Record<string, unknown>;
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1411055926 * 1000);
+      try {
+        await engine.execute(
+          { baseUrl: 'https://sellerapi.kaufland.com/v2', authType: 'HMAC', authConfig },
+          { method: 'POST', path: '/units/' } as never,
+          {},
+        );
+      } finally {
+        now.mockRestore();
+      }
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      expect(cfg.headers['Shop-Timestamp']).toBe('1411055926');
+      expect(cfg.headers['Shop-Signature']).toBe(
+        'da0b65f51c0716c1d3fa658b7eaf710583630a762a98c9af8e9b392bd9df2e2a',
+      );
+    });
+
+    it('signs the full URL with the query string it sends', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        {
+          baseUrl: 'https://sellerapi.kaufland.com/v2',
+          authType: 'HMAC',
+          authConfig: {
+            signature: {
+              secret: 's',
+              template: '${method}\\n${url}\\n${body}\\n${timestamp}',
+              headerName: 'Shop-Signature',
+              timestampHeader: 'Shop-Timestamp',
+            },
+          },
+        },
+        {
+          method: 'GET',
+          path: '/orders',
+          queryParams: { storefront: '$storefront', limit: '$limit' },
+        } as never,
+        { storefront: 'de', limit: 1 },
+      );
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      // The URL real axios builds from this config, i.e. what goes on the wire.
+      const realAxios = (jest.requireActual('axios') as { default: typeof axios }).default;
+      const sentUrl = realAxios.getUri(cfg as never);
+      expect(sentUrl).toBe('https://sellerapi.kaufland.com/v2/orders?storefront=de&limit=1');
+      const expected = crypto
+        .createHmac('sha256', 's')
+        .update(`GET\n${sentUrl}\n\n${cfg.headers['Shop-Timestamp']}`, 'utf8')
+        .digest('hex');
+      expect(cfg.headers['Shop-Signature']).toBe(expected);
     });
 
     it('signs the body exactly as it is sent', async () => {
