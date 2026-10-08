@@ -1,7 +1,7 @@
 import * as adapter from './xero.json';
 import { AdapterDefinition, getAdapter } from '../catalog';
 import { applySchemaDefaults } from '../../common/schema-defaults.util';
-import { interpolateDeep } from '../../common/env-interpolation.util';
+import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
 import * as outboundHttp from '../../common/outbound-http';
 import * as ssrf from '../../common/ssrf.util';
 import { RestEngine } from '../../connectors/engines/rest.engine';
@@ -16,7 +16,10 @@ import { computeSetupState } from '../../connectors/connector-setup-status.util'
 
 const a = adapter as unknown as AdapterDefinition & { probe: { tool: string } };
 const tenantId = '44444444-4444-4444-8444-444444444444';
+const connectionsUrl = 'https://api.xero.com/connections';
+const tenantHeader = { 'xero-tenant-id': '{{XERO_TENANT_ID}}' };
 const expectedPaths = [
+  connectionsUrl,
   '/Organisation',
   '/Invoices',
   '/Invoices/11111111-1111-4111-8111-111111111111',
@@ -36,8 +39,8 @@ describe('Xero adapter: static conformance', () => {
   });
 
   it('uses authorisation code and rotating refresh tokens with Basic client authentication', () => {
-    expect(a.requiredEnvVars).toEqual(['XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'XERO_TENANT_ID']);
-    expect(a.optionalEnvVars).toEqual(['XERO_REFRESH_TOKEN']);
+    expect(a.requiredEnvVars).toEqual(['XERO_CLIENT_ID', 'XERO_CLIENT_SECRET']);
+    expect(a.optionalEnvVars).toEqual(['XERO_TENANT_ID', 'XERO_REFRESH_TOKEN']);
     expect(a.connector.authType).toBe('OAUTH2');
     expect(a.connector.authConfig).toMatchObject({
       clientId: '{{XERO_CLIENT_ID}}',
@@ -47,8 +50,9 @@ describe('Xero adapter: static conformance', () => {
       authorizationUrl: 'https://login.xero.com/identity/connect/authorize',
       tokenUrl: 'https://identity.xero.com/connect/token',
       tokenAuthMethod: 'client_secret_basic',
-      extraHeaders: { 'xero-tenant-id': '{{XERO_TENANT_ID}}' },
     });
+    // The tenant is chosen after authorisation, so it cannot gate the whole connector.
+    expect(a.connector.authConfig).not.toHaveProperty('extraHeaders');
     expect(String(a.connector.authConfig?.scopes).split(' ').sort()).toEqual([
       'openid', 'offline_access', 'accounting.invoices.read', 'accounting.contacts.read',
       'accounting.settings.read', 'accounting.reports.trialbalance.read',
@@ -56,28 +60,34 @@ describe('Xero adapter: static conformance', () => {
     ].sort());
   });
 
-  it('has nine GET-only tools with examples and a parameter-free organisation probe', () => {
-    expect(a.tools).toHaveLength(9);
+  it('has ten GET-only tools with examples and a parameter-free connections probe', () => {
+    expect(a.tools).toHaveLength(10);
     for (const tool of a.tools) {
       expect(tool.endpointMapping.method).toBe('GET');
-      expect(tool.endpointMapping.path).toMatch(/^\/(Organisation|Invoices|Contacts|Accounts|Reports\/)/);
       expect(tool.endpointMapping.bodyMapping).toBeUndefined();
       expect(tool.endpointMapping.bodyTemplate).toBeUndefined();
-      expect(tool.endpointMapping.headers).toBeUndefined();
       expect(tool.parameters.examples).toEqual(expect.arrayContaining([expect.any(Object)]));
       expect(tool.parameters.additionalProperties).toBe(false);
+      if (tool.name === 'xero_list_connections') {
+        expect(tool.endpointMapping.path).toBe(connectionsUrl);
+        expect(tool.endpointMapping.headers).toBeUndefined();
+      } else {
+        expect(tool.endpointMapping.path).toMatch(/^\/(Organisation|Invoices|Contacts|Accounts|Reports\/)/);
+        expect(tool.endpointMapping.headers).toEqual(tenantHeader);
+      }
     }
     const probe = a.tools.find((tool) => tool.name === a.probe.tool)!;
-    expect(probe.name).toBe('xero_get_organisation');
+    expect(probe.name).toBe('xero_list_connections');
     expect(probe.parameters.required ?? []).toEqual([]);
     expect(probe.parameters.examples).toEqual([{}]);
-    expect(a.connector.healthcheckPath).toBe('/Organisation');
+    expect(a.connector.healthcheckPath).toBe(connectionsUrl);
   });
 
   it('documents callbacks, tenant selection, granular consent and rate limiting', () => {
     expect(a.instructions).toContain('https://cloud.anythingmcp.com/api/mcp-oauth/callback');
     expect(a.instructions).toContain('<your AnythingMCP server URL>/api/mcp-oauth/callback');
-    expect(a.instructions).toContain('GET https://api.xero.com/connections');
+    expect(a.instructions).toContain('xero_list_connections');
+    expect(a.instructions).toContain(connectionsUrl);
     expect(a.instructions).toContain('tenantId');
     expect(a.instructions).toContain('Retry-After');
     expect(a.instructions).toContain('consent is additive');
@@ -105,19 +115,25 @@ describe('Xero adapter: REST request mapping', () => {
     ...a.connector,
     authConfig: interpolateDeep(a.connector.authConfig, {
       XERO_CLIENT_ID: 'synthetic-client', XERO_CLIENT_SECRET: 'synthetic-secret',
-      XERO_REFRESH_TOKEN: '', XERO_TENANT_ID: tenantId,
+      XERO_REFRESH_TOKEN: '',
     }),
   };
+  // The MCP and Run Test paths resolve tool-level {{VAR}} before the engine sees the mapping.
+  const mapped = (tool: (typeof a.tools)[number], envVars: Record<string, string> = { XERO_TENANT_ID: tenantId }) =>
+    interpolateConnectorConfig(a.connector, tool.endpointMapping as { method: string; path: string }, envVars)
+      .endpointMapping as { method: string };
 
   it.each(a.tools.map((tool, index) => ({ tool, expectedPath: expectedPaths[index] })))(
-    'sends $tool.name with bearer auth and the resolved tenant header', async ({ tool, expectedPath }) => {
+    'sends $tool.name with bearer auth and the tenant header it needs', async ({ tool, expectedPath }) => {
       const example = (tool.parameters.examples as Record<string, unknown>[])[0];
-      await engine.execute(config, tool.endpointMapping as { method: string }, applySchemaDefaults(tool.parameters, example));
+      await engine.execute(config, mapped(tool), applySchemaDefaults(tool.parameters, example));
       const request = send.mock.calls[0][0];
+      const accounting = expectedPath !== connectionsUrl;
       expect(request).toMatchObject({
-        method: 'GET', url: a.connector.baseUrl + expectedPath,
-        headers: { Authorization: 'Bearer synthetic-access-token', 'xero-tenant-id': tenantId, Accept: 'application/json' },
+        method: 'GET', url: accounting ? a.connector.baseUrl + expectedPath : connectionsUrl,
+        headers: { Authorization: 'Bearer synthetic-access-token', Accept: 'application/json' },
       });
+      expect(request.headers['xero-tenant-id']).toBe(accounting ? tenantId : undefined);
       expect(request.data).toBeUndefined();
       expect(JSON.stringify(request)).not.toContain('{{');
       expect(request.url).not.toContain('synthetic-');
@@ -126,14 +142,14 @@ describe('Xero adapter: REST request mapping', () => {
 
   it.each(['xero_list_invoices', 'xero_list_contacts'])('bounds an empty %s call to the first page', async (name) => {
     const tool = a.tools.find((item) => item.name === name)!;
-    await engine.execute(config, tool.endpointMapping as { method: string }, applySchemaDefaults(tool.parameters, {}));
+    await engine.execute(config, mapped(tool), applySchemaDefaults(tool.parameters, {}));
     expect(send.mock.calls[0][0].params).toEqual({ page: 1, pageSize: 100 });
   });
 
   it('keeps filters as query values and does not paginate accounts', async () => {
     const tool = a.tools.find((item) => item.name === 'xero_list_accounts')!;
     const params = { where: 'Name=="Example & Co"', order: 'Code ASC' };
-    await engine.execute(config, tool.endpointMapping as { method: string }, params);
+    await engine.execute(config, mapped(tool), params);
     expect(send.mock.calls[0][0].params).toEqual(params);
   });
 
@@ -142,7 +158,7 @@ describe('Xero adapter: REST request mapping', () => {
     ['xero_list_contacts', { page: 2, pageSize: 50, searchTerm: 'Example & Co', where: 'ContactStatus=="ACTIVE"', order: 'Name ASC', includeArchived: false }],
   ])('maps all exposed %s list queries', async (name, params) => {
     const tool = a.tools.find((item) => item.name === name)!;
-    await engine.execute(config, tool.endpointMapping as { method: string }, params as Record<string, unknown>);
+    await engine.execute(config, mapped(tool), params as Record<string, unknown>);
     expect(send.mock.calls[0][0].params).toEqual(params);
   });
 
@@ -152,7 +168,7 @@ describe('Xero adapter: REST request mapping', () => {
   ])('preserves the %s response envelope', async (name, envelope) => {
     send.mockResolvedValueOnce({ data: envelope, status: 200, headers: {} } as AxiosResponse);
     const tool = a.tools.find((item) => item.name === name)!;
-    await expect(engine.execute(config, tool.endpointMapping as { method: string }, {})).resolves.toEqual(envelope);
+    await expect(engine.execute(config, mapped(tool), {})).resolves.toEqual(envelope);
   });
 
   it.each([
@@ -160,7 +176,7 @@ describe('Xero adapter: REST request mapping', () => {
     ['xero_get_profit_and_loss', { fromDate: '2026-07-01', toDate: '2026-09-30', paymentsOnly: false, periods: 1, timeframe: 'QUARTER' }],
   ])('maps %s report dates and preserves accrual basis', async (name, params) => {
     const tool = a.tools.find((item) => item.name === name)!;
-    await engine.execute(config, tool.endpointMapping as { method: string }, params as Record<string, unknown>);
+    await engine.execute(config, mapped(tool), params as Record<string, unknown>);
     expect(send.mock.calls[0][0].params).toEqual(params);
   });
 
@@ -170,11 +186,11 @@ describe('Xero adapter: REST request mapping', () => {
     ['xero_get_account', 'accountId', '/Accounts'],
   ])('encodes %s identifiers so they cannot change the path', async (name, parameter, path) => {
     const tool = a.tools.find((item) => item.name === name)!;
-    await engine.execute(config, tool.endpointMapping as { method: string }, { [parameter]: 'id/other?query#fragment' });
+    await engine.execute(config, mapped(tool), { [parameter]: 'id/other?query#fragment' });
     expect(send.mock.calls[0][0].url).toBe(a.connector.baseUrl + path + '/id%2Fother%3Fquery%23fragment');
   });
 
-  it.each([undefined, ''])('installs and authorises with optional refresh token %s', async (refreshToken) => {
+  it.each([undefined, ''])('installs without a tenant, authorises, then finds and uses it (refresh token %s)', async (refreshToken) => {
     const encryptionKey = 'x'.repeat(48);
     const settings = { get: (key: string) => key === 'ENCRYPTION_KEY' ? encryptionKey : undefined };
     let row: any;
@@ -194,12 +210,12 @@ describe('Xero adapter: REST request mapping', () => {
     }) as ConnectorsService;
     const service = new AdaptersService(prisma as any, registry as any, settings as any, connectors);
     const credentials = {
-      XERO_CLIENT_ID: 'synthetic-client', XERO_CLIENT_SECRET: 'synthetic-secret', XERO_TENANT_ID: tenantId,
+      XERO_CLIENT_ID: 'synthetic-client', XERO_CLIENT_SECRET: 'synthetic-secret', XERO_TENANT_ID: '',
       ...(refreshToken === undefined ? {} : { XERO_REFRESH_TOKEN: refreshToken }),
     };
     const installed = await service.importAdapter('xero', 'user-1', 'org-1', credentials);
     const initial = JSON.parse(decrypt(row.authConfig, encryptionKey));
-    expect(installed).toMatchObject({ toolsCreated: 9, probe: null });
+    expect(installed).toMatchObject({ toolsCreated: 10, probe: null });
     expect(computeSetupState({ ...row, authConfig: initial })).toEqual({ status: 'needs_authorization', missing: [] });
     expect(send).not.toHaveBeenCalled();
 
@@ -219,19 +235,32 @@ describe('Xero adapter: REST request mapping', () => {
     const saved = JSON.parse(decrypt(row.authConfig, encryptionKey));
     expect(saved).toMatchObject({
       accessToken: 'synthetic-authorised-token', refreshToken: 'synthetic-rotated-token',
-      extraHeaders: { 'xero-tenant-id': tenantId }, tokenAuthMethod: 'client_secret_basic',
+      tokenAuthMethod: 'client_secret_basic',
     });
     expect(computeSetupState({ ...row, authConfig: saved })).toEqual({ status: 'ready', missing: [] });
     await expect(connectors.testConnection(row.id)).resolves.toMatchObject({ ok: true });
-    const probe = a.tools.find((item) => item.name === a.probe.tool)!;
-    await engine.execute({ ...a.connector, authConfig: saved }, probe.endpointMapping as { method: string }, {});
+    const tool = (name: string) => a.tools.find((item) => item.name === name)!.endpointMapping as { method: string; path: string };
+    await connectors.executeConnectorCall(row, tool(a.probe.tool), {}, a.probe.tool);
     expect(send).toHaveBeenCalledTimes(2);
     for (const [request] of send.mock.calls) {
-      expect(request).toMatchObject({
-        method: 'GET', url: a.connector.baseUrl + '/Organisation',
-        headers: { Authorization: 'Bearer synthetic-authorised-token', 'xero-tenant-id': tenantId },
-      });
+      expect(request).toMatchObject({ method: 'GET', url: connectionsUrl, headers: { Authorization: 'Bearer synthetic-authorised-token' } });
+      expect(request.headers).not.toHaveProperty('xero-tenant-id');
     }
+
+    // Accounting tools refuse to run, naming the variable, until the tenant is set.
+    const { XERO_TENANT_ID: _empty, ...withoutTenant } = row.envVars;
+    for (const envVars of [row.envVars, withoutTenant]) {
+      await expect(connectors.executeConnectorCall({ ...row, envVars }, tool('xero_get_organisation'), {}, 'xero_get_organisation'))
+        .rejects.toThrow(/^The connector behind xero_get_organisation is missing a value for XERO_TENANT_ID. The request was not sent/);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+
+    await connectors.executeConnectorCall({ ...row, envVars: { ...row.envVars, XERO_TENANT_ID: tenantId } }, tool('xero_get_organisation'), {}, 'xero_get_organisation');
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(send.mock.calls[2][0]).toMatchObject({
+      method: 'GET', url: a.connector.baseUrl + '/Organisation',
+      headers: { Authorization: 'Bearer synthetic-authorised-token', 'xero-tenant-id': tenantId },
+    });
   });
 });
 

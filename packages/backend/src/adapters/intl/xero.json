@@ -1,14 +1,14 @@
 {
   "slug": "xero",
   "name": "Xero",
-  "description": "Read a Xero organisation's invoices, bills, contacts, chart of accounts, Trial Balance and Profit and Loss reports. 9 GET-only tools with OAuth2 and a fixed tenant ID.",
-  "instructions": "This connector reads the Xero Accounting API for one organisation. All nine tools use GET; no tool creates, updates or deletes accounting data.\n\n**Setup**\nInstallation requires the organisation's tenant UUID. If you are starting with a new Xero app and no token, obtain it through the external Postman authorisation below before installing this connector.\n1. At https://developer.xero.com/app/manage create an OAuth2 Web app using the authorisation code flow. Register `https://cloud.anythingmcp.com/api/mcp-oauth/callback` for AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` for a self-hosted server. The redirect URI must match exactly. Copy the Client ID and Client Secret into `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET`.\n2. To obtain your first access token, also register `https://oauth.pstmn.io/v1/browser-callback` on that Xero app. In Postman Desktop create a GET request to `https://api.xero.com/connections`. On its Authorization tab select OAuth 2.0, grant type Authorization Code and Authorize using browser. Set that Postman callback URL, Auth URL `https://login.xero.com/identity/connect/authorize`, Access Token URL `https://identity.xero.com/connect/token`, your app's Client ID and Client Secret, the read-only scope string below, a random State, and Client Authentication **Send as Basic Auth header**. Select **Get New Access Token**, sign in, choose the intended organisation and select **Use Token**. Keep Share Token off. Then send the GET Connections request. See https://learning.postman.com/docs/use/send-requests/authorization/oauth-20/ and Xero's walkthrough at https://github.com/XeroAPI/xero-postman-oauth2; use this connector's current read-only scopes rather than the walkthrough's older scope examples.\n3. If you already have an authorised OAuth session for the same app, you can skip the Postman token setup and make `GET https://api.xero.com/connections` with `Authorization: Bearer <access token>`. In either case choose the entry with the intended `tenantName` and `tenantType: ORGANISATION`, and copy its `tenantId` into `XERO_TENANT_ID`. The connection's `id` and `authEventId` are different values and must not be used. See https://developer.xero.com/documentation/guides/oauth2/tenants/. Connections is outside this connector's Accounting base URL, so it is documented here instead of exposed as a tool.\n4. Leave `XERO_REFRESH_TOKEN` empty, install, then open the connector and click **Authorize with Provider**. Sign in to Xero and connect the same organisation selected above. AnythingMCP exchanges the code at Xero Identity using HTTP Basic client authentication and stores the tokens. Stop using the Postman bootstrap tokens; AnythingMCP maintains its own tokens.\n5. Run `xero_get_organisation` with `{}` and check the returned organisation name before reading its accounts or transactions. Install a separate connector for each organisation.\n\n**Read-only scopes**\n`openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read`. These are the current granular scopes; deprecated `accounting.transactions.read` and `accounting.reports.read` are not requested. Identity scopes are limited to `openid` and `offline_access`. Xero consent is additive: a token previously granted write permissions keeps them. To reduce permissions, revoke the old connection in Xero and authorise again with these scopes. See https://developer.xero.com/documentation/guides/oauth2/scopes/.\n\n**Tokens and tenant header**\nEvery Accounting call includes `xero-tenant-id: XERO_TENANT_ID` and a bearer access token. Access tokens last 30 minutes; `offline_access` supplies refresh tokens, which expire after 60 days without renewal. AnythingMCP refreshes automatically and saves replacement refresh tokens. You may supply `XERO_REFRESH_TOKEN` only if you already obtained a current token for the same app and read-only consent. Do not share a rotating refresh token between integrations. Changing the tenant ID changes the organisation every tool reads.\n\n**Lists and identifiers**\nInvoices include sales invoices (ACCREC) and purchase bills (ACCPAY). Invoices and contacts use 1-based `page` and `pageSize`, defaulting to page 1 with 100 records. Request subsequent pages until the nested Invoices or Contacts array is empty or shorter than pageSize. Accounts returns the chart of accounts without pagination. `where` uses Xero filter syntax, for example `Type==\"ACCREC\"` or `ContactStatus==\"ACTIVE\"`; `order` accepts values such as `InvoiceNumber ASC` and `Name ASC`. Get tools require the UUID returned by the corresponding list, not an invoice number, contact name or account code. List and detail responses retain Xero's `Invoices`, `Contacts`, `Accounts` and `Organisations` envelopes.\n\n**Reports**\nPass `YYYY-MM-DD` dates: Trial Balance uses `date`; Profit and Loss uses `fromDate` and `toDate` with fromDate no later than toDate. `paymentsOnly` defaults to false for accrual reports; set true for cash reports. Profit and Loss can compare 1 to 12 periods using `periods` and `timeframe` (MONTH, QUARTER or YEAR). Reports retain the `Reports` envelope and nested Rows/Cells; financial values may be strings. The authorising Xero user needs access to reports.\n\n**Errors and limits**\nFor 401 or 403 check consent, token expiry, Xero user permissions and whether the tenant is connected to this app. On HTTP 429, pause requests to that tenant for the `Retry-After` seconds; inspect `X-Rate-Limit-Problem` and retry with backoff instead of immediately paging again. Limits depend on the app tier: https://developer.xero.com/documentation/guides/oauth2/limits/.\n\n**Cloud and self-hosted**\nBoth use Xero's public HTTPS Accounting and Identity endpoints with the same scopes and tenant header; only the registered callback differs. Live Xero authorisation and API calls have not been verified for this adapter.",
+  "description": "Read a Xero organisation's invoices, bills, contacts, chart of accounts, Trial Balance and Profit and Loss reports. 10 GET-only tools with OAuth2; xero_list_connections finds the tenant ID after authorisation.",
+  "instructions": "This connector reads the Xero Accounting API for one organisation. All ten tools use GET; no tool creates, updates or deletes accounting data.\n\n**Setup**\n1. At https://developer.xero.com/app/manage create an OAuth2 Web app using the authorisation code flow. Register `https://cloud.anythingmcp.com/api/mcp-oauth/callback` for AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` for a self-hosted server. The redirect URI must match exactly. Copy the Client ID and Client Secret into `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET`.\n2. Leave `XERO_TENANT_ID` and `XERO_REFRESH_TOKEN` empty, install, then open the connector and click **Authorize with Provider**. Sign in to Xero and connect the intended organisation. AnythingMCP exchanges the code at Xero Identity using HTTP Basic client authentication and stores the tokens.\n3. Run `xero_list_connections` with `{}`. Choose the entry with the intended `tenantName` and `tenantType: ORGANISATION`, and copy its `tenantId` into `XERO_TENANT_ID`. The connection's `id` and `authEventId` are different values and must not be used. See https://developer.xero.com/documentation/guides/oauth2/tenants/. Until `XERO_TENANT_ID` is set, the other tools stop before calling Xero and name the missing variable.\n4. Run `xero_get_organisation` with `{}` and check the returned organisation name before reading its accounts or transactions. Install a separate connector for each organisation.\n\nIf you prefer to know the tenant ID before installing, read it with Postman instead: also register `https://oauth.pstmn.io/v1/browser-callback` on the Xero app. In Postman Desktop create a GET request to `https://api.xero.com/connections`. On its Authorization tab select OAuth 2.0, grant type Authorization Code and Authorize using browser. Set that Postman callback URL, Auth URL `https://login.xero.com/identity/connect/authorize`, Access Token URL `https://identity.xero.com/connect/token`, your app's Client ID and Client Secret, the read-only scope string below, a random State, and Client Authentication **Send as Basic Auth header**. Select **Get New Access Token**, sign in, choose the intended organisation and select **Use Token**. Keep Share Token off. Then send the GET Connections request and copy the `tenantId` as in step 3. See https://learning.postman.com/docs/use/send-requests/authorization/oauth-20/ and Xero's walkthrough at https://github.com/XeroAPI/xero-postman-oauth2; use this connector's current read-only scopes rather than the walkthrough's older scope examples. Stop using the Postman tokens once AnythingMCP is authorised; it maintains its own.\n\n**Read-only scopes**\n`openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read`. These are the current granular scopes; deprecated `accounting.transactions.read` and `accounting.reports.read` are not requested. Identity scopes are limited to `openid` and `offline_access`. Xero consent is additive: a token previously granted write permissions keeps them. To reduce permissions, revoke the old connection in Xero and authorise again with these scopes. See https://developer.xero.com/documentation/guides/oauth2/scopes/.\n\n**Tokens and tenant header**\nEvery Accounting call includes `xero-tenant-id: XERO_TENANT_ID` and a bearer access token; `xero_list_connections` sends only the bearer token. Access tokens last 30 minutes; `offline_access` supplies refresh tokens, which expire after 60 days without renewal. AnythingMCP refreshes automatically and saves replacement refresh tokens. You may supply `XERO_REFRESH_TOKEN` only if you already obtained a current token for the same app and read-only consent. Do not share a rotating refresh token between integrations. Changing the tenant ID changes the organisation every tool reads.\n\n**Lists and identifiers**\nInvoices include sales invoices (ACCREC) and purchase bills (ACCPAY). Invoices and contacts use 1-based `page` and `pageSize`, defaulting to page 1 with 100 records. Request subsequent pages until the nested Invoices or Contacts array is empty or shorter than pageSize. Accounts returns the chart of accounts without pagination. `where` uses Xero filter syntax, for example `Type==\"ACCREC\"` or `ContactStatus==\"ACTIVE\"`; `order` accepts values such as `InvoiceNumber ASC` and `Name ASC`. Get tools require the UUID returned by the corresponding list, not an invoice number, contact name or account code. List and detail responses retain Xero's `Invoices`, `Contacts`, `Accounts` and `Organisations` envelopes.\n\n**Reports**\nPass `YYYY-MM-DD` dates: Trial Balance uses `date`; Profit and Loss uses `fromDate` and `toDate` with fromDate no later than toDate. `paymentsOnly` defaults to false for accrual reports; set true for cash reports. Profit and Loss can compare 1 to 12 periods using `periods` and `timeframe` (MONTH, QUARTER or YEAR). Reports retain the `Reports` envelope and nested Rows/Cells; financial values may be strings. The authorising Xero user needs access to reports.\n\n**Errors and limits**\nFor 401 or 403 check consent, token expiry, Xero user permissions and whether the tenant is connected to this app. On HTTP 429, pause requests to that tenant for the `Retry-After` seconds; inspect `X-Rate-Limit-Problem` and retry with backoff instead of immediately paging again. Limits depend on the app tier: https://developer.xero.com/documentation/guides/oauth2/limits/.\n\n**Cloud and self-hosted**\nBoth use Xero's public HTTPS Accounting and Identity endpoints with the same scopes and tenant header; only the registered callback differs. Live Xero authorisation and API calls have not been verified for this adapter.",
   "region": "intl",
   "category": "accounting",
   "icon": "xero",
   "docsUrl": "https://developer.xero.com/documentation/api/accounting/overview/",
-  "requiredEnvVars": ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET", "XERO_TENANT_ID"],
-  "optionalEnvVars": ["XERO_REFRESH_TOKEN"],
+  "requiredEnvVars": ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET"],
+  "optionalEnvVars": ["XERO_TENANT_ID", "XERO_REFRESH_TOKEN"],
   "envVarMeta": {
     "XERO_CLIENT_ID": {
       "label": "Client ID",
@@ -24,7 +24,7 @@
     "XERO_TENANT_ID": {
       "label": "Organisation tenant ID",
       "kind": "setting",
-      "help": "The tenantId UUID of the intended ORGANISATION from GET https://api.xero.com/connections. Do not use the connection id. Obtain it before installing and verify the organisation with xero_get_organisation.",
+      "help": "Leave empty until after Authorize with Provider, then run xero_list_connections and paste the tenantId of the intended ORGANISATION, not the connection id. The Accounting tools need it; verify the organisation with xero_get_organisation.",
       "link": "https://developer.xero.com/documentation/guides/oauth2/tenants/",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
       "patternMessage": "Enter the organisation's tenantId as a UUID."
@@ -49,19 +49,24 @@
       "authorizationUrl": "https://login.xero.com/identity/connect/authorize",
       "tokenUrl": "https://identity.xero.com/connect/token",
       "tokenAuthMethod": "client_secret_basic",
-      "scopes": "openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read",
-      "extraHeaders": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }
+      "scopes": "openid offline_access accounting.invoices.read accounting.contacts.read accounting.settings.read accounting.reports.trialbalance.read accounting.reports.profitandloss.read"
     },
     "headers": { "Accept": "application/json" },
-    "healthcheckPath": "/Organisation"
+    "healthcheckPath": "https://api.xero.com/connections"
   },
-  "probe": { "tool": "xero_get_organisation" },
+  "probe": { "tool": "xero_list_connections" },
   "tools": [
+    {
+      "name": "xero_list_connections",
+      "description": "List the Xero organisations this authorisation can read, with tenantId, tenantName and tenantType. Call with {} after Authorize with Provider, then copy the intended ORGANISATION's tenantId (not its connection id) into XERO_TENANT_ID.",
+      "parameters": { "type": "object", "properties": {}, "additionalProperties": false, "examples": [{}] },
+      "endpointMapping": { "method": "GET", "path": "https://api.xero.com/connections" }
+    },
     {
       "name": "xero_get_organisation",
       "description": "Read the configured organisation's name, base currency and settings. Call with {} to verify authentication and the tenant selection before reading financial data.",
       "parameters": { "type": "object", "properties": {}, "additionalProperties": false, "examples": [{}] },
-      "endpointMapping": { "method": "GET", "path": "/Organisation" }
+      "endpointMapping": { "method": "GET", "path": "/Organisation", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" } }
     },
     {
       "name": "xero_list_invoices",
@@ -78,7 +83,7 @@
         "examples": [{ "page": 1, "pageSize": 100, "where": "Type==\"ACCREC\"", "order": "InvoiceNumber ASC" }]
       },
       "endpointMapping": {
-        "method": "GET", "path": "/Invoices",
+        "method": "GET", "path": "/Invoices", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" },
         "queryParams": { "page": "$page", "pageSize": "$pageSize", "where": "$where", "order": "$order" }
       }
     },
@@ -91,7 +96,7 @@
         "required": ["invoiceId"], "additionalProperties": false,
         "examples": [{ "invoiceId": "11111111-1111-4111-8111-111111111111" }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Invoices/{invoiceId}", "encodePathParams": true }
+      "endpointMapping": { "method": "GET", "path": "/Invoices/{invoiceId}", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "encodePathParams": true }
     },
     {
       "name": "xero_list_contacts",
@@ -110,7 +115,7 @@
         "examples": [{ "page": 1, "pageSize": 100, "searchTerm": "Example", "order": "Name ASC", "includeArchived": false }]
       },
       "endpointMapping": {
-        "method": "GET", "path": "/Contacts",
+        "method": "GET", "path": "/Contacts", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" },
         "queryParams": { "page": "$page", "pageSize": "$pageSize", "searchTerm": "$searchTerm", "where": "$where", "order": "$order", "includeArchived": "$includeArchived" }
       }
     },
@@ -123,7 +128,7 @@
         "required": ["contactId"], "additionalProperties": false,
         "examples": [{ "contactId": "22222222-2222-4222-8222-222222222222" }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Contacts/{contactId}", "encodePathParams": true }
+      "endpointMapping": { "method": "GET", "path": "/Contacts/{contactId}", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "encodePathParams": true }
     },
     {
       "name": "xero_list_accounts",
@@ -137,7 +142,7 @@
         "additionalProperties": false,
         "examples": [{ "where": "Status==\"ACTIVE\"", "order": "Code ASC" }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Accounts", "queryParams": { "where": "$where", "order": "$order" } }
+      "endpointMapping": { "method": "GET", "path": "/Accounts", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "queryParams": { "where": "$where", "order": "$order" } }
     },
     {
       "name": "xero_get_account",
@@ -148,7 +153,7 @@
         "required": ["accountId"], "additionalProperties": false,
         "examples": [{ "accountId": "33333333-3333-4333-8333-333333333333" }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Accounts/{accountId}", "encodePathParams": true }
+      "endpointMapping": { "method": "GET", "path": "/Accounts/{accountId}", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "encodePathParams": true }
     },
     {
       "name": "xero_get_trial_balance",
@@ -162,7 +167,7 @@
         "required": ["date"], "additionalProperties": false,
         "examples": [{ "date": "2026-06-30", "paymentsOnly": false }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Reports/TrialBalance", "queryParams": { "date": "$date", "paymentsOnly": "$paymentsOnly" } }
+      "endpointMapping": { "method": "GET", "path": "/Reports/TrialBalance", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "queryParams": { "date": "$date", "paymentsOnly": "$paymentsOnly" } }
     },
     {
       "name": "xero_get_profit_and_loss",
@@ -179,7 +184,7 @@
         "required": ["fromDate", "toDate"], "additionalProperties": false,
         "examples": [{ "fromDate": "2026-07-01", "toDate": "2026-09-30", "paymentsOnly": false, "periods": 1, "timeframe": "QUARTER" }]
       },
-      "endpointMapping": { "method": "GET", "path": "/Reports/ProfitAndLoss", "queryParams": { "fromDate": "$fromDate", "toDate": "$toDate", "paymentsOnly": "$paymentsOnly", "periods": "$periods", "timeframe": "$timeframe" } }
+      "endpointMapping": { "method": "GET", "path": "/Reports/ProfitAndLoss", "headers": { "xero-tenant-id": "{{XERO_TENANT_ID}}" }, "queryParams": { "fromDate": "$fromDate", "toDate": "$toDate", "paymentsOnly": "$paymentsOnly", "periods": "$periods", "timeframe": "$timeframe" } }
     }
   ]
 }
