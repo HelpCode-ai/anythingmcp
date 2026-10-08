@@ -265,7 +265,7 @@ AI による処理は既定でオフで、お手持ちの OpenAI、OpenRouter、
 REST コネクターを作成し、仕様を URL か貼り付けでインポートします。各操作がサーバーの `/mcp` エンドポイント上の MCP ツールになり、コードは不要です。[仕組み](docs/connectors/rest.md#from-openapi--swagger)
 
 ### SOAP/WSDL サービスを Claude に接続できますか？
-はい。AnythingMCP は WSDL を解析して各操作をツールにし、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーです。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
+はい。AnythingMCP は WSDL を解析して各操作をツールにし、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダー、WS-Security UsernameToken です。署名付きの WS-Security メッセージにはまだ対応していません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
 
 ### Claude で SQL Server、Oracle、PostgreSQL を安全にクエリできますか？
 クエリツールは既定で読み取り専用です。加えて、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを渡す静的クエリを優先し、ロールごとにツールをホワイトリスト化してください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリが監査ログに記録されます。

@@ -1,6 +1,6 @@
 # SOAP / WSDL to MCP
 
-AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code. Give it the WSDL and each operation becomes a tool; AnythingMCP builds the SOAP envelope, keeps the WSDL parameter order that WCF services need and authenticates with HTTP Basic, a bearer token or an API-key header, so AI agents can call legacy enterprise SOAP APIs.
+AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code. Give it the WSDL and each operation becomes a tool; AnythingMCP builds the SOAP envelope, keeps the WSDL parameter order that WCF services need and authenticates with HTTP Basic, a bearer token, an API-key header or a WS-Security UsernameToken, so AI agents can call legacy enterprise SOAP APIs.
 
 [Back to README](../../README.md)
 
@@ -105,8 +105,7 @@ AnythingMCP handles WCF-specific requirements:
 | **Basic Auth** | HTTP Basic (username/password in header) |
 | **Bearer Token** | Token in HTTP header |
 | **API Key** | Key in a header you name (`headerName`, default `X-API-Key`) |
-
-> **Not implemented yet:** WS-Security (UsernameToken or signed SOAP headers) and TLS client certificates. The `WS_SECURITY` and `CERTIFICATE` auth types exist in the data model, but the SOAP engine sends an empty `<soapenv:Header/>` and no client certificate, so a service that requires either will reject the call.
+| **WS-Security (UsernameToken)** | A `wsse:Security` header with a UsernameToken in the SOAP envelope (OASIS WSS 1.0 UsernameToken profile) |
 
 ```json
 {
@@ -117,6 +116,32 @@ AnythingMCP handles WCF-specific requirements:
   }
 }
 ```
+
+### WS-Security UsernameToken
+
+Choose **WS-Security (UsernameToken)** in the connector's authentication settings (offered for SOAP connectors), or send `"authType": "WS_SECURITY"`:
+
+```json
+{
+  "authType": "WS_SECURITY",
+  "authConfig": {
+    "username": "ws-user",
+    "password": "ws-pass",
+    "passwordType": "PasswordDigest"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `username`, `password` | Required |
+| `passwordType` | `PasswordText` (default): the password is sent as is, so use HTTPS. `PasswordDigest`: Base64(SHA-1(nonce + created + password)) is sent with a fresh random nonce and the creation time, instead of the password |
+| `includeNonce` | `true` adds the Nonce and Created elements to a `PasswordText` token, for services that require them. `PasswordDigest` always has them |
+| `includeTimestamp` | `true` adds a `wsu:Timestamp` valid for five minutes |
+
+The header carries `soapenv:mustUnderstand="1"`. `PasswordDigest` and the timestamp use the backend's clock, so a service that checks freshness needs it to be accurate. When a call fails, the request returned in the error detail (to the AI client and in the tool test) shows `<wsse:Security><!-- redacted --></wsse:Security>` in place of the header, and a Security block echoed in the service's response is redacted the same way.
+
+> **Not implemented yet:** signed or encrypted WS-Security messages (X.509 tokens, XML Signature, XML Encryption) and TLS client certificates. The `CERTIFICATE` auth type exists in the data model, but the SOAP engine sends no client certificate, so a service that requires one will reject the call.
 
 ---
 
@@ -158,7 +183,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
 | "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style and nested complex-type parameters are not supported yet |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
-| Authentication failures | Check the credentials and the auth type. A service that requires WS-Security headers or a client certificate cannot be called yet (see Authentication) |
+| Authentication failures | Check the credentials and the auth type. For WS-Security, try the other password type, set `includeNonce` or `includeTimestamp` if the service asks for them, and check the backend's clock for `PasswordDigest`. A service that requires signed WS-Security messages or a client certificate cannot be called yet (see Authentication) |
 
 ---
 
