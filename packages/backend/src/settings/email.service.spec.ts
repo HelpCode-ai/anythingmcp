@@ -96,7 +96,7 @@ describe('EmailService', () => {
 
   it('falls back to the account settings when no account matches', async () => {
     const { service } = make({ user: null });
-    await service.sendTrialWinbackEmail('a@b.com', 'Ada', { kind: 'help' });
+    await service.sendTrialWinbackEmail('a@b.com', 'Ada', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
     const mail = sent();
     expect(mail.headers['List-Unsubscribe']).toBe('<https://cloud.anythingmcp.com/settings#email-preferences>');
     expect(mail.headers['List-Unsubscribe-Post']).toBeUndefined();
