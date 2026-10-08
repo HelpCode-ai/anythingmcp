@@ -94,6 +94,15 @@ describe('ConnectorSetupService — find', () => {
 
       const installed: any = (await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abcdefghijklmnopqrstuvwx' } })).body;
       expect(installed.callbackUrlToRegisterInTheProviderApp).toBe('https://cloud.example.com/api/mcp-oauth/callback');
+
+      // Where to create the app, and how to show both addresses: a link to
+      // tap and the callback alone in a code block to copy.
+      for (const r of [etsy, installed]) {
+        expect(r.createTheAppAt).toBe('https://www.etsy.com/developers/register');
+        expect(r.showToTheUser).toMatch(/\[Create the app\]\(https:\/\/www\.etsy\.com\/developers\/register\)/);
+        expect(r.showToTheUser).toMatch(/fenced code block/);
+      }
+      expect(openplz.createTheAppAt).toBeUndefined();
     } finally {
       process.env.SERVER_URL = before;
     }

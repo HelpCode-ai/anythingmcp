@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "ETSY_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://www.etsy.com/developers/register",
   "envVarMeta": {
     "ETSY_CLIENT_ID": {
       "label": "Keystring",
@@ -36,7 +37,7 @@
       "advanced": true
     }
   },
-  "prerequisites": "An Etsy app of your own (etsy.com/developers → Create a New App). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, Etsy refuses the sign-in and the calls, and AnythingMCP tells you before sending you to Etsy. Use the **Keystring** and **Shared secret** of an active app.",
+  "prerequisites": "An Etsy app of your own ([create one on Etsy](https://www.etsy.com/developers/register)). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, Etsy refuses the sign-in and the calls, and AnythingMCP tells you before sending you to Etsy. Use the **Keystring** and **Shared secret** of an active app.",
   "verifyHints": {
     "403": "Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it (Etsy emails you), and signing in only works after that. If your app is already active, copy the Shared secret again from your app page: it must belong to this Keystring."
   },
