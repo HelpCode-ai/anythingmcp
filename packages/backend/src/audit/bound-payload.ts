@@ -57,10 +57,6 @@ function shrink(value: unknown, shape: Shape, depth: number): unknown {
 }
 
 /**
- * The value itself when it serializes under `maxBytes`; otherwise a
- * structure-preserving excerpt marked with `_amcp_truncated`.
- */
-/**
  * Postgres refuses U+0000 and unpaired UTF-16 surrogates in jsonb ("invalid
  * input syntax for type json"), and the whole invocation row was lost. Vendors
  * send the first; cutting a string in the middle of an emoji (Etsy listing
@@ -68,6 +64,8 @@ function shrink(value: unknown, shape: Shape, depth: number): unknown {
  * is how they are spotted without walking every value.
  */
 const UNSTORABLE_ESCAPE = /\\u0000|\\ud[89a-f][0-9a-f]{2}/i;
+// U+0000 is the character to find here, not a mistake.
+// eslint-disable-next-line no-control-regex
 const UNSTORABLE_CHARS = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 
 function cleanText(s: string): string {
@@ -79,6 +77,10 @@ function storable<T>(value: T, json: string): T {
   return JSON.parse(JSON.stringify(value, (_k, v) => (typeof v === 'string' ? cleanText(v) : v)));
 }
 
+/**
+ * The value itself when it serializes under `maxBytes`; otherwise a
+ * structure-preserving excerpt marked with `_amcp_truncated`.
+ */
 export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string, unknown> {
   if (value === undefined || value === null) return value;
   let json: string;
