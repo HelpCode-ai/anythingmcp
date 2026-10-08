@@ -130,6 +130,26 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     ).toBeUndefined();
   });
 
+  it('tells the user to install the Shopify app when the token answers app_not_installed', () => {
+    const hint = deriveErrorHint({
+      host: 'acme.myshopify.com',
+      status: 400,
+      message: 'Request failed with status code 400',
+      body: '<title>400 - Oauth error app_not_installed</title>',
+    });
+    expect(hint).toMatch(/Install app/);
+    expect(deriveErrorHint({ host: 'example.com', status: 400, body: 'app_not_installed' })).toBeUndefined();
+  });
+
+  it('points an account-level Printful token at store_id', () => {
+    const hint = deriveErrorHint({
+      host: 'api.printful.com',
+      status: 400,
+      body: { code: 400, result: 'This endpoint requires `store_id`!' },
+    });
+    expect(hint).toMatch(/printful_list_stores/);
+  });
+
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });
