@@ -724,6 +724,86 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
   });
 });
 
+describe('weclapp tenant pasted as an address after install (#733)', () => {
+  const weclapp = (envVars: Record<string, string>) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'API_KEY',
+    userId: 'u1',
+    organizationId: 'org1',
+    baseUrl: 'https://old.weclapp.com/webapp/api/v2',
+    headers: null,
+    authConfig: null,
+    envVars,
+    config: { adapterSlug: 'weclapp' },
+  });
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        update: jest.fn().mockImplementation(async (_id: string, data: any) => ({ ...connector, ...data })),
+      },
+    });
+
+  it.each(['acme.weclapp.com', 'https://ACME.weclapp.com/webapp/api/v1/', ' acme '])(
+    'PUT :id/env-vars stores %j as acme and rebuilds the base URL',
+    async (value) => {
+      const { controller, connectorsService } = build(weclapp({ WECLAPP_TENANT: 'old', WECLAPP_API_TOKEN: 't' }));
+
+      await controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { WECLAPP_TENANT: value, WECLAPP_API_TOKEN: 't' } });
+
+      expect(connectorsService.update).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({
+          envVars: { WECLAPP_TENANT: 'acme', WECLAPP_API_TOKEN: 't' },
+          baseUrl: 'https://acme.weclapp.com/webapp/api/v2',
+        }),
+      );
+    },
+  );
+
+  it('PUT :id/env-vars refuses an address on another domain, saving nothing', async () => {
+    const { controller, connectorsService } = build(weclapp({ WECLAPP_TENANT: 'old' }));
+
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { WECLAPP_TENANT: 'https://acme.example.com/webapp' } }),
+    ).rejects.toThrow(/^WECLAPP_TENANT must be only the part before \.weclapp\.com, such as acme for acme\.weclapp\.com/);
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('PUT :id cleans the variables it stores too', async () => {
+    const { controller, connectorsService } = build(weclapp({ WECLAPP_TENANT: 'old' }));
+
+    await controller.update(req('ADMIN'), 'c1', { envVars: { WECLAPP_TENANT: 'acme.weclapp.com' } });
+
+    expect(connectorsService.update).toHaveBeenCalledWith('c1', { envVars: { WECLAPP_TENANT: 'acme' } });
+  });
+
+  it('PUT :id uses the template of a hand-built connector', async () => {
+    const handBuilt = { ...weclapp({}), baseUrl: 'https://{{TENANT}}.weclapp.com/webapp/api/v2', config: null };
+    const { controller, connectorsService } = build(handBuilt);
+
+    await controller.update(req('ADMIN'), 'c1', { envVars: { TENANT: 'https://acme.weclapp.com/webapp' } });
+
+    expect(connectorsService.update).toHaveBeenCalledWith('c1', { envVars: { TENANT: 'acme' } });
+  });
+
+  it('POST cleans the variables of a new hand-built connector', async () => {
+    const { controller, connectorsService } = buildController({
+      connectorsService: { create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST', config: null }) },
+    });
+
+    await controller.create(req('EDITOR'), {
+      name: 'weclapp',
+      type: 'REST' as any,
+      baseUrl: 'https://{{TENANT}}.weclapp.com/webapp/api/v2',
+      envVars: { TENANT: 'acme.weclapp.com', TOKEN: 't' },
+    });
+
+    expect(connectorsService.create.mock.calls[0][2].envVars).toEqual({ TENANT: 'acme', TOKEN: 't' });
+  });
+});
+
 /**
  * "Authorize with Provider" on REST connectors. The Etsy cases use the shape
  * of rows installed before the adapter could be authorized in the browser:
