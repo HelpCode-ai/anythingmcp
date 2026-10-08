@@ -23,6 +23,7 @@ import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
+import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -321,24 +322,35 @@ export class RestEngine {
         assertNoPrototypePollution(parsed);
         axiosConfig.data = parsed;
       } else if (endpointMapping.bodyMapping) {
+        let bodyMapping = endpointMapping.bodyMapping;
+        let bodyParams = params;
+        // `{ "__mime": { to, subject, text, … } }`: build an RFC 5322 message
+        // from those fields and send it, encoded, where the marker stands
+        // (Gmail's `raw`). Opt-in: a mapping without the marker skips this
+        // and keeps its own object and params. See mime-message.util.ts.
+        if (containsMimeMarker(bodyMapping)) {
+          const expanded = expandMimeMarkers(bodyMapping, (v) => this.resolveValue(v, params));
+          bodyMapping = expanded.template;
+          bodyParams = { ...params, ...expanded.values };
+        }
         // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
-        if ('__raw' in endpointMapping.bodyMapping) {
+        if ('__raw' in bodyMapping) {
           // Resolved on its own rather than through mapParams so an XML body
           // can escape what `${param}` puts into it. A whole-value `$param`
           // is the caller's own body and goes out as given.
           axiosConfig.data = this.resolveValue(
-            endpointMapping.bodyMapping['__raw'],
-            params,
+            bodyMapping['__raw'],
+            bodyParams,
             xmlBody ? escapeXmlValue : undefined,
           );
         } else {
-          const mapped = this.mapParams(endpointMapping.bodyMapping, params);
+          const mapped = this.mapParams(bodyMapping, bodyParams);
           const encoding = endpointMapping.bodyEncoding || 'json';
           // Only fields whose marker is written in the tool's own bodyMapping
           // may fetch a file. A `$param` resolves to whatever the caller sent,
           // objects included, so without this a model could make any
           // form-data tool download a URL of its choosing.
-          const fileKeys = configuredFileKeys(endpointMapping.bodyMapping);
+          const fileKeys = configuredFileKeys(bodyMapping);
 
           if (encoding === 'form-urlencoded') {
             const urlParams = new URLSearchParams();

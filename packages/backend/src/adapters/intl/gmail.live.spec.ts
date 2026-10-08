@@ -2,6 +2,7 @@ import * as adapter from './gmail.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applyResponseTransform } from '../../connectors/response-transform.util';
 
 /**
  * Static checks always run. The live block runs only with a Google access
@@ -9,7 +10,10 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
  * Playground) and calls read-only tools through the real RestEngine; the
  * token goes out as the same Bearer header the OAUTH2 connector sends:
  *   GMAIL_ACCESS_TOKEN=ya29... npx jest src/adapters/intl/gmail.live.spec.ts
- * Nothing is modified or sent.
+ * Nothing is modified or sent. With GMAIL_LIVE_DRAFT=1 as well (and a
+ * gmail.modify token) one draft addressed to the signed-in account is
+ * created through gmail_create_draft, read back decoded and deleted again;
+ * nothing is sent.
  */
 
 type Mapping = {
@@ -17,7 +21,7 @@ type Mapping = {
   path: string;
   encodePathParams?: boolean;
   queryParams?: Record<string, string>;
-  bodyMapping?: Record<string, unknown>;
+  bodyMapping?: Record<string, any>;
 };
 const a = adapter as unknown as {
   unlisted?: boolean;
@@ -36,6 +40,7 @@ const a = adapter as unknown as {
     enabled?: boolean;
     parameters?: { properties?: Record<string, unknown>; required?: string[] };
     endpointMapping: Mapping;
+    responseMapping?: Record<string, unknown>;
   }>;
 };
 const tool = (name: string) => {
@@ -45,8 +50,8 @@ const tool = (name: string) => {
 };
 
 describe('gmail adapter: static spec conformance', () => {
-  it('stays unlisted until tested against a real mailbox', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in with Google OAuth2 like the other Google adapters', () => {
@@ -76,14 +81,44 @@ describe('gmail adapter: static spec conformance', () => {
     }
   });
 
-  it('writes only label changes and sending an existing draft; no DELETE, no trash', () => {
+  it('writes only labels, drafts and sending; no DELETE, no trash', () => {
     const writes = a.tools.filter((t) => t.endpointMapping.method !== 'GET');
     expect(writes.map((t) => `${t.endpointMapping.method} ${t.endpointMapping.path}`).sort()).toEqual([
+      'POST /drafts',
       'POST /drafts/send',
+      'POST /messages/send',
+      'POST /messages/send',
       'POST /messages/{message_id}/modify',
       'POST /threads/{thread_id}/modify',
     ]);
     for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/trash|delete/i);
+  });
+
+  it('composes messages with the __mime marker into the fields Gmail reads', () => {
+    const fields = { to: '$to', cc: '$cc', bcc: '$bcc', subject: '$subject', text: '$body', html: '$html_body' };
+    expect(tool('gmail_send_message').endpointMapping.bodyMapping).toEqual({ raw: { __mime: fields } });
+    expect(tool('gmail_create_draft').endpointMapping.bodyMapping).toEqual({
+      message: {
+        raw: { __mime: { ...fields, inReplyTo: '$in_reply_to', references: '$references' } },
+        threadId: '$thread_id',
+      },
+    });
+    expect(tool('gmail_reply').endpointMapping.bodyMapping).toEqual({
+      raw: {
+        __mime: { ...fields, subjectPrefix: 'Re: ', inReplyTo: '$in_reply_to', references: '$references' },
+      },
+      threadId: '$thread_id',
+    });
+    expect(tool('gmail_send_message').parameters?.required).toEqual(['to', 'subject', 'body']);
+    expect(tool('gmail_reply').parameters?.required).toEqual(['thread_id', 'in_reply_to', 'to', 'subject', 'body']);
+  });
+
+  it('decodes message bodies on the read tools and documents composing', () => {
+    for (const name of ['gmail_get_message', 'gmail_get_thread', 'gmail_get_draft']) {
+      expect(tool(name).responseMapping).toEqual({ decode: 'gmail-message' });
+    }
+    expect(a.instructions).not.toMatch(/does not compose/);
+    expect(a.instructions).toContain('gmail_reply');
   });
 
   it('maps label arrays and the draft id to the API field names', () => {
@@ -112,6 +147,8 @@ live('gmail adapter: live read-only calls', () => {
       tool(name).endpointMapping,
       params,
     );
+  const decode = (name: string, raw: unknown): any =>
+    applyResponseTransform(raw, tool(name).responseMapping).value;
 
   it('reads the profile', async () => {
     const res = await run('gmail_get_profile');
@@ -139,6 +176,10 @@ live('gmail adapter: live read-only calls', () => {
     expect(names.every((n: string) => ['From', 'Subject'].includes(n))).toBe(true);
     const full = await run('gmail_get_message', { message_id: res.messages[0].id });
     expect(full.payload.mimeType).toBeTruthy();
+    const decoded = decode('gmail_get_message', full);
+    expect(decoded.id).toBe(res.messages[0].id);
+    expect(decoded).not.toHaveProperty('payload');
+    expect(typeof decoded.subject === 'string' || decoded.subject === undefined).toBe(true);
   }, 30000);
 
   it('lists threads and reads one', async () => {
@@ -152,4 +193,28 @@ live('gmail adapter: live read-only calls', () => {
     const res = await run('gmail_list_drafts', { max_results: 1 });
     expect(typeof res.resultSizeEstimate).toBe('number');
   }, 30000);
+
+  (process.env.GMAIL_LIVE_DRAFT === '1' ? it : it.skip)(
+    'creates a non-ASCII draft to the own address, reads it back decoded, deletes it',
+    async () => {
+      const me = (await run('gmail_get_profile')).emailAddress as string;
+      const subject = 'AnythingMCP Test: Grüße, perché 👋 日本語';
+      const body = 'Zeile 1: Straße\nRiga 2: città\n🚀';
+      const created = await run('gmail_create_draft', { to: [`Jürgen Test <${me}>`], subject, body });
+      expect(created.id).toBeTruthy();
+      try {
+        const draft = decode('gmail_get_draft', await run('gmail_get_draft', { draft_id: created.id }));
+        expect(draft.message.subject).toBe(subject);
+        expect(draft.message.to).toContain(me);
+        expect(draft.message.text.replace(/\r\n/g, '\n').trim()).toBe(body);
+      } finally {
+        await engine.execute(
+          { baseUrl: a.connector.baseUrl, authType: 'BEARER_TOKEN', authConfig: { token: TOKEN as string } },
+          { method: 'DELETE', path: '/drafts/{id}', encodePathParams: true },
+          { id: created.id },
+        );
+      }
+    },
+    30000,
+  );
 });
