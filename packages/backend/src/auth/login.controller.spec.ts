@@ -794,12 +794,42 @@ describe('LoginController', () => {
       session('https://claude.ai.evil.example/cb', 'Claude');
       const html = await page(make(DEPLOY.cloud));
       expect(html).not.toContain('class="tile tile-claude"');
-      expect(html).not.toContain('Claude Directory');
       expect(html).toContain('class="tile tile-initial"');
       // The unknown destination is shown, highlighted, with the warning.
       expect(html).toContain('class="returns unknown"');
       expect(html).toContain('claude.ai.evil.example');
       expect(html).toContain('Only continue if you started this');
+    });
+
+    it('shows the directory badge to every client but ChatGPT and Muse, and tells the sign-up page who it is', async () => {
+      const link = (client: string) => `href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=${client}"`;
+
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      let html = await page(make(DEPLOY.cloud));
+      expect(html).toContain('Claude Directory');
+      expect(html).toContain(link('claude'));
+
+      session('https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT');
+      html = await page(make(DEPLOY.cloud));
+      expect(html).not.toContain('Claude Directory');
+      expect(html).toContain(link('chatgpt'));
+
+      // Muse by Meta's domains, or by name while its host is not known yet.
+      for (const [uri, name] of [
+        ['https://www.meta.ai/oauth/callback', 'Meta AI'],
+        ['https://connectors.example.net/cb', 'Muse'],
+      ]) {
+        session(uri, name);
+        html = await page(make(DEPLOY.cloud));
+        expect(html).not.toContain('Claude Directory');
+        expect(html).toContain(link('muse'));
+      }
+
+      // Any other client (Cursor, Copilot, Grok…) sees it.
+      session('https://grok.com/connectors-oauth-exchange-code/', 'Grok');
+      html = await page(make(DEPLOY.cloud));
+      expect(html).toContain('Claude Directory');
+      expect(html).toContain(link('other'));
     });
 
     it('shows no directory badge on self-hosted, even for Claude', async () => {

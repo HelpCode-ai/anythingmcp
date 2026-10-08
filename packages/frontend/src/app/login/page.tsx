@@ -106,6 +106,11 @@ function LoginForm() {
   // backend): someone who came from "Connect" in Claude and had to create an
   // account first. Not a Next route, so it needs a full navigation.
   const returningToAuthorization = redirectTo.startsWith('/auth/');
+  // The AI client being connected, as the authorization page recognised it:
+  // 'claude', 'chatgpt', 'muse' or 'other'. The Claude Directory badge is left
+  // out for ChatGPT and Muse only, as on the authorization page.
+  const clientParam = searchParams.get('client');
+  const showDirectoryBadge = clientParam !== 'chatgpt' && clientParam !== 'muse';
   const goTo = (target: string) => {
     if (target.startsWith('/auth/')) window.location.assign(target);
     else router.push(target);
@@ -1113,7 +1118,7 @@ function LoginForm() {
     return (
       <div className="grid w-full lg:min-h-dvh lg:grid-cols-2">
         <div className="flex items-center justify-center px-4 py-6 sm:py-10 lg:px-6 lg:py-12">{formCard}</div>
-        <TrustPanel stats={trustStats} />
+        <TrustPanel stats={trustStats} directoryBadge={showDirectoryBadge} />
       </div>
     );
   }
