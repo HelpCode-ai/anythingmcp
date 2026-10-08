@@ -244,6 +244,64 @@ describe('WsdlParser', () => {
     });
   });
 
+  describe('SOAP 1.2 ports', () => {
+    it('marks the tools of a SOAP 1.2 port and calls them with SOAP 1.2', async () => {
+      const wsdl = fixture('soap12-only');
+      const tools = await parser.parse(wsdl);
+
+      expect(tools).toHaveLength(1);
+      expect(tools[0].endpointMapping).toEqual({
+        method: 'GetStock',
+        path: 'StockSoap12Port',
+        bodyMapping: { sku: '$sku' },
+        paramOrder: ['sku'],
+        soapAction: 'urn:GetStock',
+        endpoint: 'http://stock.example.com/soap12',
+        targetNamespace: 'http://example.com/stock',
+        soapVersion: '1.2',
+      });
+
+      await engine.execute(
+        { baseUrl: 'http://stock.example.com/soap12', authType: 'NONE', specUrl: wsdl },
+        tools[0].endpointMapping as any,
+        { sku: 'A-1' },
+      );
+      const [, envelope, options] = post.mock.calls[0];
+      expect(envelope).toContain(
+        '<soapenv:Envelope xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/stock">',
+      );
+      expect(options.headers['Content-Type']).toBe(
+        'application/soap+xml; charset=utf-8; action="urn:GetStock"',
+      );
+      expect(options.headers).not.toHaveProperty('SOAPAction');
+    });
+
+    it('keeps only the SOAP 1.1 tool of an operation offered on both, whatever the port order', async () => {
+      const wsdl = fixture('soap11-and-soap12');
+      const tools = await parser.parse(wsdl);
+
+      // Both ports would give "itemservice_getitem"; the SOAP 1.2 port comes
+      // first in the WSDL.
+      expect(tools.map((t) => t.name)).toEqual(['itemservice_getitem']);
+      expect(tools[0].endpointMapping).toEqual({
+        method: 'GetItem',
+        path: 'BasicHttpBinding_IItemService',
+        bodyMapping: { itemId: '$itemId' },
+        paramOrder: ['itemId'],
+        soapAction: 'http://tempuri.org/IItemService/GetItem',
+        endpoint: 'http://items.example.com/ItemService.svc',
+        targetNamespace: 'http://tempuri.org/',
+      });
+    });
+
+    it('does not mark SOAP 1.1 ports', async () => {
+      for (const name of ['wrapped-operation-name', 'request-element', 'rpc-literal', 'jaxws-unqualified']) {
+        const tools = await parser.parse(fixture(name));
+        for (const tool of tools) expect(tool.endpointMapping).not.toHaveProperty('soapVersion');
+      }
+    });
+  });
+
   describe('complex and repeated parameters (JAX-WS)', () => {
     it('describes a complex parameter as an object and a repeated one as an array', async () => {
       const [tool] = await parser.parse(fixture('jaxws-unqualified'));

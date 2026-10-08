@@ -61,6 +61,13 @@ export interface SoapEndpointMapping {
    * require. Set on import; absent: qualified (`tns:`), as before.
    */
   childElementsQualified?: boolean;
+  /**
+   * `'1.2'` for an operation of a SOAP 1.2 port: the envelope is in the SOAP
+   * 1.2 namespace and the action travels in the Content-Type
+   * (`application/soap+xml; action="…"`) instead of a SOAPAction header.
+   * Set on import; absent: SOAP 1.1.
+   */
+  soapVersion?: '1.1' | '1.2';
 }
 
 export interface DatabaseEndpointMapping {

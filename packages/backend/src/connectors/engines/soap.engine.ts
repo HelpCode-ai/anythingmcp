@@ -57,6 +57,15 @@ const REDACTED_SECURITY_HEADER = '<wsse:Security><!-- redacted --></wsse:Securit
 /** Any Security header block, whatever its prefix, in a server's response. */
 const SECURITY_HEADER_BLOCK = /<([\w.-]+:)?Security\b[\s\S]*?<\/([\w.-]+:)?Security\s*>/g;
 
+const SOAP11_ENVELOPE_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
+const SOAP12_ENVELOPE_NS = 'http://www.w3.org/2003/05/soap-envelope';
+
+/** The SOAP 1.2 media type, with the action as its quoted `action` parameter when there is one. */
+function soap12ContentType(soapAction: string): string {
+  const action = soapAction ? `; action="${soapAction.replace(/["\\]/g, '\\$&')}"` : '';
+  return `application/soap+xml; charset=utf-8${action}`;
+}
+
 /** How deep parameter values may nest (objects and arrays) before the call is refused. */
 const MAX_NESTING_DEPTH = 20;
 /** An XML element name without a prefix (NCName, close enough). */
@@ -72,6 +81,8 @@ interface EnvelopeOptions {
    * element is.
    */
   qualified?: boolean;
+  /** A SOAP 1.2 envelope instead of SOAP 1.1. */
+  soap12?: boolean;
 }
 
 interface SerializeContext {
@@ -194,6 +205,9 @@ export class SoapEngine {
         ? this.buildSecurityHeader(config.authConfig)
         : undefined;
 
+    // Opt-in, set on import for SOAP 1.2 ports: older tools stay SOAP 1.1.
+    const soap12 = endpointMapping.soapVersion === '1.2';
+
     // Build the SOAP envelope (respecting WSDL parameter order for WCF)
     const elementOrder = this.validElementOrder(endpointMapping.elementOrder);
     const buildEnvelope = (header?: string) =>
@@ -207,6 +221,7 @@ export class SoapEngine {
           elementOrder,
           // Opt-in, set on import: older tools keep qualified elements.
           qualified: endpointMapping.childElementsQualified !== false,
+          soap12,
         },
       );
     const envelope = buildEnvelope(securityHeader);
@@ -221,10 +236,13 @@ export class SoapEngine {
 
     // Build headers. SOAP 1.1 requires the SOAPAction header even when the
     // action is empty: it is then sent as `""` (two double quotes), as WCF,
-    // Axis and node-soap do. A non-empty action is sent as stored.
+    // Axis and node-soap do. A non-empty action is sent as stored. SOAP 1.2
+    // has no SOAPAction header: the action is a parameter of the media type
+    // (RFC 3902), left out when empty.
     const headers: Record<string, string> = {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: soapAction || '""',
+      ...(soap12
+        ? { 'Content-Type': soap12ContentType(soapAction) }
+        : { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: soapAction || '""' }),
       ...config.headers,
     };
 
@@ -303,7 +321,7 @@ export class SoapEngine {
   }
 
   /**
-   * Build a SOAP 1.1 envelope: the parameters wrapped in the body element
+   * Build a SOAP 1.1 (or 1.2) envelope: the parameters wrapped in the body element
    * (the operation name unless the WSDL names another input element).
    * WCF services require parameters in WSDL-defined order.
    */
@@ -338,7 +356,7 @@ export class SoapEngine {
       .join('\n');
 
     return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${ns}">
+<soapenv:Envelope xmlns:soapenv="${options.soap12 ? SOAP12_ENVELOPE_NS : SOAP11_ENVELOPE_NS}" xmlns:tns="${ns}">
 ${header}
   <soapenv:Body>
     <tns:${wrapperElement}>

@@ -328,6 +328,98 @@ describe('SoapEngine', () => {
     });
   });
 
+  describe('SOAP 1.2', () => {
+    const soap12Mapping = { ...baseMapping, soapVersion: '1.2' as const };
+    const soap12Response = `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+        <env:Body><GetUserResponse><Name>Ada</Name></GetUserResponse></env:Body>
+      </env:Envelope>`;
+
+    it('sends a SOAP 1.2 envelope with the action in the Content-Type and no SOAPAction header', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      const result = (await engine.execute(baseConfig, soap12Mapping, { userId: '42' })) as any;
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://tempuri.org/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <tns:GetUser>
+      <tns:userId>42</tns:userId>
+    </tns:GetUser>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe(
+        'application/soap+xml; charset=utf-8; action="http://tempuri.org/IService/GetUser"',
+      );
+      expect(headers).not.toHaveProperty('SOAPAction');
+      // The response is read the same way as a SOAP 1.1 one.
+      expect(result).toEqual({ Name: 'Ada' });
+    });
+
+    it('leaves the action parameter out when the action is empty', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+      (soap.createClientAsync as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+      await engine.execute(
+        { ...baseConfig, specUrl: 'http://example.com/soap12-empty?wsdl' },
+        { ...soap12Mapping, soapAction: '' },
+        { userId: '42' },
+      );
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe('application/soap+xml; charset=utf-8');
+      expect(headers).not.toHaveProperty('SOAPAction');
+    });
+
+    it('reads a SOAP 1.2 fault returned with an HTTP error status', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 400,
+        statusText: 'Bad Request',
+        data: `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault>
+          <env:Code><env:Value>env:Sender</env:Value></env:Code>
+          <env:Reason><env:Text xml:lang="en">User 42 is unknown</env:Text></env:Reason>
+        </env:Fault></env:Body></env:Envelope>`,
+      });
+
+      await expect(engine.execute(baseConfig, soap12Mapping, { userId: '42' })).rejects.toThrow(
+        'SOAP call failed with HTTP 400: User 42 is unknown',
+      );
+    });
+
+    it('puts the WS-Security header in the SOAP 1.2 envelope', async () => {
+      engine = new FixedClockSoapEngine();
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      await engine.execute(
+        { ...baseConfig, authType: 'WS_SECURITY', authConfig: { username: 'u', password: 'p' } },
+        soap12Mapping,
+        { userId: '42' },
+      );
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toContain(
+        'xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope"',
+      );
+      expect(envelope).toMatch(/<soapenv:Header>\s*<wsse:Security [^>]*soapenv:mustUnderstand="1">/);
+    });
+
+    it('sends SOAP 1.1 for a stored tool without soapVersion', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      await engine.execute(baseConfig, baseMapping, { userId: '42' });
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toContain('xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"');
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers).toEqual({
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: 'http://tempuri.org/IService/GetUser',
+      });
+    });
+  });
+
   describe('SOAP response parsing', () => {
     it('should extract body content from SOAP response XML', async () => {
       const xml = `

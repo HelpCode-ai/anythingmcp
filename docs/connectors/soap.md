@@ -85,6 +85,7 @@ SOAP tools use a specific endpoint mapping format:
 | `inputElement` | Body element that wraps the parameters, when the WSDL's input element is not named after the operation (set on import) |
 | `inputNamespace` | Namespace of that element, when it differs from the WSDL `targetNamespace` (set on import) |
 | `childElementsQualified` | `false` when the parameter elements carry no namespace: RPC style, or a schema with `elementFormDefault="unqualified"` (the XSD default, common in JAX-WS services) or `form="unqualified"`. The engine then writes `<customerId>` instead of `<tns:customerId>` (set on import; absent: qualified, as WCF needs) |
+| `soapVersion` | `"1.2"` for an operation of a SOAP 1.2 port (set on import; absent: SOAP 1.1) |
 | `elementOrder` | Order of the child elements of complex parameters, by path (`{"address": ["street", "city"]}`), because the schema's `xs:sequence` is order-sensitive and a stored tool does not keep the key order of objects (set on import) |
 
 ### Parameter values
@@ -108,8 +109,14 @@ AnythingMCP handles WCF-specific requirements:
 
 - **Parameter ordering** — WSDL-defined parameter order is preserved (WCF services are order-sensitive)
 - **Endpoint override** — The connector's `baseUrl` overrides the WSDL endpoint host, useful for internal networks where the WSDL advertises external IPs
-- **Multiple bindings** — Each port/binding generates separate tools
+- **Multiple bindings** — Each port/binding generates separate tools. An operation that a service offers on both a SOAP 1.1 and a SOAP 1.2 port (WCF's `BasicHttpBinding` next to a SOAP 1.2 binding) becomes one tool, on the SOAP 1.1 port, because tools are named after the service and the operation
 - **SOAPAction header** — Sent with the operation's `soapAction` from the WSDL; when the WSDL declares an empty action, the header is sent as `SOAPAction: ""`, as SOAP 1.1 requires
+
+### SOAP 1.2
+
+Operations of a SOAP 1.2 port (a binding with a `soap12:binding` element, namespace `http://schemas.xmlsoap.org/wsdl/soap12/`) are imported with `"soapVersion": "1.2"` and sent as SOAP 1.2: the envelope uses the `http://www.w3.org/2003/05/soap-envelope` namespace, and the action travels in the media type, `Content-Type: application/soap+xml; charset=utf-8; action="<soapAction>"` (without `action` when the WSDL declares none), instead of a `SOAPAction` header. SOAP 1.2 faults are read from `Reason/Text`.
+
+WCF bindings that also require WS-Addressing headers (`wsHttpBinding`, a `wsaw:UsingAddressing` policy) are not supported: use the service's `BasicHttpBinding` port.
 
 ---
 

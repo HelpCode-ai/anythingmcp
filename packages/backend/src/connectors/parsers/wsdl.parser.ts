@@ -3,6 +3,7 @@ import { ParsedTool } from './openapi.parser';
 import * as soap from 'soap';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxios } from '../../common/outbound-http';
+import { XMLParser } from 'fast-xml-parser';
 
 /** Keys describe() adds to a complex type's shape that are not elements. */
 const DESCRIBE_METADATA_KEYS = new Set(['targetNSAlias', 'targetNamespace']);
@@ -298,6 +299,93 @@ function enumerationValues(element: any, schema: any, definitions: any): string[
   return values.length > 0 ? values : undefined;
 }
 
+/** WSDL 1.1 SOAP 1.2 binding extension namespace (`soap12:binding`). */
+const SOAP12_BINDING_NS = 'http://schemas.xmlsoap.org/wsdl/soap12/';
+
+/**
+ * Ports that use SOAP 1.2, keyed by `${service}\n${port}`. node-soap reads
+ * SOAP 1.2 bindings like SOAP 1.1 ones and keeps no trace of the binding
+ * extension's namespace, so it is read from the WSDL documents themselves
+ * (the root and every imported WSDL): a binding is SOAP 1.2 when its
+ * `binding` child element is in the soap12 namespace, whatever its prefix.
+ */
+export function soap12Ports(wsdl: any): Set<string> {
+  const bindingNames = new Set<string>();
+  const seen = new Set<unknown>();
+  const visit = (doc: any, depth: number) => {
+    if (!doc || seen.has(doc) || depth > 20) return;
+    seen.add(doc);
+    if (typeof doc.xml === 'string') collectSoap12Bindings(doc.xml, bindingNames);
+    for (const included of doc._includesWsdl || []) visit(included, depth + 1);
+  };
+  visit(wsdl, 0);
+
+  const ports = new Set<string>();
+  if (bindingNames.size === 0) return ports;
+  const definitions = wsdl?.definitions;
+  // A port refers to its binding object; bindings are keyed by name.
+  const nameOf = new Map<unknown, string>();
+  for (const [name, binding] of Object.entries(definitions?.bindings || {})) {
+    nameOf.set(binding, name);
+  }
+  for (const [serviceName, service] of Object.entries(definitions?.services || {}) as [string, any][]) {
+    for (const [portName, port] of Object.entries(service?.ports || {}) as [string, any][]) {
+      const bindingName = nameOf.get(port?.binding);
+      if (bindingName && bindingNames.has(bindingName)) ports.add(`${serviceName}\n${portName}`);
+    }
+  }
+  return ports;
+}
+
+function localName(qname: string): string {
+  return qname.slice(qname.indexOf(':') + 1);
+}
+
+/** Namespace declarations (prefix → URI, '' for the default) on a parsed element. */
+function namespaceDeclarations(node: unknown): Record<string, string> {
+  const declarations: Record<string, string> = {};
+  if (!node || typeof node !== 'object') return declarations;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (typeof value !== 'string') continue;
+    if (key === '@_xmlns') declarations[''] = value;
+    else if (key.startsWith('@_xmlns:')) declarations[key.slice('@_xmlns:'.length)] = value;
+  }
+  return declarations;
+}
+
+function collectSoap12Bindings(xml: string, names: Set<string>): void {
+  let document: Record<string, unknown>;
+  try {
+    document = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: '@_',
+      isArray: (name) => localName(name) === 'binding',
+    }).parse(xml);
+  } catch {
+    return;
+  }
+  for (const [rootKey, root] of Object.entries(document)) {
+    if (localName(rootKey) !== 'definitions' || !root || typeof root !== 'object') continue;
+    const rootScope = namespaceDeclarations(root);
+    for (const [key, bindings] of Object.entries(root as Record<string, unknown>)) {
+      if (key.startsWith('@_') || localName(key) !== 'binding' || !Array.isArray(bindings)) continue;
+      for (const binding of bindings) {
+        if (!binding || typeof binding !== 'object' || typeof binding['@_name'] !== 'string') continue;
+        const scope = { ...rootScope, ...namespaceDeclarations(binding) };
+        for (const [childKey, children] of Object.entries(binding as Record<string, unknown>)) {
+          if (childKey.startsWith('@_') || localName(childKey) !== 'binding') continue;
+          const colon = childKey.indexOf(':');
+          const prefix = colon > 0 ? childKey.slice(0, colon) : '';
+          for (const child of Array.isArray(children) ? children : [children]) {
+            const namespace = { ...scope, ...namespaceDeclarations(child) }[prefix];
+            if (namespace === SOAP12_BINDING_NS) names.add(binding['@_name']);
+          }
+        }
+      }
+    }
+  }
+}
+
 /**
  * Whether the parameter elements of an operation are namespace-qualified:
  * false for RPC style (message parts are unqualified) and for a document
@@ -375,9 +463,11 @@ export class WsdlParser {
     const tools: ParsedTool[] = [];
 
     const targetNamespace = wsdlTargetNamespace(wsdl) || undefined;
+    const soap12 = soap12Ports(wsdl);
 
     for (const [serviceName, service] of Object.entries(description)) {
       for (const [portName, port] of Object.entries(service as any)) {
+        const soapVersion = soap12.has(`${serviceName}\n${portName}`) ? '1.2' : undefined;
         for (const [operationName, operation] of Object.entries(port as any)) {
           const info = resolveWsdlOperation(wsdl, portName, operationName);
           const decls = inputElementDecls(wsdl, portName, operationName);
@@ -396,6 +486,7 @@ export class WsdlParser {
                 operationName,
                 decls,
               ),
+              soapVersion,
             },
           );
           tools.push(tool);
@@ -403,8 +494,36 @@ export class WsdlParser {
       }
     }
 
-    this.logger.log(`Extracted ${tools.length} tools from WSDL`);
-    return tools;
+    const unique = this.withoutSoap12Duplicates(tools);
+    this.logger.log(
+      `Extracted ${unique.length} tools from WSDL` +
+        (unique.length < tools.length
+          ? ` (${tools.length - unique.length} SOAP 1.2 duplicates of SOAP 1.1 operations skipped)`
+          : ''),
+    );
+    return unique;
+  }
+
+  /**
+   * A tool is named after its service and operation, not its port, so an
+   * operation offered on a SOAP 1.1 and a SOAP 1.2 port (WCF's
+   * BasicHttpBinding next to a SOAP 1.2 binding) gave two tools with one
+   * name: the import kept whichever came first and a re-import overwrote it
+   * with the last. The SOAP 1.1 one is kept, whatever the port order: it is
+   * what such tools always sent, and the simpler binding. An operation only
+   * offered over SOAP 1.2 keeps its tool.
+   */
+  private withoutSoap12Duplicates(tools: ParsedTool[]): ParsedTool[] {
+    const soap11Names = new Set(
+      tools
+        .filter((t) => (t.endpointMapping as { soapVersion?: string }).soapVersion !== '1.2')
+        .map((t) => t.name),
+    );
+    return tools.filter(
+      (t) =>
+        (t.endpointMapping as { soapVersion?: string }).soapVersion !== '1.2' ||
+        !soap11Names.has(t.name),
+    );
   }
 
   private operationToTool(
@@ -414,7 +533,7 @@ export class WsdlParser {
     operation: any,
     info: WsdlOperationInfo,
     targetNamespace: string | undefined,
-    schema: { childElementsQualified?: false },
+    schema: { childElementsQualified?: false; soapVersion?: '1.2' },
   ): ParsedTool {
     const { soapAction, endpoint } = info;
     // Stored only where they differ from what the engine assumes (the
@@ -493,6 +612,8 @@ export class WsdlParser {
         ...(Object.keys(elementOrder).length > 0 ? { elementOrder } : {}),
         // Only written when false: tools without it keep qualified elements.
         ...(schema.childElementsQualified === false ? { childElementsQualified: false } : {}),
+        // Only for SOAP 1.2 ports: tools without it are sent as SOAP 1.1.
+        ...(schema.soapVersion ? { soapVersion: schema.soapVersion } : {}),
       },
     };
 
