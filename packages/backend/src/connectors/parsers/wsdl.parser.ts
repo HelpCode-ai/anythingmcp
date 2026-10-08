@@ -58,6 +58,23 @@ export function wsdlUrlForLog(wsdlUrl: string): string {
   }
 }
 
+/**
+ * Download and parse a WSDL with the `soap` library, the one way every WSDL
+ * is read (import, the engine's metadata fallback, the connection test).
+ * The URL comes from the user: it is checked, and WSDL/XSD imports and
+ * redirects go through the guarded client. No credentials are sent.
+ */
+export async function openWsdl(wsdlUrl: string): Promise<soap.Client> {
+  await assertSafeOutboundUrl(wsdlUrl);
+  return soap.createClientAsync(wsdlUrl, {
+    request: outboundAxios() as any,
+    // Without this the library answers from a process-wide cache that never
+    // expires, so a changed WSDL was only seen after a restart (and every
+    // WSDL ever read stayed in memory).
+    disableCache: true,
+  });
+}
+
 /** The targetNamespace of the WSDL definitions element. */
 export function wsdlTargetNamespace(wsdl: any): string {
   return (
@@ -455,16 +472,7 @@ export class WsdlParser {
   async parse(wsdlUrl: string): Promise<ParsedTool[]> {
     this.logger.debug(`Parsing WSDL from: ${wsdlUrlForLog(wsdlUrl)}`);
 
-    // The URL comes from the user: check it, and keep checking WSDL/XSD
-    // imports and redirects through the guarded client.
-    await assertSafeOutboundUrl(wsdlUrl);
-    const client = await soap.createClientAsync(wsdlUrl, {
-      request: outboundAxios() as any,
-      // Without this the library answers a re-import from a process-wide
-      // cache that never expires, so a changed WSDL was only seen after a
-      // restart (and every WSDL ever imported stayed in memory).
-      disableCache: true,
-    });
+    const client = await openWsdl(wsdlUrl);
     const description = client.describe();
     const wsdl = client.wsdl;
     const tools: ParsedTool[] = [];

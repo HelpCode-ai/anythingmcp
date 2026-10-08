@@ -43,6 +43,10 @@ curl -s http://localhost:4000/api/connectors \
   }'
 ```
 
+### Testing the connection
+
+**Test connection** (and the dashboard's health check) downloads and parses the connector's WSDL, from `specUrl` or else the base URL, the way an import does, and reports how many operations and ports it declares. It calls no operation, since any of them may change data, so it does not check the credentials (HTTP Basic, bearer token, API key or WS-Security): run a read-only tool from the connector page for that. The WSDL is downloaded without the connector's credentials, so a WSDL that is only served after authentication fails the test with HTTP 401 or 403.
+
 ---
 
 ## Importing Tools from WSDL
@@ -206,7 +210,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 
 | Issue | Solution |
 |-------|----------|
-| WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
+| WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container; **Test connection** shows why the download or parse failed. The WSDL is read without credentials |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
 | "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. Parameter elements are written with the `tns:` prefix unless the schema declares them unqualified; tools imported before that was read keep the prefix, so re-import the WSDL of a JAX-WS or RPC service that answers with an unmarshalling fault. RPC/encoded style is not supported. Tools imported before nested values were supported describe complex parameters as text: re-import the WSDL so they take objects and lists |
 | A changed WSDL is not picked up | Tools keep the metadata read at import: re-import the WSDL. A tool that lacks some of it (an empty `soapAction` is common) reads it from the WSDL at call time and keeps it for up to 10 minutes (1 minute when the WSDL could not be read) |

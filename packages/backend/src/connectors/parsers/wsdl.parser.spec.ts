@@ -294,6 +294,15 @@ describe('WsdlParser', () => {
       });
     });
 
+    it('counts the ports of both versions in a connection test', async () => {
+      await expect(engine.inspectWsdl(fixture('soap11-and-soap12'))).resolves.toEqual({
+        operations: 1,
+        ports: 2,
+        soap12Ports: 1,
+      });
+      expect(post).not.toHaveBeenCalled();
+    });
+
     it('does not mark SOAP 1.1 ports', async () => {
       for (const name of ['wrapped-operation-name', 'request-element', 'rpc-literal', 'jaxws-unqualified']) {
         const tools = await parser.parse(fixture(name));

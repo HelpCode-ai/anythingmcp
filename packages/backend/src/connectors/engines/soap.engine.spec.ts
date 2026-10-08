@@ -993,6 +993,59 @@ describe('SoapEngine', () => {
     });
   });
 
+  describe('inspectWsdl (connection test)', () => {
+    const mockedCreateClient = soap.createClientAsync as jest.Mock;
+    const url = 'https://user:pw@example.com/service?wsdl&token=s3cret';
+
+    beforeEach(() => mockedCreateClient.mockReset());
+
+    it('counts operations and ports without calling any operation', async () => {
+      mockedCreateClient.mockResolvedValue({
+        wsdl: { definitions: { services: {}, bindings: {} } },
+        describe: () => ({
+          UserService: {
+            BasicHttpBinding_IService: { GetUser: {}, SetUser: {} },
+            BasicHttpsBinding_IService: { GetUser: {}, SetUser: {} },
+          },
+        }),
+      });
+
+      await expect(engine.inspectWsdl(url)).resolves.toEqual({
+        operations: 2,
+        ports: 2,
+        soap12Ports: 0,
+      });
+      expect(mockedCreateClient).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ disableCache: true }),
+      );
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('reports the HTTP status of a refused WSDL, without the URL or the response body', async () => {
+      mockedCreateClient.mockRejectedValue(
+        new Error(`Invalid WSDL URL: ${url}\n\n\r Code: 401\n\n\r Response Body: <html>secret page</html>`),
+      );
+
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.name).toBe('WsdlReadError');
+      expect(err.status).toBe(401);
+      expect(err.message).toBe('The WSDL request returned HTTP 401');
+    });
+
+    it('keeps network error codes and strips credentials from other messages', async () => {
+      mockedCreateClient.mockRejectedValue(
+        Object.assign(new Error(`getaddrinfo ENOTFOUND for ${url}`), { code: 'ENOTFOUND' }),
+      );
+
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.code).toBe('ENOTFOUND');
+      expect(err.status).toBeUndefined();
+      expect(err.message).toBe('getaddrinfo ENOTFOUND for https://example.com/service');
+      expect(err.message).not.toMatch(/s3cret|pw@/);
+    });
+  });
+
   describe('SOAPAction and Content-Type headers', () => {
     it('should set correct headers for SOAP call', async () => {
       mockedAxios.post.mockResolvedValue({

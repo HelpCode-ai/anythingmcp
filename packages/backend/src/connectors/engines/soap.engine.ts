@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
-import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 import {
+  openWsdl,
   resolveWsdlOperation,
+  soap12Ports,
   wsdlTargetNamespace,
   wsdlUrlForLog,
   WsdlOperationInfo,
@@ -64,6 +65,48 @@ const SOAP12_ENVELOPE_NS = 'http://www.w3.org/2003/05/soap-envelope';
 function soap12ContentType(soapAction: string): string {
   const action = soapAction ? `; action="${soapAction.replace(/["\\]/g, '\\$&')}"` : '';
   return `application/soap+xml; charset=utf-8${action}`;
+}
+
+/** What a connection test reports about a WSDL. */
+export interface WsdlSummary {
+  /** Distinct operations (per service), i.e. the tools an import would create at most. */
+  operations: number;
+  ports: number;
+  /** Ports with a SOAP 1.2 binding. */
+  soap12Ports: number;
+}
+
+/** A WSDL that could not be downloaded or parsed. */
+export class WsdlReadError extends Error {
+  constructor(
+    message: string,
+    /** HTTP status of the WSDL response, when the server answered. */
+    readonly status?: number,
+    /** Network error code (ENOTFOUND, ECONNREFUSED, …), when there was one. */
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'WsdlReadError';
+  }
+}
+
+/**
+ * The error of a WSDL download or parse, safe to show: node-soap's message
+ * for a non-200 answer quotes the full URL (whose query may carry a token)
+ * and the response body, so it is replaced by the status; any other message
+ * gets the URL without user info and query string, and is shortened.
+ */
+function toWsdlReadError(err: any, wsdlUrl: string): WsdlReadError {
+  const raw = String(err?.message ?? err ?? 'unknown error');
+  const status =
+    typeof err?.response?.status === 'number'
+      ? err.response.status
+      : Number(/\bCode: (\d{3})\b/.exec(raw)?.[1]) || undefined;
+  const code = typeof err?.code === 'string' ? err.code : undefined;
+  if (status) return new WsdlReadError(`The WSDL request returned HTTP ${status}`, status, code);
+  let message = raw.split(wsdlUrl).join(wsdlUrlForLog(wsdlUrl));
+  if (message.length > 300) message = `${message.slice(0, 300)}…`;
+  return new WsdlReadError(message, undefined, code);
 }
 
 /** How deep parameter values may nest (objects and arrays) before the call is refused. */
@@ -665,13 +708,8 @@ ${paramXml}
   /** Read every operation of a WSDL, using the soap library for parsing only. */
   private async readWsdlMetadata(wsdlUrl: string): Promise<WsdlMetadata | null> {
     try {
-      await assertSafeOutboundUrl(wsdlUrl);
-      const client = await soap.createClientAsync(wsdlUrl, {
-        request: outboundAxios() as any,
-        // The library's own cache keeps every WSDL it ever parsed for the life
-        // of the process, with no limit; wsdlCache above is bounded.
-        disableCache: true,
-      });
+      // Without the library's own cache (see openWsdl): wsdlCache is bounded.
+      const client = await openWsdl(wsdlUrl);
       const wsdl = client.wsdl;
       const targetNamespace = wsdlTargetNamespace(wsdl);
 
@@ -706,6 +744,33 @@ ${paramXml}
       );
       return null;
     }
+  }
+
+  /**
+   * Download and parse a WSDL for a connection test, through the same
+   * guarded path as an import, without the cache: the test should see the
+   * WSDL as it is now. Calls no operation. Throws a WsdlReadError whose
+   * message carries neither the URL's credentials nor the response body.
+   */
+  async inspectWsdl(wsdlUrl: string): Promise<WsdlSummary> {
+    let client: Awaited<ReturnType<typeof openWsdl>>;
+    try {
+      client = await openWsdl(wsdlUrl);
+    } catch (err: any) {
+      throw toWsdlReadError(err, wsdlUrl);
+    }
+    const soap12 = soap12Ports(client.wsdl);
+    const operations = new Set<string>();
+    let ports = 0;
+    for (const [serviceName, service] of Object.entries(client.describe())) {
+      for (const port of Object.values(service as Record<string, object>)) {
+        ports++;
+        for (const operationName of Object.keys(port)) {
+          operations.add(`${serviceName}\n${operationName}`);
+        }
+      }
+    }
+    return { operations: operations.size, ports, soap12Ports: soap12.size };
   }
 
   private injectAuth(

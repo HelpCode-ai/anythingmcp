@@ -4,7 +4,8 @@ import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
-import { SoapEngine } from './engines/soap.engine';
+import { SoapEngine, WsdlReadError } from './engines/soap.engine';
+import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -342,6 +343,10 @@ export class ConnectorsService {
               : `Connection successful — the service has ${out.entitySets?.length ?? 0} entity sets`,
           };
         }
+        case 'SOAP':
+          // The WSDL the tools read (specUrl, else the base URL), as the
+          // engine would; specUrl is used as stored there too.
+          return await this.testSoapConnection(connector.specUrl || baseUrl);
         case 'MCP': {
           const tools = await this.mcpClientEngine.listTools({
             baseUrl: connector.baseUrl,
@@ -419,6 +424,67 @@ export class ConnectorsService {
       outputSchema: (rt.outputSchema as Record<string, unknown>) ?? null,
       annotations: (rt.annotations as Record<string, unknown>) ?? null,
     }));
+  }
+
+  /**
+   * Test a SOAP connector by downloading and parsing its WSDL through the
+   * guarded path an import takes. No operation is called, since any of
+   * them may change data, so the credentials are not checked; the WSDL is
+   * read without them, as an import reads it.
+   */
+  private async testSoapConnection(
+    wsdlUrl: string,
+  ): Promise<Awaited<ReturnType<ConnectorsService['testConnection']>>> {
+    const notChecked =
+      'No operation was called, so the credentials (HTTP Basic, WS-Security, …) were not checked.';
+    try {
+      const wsdl = await this.soapEngine.inspectWsdl(wsdlUrl);
+      if (wsdl.operations === 0) {
+        return { ok: false, kind: 'error', message: 'The WSDL was read, but it declares no SOAP operations.' };
+      }
+      const soap12 = wsdl.soap12Ports > 0 ? `, ${wsdl.soap12Ports} of them SOAP 1.2` : '';
+      return {
+        ok: true,
+        kind: 'ok',
+        message:
+          `WSDL read: ${wsdl.operations} operation${wsdl.operations === 1 ? '' : 's'} on ` +
+          `${wsdl.ports} port${wsdl.ports === 1 ? '' : 's'}${soap12}. ${notChecked}`,
+      };
+    } catch (error: any) {
+      if (!(error instanceof WsdlReadError)) throw error;
+      const where = wsdlUrlForLog(wsdlUrl);
+      if (error.status === 401 || error.status === 403) {
+        return {
+          ok: false,
+          kind: 'auth_failed',
+          httpStatus: error.status,
+          message:
+            `The WSDL at ${where} was refused with HTTP ${error.status}. AnythingMCP reads the WSDL ` +
+            "without the connector's credentials, so it must be readable without them.",
+        };
+      }
+      if (error.status === 404) {
+        return {
+          ok: false,
+          kind: 'not_found',
+          httpStatus: 404,
+          message: `No WSDL at ${where} (HTTP 404). Check the connector's WSDL URL.`,
+        };
+      }
+      if (error.status) {
+        return {
+          ok: false,
+          kind: 'error',
+          httpStatus: error.status,
+          message: `The WSDL at ${where} could not be downloaded: HTTP ${error.status}.`,
+        };
+      }
+      // Network and SSRF errors are classified like any other connector's.
+      const result = this.classifyTestError(error, '/');
+      return result.kind === 'error'
+        ? { ...result, message: `The WSDL at ${where} could not be read: ${result.message}` }
+        : result;
+    }
   }
 
   private classifyTestError(
