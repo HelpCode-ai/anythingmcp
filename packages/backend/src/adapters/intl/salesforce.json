@@ -7,7 +7,6 @@
   "category": "crm",
   "icon": "salesforce",
   "docsUrl": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm",
-  "unlisted": true,
   "requiredEnvVars": [
     "SALESFORCE_MY_DOMAIN",
     "SALESFORCE_CLIENT_ID",

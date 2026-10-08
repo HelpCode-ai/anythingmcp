@@ -59,8 +59,8 @@ const statusOf = (body: unknown): number | null => {
 };
 
 describe('slack adapter: static spec conformance', () => {
-  it('stays unlisted until tested against a real workspace', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the pasted token as a Bearer header with a User-Agent', () => {

@@ -7,7 +7,6 @@
   "category": "messaging",
   "icon": "slack",
   "docsUrl": "https://docs.slack.dev/reference/methods",
-  "unlisted": true,
   "requiredEnvVars": [
     "SLACK_TOKEN"
   ],

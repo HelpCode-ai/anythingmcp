@@ -7,7 +7,6 @@
   "category": "e-commerce",
   "icon": "printful",
   "docsUrl": "https://developers.printful.com/docs/",
-  "unlisted": true,
   "requiredEnvVars": [
     "PRINTFUL_API_TOKEN"
   ],

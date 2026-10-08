@@ -117,8 +117,8 @@ const call = async (name: string, params: Record<string, unknown>) => {
 describe('salesforce adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real org', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in and renews tokens on the org own My Domain, so sandboxes work', () => {
