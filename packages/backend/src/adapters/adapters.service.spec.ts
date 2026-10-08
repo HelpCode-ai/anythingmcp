@@ -303,6 +303,58 @@ describe('AdaptersService install — a base URL variable without https://', () 
   });
 });
 
+describe('AdaptersService install — weclapp tenant pasted as an address (#733)', () => {
+  function build() {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: jest.fn() } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('stores the tenant name only', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('weclapp', 'u1', 'org1', {
+      WECLAPP_TENANT: 'https://acme.weclapp.com/webapp',
+      WECLAPP_API_TOKEN: 't',
+    });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('https://acme.weclapp.com/webapp/api/v2');
+    expect(data.envVars).toMatchObject({ WECLAPP_TENANT: 'acme' });
+  });
+
+  it('refuses an address on another domain, at install and in the pre-save check', async () => {
+    const { service, prisma } = build();
+    const message = /^WECLAPP_TENANT must be only the part before \.weclapp\.com, such as acme for acme\.weclapp\.com/;
+
+    await expect(
+      service.importAdapter('weclapp', 'u1', 'org1', { WECLAPP_TENANT: 'acme.example.com', WECLAPP_API_TOKEN: 't' }),
+    ).rejects.toThrow(message);
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+
+    const out: any = await service.verifyCredentials('weclapp', 'org1', {
+      WECLAPP_TENANT: 'acme.example.com',
+      WECLAPP_API_TOKEN: 't',
+    });
+    expect(out).toMatchObject({ ok: false, kind: 'invalid_input' });
+    expect(out.message).toMatch(message);
+  });
+});
+
 describe('AdaptersService starter pack', () => {
   const { STARTER_PACK } = jest.requireActual('./starter-pack');
   const { getAdapter } = jest.requireActual('./catalog');

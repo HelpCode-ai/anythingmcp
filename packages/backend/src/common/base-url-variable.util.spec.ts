@@ -3,6 +3,7 @@ import {
   assertAbsoluteBaseUrl,
   checkBaseUrlValue,
   leadingBaseUrlVariable,
+  normalizeAddressVariables,
   normalizeSubdomainVariables,
   normalizeBaseUrlVariable,
   normalizeBaseUrlVariables,
@@ -240,5 +241,150 @@ describe('normalizeSubdomainVariables', () => {
     expect(
       normalizeSubdomainVariables('https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v2', { WECLAPP_TENANT: 'stryve.weclapp.com' }),
     ).toEqual({ WECLAPP_TENANT: 'stryve' });
+  });
+});
+
+describe('normalizeSubdomainVariables — weclapp tenant (#733)', () => {
+  const template = 'https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v2';
+  const tenant = (value: string) =>
+    normalizeSubdomainVariables(template, { WECLAPP_TENANT: value }, { singleLabel: true }).WECLAPP_TENANT;
+
+  it.each([
+    'acme',
+    'acme.weclapp.com',
+    'ACME.Weclapp.com',
+    'https://acme.weclapp.com/webapp',
+    'https://acme.weclapp.com/webapp/api/v1/',
+    ' acme ',
+    'http://acme.weclapp.com',
+    'acme.weclapp.com:443',
+    'acme.weclapp.com.',
+    '//acme.weclapp.com/#/dashboard',
+    'https://acme.weclapp.com/webapp/view/party/customer?id=1',
+  ])('%j → acme', (value) => {
+    expect(tenant(value)).toBe('acme');
+  });
+
+  it('keeps an already-correct map as it is', () => {
+    const values = { WECLAPP_TENANT: 'acme-gmbh', WECLAPP_API_TOKEN: 'secret.with.dots' };
+    expect(normalizeSubdomainVariables(template, values, { singleLabel: true })).toBe(values);
+  });
+
+  it('is idempotent', () => {
+    const once = normalizeSubdomainVariables(template, { WECLAPP_TENANT: 'https://Acme.weclapp.com/webapp' }, { singleLabel: true });
+    expect(normalizeSubdomainVariables(template, once, { singleLabel: true })).toBe(once);
+  });
+
+  it.each(['acme.example.com', 'https://acme.example.com/webapp', 'acme.weclapp.de'])(
+    'refuses %j, an address on another domain, naming the variable and the expected form',
+    (value) => {
+      expect(() => tenant(value)).toThrow(BadRequestException);
+      expect(() => tenant(value)).toThrow(
+        'WECLAPP_TENANT must be only the part before .weclapp.com, such as acme for acme.weclapp.com — ' +
+          'the value given is an address that does not end in .weclapp.com.',
+      );
+    },
+  );
+
+  it.each(['acme corp', 'me@acme.weclapp.com', 'https://', 'acme..weclapp.com'])(
+    'refuses %j, which is not a host name, without echoing it',
+    (value) => {
+      expect(() => tenant(value)).toThrow(
+        /^WECLAPP_TENANT must be only the part before \.weclapp\.com, such as acme for acme\.weclapp\.com — the value given is not a host name\.$/,
+      );
+    },
+  );
+
+  it('accepts a dotted name before the suffix of a hand-built template', () => {
+    expect(
+      normalizeSubdomainVariables('https://{{ACCOUNT}}.snowflakecomputing.com/api', {
+        ACCOUNT: 'https://xy123.eu-central-1.snowflakecomputing.com/console',
+      }),
+    ).toEqual({ ACCOUNT: 'xy123.eu-central-1' });
+    expect(() =>
+      normalizeSubdomainVariables('https://{{ACCOUNT}}.snowflakecomputing.com/api', { ACCOUNT: 'not a host' }),
+    ).toThrow(/^ACCOUNT must be only the part before/);
+  });
+
+  it('leaves a variable that is the whole host alone', () => {
+    const values = { SPLUNK_HOST: 'https://splunk.example.com:8089/en-US/app' };
+    expect(normalizeSubdomainVariables('https://{{SPLUNK_HOST}}:8089/services/mcp', values, { singleLabel: true })).toBe(
+      values,
+    );
+  });
+
+  it('normalizeAddressVariables leaves non-HTTP connectors alone', () => {
+    const values = { HOST: 'db.example.com' };
+    expect(normalizeAddressVariables('postgres://{{HOST}}.internal:5432/app', values, 'DATABASE', { singleLabel: true })).toBe(
+      values,
+    );
+  });
+});
+
+describe('normalizeSubdomainVariables — the web address of an API host with an extra label', () => {
+  const strict = { singleLabel: true };
+  const kustomer = 'https://{{KUSTOMER_SUBDOMAIN}}.api.kustomerapp.com/v1';
+  const mailchimp = 'https://{{MAILCHIMP_DC}}.api.mailchimp.com/3.0';
+
+  it.each([
+    ['acme.kustomerapp.com', 'acme'],
+    ['https://ACME.kustomerapp.com/app/customers', 'acme'],
+    ['acme.api.kustomerapp.com', 'acme'],
+  ])('Kustomer %j → %s', (value, expected) => {
+    expect(normalizeSubdomainVariables(kustomer, { KUSTOMER_SUBDOMAIN: value }, strict).KUSTOMER_SUBDOMAIN).toBe(expected);
+  });
+
+  it.each([
+    ['us6.admin.mailchimp.com', 'us6'],
+    ['https://us6.admin.mailchimp.com/lists/', 'us6'],
+    ['us6.api.mailchimp.com', 'us6'],
+    ['us6', 'us6'],
+  ])('Mailchimp %j → %s', (value, expected) => {
+    expect(normalizeSubdomainVariables(mailchimp, { MAILCHIMP_DC: value }, strict).MAILCHIMP_DC).toBe(expected);
+  });
+
+  it.each(['acme.example.com', 'us6.admin.mailchimp.org', 'mailchimp.com'])(
+    'still refuses %j, which is not on the parent domain',
+    (value) => {
+      expect(() => normalizeSubdomainVariables(mailchimp, { MAILCHIMP_DC: value }, strict)).toThrow(
+        /^MAILCHIMP_DC must be only the part before \.api\.mailchimp\.com/,
+      );
+    },
+  );
+
+  it('never reduces a two-label suffix to its top-level domain', () => {
+    // `.weclapp.com` minus its first label is `.com`: no parent-domain rule.
+    expect(() =>
+      normalizeSubdomainVariables('https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v2', { WECLAPP_TENANT: 'acme.example.com' }, strict),
+    ).toThrow(/does not end in \.weclapp\.com/);
+  });
+});
+
+describe('catalog adapters whose host starts with a variable', () => {
+  // Every `https://{{VAR}}.rest-of-host` template in the catalog: an
+  // already-correct single label must survive unchanged, and the address the
+  // browser shows must come back as that label.
+  const slot = /:\/\/\{\{([A-Za-z0-9_]+)\}\}(\.[^/{}?#]+)/;
+  const subdomain = listAdapters()
+    .map((meta) => getAdapter(meta.slug)!)
+    .filter((a) => slot.test(a.connector.baseUrl ?? ''));
+
+  it('includes weclapp, Freshdesk and MOCO', () => {
+    expect(subdomain.map((a) => a.slug)).toEqual(expect.arrayContaining(['weclapp', 'freshdesk', 'moco']));
+  });
+
+  it.each(subdomain.map((a) => [a.slug, a] as const))('%s', (_slug, adapter) => {
+    const [, name, suffix] = slot.exec(adapter.connector.baseUrl)!;
+    const clean = normalizeAddressVariables(adapter.connector.baseUrl, { [name]: 'acme1' }, adapter.connector.type, {
+      singleLabel: true,
+    });
+    expect(clean[name]).toBe('acme1');
+    const pasted = normalizeAddressVariables(
+      adapter.connector.baseUrl,
+      { [name]: `https://ACME1${suffix}/some/page?x=1` },
+      adapter.connector.type,
+      { singleLabel: true },
+    );
+    expect(pasted[name]).toBe('acme1');
   });
 });
