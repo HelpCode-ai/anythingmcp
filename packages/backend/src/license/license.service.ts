@@ -37,6 +37,8 @@ const TRIAL_RETRY_ATTEMPTS = 3;
 const trialRetryBaseMs = () => Number(process.env.TRIAL_RETRY_BASE_MS ?? 600);
 /** A checkout link is asked for by someone waiting on a spinner: one retry, no more. */
 const CHECKOUT_RETRY_ATTEMPTS = 2;
+/** Most addresses the licence site's subscription-history route takes per call. */
+const SUBSCRIPTION_HISTORY_BATCH = 20;
 
 /**
  * A paid Cloud licence's Stripe subscription as the licence site reports it
@@ -759,6 +761,62 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         `Could not report the refused move of licence …${licenseKey.slice(-4)}: ${err?.response?.status ?? err?.message}`,
       );
     }
+  }
+
+  /**
+   * Whether each address ever had an AnythingMCP Stripe subscription, in any
+   * state (card trials and cancelled ones included). The licence site holds the
+   * Stripe customers; the Cloud trial win-back asks it so a discount never goes
+   * to a current or former customer.
+   *
+   * Returns the answer per lower-cased address, or null when the site cannot
+   * give a complete one (no service token, network or HTTP error, an address
+   * missing from the reply, a value that is not a boolean). The caller must
+   * then send nothing. Addresses go out in batches of 20, the site's limit;
+   * none of them is ever logged.
+   */
+  async subscriptionHistory(emails: string[]): Promise<Map<string, boolean> | null> {
+    const unique = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+    const out = new Map<string, boolean>();
+    if (unique.length === 0) return out;
+
+    const headers = this.serviceHeaders();
+    if (!headers['x-amcp-service-token']) {
+      this.logger.warn('Cannot check subscription history: LICENSE_SERVICE_TOKEN is not set.');
+      return null;
+    }
+
+    for (let i = 0; i < unique.length; i += SUBSCRIPTION_HISTORY_BATCH) {
+      const batch = unique.slice(i, i + SUBSCRIPTION_HISTORY_BATCH);
+      try {
+        const { data } = await axios.post(
+          `${this.apiBase}/api/license/subscription-history`,
+          { emails: batch },
+          { timeout: 10000, headers },
+        );
+        const results: unknown = data?.results;
+        if (!results || typeof results !== 'object' || Array.isArray(results)) {
+          this.logger.warn('Subscription history check: the licence site sent no results.');
+          return null;
+        }
+        for (const email of batch) {
+          const had = Object.prototype.hasOwnProperty.call(results, email)
+            ? (results as Record<string, unknown>)[email]
+            : undefined;
+          if (typeof had !== 'boolean') {
+            this.logger.warn('Subscription history check: the licence site left an address unanswered.');
+            return null;
+          }
+          out.set(email, had);
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `Subscription history check failed (${err?.response?.status ?? 'no response'}): ${err?.message ?? err}`,
+        );
+        return null;
+      }
+    }
+    return out;
   }
 
   // ── Get Current License ────────────────────────────────────────────────────
