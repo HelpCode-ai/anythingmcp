@@ -63,10 +63,10 @@ describe('EmailService', () => {
     expect(mail.text).toContain('123456');
     expect(mail.headers).toBeUndefined();
     expect(mail.html).not.toContain('Unsubscribe');
-    // Live numbers, rounded down.
+    // A live number above its floor, rounded down; the others at their floors.
     expect(mail.html).toContain('1,200+');
-    expect(mail.html).toContain('32,000+');
-    expect(mail.html).toContain('650,000+');
+    expect(mail.html).toContain('200,000+');
+    expect(mail.html).toContain('1M+');
   });
 
   it('escapes the inviter and role in invitations', async () => {
@@ -125,6 +125,6 @@ describe('EmailService', () => {
     trustStats.get.mockRejectedValue(new Error('down'));
     trustStats.peek.mockReturnValue({ githubStars: null, dockerPulls: null, workspaces: null, toolCalls30d: null, updatedAt: null });
     await expect(service.sendExistingAccountEmail('a@b.com', 'https://cloud.anythingmcp.com/login', 'https://cloud.anythingmcp.com/forgot-password')).resolves.toBe(true);
-    expect(sent().html).not.toContain('stars on GitHub');
+    expect(sent().html).toContain('1,000+');
   });
 });

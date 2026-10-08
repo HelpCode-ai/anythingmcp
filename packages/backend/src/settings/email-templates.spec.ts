@@ -127,18 +127,19 @@ describe.each([
 describe('trust band', () => {
   const verify = EMAIL_SAMPLES.find((s) => s.id === 'verification')!;
 
-  it('shows the formatted live numbers', () => {
+  it('shows the numbers, never below their floors', () => {
     const html = verify.render(cloud, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('984');
-    expect(html).toContain('32,000+');
-    expect(html).toContain('650,000+');
+    expect(html).toContain('1,000+');
+    expect(html).toContain('200,000+');
+    expect(html).toContain('1M+');
     expect(html).toContain('3,800+');
   });
 
-  it('drops the numbers it does not have instead of showing zeros', () => {
+  it('shows the floors without live numbers, and no workspace count', () => {
     const html = verify.render(noStats, { name: 'A', other: 'B' }).html;
-    expect(html).not.toContain('stars on GitHub');
-    expect(html).not.toContain('downloads');
+    expect(html).toContain('stars on GitHub');
+    expect(html).toContain('200,000+');
+    expect(html).not.toContain('workspaces on');
     expect(html).not.toMatch(/\b0\+/);
     // Badges and the client list stay.
     expect(html).toContain('AES-256-GCM');
