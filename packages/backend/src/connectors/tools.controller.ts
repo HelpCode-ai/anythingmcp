@@ -37,6 +37,7 @@ import {
   hasTransform,
   validateTransform,
 } from './response-transform.util';
+import { validateDecode } from './mime-decode.util';
 import {
   ToolAnnotations,
   deriveToolAnnotations,
@@ -337,6 +338,10 @@ export class ToolsController {
    */
   private assertValidResponseMapping(responseMapping: unknown) {
     if (!responseMapping || typeof responseMapping !== 'object') return;
+    const decodeError = validateDecode((responseMapping as Record<string, unknown>).decode);
+    if (decodeError) {
+      throw new BadRequestException(`Invalid response mapping: ${decodeError}`);
+    }
     const transform = (responseMapping as Record<string, unknown>).transform;
     if (transform === undefined || transform === null) return;
     const error = validateTransform(transform);
