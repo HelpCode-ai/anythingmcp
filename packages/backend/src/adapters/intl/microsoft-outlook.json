@@ -45,7 +45,7 @@
   "probe": {
     "tool": "outlook_get_me"
   },
-  "unlisted": true,
+  "prerequisites": "An app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send` and `Calendars.ReadWrite`, and a client secret. Some organisations only let an admin grant consent to these permissions.",
   "connector": {
     "name": "Outlook (Microsoft Graph)",
     "type": "REST",
