@@ -1,12 +1,12 @@
 {
   "slug": "kaufland",
   "name": "Kaufland Marketplace",
-  "description": "Kaufland Marketplace (formerly real.de) seller API: orders and their units, shipments, storefront listings, units, tickets and warehouses. HMAC-signed requests — the signature covers the method, URL, body and a timestamp.",
+  "description": "Kaufland Marketplace (formerly real.de) seller API: orders and their units, storefronts, units, tickets and warehouses. HMAC-signed requests — the signature covers the method, URL, body and a timestamp.",
   "region": "de",
   "category": "e-commerce",
   "icon": "kaufland",
   "docsUrl": "https://sellerapi.kaufland.com/",
-  "instructions": "**Getting credentials**\n1. You must already be a Kaufland Marketplace seller. In the **Seller Portal** open **Settings → API keys** and create a key pair.\n2. You receive a **Client Key** (public, identifies you) and a **Secret Key** (never sent — it signs the request). Set `KAUFLAND_CLIENT_KEY` and `KAUFLAND_SECRET_KEY`.\n\n**The secret never travels.** Kaufland does not accept a bearer token: every request carries `Shop-Client-Key`, `Shop-Timestamp` and `Shop-Signature`, where the signature is an HMAC-SHA256 over the canonical string\n\n```\n<METHOD>\\n<FULL URL INCLUDING QUERY>\\n<BODY>\\n<UNIX TIMESTAMP>\\n\n```\n\nkeyed with the secret. AnythingMCP computes it per request and sends the timestamp it used, so the server can recompute the same string.\n\n**A signature is only valid for a few minutes.** Kaufland rejects a request whose timestamp has drifted, which means a 401 here can be a clock problem rather than a key problem. If every call fails and the keys are definitely right, check the host's time.\n\n**Storefronts are per country.** Kaufland runs `de`, `cz`, `sk`, `pl` and `at` storefronts and most endpoints take a `storefront` parameter. Omitting it gives you the seller's default, which is rarely what a report about one market wants.\n\n**Orders page with offset and limit**, and `ts_created_from` / `ts_created_to` bound the window — both ISO 8601. Ask for the window you mean; the default is short.\n\n**Order units are where the money is.** An order carries `order_units`, each with its own status, price and fulfilment state. A part-cancelled order is normal, so a revenue figure should sum the units that were actually fulfilled rather than the order total.\n\n**Cloud reachability**: sellerapi.kaufland.com is public with a valid certificate.",
+  "instructions": "**Getting credentials**\n1. You must already be a Kaufland Marketplace seller. In the **Seller Portal** open **Settings → API keys** and create a key pair.\n2. You receive a **Client Key** (public, identifies you) and a **Secret Key** (never sent — it signs the request). Set `KAUFLAND_CLIENT_KEY` and `KAUFLAND_SECRET_KEY`.\n\n**The secret never travels.** Kaufland does not accept a bearer token: every request carries `Shop-Client-Key`, `Shop-Timestamp` and `Shop-Signature`, where the signature is an HMAC-SHA256 over the canonical string\n\n```\n<METHOD>\\n<FULL URL INCLUDING QUERY>\\n<BODY>\\n<UNIX TIMESTAMP>\n```\n\nkeyed with the secret, with no newline after the timestamp. AnythingMCP computes it per request and sends the timestamp it used, so the server can recompute the same string.\n\n**A signature is only valid for a few minutes.** Kaufland rejects a request whose timestamp has drifted, which means a 401 here can be a clock problem rather than a key problem. If every call fails and the keys are definitely right, check the host's time.\n\n**Storefronts are per country.** Kaufland runs a storefront per country (`de`, `cz`, `sk`, `pl`, `at` and more); `kaufland_list_storefronts` returns the current list. Most endpoints take a `storefront` parameter. Omitting it gives you the seller's default, which is rarely what a report about one market wants.\n\n**Orders page with offset and limit**, and `ts_created_from` / `ts_created_to` bound the window — both ISO 8601. Ask for the window you mean; the default is short.\n\n**Shipments** have no list endpoint in the Seller API: for an order's delivery details call `kaufland_get_order` with `embedded=delivery`.\n\n**Order units are where the money is.** An order carries `order_units`, each with its own status, price and fulfilment state. A part-cancelled order is normal, so a revenue figure should sum the units that were actually fulfilled rather than the order total.\n\n**Cloud reachability**: sellerapi.kaufland.com is public with a valid certificate.",
   "requiredEnvVars": [
     "KAUFLAND_CLIENT_KEY",
     "KAUFLAND_SECRET_KEY"
@@ -21,7 +21,7 @@
         "algorithm": "sha256",
         "encoding": "hex",
         "secret": "{{KAUFLAND_SECRET_KEY}}",
-        "template": "${method}\\n${url}\\n${body}\\n${timestamp}\\n",
+        "template": "${method}\\n${url}\\n${body}\\n${timestamp}",
         "headerName": "Shop-Signature",
         "timestampHeader": "Shop-Timestamp",
         "extraHeaders": {
@@ -52,13 +52,13 @@
     },
     {
       "name": "kaufland_list_orders",
-      "description": "List orders in a time window with their buyer, storefront, totals and status. Bound the window explicitly: the default is short and a report that silently used it will understate the period.",
+      "description": "List orders in a time window: id, storefront, creation time and number of units. Call kaufland_get_order for the buyer, the addresses and the units. Bound the window explicitly: the default is short and a report that silently used it will understate the period.",
       "parameters": {
         "type": "object",
         "properties": {
           "storefront": {
             "type": "string",
-            "description": "Storefront to query: de, cz, sk, pl or at."
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
           },
           "ts_created_from": {
             "type": "string",
@@ -79,10 +79,6 @@
           "sort": {
             "type": "string",
             "description": "Sort expression, e.g. ts_created:desc."
-          },
-          "embedded": {
-            "type": "string",
-            "description": "Related objects to expand inline, e.g. order_units,order_invoices."
           }
         }
       },
@@ -95,14 +91,13 @@
           "ts_created_to": "$ts_created_to",
           "limit": "$limit",
           "offset": "$offset",
-          "sort": "$sort",
-          "embedded": "$embedded"
+          "sort": "$sort"
         }
       }
     },
     {
       "name": "kaufland_get_order",
-      "description": "Read one order in full: the buyer, the delivery address, the payment and every order unit with its own price, status and fulfilment state.",
+      "description": "Read one order in full: the buyer, the billing and shipping address and every order unit with its own price, status and delivery window.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -112,7 +107,7 @@
           },
           "embedded": {
             "type": "string",
-            "description": "Related objects to expand, e.g. order_units."
+            "description": "One extra object to include: order_invoices, delivery or kss_delivery. Order units are always included."
           }
         },
         "required": [
@@ -135,7 +130,7 @@
         "properties": {
           "storefront": {
             "type": "string",
-            "description": "Storefront to query: de, cz, sk, pl or at."
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
           },
           "status": {
             "type": "string",
@@ -175,7 +170,7 @@
         "properties": {
           "storefront": {
             "type": "string",
-            "description": "Storefront to query: de, cz, sk, pl or at."
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
           },
           "ean": {
             "type": "string",
@@ -203,36 +198,6 @@
       }
     },
     {
-      "name": "kaufland_list_shipments",
-      "description": "List reported shipments with their carrier, tracking number and the order units they cover — the answer to whether something has actually gone out.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "storefront": {
-            "type": "string",
-            "description": "Storefront to query."
-          },
-          "limit": {
-            "type": "number",
-            "description": "Rows per page (max 100)."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Rows to skip, for paging."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/shipments",
-        "queryParams": {
-          "storefront": "$storefront",
-          "limit": "$limit",
-          "offset": "$offset"
-        }
-      }
-    },
-    {
       "name": "kaufland_list_tickets",
       "description": "List customer service tickets with their subject, status and the order they relate to — where a buyer complaint shows up before it becomes a rating.",
       "parameters": {
@@ -240,7 +205,7 @@
         "properties": {
           "storefront": {
             "type": "string",
-            "description": "Storefront to query."
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
           },
           "status": {
             "type": "string",
@@ -269,14 +234,14 @@
     },
     {
       "name": "kaufland_list_storefronts",
-      "description": "List the storefronts this seller is active on, with the currency and locale of each. Use it to find the storefront code the other tools need.",
+      "description": "List the storefronts (one per country) Kaufland runs, with the currency and locale of each. Use it to find the storefront code the other tools need.",
       "parameters": {
         "type": "object",
         "properties": {}
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/storefronts"
+        "path": "/info/storefront"
       }
     }
   ]

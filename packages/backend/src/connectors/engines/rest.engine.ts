@@ -792,6 +792,7 @@ export class RestEngine {
    *   signature.template   `${method}`, `${url}`, `${path}`, `${body}`,
    *                        `${timestamp}` — whatever the vendor's canonical
    *                        string needs, in their order. `\n` is honoured.
+   *                        `${url}` and `${path}` include the query string.
    *   signature.secret     the shared secret (an env placeholder at rest)
    *   signature.algorithm  sha256 (default) | sha1 | sha512
    *   signature.encoding   hex (default) | base64
@@ -826,21 +827,27 @@ export class RestEngine {
           ? data
           : JSON.stringify(data);
 
-    const url = String(axiosConfig.url ?? '');
+    // Query params are set separately on axiosConfig and appended later, so
+    // fold them in here or they are absent from a signature that covers them.
+    // Kaufland signs the full URL with its query: without it every call that
+    // takes a filter fails as "signature corrupted". Pin the serializer so
+    // the query axios sends is byte for byte the one signed here.
+    const params = (axiosConfig.params as Record<string, unknown>) ?? {};
+    const query = serializeRepeatedParams(params);
+    if (query) axiosConfig.paramsSerializer = serializeRepeatedParams;
+    const base = String(axiosConfig.url ?? '');
+    const url = query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base;
     let path = url;
     try {
       const parsed = new URL(url);
-      // Query params are set separately on axiosConfig and appended later, so
-      // fold them in here or they are absent from a signature that covers them.
-      const query = serializeRepeatedParams(
-        (axiosConfig.params as Record<string, unknown>) ?? {},
-      );
-      path = parsed.pathname + (query ? `?${query}` : parsed.search);
+      path = parsed.pathname + parsed.search;
     } catch {
       /* relative URL — sign it as given */
     }
 
-    const canonical = String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}\n')
+    // Kaufland's documented string: the four parts joined by newlines, with
+    // no newline after the timestamp.
+    const canonical = String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
       .replace(/\\n/g, '\n')
       .replace(/\$\{method\}/g, String(axiosConfig.method ?? 'GET').toUpperCase())
       .replace(/\$\{url\}/g, url)
