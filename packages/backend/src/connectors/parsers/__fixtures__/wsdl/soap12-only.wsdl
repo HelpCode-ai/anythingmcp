@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A service that only has a SOAP 1.2 port. The soap12 namespace is bound to
+  an unusual prefix and declared on the binding, so detection must resolve
+  the namespace rather than match the prefix.
+-->
+<definitions name="StockService"
+    targetNamespace="http://example.com/stock"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/stock">
+  <types>
+    <xs:schema elementFormDefault="qualified" targetNamespace="http://example.com/stock">
+      <xs:element name="GetStock">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="sku" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="GetStockResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="quantity" type="xs:int"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="GetStockIn">
+    <part name="parameters" element="tns:GetStock"/>
+  </message>
+  <message name="GetStockOut">
+    <part name="parameters" element="tns:GetStockResponse"/>
+  </message>
+  <portType name="StockPortType">
+    <operation name="GetStock">
+      <input message="tns:GetStockIn"/>
+      <output message="tns:GetStockOut"/>
+    </operation>
+  </portType>
+  <binding name="StockSoap12Binding" type="tns:StockPortType" xmlns:w12="http://schemas.xmlsoap.org/wsdl/soap12/">
+    <w12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetStock">
+      <w12:operation soapAction="urn:GetStock"/>
+      <input><w12:body use="literal"/></input>
+      <output><w12:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="StockService">
+    <port name="StockSoap12Port" binding="tns:StockSoap12Binding">
+      <w12:address location="http://stock.example.com/soap12" xmlns:w12="http://schemas.xmlsoap.org/wsdl/soap12/"/>
+    </port>
+  </service>
+</definitions>

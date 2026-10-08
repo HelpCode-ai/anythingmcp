@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as soap from 'soap';
 import { createHash } from 'crypto';
 import { Logger } from '@nestjs/common';
+import { SsrfBlockedError } from '../../common/ssrf.util';
 
 jest.mock('axios');
 jest.mock('soap');
@@ -119,6 +120,304 @@ describe('SoapEngine', () => {
       expect(envelope).toContain('&amp;more');
       expect(envelope).toContain('&quot;xss&quot;');
       expect(envelope).not.toContain('<script>');
+    });
+  });
+
+  describe('nested parameter values', () => {
+    const okResponse = { status: 200, data: '<Envelope><Body><Resp/></Body></Envelope>' };
+    const orderMapping = {
+      ...baseMapping,
+      method: 'CreateOrder',
+      paramOrder: ['customer', 'lines', 'tags', 'note'],
+    };
+
+    async function envelopeFor(mapping: Record<string, unknown>, params: Record<string, unknown>) {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, mapping as any, params);
+      return mockedAxios.post.mock.calls[0][1] as string;
+    }
+
+    it('writes objects as child elements and arrays as repeated elements', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: { name: 'Ada & Co', address: { street: 'Main St 1', city: 'Basel' } },
+        lines: [
+          { sku: 'A-1', quantity: 2, gift: false },
+          { sku: 'B-2', quantity: 1, gift: true },
+        ],
+        tags: ['urgent', 'b2b'],
+        note: 'x',
+      });
+
+      expect(envelope).toContain(
+        [
+          '    <tns:CreateOrder>',
+          '      <tns:customer>',
+          '        <tns:name>Ada &amp; Co</tns:name>',
+          '        <tns:address>',
+          '          <tns:street>Main St 1</tns:street>',
+          '          <tns:city>Basel</tns:city>',
+          '        </tns:address>',
+          '      </tns:customer>',
+          '      <tns:lines>',
+          '        <tns:sku>A-1</tns:sku>',
+          '        <tns:quantity>2</tns:quantity>',
+          '        <tns:gift>false</tns:gift>',
+          '      </tns:lines>',
+          '      <tns:lines>',
+          '        <tns:sku>B-2</tns:sku>',
+          '        <tns:quantity>1</tns:quantity>',
+          '        <tns:gift>true</tns:gift>',
+          '      </tns:lines>',
+          '      <tns:tags>urgent</tns:tags>',
+          '      <tns:tags>b2b</tns:tags>',
+          '      <tns:note>x</tns:note>',
+          '    </tns:CreateOrder>',
+        ].join('\n'),
+      );
+      expect(envelope).not.toContain('[object Object]');
+    });
+
+    it('orders child elements by the stored elementOrder, then the remaining keys', async () => {
+      const envelope = await envelopeFor(
+        {
+          ...orderMapping,
+          elementOrder: { customer: ['name', 'address'], 'customer/address': ['street', 'city'] },
+        },
+        {
+          // Keys in the "wrong" order, as a JSON client may send them.
+          customer: { extra: 1, address: { city: 'Basel', street: 'Main St 1' }, name: 'Ada' },
+        },
+      );
+
+      expect(envelope).toContain(
+        [
+          '      <tns:customer>',
+          '        <tns:name>Ada</tns:name>',
+          '        <tns:address>',
+          '          <tns:street>Main St 1</tns:street>',
+          '          <tns:city>Basel</tns:city>',
+          '        </tns:address>',
+          '        <tns:extra>1</tns:extra>',
+          '      </tns:customer>',
+        ].join('\n'),
+      );
+    });
+
+    it('leaves out null and undefined values at any level and writes dates as ISO 8601', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: {
+          name: null,
+          since: new Date('2026-10-08T07:00:00.000Z'),
+          address: undefined,
+          vip: true,
+        },
+        lines: [null, { sku: 'A-1' }],
+        tags: [],
+        note: null,
+      });
+
+      expect(envelope).toContain(
+        [
+          '    <tns:CreateOrder>',
+          '      <tns:customer>',
+          '        <tns:since>2026-10-08T07:00:00.000Z</tns:since>',
+          '        <tns:vip>true</tns:vip>',
+          '      </tns:customer>',
+          '      <tns:lines>',
+          '        <tns:sku>A-1</tns:sku>',
+          '      </tns:lines>',
+          '    </tns:CreateOrder>',
+        ].join('\n'),
+      );
+      expect(envelope).not.toContain('null');
+      expect(envelope).not.toContain('tags');
+    });
+
+    it('writes an empty object as an empty element', async () => {
+      const envelope = await envelopeFor(orderMapping, { customer: {} });
+      expect(envelope).toContain('      <tns:customer/>\n    </tns:CreateOrder>');
+    });
+
+    it('writes a parameter an older import named "tags[]" as <tns:tags>', async () => {
+      const envelope = await envelopeFor(
+        { ...baseMapping, paramOrder: ['tags[]'], bodyMapping: { 'tags[]': '$tags[]' } },
+        { 'tags[]': ['a', 'b'] },
+      );
+      expect(envelope).toContain('      <tns:tags>a</tns:tags>\n      <tns:tags>b</tns:tags>');
+      expect(envelope).not.toContain('[]');
+    });
+
+    it('escapes nested text', async () => {
+      const envelope = await envelopeFor(orderMapping, {
+        customer: { name: '<b>"x"</b>' },
+        tags: ["it's"],
+      });
+      expect(envelope).toContain('<tns:name>&lt;b&gt;&quot;x&quot;&lt;/b&gt;</tns:name>');
+      expect(envelope).toContain('<tns:tags>it&apos;s</tns:tags>');
+    });
+
+    it('refuses a nested key that is not an XML name', async () => {
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, {
+          customer: { 'a><evil/><b': 'x' },
+        }),
+      ).rejects.toThrow('SOAP parameter "a><evil/><b" is not a valid XML element name');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses a value that refers to itself', async () => {
+      const customer: Record<string, unknown> = { name: 'Ada' };
+      customer.self = customer;
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, { customer }),
+      ).rejects.toThrow('SOAP parameter "customer/self" contains a circular reference');
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses values nested more than 20 levels deep', async () => {
+      let deep: Record<string, unknown> = { leaf: 'x' };
+      for (let i = 0; i < 20; i++) deep = { level: deep };
+      await expect(
+        engine.execute(baseConfig, orderMapping as any, { customer: deep }),
+      ).rejects.toThrow(/is nested more than 20 levels deep/);
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+
+      // 20 levels are fine.
+      let ok: Record<string, unknown> = { leaf: 'x' };
+      for (let i = 0; i < 19; i++) ok = { level: ok };
+      await expect(envelopeFor(orderMapping, { customer: ok })).resolves.toContain(
+        '<tns:leaf>x</tns:leaf>',
+      );
+    });
+  });
+
+  describe('element qualification', () => {
+    const okResponse = { status: 200, data: '<Envelope><Body><Resp/></Body></Envelope>' };
+    const params = { userId: '42', filter: { active: true, roles: ['a', 'b'] } };
+    const mapping = { ...baseMapping, paramOrder: ['userId', 'filter'] };
+
+    it('qualifies parameter elements when the tool does not say otherwise (stored tools)', async () => {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, mapping, params);
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+
+      expect(envelope).toContain('      <tns:userId>42</tns:userId>');
+      expect(envelope).toContain('        <tns:active>true</tns:active>');
+    });
+
+    it('writes parameter and nested elements unprefixed when childElementsQualified is false', async () => {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, { ...mapping, childElementsQualified: false }, params);
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+
+      expect(envelope).toContain(
+        [
+          '    <tns:GetUser>',
+          '      <userId>42</userId>',
+          '      <filter>',
+          '        <active>true</active>',
+          '        <roles>a</roles>',
+          '        <roles>b</roles>',
+          '      </filter>',
+          '    </tns:GetUser>',
+        ].join('\n'),
+      );
+      // The wrapper stays qualified, and no default namespace pulls the
+      // unprefixed elements into one.
+      expect(envelope).toContain('xmlns:tns="http://tempuri.org/"');
+      expect(envelope).not.toMatch(/xmlns=/);
+    });
+  });
+
+  describe('SOAP 1.2', () => {
+    const soap12Mapping = { ...baseMapping, soapVersion: '1.2' as const };
+    const soap12Response = `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+        <env:Body><GetUserResponse><Name>Ada</Name></GetUserResponse></env:Body>
+      </env:Envelope>`;
+
+    it('sends a SOAP 1.2 envelope with the action in the Content-Type and no SOAPAction header', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      const result = (await engine.execute(baseConfig, soap12Mapping, { userId: '42' })) as any;
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://tempuri.org/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <tns:GetUser>
+      <tns:userId>42</tns:userId>
+    </tns:GetUser>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe(
+        'application/soap+xml; charset=utf-8; action="http://tempuri.org/IService/GetUser"',
+      );
+      expect(headers).not.toHaveProperty('SOAPAction');
+      // The response is read the same way as a SOAP 1.1 one.
+      expect(result).toEqual({ Name: 'Ada' });
+    });
+
+    it('leaves the action parameter out when the action is empty', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+      (soap.createClientAsync as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+      await engine.execute(
+        { ...baseConfig, specUrl: 'http://example.com/soap12-empty?wsdl' },
+        { ...soap12Mapping, soapAction: '' },
+        { userId: '42' },
+      );
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe('application/soap+xml; charset=utf-8');
+      expect(headers).not.toHaveProperty('SOAPAction');
+    });
+
+    it('reads a SOAP 1.2 fault returned with an HTTP error status', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 400,
+        statusText: 'Bad Request',
+        data: `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault>
+          <env:Code><env:Value>env:Sender</env:Value></env:Code>
+          <env:Reason><env:Text xml:lang="en">User 42 is unknown</env:Text></env:Reason>
+        </env:Fault></env:Body></env:Envelope>`,
+      });
+
+      await expect(engine.execute(baseConfig, soap12Mapping, { userId: '42' })).rejects.toThrow(
+        'SOAP call failed with HTTP 400: User 42 is unknown',
+      );
+    });
+
+    it('puts the WS-Security header in the SOAP 1.2 envelope', async () => {
+      engine = new FixedClockSoapEngine();
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      await engine.execute(
+        { ...baseConfig, authType: 'WS_SECURITY', authConfig: { username: 'u', password: 'p' } },
+        soap12Mapping,
+        { userId: '42' },
+      );
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toContain(
+        'xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope"',
+      );
+      expect(envelope).toMatch(/<soapenv:Header>\s*<wsse:Security [^>]*soapenv:mustUnderstand="1">/);
+    });
+
+    it('sends SOAP 1.1 for a stored tool without soapVersion', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: soap12Response });
+
+      await engine.execute(baseConfig, baseMapping, { userId: '42' });
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toContain('xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"');
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers).toEqual({
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: 'http://tempuri.org/IService/GetUser',
+      });
     });
   });
 
@@ -695,6 +994,154 @@ describe('SoapEngine', () => {
     });
   });
 
+  describe('inspectWsdl (connection test)', () => {
+    const mockedCreateClient = soap.createClientAsync as jest.Mock;
+    const url = 'https://user:pw@example.com/service?wsdl&token=s3cret';
+
+    beforeEach(() => mockedCreateClient.mockReset());
+
+    it('counts operations and ports without calling any operation', async () => {
+      mockedCreateClient.mockResolvedValue({
+        wsdl: { definitions: { services: {}, bindings: {} } },
+        describe: () => ({
+          UserService: {
+            BasicHttpBinding_IService: { GetUser: {}, SetUser: {} },
+            BasicHttpsBinding_IService: { GetUser: {}, SetUser: {} },
+          },
+        }),
+      });
+
+      await expect(engine.inspectWsdl(url)).resolves.toEqual({
+        operations: 2,
+        ports: 2,
+        soap12Ports: 0,
+      });
+      expect(mockedCreateClient).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ disableCache: true }),
+      );
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('reports the HTTP status of a refused WSDL, without the URL or the response body', async () => {
+      mockedCreateClient.mockRejectedValue(
+        new Error(`Invalid WSDL URL: ${url}\n\n\r Code: 401\n\n\r Response Body: <html>secret page</html>`),
+      );
+
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.name).toBe('WsdlReadError');
+      expect(err.status).toBe(401);
+      expect(err.message).toBe('The WSDL request returned HTTP 401');
+    });
+
+    it('keeps network error codes and strips credentials from other messages', async () => {
+      mockedCreateClient.mockRejectedValue(
+        Object.assign(new Error(`getaddrinfo ENOTFOUND for ${url}`), { code: 'ENOTFOUND' }),
+      );
+
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.code).toBe('ENOTFOUND');
+      expect(err.status).toBeUndefined();
+      expect(err.message).toBe('getaddrinfo ENOTFOUND for https://example.com/service');
+      expect(err.message).not.toMatch(/s3cret|pw@/);
+    });
+
+    it.each([
+      ['an HTTP status', new Error('Invalid WSDL URL: x\n\n\r Code: 404\n\n\r Response Body: '), true],
+      ['a 200 that is not a WSDL', new Error('Root element of WSDL was <html>. This is likely an authentication issue.'), true],
+      ['a redirect loop', Object.assign(new Error('Maximum number of redirects exceeded'), { code: 'ERR_FR_TOO_MANY_REDIRECTS' }), true],
+      ['DNS', Object.assign(new Error('getaddrinfo ENOTFOUND example.com'), { code: 'ENOTFOUND' }), false],
+      ['a timeout', Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' }), false],
+      ['TLS', Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' }), false],
+      ['the SSRF guard', new SsrfBlockedError("SSRF guard: hostname 'example.com' is blocked"), false],
+    ])('tells whether the server answered: %s', async (_label, error, reached) => {
+      mockedCreateClient.mockRejectedValue(error);
+      const err: any = await engine.inspectWsdl(url).catch((e) => e);
+      expect(err.reachedServer).toBe(reached);
+    });
+
+    describe('cache', () => {
+      class ClockedEngine extends SoapEngine {
+        now = Date.parse('2026-10-08T07:00:00Z');
+        protected currentTime(): Date {
+          return new Date(this.now);
+        }
+      }
+      const client = {
+        wsdl: {
+          definitions: {
+            $targetNamespace: 'http://tempuri.org/',
+            services: { S: { ports: { P: { location: 'http://example.com/service', binding: { methods: {} } } } } },
+            bindings: {},
+          },
+        },
+        describe: () => ({ S: { P: { GetUser: { input: { userId: 's:string' } } } } }),
+      };
+
+      it('reads a WSDL once for repeated tests within ten minutes, and again after', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockResolvedValue(client);
+
+        await clocked.inspectWsdl(url);
+        await clocked.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+        clocked.now += 10 * 60_000;
+        await clocked.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+      });
+
+      it('shares the read with tool calls, both ways', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockResolvedValue(client);
+        mockedAxios.post.mockResolvedValue({ status: 200, data: '<Envelope><Body><R/></Body></Envelope>' });
+
+        await clocked.inspectWsdl(url);
+        await clocked.execute(
+          { ...baseConfig, specUrl: url },
+          { method: 'GetUser', path: 'P', paramOrder: ['userId'] },
+          { userId: '1' },
+        );
+        expect(mockedCreateClient).toHaveBeenCalledTimes(1);
+
+        const other = new ClockedEngine();
+        await other.execute(
+          { ...baseConfig, specUrl: url },
+          { method: 'GetUser', path: 'P', paramOrder: ['userId'] },
+          { userId: '1' },
+        );
+        await other.inspectWsdl(url);
+        expect(mockedCreateClient).toHaveBeenCalledTimes(2);
+      });
+
+      it('tries a WSDL that could not be read again on the next test', async () => {
+        const clocked = new ClockedEngine();
+        mockedCreateClient.mockRejectedValueOnce(new Error('Root element of WSDL was <html>.'));
+        mockedCreateClient.mockResolvedValueOnce(client);
+
+        await expect(clocked.inspectWsdl(url)).rejects.toThrow('Root element');
+        await expect(clocked.inspectWsdl(url)).resolves.toMatchObject({ operations: 1, ports: 1 });
+      });
+    });
+
+    it('logs a failed metadata read without the query string or the response body', async () => {
+      const lines: string[] = [];
+      const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
+        lines.push(String(message));
+      });
+      mockedCreateClient.mockRejectedValue(
+        new Error(`Invalid WSDL URL: ${url}\n\n\r Code: 404\n\n\r Response Body: secret-body`),
+      );
+      mockedAxios.post.mockResolvedValue({ status: 200, data: '<Envelope><Body><R/></Body></Envelope>' });
+
+      await engine.execute({ ...baseConfig, specUrl: url }, { ...baseMapping, soapAction: undefined }, { userId: '1' });
+
+      spy.mockRestore();
+      expect(lines.join('\n')).toContain('https://example.com/service: The WSDL request returned HTTP 404');
+      expect(lines.join('\n')).not.toMatch(/s3cret|pw@|secret-body/);
+    });
+  });
+
   describe('SOAPAction and Content-Type headers', () => {
     it('should set correct headers for SOAP call', async () => {
       mockedAxios.post.mockResolvedValue({
@@ -707,6 +1154,37 @@ describe('SoapEngine', () => {
       const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers['Content-Type']).toBe('text/xml; charset=utf-8');
       expect(headers.SOAPAction).toBe('http://tempuri.org/IService/GetUser');
+    });
+
+    it('sends an empty SOAPAction as "" (SOAP 1.1 requires the header)', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+      // No soapAction stored and none in the WSDL (it cannot be read here).
+      (soap.createClientAsync as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+      await engine.execute(
+        { ...baseConfig, specUrl: 'http://example.com/empty-action?wsdl' },
+        { ...baseMapping, soapAction: '' },
+        { userId: '1' },
+      );
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers.SOAPAction).toBe('""');
+      expect(headers['Content-Type']).toBe('text/xml; charset=utf-8');
+    });
+
+    it('keeps a non-empty SOAPAction unquoted', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+
+      await engine.execute(baseConfig, { ...baseMapping, soapAction: 'urn:GetUser' }, { userId: '1' });
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers.SOAPAction).toBe('urn:GetUser');
     });
   });
 });

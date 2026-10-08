@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Document/literal as JAX-WS generates it: the schema has no
+  elementFormDefault (so local elements are unqualified, the XSD default),
+  the input element points at a named complex type, and the parameters are
+  optional (minOccurs="0"), nested (address), repeated (tags), an
+  enumeration (status) and a dateTime.
+-->
+<definitions name="OrderService"
+    targetNamespace="http://example.com/orders"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/orders">
+  <types>
+    <xs:schema version="1.0" targetNamespace="http://example.com/orders">
+      <xs:element name="createOrder" type="tns:createOrder"/>
+      <xs:element name="createOrderResponse" type="tns:createOrderResponse"/>
+      <xs:complexType name="createOrder">
+        <xs:sequence>
+          <xs:element name="customerId" type="xs:string"/>
+          <xs:element name="status" type="tns:orderStatus" minOccurs="0"/>
+          <xs:element name="deliveryDate" type="xs:dateTime" minOccurs="0"/>
+          <xs:element name="address" type="tns:address" minOccurs="0"/>
+          <xs:element name="tags" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          <xs:element name="note" type="xs:string" nillable="true"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="address">
+        <xs:sequence>
+          <xs:element name="street" type="xs:string"/>
+          <xs:element name="city" type="xs:string"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="orderStatus">
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="NEW"/>
+          <xs:enumeration value="SHIPPED"/>
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="createOrderResponse">
+        <xs:sequence>
+          <xs:element name="return" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+      </xs:complexType>
+    </xs:schema>
+  </types>
+  <message name="createOrder">
+    <part name="parameters" element="tns:createOrder"/>
+  </message>
+  <message name="createOrderResponse">
+    <part name="parameters" element="tns:createOrderResponse"/>
+  </message>
+  <portType name="OrderService">
+    <operation name="createOrder">
+      <input message="tns:createOrder"/>
+      <output message="tns:createOrderResponse"/>
+    </operation>
+  </portType>
+  <binding name="OrderServicePortBinding" type="tns:OrderService">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <operation name="createOrder">
+      <soap:operation soapAction=""/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="OrderService">
+    <port name="OrderServicePort" binding="tns:OrderServicePortBinding">
+      <soap:address location="http://orders.example.com/OrderService"/>
+    </port>
+  </service>
+</definitions>
