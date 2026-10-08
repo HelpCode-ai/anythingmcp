@@ -1,5 +1,7 @@
 # Dependencies
-node_modules/
+# No trailing slash: a node_modules symlink (a worktree pointing at another
+# checkout's install) is a file, and "node_modules/" let one into #948.
+node_modules
 .pnp
 .pnp.js
 
