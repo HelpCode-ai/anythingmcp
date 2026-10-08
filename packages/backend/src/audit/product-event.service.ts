@@ -84,6 +84,15 @@ export const ProductEvents = {
   CATALOG_SEARCH: 'catalog_search',
   /** A result was picked after a search. metadata.query, adapterSlug, via. */
   CATALOG_SEARCH_PICKED: 'catalog_search_picked',
+  /**
+   * Cloud: the workspace's first successful tool call was handed to the
+   * licence site, to be uploaded to Google Ads as an activation conversion
+   * against the sign-up's click id (see ads-activation.service.ts). Once per
+   * workspace; metadata.kind = which click id (gclid, gbraid, wbraid),
+   * metadata.status = the site's HTTP answer (2xx queued, 4xx refused for
+   * good). Server-only. Its presence is what stops a second report.
+   */
+  ADS_ACTIVATION_REPORTED: 'ads_activation_reported',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -97,6 +106,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
+  ProductEvents.ADS_ACTIVATION_REPORTED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
@@ -148,15 +158,34 @@ export class ProductEventService {
    */
   async clickIdForUser(userId: string | null | undefined): Promise<AttributionClickId | null> {
     if (!userId) return null;
+    return (await this.signupClickId({ userId }))?.clickId ?? null;
+  }
+
+  /**
+   * The same for a workspace: the click id of the sign-up that created it,
+   * with the user who signed up (null if that account is gone). Null when
+   * the sign-up carried no click id with ad consent granted.
+   */
+  async clickIdForOrganization(
+    organizationId: string | null | undefined,
+  ): Promise<{ clickId: AttributionClickId; userId: string | null } | null> {
+    if (!organizationId) return null;
+    return this.signupClickId({ organizationId });
+  }
+
+  /** Newest `signup_attributed` rows first; the first that yields an id wins. */
+  private async signupClickId(
+    where: { userId: string } | { organizationId: string },
+  ): Promise<{ clickId: AttributionClickId; userId: string | null } | null> {
     const rows = await this.prisma.productEvent.findMany({
-      where: { userId, event: ProductEvents.SIGNUP_ATTRIBUTED },
+      where: { ...where, event: ProductEvents.SIGNUP_ATTRIBUTED },
       orderBy: { createdAt: 'desc' },
       take: 5,
-      select: { metadata: true },
+      select: { metadata: true, userId: true },
     });
     for (const row of rows) {
-      const found = clickIdFromAttribution(row.metadata);
-      if (found) return found;
+      const clickId = clickIdFromAttribution(row.metadata);
+      if (clickId) return { clickId, userId: row.userId ?? null };
     }
     return null;
   }
