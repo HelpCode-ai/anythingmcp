@@ -1,0 +1,1102 @@
+{
+  "slug": "printful",
+  "name": "Printful",
+  "description": "Printful print-on-demand: browse the product catalog, check production prices and shipping rates, estimate costs, draft and track orders, and see the products of your Printful stores, including Shopify, Etsy and WooCommerce stores. Printful API with a private token.",
+  "instructions": "## Printful\nThis connector talks to the Printful API (`https://api.printful.com`). Printful prints and ships products on demand (apparel, embroidery, posters, canvas, mugs, phone cases…) from its own fulfilment centres in North America, Europe and elsewhere. A Printful store is either linked to a platform (Shopify, WooCommerce, Etsy, Wix…), whose orders arrive on their own, or a **Manual order / API** store created in the Printful dashboard.\n\nThe connector uses Printful API v1, the documented stable version. Product prices come from the v2 endpoint `/v2/catalog-products/{id}/prices`, which Printful labels open beta and usable in production.\n\n## Setup\n1. Sign in at https://developers.printful.com with your Printful account and open **Your tokens** (https://developers.printful.com/tokens).\n2. Create a **private token**. Pick the access level:\n   - **Store**: the token reaches one store, chosen now. Simplest; store tools need no `store_id`.\n   - **Account**: the token reaches every store of the account. Store tools then need `store_id` (from `printful_list_stores`); it is sent as the `X-PF-Store-Id` header. Shipping rates and orders need a store too: an account with no store yet answers `This endpoint requires store_id`, so create one first (Stores → Add store → Manual order platform / API).\n3. Pick the scopes. For everything this connector does: `orders` (read and write orders; `orders/read` for a read-only setup) and `sync_products/read` (store products). `printful_list_stores` needs the stores scope (`stores_list`) where the token form offers it. The catalog, prices and shipping rates need no scope.\n4. Set an expiry date, create the token and copy it right away: it is not shown again. Paste it into `PRINTFUL_API_TOKEN`.\n\nThe token is sent as `Authorization: Bearer <token>`. Private tokens expire on the date you chose and cannot be refreshed: create a new one before then.\n\n## Start here\n1. `printful_get_token_scopes` shows what the token may do; `printful_list_stores` lists the stores and their ids.\n2. Catalog: `printful_list_categories` → `printful_list_catalog_products` → `printful_get_catalog_product` for the variants (size and colour) and their ids; `printful_get_product_prices` for production prices per placement and technique.\n3. Before ordering: `printful_calculate_shipping_rates` for the shipping options, `printful_estimate_order_costs` for the full cost of an order.\n\n## Orders\n- `printful_create_draft_order` creates a **draft**: Printful does not submit it for fulfillment and only charges orders that are confirmed. Review it in the dashboard (Orders) and confirm it there or with `printful_confirm_order`.\n- An item is either a catalog `variant_id` with print `files` (public image URLs with a placement `type` such as `default` or `back`), or a `sync_variant_id` / `external_variant_id` of a product already set up in the store, which carries its own files.\n- `external_id` is your own order id; any order tool also takes it as `@<external_id>` instead of Printful's numeric id.\n- Addresses: `country_code` is ISO 3166-1 alpha-2; `state_code` is required for the US, Canada and Australia; a tax number is required for Brazil.\n- Statuses: `draft` (not submitted), `pending` (submitted, can still be cancelled), `inreview`, `failed`, `canceled`, `inprocess` (in production), `onhold` (a problem to resolve), `partial` (some items shipped), `fulfilled` (all shipped), `archived`. Tracking numbers and URLs are in `shipments` of `printful_get_order`.\n- Orders from a linked Shopify, Etsy or WooCommerce store arrive in Printful by themselves; do not create them again.\n\n## Store products\nPrintful has two product lists, one per store kind:\n- **Manual order / API stores**: `printful_list_store_products` and `printful_get_store_product`.\n- **Platform-linked stores** (Shopify, WooCommerce, Etsy…): `printful_list_sync_products` and `printful_get_sync_product`, which show which platform variants are synced to a Printful product.\nUse the pair that matches the kind of store (see `type` in `printful_list_stores`).\n\n## Responses and paging\nAnswers have the form `{ \"code\": 200, \"result\": …, \"paging\": { \"total\", \"offset\", \"limit\" } }`. `printful_list_orders` and `printful_list_sync_products` page with `offset` and `limit` (at most 100). Prices are decimal strings; timestamps are Unix seconds.\n\n## Write tools\n`printful_create_draft_order` is on: a draft costs nothing. `printful_confirm_order` is installed switched off, because confirming charges the store's billing method and starts production; enable it on the connector page if you want it. No tool deletes or cancels anything.\n\n## Rate limits\n120 requests per minute per store (30 per minute for unauthenticated catalog calls). Every answer carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`; over the limit Printful answers 429 with `Retry-After`, and the request is not processed.\n\n## Errors\n- 401: the token is wrong, expired or deleted. Create a new one under Your tokens.\n- 403: the token lacks the scope for this call, or an account-level token was used without `store_id`.\n- 400: a field is invalid; the message in `result` or `error.message` says which (for example a missing `state_code`, an unknown variant or a file URL Printful cannot download).\n- 404: unknown id. Look ids up with the list tools rather than guessing them.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "printful",
+  "docsUrl": "https://developers.printful.com/docs/",
+  "requiredEnvVars": [
+    "PRINTFUL_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "PRINTFUL_API_TOKEN": {
+      "label": "Private token",
+      "kind": "credential",
+      "secret": true,
+      "help": "developers.printful.com → Your tokens → create a private token (store or account level), pick the scopes orders and sync_products/read, set an expiry date and copy the token right away: it is shown only once.",
+      "link": "https://developers.printful.com/tokens",
+      "pattern": "^(?!Bearer\\s)\\S+$",
+      "patternMessage": "Paste the token alone, without Bearer in front and without spaces."
+    }
+  },
+  "prerequisites": "A Printful account with at least one store. Private tokens are created in the Printful Developer Portal (developers.printful.com) with the same login.",
+  "verifyHints": {
+    "401": "Printful refused the token. It may be mistyped, expired or deleted: create a new private token under Your tokens on developers.printful.com.",
+    "403": "The token lacks a scope for this call. Create a token with the orders and sync_products/read scopes.",
+    "rate_limited": "Printful allows 120 requests per minute per store. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "printful_get_token_scopes"
+  },
+  "connector": {
+    "name": "Printful",
+    "type": "REST",
+    "baseUrl": "https://api.printful.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PRINTFUL_API_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/oauth/scopes"
+  },
+  "tools": [
+    {
+      "name": "printful_get_token_scopes",
+      "description": "List the scopes of the configured private token (orders, sync_products, file_library, webhooks…), to check what the connector is allowed to read and change. Works with store- and account-level tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oauth/scopes"
+      }
+    },
+    {
+      "name": "printful_list_stores",
+      "description": "List the Printful stores the token can reach, with id, name and type (the platform the store is linked to). An account-level token sees every store of the account and needs one of these ids as store_id on store tools; a store-level token sees its own store.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores"
+      }
+    },
+    {
+      "name": "printful_list_categories",
+      "description": "List the Printful catalog categories (men's clothing, wall art, mugs, hats…) with id, parent id, title and image. Use a category id to filter printful_list_catalog_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories"
+      }
+    },
+    {
+      "name": "printful_list_catalog_products",
+      "description": "List the blank products in the Printful catalog (t-shirts, hoodies, posters, mugs…) with id, type, brand, model, title, image, variant count, average fulfillment time and printing techniques, optionally only from some categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Comma-separated category ids from printful_list_categories, e.g. 24 or 24,27."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "category_id": "$category_id"
+        }
+      }
+    },
+    {
+      "name": "printful_get_catalog_product",
+      "description": "Get one catalog product with its description, print file placements, techniques and options, and every variant (size, colour, price, in-stock flag and stock status by region). Variant ids are what orders, shipping rates and cost estimates use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Catalog product id from printful_list_catalog_products."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      }
+    },
+    {
+      "name": "printful_get_catalog_variant",
+      "description": "Get one catalog variant (a size and colour of a product) with its price, stock status by region and its parent product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "description": "Catalog variant id from printful_get_catalog_product."
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/variant/{variant_id}"
+      }
+    },
+    {
+      "name": "printful_get_product_size_guide",
+      "description": "Get the size guide of a catalog product: measurements per size for the product and how to measure, in inches or centimetres.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Catalog product id."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "inches",
+              "cm"
+            ],
+            "description": "Measurement unit. By default inches for the United States, Liberia and Myanmar and centimetres elsewhere."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/sizes",
+        "queryParams": {
+          "unit": "$unit"
+        }
+      }
+    },
+    {
+      "name": "printful_get_product_prices",
+      "description": "Get the production prices of a catalog product, including store discounts: price per placement and technique (front, back, sleeve, embroidery…) and per variant. Shipping is not included. Uses Printful API v2 (open beta).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Catalog product id."
+          },
+          "selling_region_name": {
+            "type": "string",
+            "description": "Selling region whose production currency the prices are calculated in, e.g. worldwide."
+          },
+          "currency": {
+            "type": "string",
+            "description": "3-letter currency code to show prices in (default: the store currency)."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/catalog-products/{product_id}/prices",
+        "queryParams": {
+          "selling_region_name": "$selling_region_name",
+          "currency": "$currency"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_calculate_shipping_rates",
+      "description": "Get the shipping options for a set of catalog or store variants to an address, with rate id, name, price, currency and delivery-day range and dates. Creates nothing. Only the country (and state for the US, Canada, Australia) is required; a fuller address gives more precise rates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Destination address.",
+            "properties": {
+              "address1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Apartment, suite."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "State or province code. Required for the US, Canada and Australia."
+              },
+              "country_code": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 country code."
+              },
+              "zip": {
+                "type": "string",
+                "description": "ZIP or postal code."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number."
+              }
+            },
+            "required": [
+              "country_code"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Items to ship, each with one variant id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variant_id": {
+                  "type": "string",
+                  "description": "Catalog variant id."
+                },
+                "external_variant_id": {
+                  "type": "string",
+                  "description": "External variant id of a store product."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Quantity."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Retail value of the item, optional; helps calculate customs."
+                }
+              },
+              "required": [
+                "quantity"
+              ]
+            }
+          },
+          "currency": {
+            "type": "string",
+            "description": "3-letter currency code to convert the rates to (default: the store currency)."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en_US",
+              "es_ES"
+            ],
+            "description": "Language of the rate names (default en_US)."
+          }
+        },
+        "required": [
+          "recipient",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/rates",
+        "bodyMapping": {
+          "recipient": "$recipient",
+          "items": "$items",
+          "currency": "$currency",
+          "locale": "$locale"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "printful_list_orders",
+      "description": "List the orders of a store, optionally by status: draft, pending, inreview, failed, canceled, inprocess, onhold, partial, fulfilled or archived. Returns each order with recipient, items, costs and shipments; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "inreview",
+              "failed",
+              "canceled",
+              "inprocess",
+              "onhold",
+              "partial",
+              "fulfilled",
+              "archived"
+            ],
+            "description": "Only orders with this status."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Orders to skip, for paging (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Orders per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "status": "$status",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_get_order",
+      "description": "Get one order: status, shipping method, recipient, items with files, Printful costs (subtotal, shipping, tax, VAT, total), retail costs, and shipments with carrier, tracking number and tracking URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Printful order id (a number), or your external id prefixed with @, e.g. @SHOP-1001."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_estimate_order_costs",
+      "description": "Estimate what Printful would charge for an order without creating it: item and print costs (back prints, inside labels…), digitization, fees, shipping, tax, VAT and total, plus the retail costs. Applies the store's shipping settings. Takes the same recipient and items as an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Your own order id (up to 32 letters, digits, - or _). The order can then be read as @<external_id>."
+          },
+          "shipping": {
+            "type": "string",
+            "description": "Shipping rate id from printful_calculate_shipping_rates, e.g. STANDARD (default)."
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Recipient address.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Full name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company name."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Apartment, suite, floor."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "State or province code, e.g. CA. Required for the US, Canada and Australia."
+              },
+              "country_code": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. DE or US."
+              },
+              "zip": {
+                "type": "string",
+                "description": "ZIP or postal code."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address."
+              },
+              "tax_number": {
+                "type": "string",
+                "description": "Tax number. Required for Brazil (CPF/CNPJ)."
+              }
+            },
+            "required": [
+              "address1",
+              "city",
+              "country_code"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Line items. Give each one exactly one of variant_id (catalog variant, with files), sync_variant_id or external_variant_id (a product already set up in a Printful store, files included).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variant_id": {
+                  "type": "integer",
+                  "description": "Catalog variant id from printful_get_catalog_product. Needs files."
+                },
+                "sync_variant_id": {
+                  "type": "integer",
+                  "description": "Sync variant id of a store product (from printful_get_store_product or printful_get_sync_product)."
+                },
+                "external_variant_id": {
+                  "type": "string",
+                  "description": "Your own variant id of a store product (the external_id of its sync variant)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000,
+                  "description": "Quantity, at most 1000 per item."
+                },
+                "retail_price": {
+                  "type": "string",
+                  "description": "Retail price shown on the packing slip, e.g. \"24.99\"."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Item name shown on the packing slip."
+                },
+                "external_id": {
+                  "type": "string",
+                  "description": "Your own line item id."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "Your own SKU for the item."
+                },
+                "files": {
+                  "type": "array",
+                  "description": "Print files, for catalog variants. Placements come from printful_get_catalog_product.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Placement, e.g. default (front), back, front, label_inside, embroidery_front."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Printful downloads the print file from (PNG or JPG)."
+                      },
+                      "filename": {
+                        "type": "string",
+                        "description": "File name."
+                      },
+                      "visible": {
+                        "type": "boolean",
+                        "description": "Show the file in the Printful file library (default true)."
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ]
+                  }
+                },
+                "options": {
+                  "type": "array",
+                  "description": "Product options such as embroidery thread colours, as {id, value} pairs listed on the catalog product.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Option id."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Option value."
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "quantity"
+              ]
+            }
+          },
+          "retail_costs": {
+            "type": "object",
+            "description": "Amounts shown on the packing slip (not what Printful charges).",
+            "properties": {
+              "currency": {
+                "type": "string",
+                "description": "3-letter currency code."
+              },
+              "subtotal": {
+                "type": "string",
+                "description": "Items total."
+              },
+              "discount": {
+                "type": "string",
+                "description": "Discount."
+              },
+              "shipping": {
+                "type": "string",
+                "description": "Shipping."
+              },
+              "tax": {
+                "type": "string",
+                "description": "Tax."
+              }
+            }
+          },
+          "gift": {
+            "type": "object",
+            "description": "Gift message printed on the packing slip.",
+            "properties": {
+              "subject": {
+                "type": "string",
+                "description": "Gift message title."
+              },
+              "message": {
+                "type": "string",
+                "description": "Gift message text."
+              }
+            }
+          },
+          "packing_slip": {
+            "type": "object",
+            "description": "Packing slip overrides.",
+            "properties": {
+              "email": {
+                "type": "string",
+                "description": "Customer service email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Customer service phone."
+              },
+              "message": {
+                "type": "string",
+                "description": "Custom message."
+              },
+              "store_name": {
+                "type": "string",
+                "description": "Store name for the return address."
+              },
+              "custom_order_id": {
+                "type": "string",
+                "description": "Order id printed instead of Printful's."
+              }
+            }
+          }
+        },
+        "required": [
+          "recipient",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/estimate-costs",
+        "bodyMapping": {
+          "external_id": "$external_id",
+          "shipping": "$shipping",
+          "recipient": "$recipient",
+          "items": "$items",
+          "retail_costs": "$retail_costs",
+          "gift": "$gift",
+          "packing_slip": "$packing_slip"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "printful_create_draft_order",
+      "description": "Create an order as a draft. A draft is not submitted for fulfillment and not charged; it can be reviewed and edited in the Printful dashboard and is sent to production only when confirmed (printful_confirm_order or the dashboard). Returns the order with its id and estimated costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Your own order id (up to 32 letters, digits, - or _). The order can then be read as @<external_id>."
+          },
+          "shipping": {
+            "type": "string",
+            "description": "Shipping rate id from printful_calculate_shipping_rates, e.g. STANDARD (default)."
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Recipient address.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Full name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company name."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Apartment, suite, floor."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "State or province code, e.g. CA. Required for the US, Canada and Australia."
+              },
+              "country_code": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. DE or US."
+              },
+              "zip": {
+                "type": "string",
+                "description": "ZIP or postal code."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address."
+              },
+              "tax_number": {
+                "type": "string",
+                "description": "Tax number. Required for Brazil (CPF/CNPJ)."
+              }
+            },
+            "required": [
+              "address1",
+              "city",
+              "country_code"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Line items. Give each one exactly one of variant_id (catalog variant, with files), sync_variant_id or external_variant_id (a product already set up in a Printful store, files included).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variant_id": {
+                  "type": "integer",
+                  "description": "Catalog variant id from printful_get_catalog_product. Needs files."
+                },
+                "sync_variant_id": {
+                  "type": "integer",
+                  "description": "Sync variant id of a store product (from printful_get_store_product or printful_get_sync_product)."
+                },
+                "external_variant_id": {
+                  "type": "string",
+                  "description": "Your own variant id of a store product (the external_id of its sync variant)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000,
+                  "description": "Quantity, at most 1000 per item."
+                },
+                "retail_price": {
+                  "type": "string",
+                  "description": "Retail price shown on the packing slip, e.g. \"24.99\"."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Item name shown on the packing slip."
+                },
+                "external_id": {
+                  "type": "string",
+                  "description": "Your own line item id."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "Your own SKU for the item."
+                },
+                "files": {
+                  "type": "array",
+                  "description": "Print files, for catalog variants. Placements come from printful_get_catalog_product.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Placement, e.g. default (front), back, front, label_inside, embroidery_front."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL Printful downloads the print file from (PNG or JPG)."
+                      },
+                      "filename": {
+                        "type": "string",
+                        "description": "File name."
+                      },
+                      "visible": {
+                        "type": "boolean",
+                        "description": "Show the file in the Printful file library (default true)."
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ]
+                  }
+                },
+                "options": {
+                  "type": "array",
+                  "description": "Product options such as embroidery thread colours, as {id, value} pairs listed on the catalog product.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Option id."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Option value."
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "quantity"
+              ]
+            }
+          },
+          "retail_costs": {
+            "type": "object",
+            "description": "Amounts shown on the packing slip (not what Printful charges).",
+            "properties": {
+              "currency": {
+                "type": "string",
+                "description": "3-letter currency code."
+              },
+              "subtotal": {
+                "type": "string",
+                "description": "Items total."
+              },
+              "discount": {
+                "type": "string",
+                "description": "Discount."
+              },
+              "shipping": {
+                "type": "string",
+                "description": "Shipping."
+              },
+              "tax": {
+                "type": "string",
+                "description": "Tax."
+              }
+            }
+          },
+          "gift": {
+            "type": "object",
+            "description": "Gift message printed on the packing slip.",
+            "properties": {
+              "subject": {
+                "type": "string",
+                "description": "Gift message title."
+              },
+              "message": {
+                "type": "string",
+                "description": "Gift message text."
+              }
+            }
+          },
+          "packing_slip": {
+            "type": "object",
+            "description": "Packing slip overrides.",
+            "properties": {
+              "email": {
+                "type": "string",
+                "description": "Customer service email."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Customer service phone."
+              },
+              "message": {
+                "type": "string",
+                "description": "Custom message."
+              },
+              "store_name": {
+                "type": "string",
+                "description": "Store name for the return address."
+              },
+              "custom_order_id": {
+                "type": "string",
+                "description": "Order id printed instead of Printful's."
+              }
+            }
+          }
+        },
+        "required": [
+          "recipient",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "external_id": "$external_id",
+          "shipping": "$shipping",
+          "recipient": "$recipient",
+          "items": "$items",
+          "retail_costs": "$retail_costs",
+          "gift": "$gift",
+          "packing_slip": "$packing_slip"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_confirm_order",
+      "description": "Submit a draft order for fulfillment. Printful charges the store's billing method and starts production; from then on the order can only be cancelled while it is pending. Returns the order with its new status.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Printful order id of a draft, or @<external_id>."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/confirm",
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "printful_list_store_products",
+      "description": "List the products of a Manual order / API store (one created in the Printful dashboard rather than linked to a platform) with id, external id, name, number of variants and thumbnail, optionally by status or category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "synced",
+              "unsynced",
+              "ignored",
+              "imported",
+              "discontinued",
+              "out_of_stock"
+            ],
+            "description": "Only products in this state."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Comma-separated catalog category ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/store/products",
+        "queryParams": {
+          "status": "$status",
+          "category_id": "$category_id"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_get_store_product",
+      "description": "Get one product of a Manual order / API store with its sync variants: catalog variant, retail price, currency, SKU, print files and options. A sync variant id can be ordered without sending files again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Sync product id (a number), or its external id prefixed with @."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/store/products/{product_id}",
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_list_sync_products",
+      "description": "List the products of a store linked to an e-commerce platform (Shopify, WooCommerce, Etsy…), with their sync state toward Printful: how many variants exist and how many are synced to a Printful product. Search by name and page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in product names."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "synced",
+              "unsynced",
+              "ignored",
+              "imported",
+              "discontinued",
+              "out_of_stock"
+            ],
+            "description": "Only products in this state, e.g. unsynced for products without a Printful product attached."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Products to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Products per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync/products",
+        "queryParams": {
+          "search": "$search",
+          "status": "$status",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    },
+    {
+      "name": "printful_get_sync_product",
+      "description": "Get one product of a platform-linked store with its sync variants: the platform variant, the Printful catalog variant it is synced to, retail price, SKU, print files and whether it is synced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Sync product id (a number), or the platform's product id prefixed with @."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Printful store id from printful_list_stores. Needed only with an account-level token; a store-level token already belongs to one store."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync/products/{product_id}",
+        "headers": {
+          "X-PF-Store-Id": "$store_id"
+        }
+      }
+    }
+  ]
+}
