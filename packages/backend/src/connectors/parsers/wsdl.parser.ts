@@ -61,17 +61,14 @@ export function wsdlTargetNamespace(wsdl: any): string {
 }
 
 /**
- * Find an operation of a port in a WSDL parsed by the `soap` library.
- *
- * The port is followed to its binding: bindings are keyed by their own name,
- * which only matches the port name in WCF WSDLs (`BasicHttpBinding_IService`
- * for both); JAX-WS names them `ItemPort` and `ItemBinding`.
+ * The binding operation of a port in a WSDL parsed by the `soap` library
+ * (style, soapAction, input), and the port's address.
  */
-export function resolveWsdlOperation(
+function findWsdlMethod(
   wsdl: any,
   portName: string,
   operationName: string,
-): WsdlOperationInfo {
+): { method: any; endpoint: string } {
   const definitions = wsdl?.definitions;
   let endpoint = '';
   let method: any;
@@ -83,6 +80,256 @@ export function resolveWsdlOperation(
     break;
   }
   method ??= definitions?.bindings?.[portName]?.methods?.[operationName];
+  return { method, endpoint };
+}
+
+/** A child element of an operation's input element, as its schema declares it. */
+export interface InputElementDecl {
+  name: string;
+  /** minOccurs absent or at least 1, and not one branch of a choice. */
+  required: boolean;
+  /** Namespace-qualified in the message: `form`, else the declaring schema's elementFormDefault; always for a `ref`. */
+  qualified: boolean;
+  /** The xs:enumeration values of its simple type. */
+  enum?: string[];
+}
+
+const XSD_NS = 'http://www.w3.org/2001/XMLSchema';
+/** node-soap's key for a default / target namespace in its prefix maps. */
+const TNS_PREFIX = '__tns__';
+/** Guards the schema walk against recursive base types and group references. */
+const MAX_SCHEMA_WALK_DEPTH = 20;
+
+/** Resolve a QName (`tns:Item`) as node-soap does, through the prefix maps in scope. */
+function resolveQName(
+  qname: string,
+  node: any,
+  schema: any,
+  definitions: any,
+): { ns?: string; name: string } {
+  const colon = qname.indexOf(':');
+  const prefix = colon > 0 ? qname.slice(0, colon) : TNS_PREFIX;
+  const name = qname.slice(colon + 1);
+  for (const map of [
+    node?.xmlns,
+    node?.schemaXmlns,
+    schema?.xmlns,
+    node?.definitionsXmlns,
+    definitions?.xmlns,
+  ]) {
+    if (map?.[prefix]) return { ns: map[prefix], name };
+  }
+  return { name };
+}
+
+/**
+ * The direct child elements of a document-style operation's input element,
+ * read from the schema (node-soap's describe() drops minOccurs, form and
+ * enumerations). Undefined when the input is not a schema element (RPC) or
+ * part of its content model cannot be resolved; callers then keep their
+ * defaults.
+ */
+export function inputElementDecls(
+  wsdl: any,
+  portName: string,
+  operationName: string,
+): InputElementDecl[] | undefined {
+  const definitions = wsdl?.definitions;
+  const { method } = findWsdlMethod(wsdl, portName, operationName);
+  const input = method?.input;
+  if (!definitions?.schemas || method?.style === 'rpc' || input?.name !== 'element') {
+    return undefined;
+  }
+  const schema = definitions.schemas[input.targetNamespace];
+  if (!schema) return undefined;
+  try {
+    return elementContentDecls(input, schema, definitions, 0);
+  } catch {
+    // An unexpected shape of node-soap's internals: keep the defaults.
+    return undefined;
+  }
+}
+
+function elementContentDecls(
+  element: any,
+  schema: any,
+  definitions: any,
+  depth: number,
+): InputElementDecl[] | undefined {
+  if (depth > MAX_SCHEMA_WALK_DEPTH) return undefined;
+  if (element.$type) {
+    const type = resolveQName(element.$type, element, schema, definitions);
+    if (type.ns === XSD_NS) return [];
+    const typeSchema = type.ns ? definitions.schemas[type.ns] : undefined;
+    const complexType = typeSchema?.complexTypes?.[type.name];
+    if (complexType) return complexTypeDecls(complexType, typeSchema, definitions, depth + 1);
+    // A simple type has no child elements.
+    return typeSchema?.types?.[type.name] ? [] : undefined;
+  }
+  const inline = (element.children || []).find((c: any) => c?.name === 'complexType');
+  return inline ? complexTypeDecls(inline, schema, definitions, depth + 1) : [];
+}
+
+function complexTypeDecls(
+  complexType: any,
+  schema: any,
+  definitions: any,
+  depth: number,
+): InputElementDecl[] | undefined {
+  if (depth > MAX_SCHEMA_WALK_DEPTH) return undefined;
+  const decls: InputElementDecl[] = [];
+  for (const child of complexType.children || []) {
+    if (['sequence', 'all', 'choice', 'group'].includes(child?.name)) {
+      const particle = particleDecls(child, schema, definitions, false, depth + 1);
+      if (!particle) return undefined;
+      decls.push(...particle);
+    } else if (child?.name === 'complexContent') {
+      const derivation = (child.children || []).find(
+        (c: any) => c?.name === 'extension' || c?.name === 'restriction',
+      );
+      if (!derivation) continue;
+      // An extension's content follows its base type's.
+      if (derivation.name === 'extension' && derivation.$base) {
+        const base = resolveQName(derivation.$base, derivation, schema, definitions);
+        if (base.ns !== XSD_NS) {
+          const baseSchema = base.ns ? definitions.schemas[base.ns] : undefined;
+          const baseType = baseSchema?.complexTypes?.[base.name];
+          if (!baseType) return undefined;
+          const inherited = complexTypeDecls(baseType, baseSchema, definitions, depth + 1);
+          if (!inherited) return undefined;
+          decls.push(...inherited);
+        }
+      }
+      for (const particle of derivation.children || []) {
+        if (!['sequence', 'all', 'choice', 'group'].includes(particle?.name)) continue;
+        const own = particleDecls(particle, schema, definitions, false, depth + 1);
+        if (!own) return undefined;
+        decls.push(...own);
+      }
+    }
+    // simpleContent (text), attributes and annotations declare no elements.
+  }
+  return decls;
+}
+
+function particleDecls(
+  particle: any,
+  schema: any,
+  definitions: any,
+  optional: boolean,
+  depth: number,
+): InputElementDecl[] | undefined {
+  if (depth > MAX_SCHEMA_WALK_DEPTH) return undefined;
+  // Every element of a choice, or of a particle that may be absent, is optional.
+  const childrenOptional =
+    optional || particle.name === 'choice' || particle.$minOccurs === '0';
+  if (particle.name === 'group' && particle.$ref) {
+    const ref = resolveQName(particle.$ref, particle, schema, definitions);
+    const groupSchema = ref.ns ? definitions.schemas[ref.ns] : undefined;
+    const group = groupSchema?.groups?.[ref.name];
+    return group
+      ? particleDecls(group, groupSchema, definitions, childrenOptional, depth + 1)
+      : undefined;
+  }
+
+  const decls: InputElementDecl[] = [];
+  for (const child of particle.children || []) {
+    if (child?.name === 'element') {
+      const decl = elementDecl(child, schema, definitions, childrenOptional);
+      if (!decl) return undefined;
+      decls.push(decl);
+    } else if (['sequence', 'all', 'choice', 'group'].includes(child?.name)) {
+      const nested = particleDecls(child, schema, definitions, childrenOptional, depth + 1);
+      if (!nested) return undefined;
+      decls.push(...nested);
+    }
+    // xs:any carries no named element.
+  }
+  return decls;
+}
+
+function elementDecl(
+  element: any,
+  schema: any,
+  definitions: any,
+  optional: boolean,
+): InputElementDecl | undefined {
+  let name: string | undefined = element.$name;
+  // A reference to a global element: always qualified, typed by that element.
+  let typed = element;
+  let typedSchema = schema;
+  let qualified: boolean;
+  if (element.$ref) {
+    const ref = resolveQName(element.$ref, element, schema, definitions);
+    name = ref.name;
+    qualified = true;
+    typedSchema = ref.ns ? definitions.schemas[ref.ns] : undefined;
+    typed = typedSchema?.elements?.[ref.name];
+  } else if (element.$form === 'qualified' || element.$form === 'unqualified') {
+    qualified = element.$form === 'qualified';
+  } else {
+    qualified = schema?.$elementFormDefault === 'qualified';
+  }
+  if (!name) return undefined;
+
+  const minOccurs = element.$minOccurs === undefined ? 1 : parseInt(element.$minOccurs, 10);
+  const decl: InputElementDecl = {
+    name,
+    required: !optional && !(minOccurs < 1),
+    qualified,
+  };
+  const values = typed ? enumerationValues(typed, typedSchema, definitions) : undefined;
+  if (values?.length) decl.enum = values;
+  return decl;
+}
+
+/** The xs:enumeration values of an element's simple type (named or inline), if any. */
+function enumerationValues(element: any, schema: any, definitions: any): string[] | undefined {
+  let simpleType = (element.children || []).find((c: any) => c?.name === 'simpleType');
+  if (!simpleType && element.$type) {
+    const type = resolveQName(element.$type, element, schema, definitions);
+    simpleType = type.ns ? definitions.schemas[type.ns]?.types?.[type.name] : undefined;
+  }
+  const restriction = (simpleType?.children || []).find((c: any) => c?.name === 'restriction');
+  const values = (restriction?.children || [])
+    .filter((c: any) => c?.name === 'enumeration')
+    .map((c: any) => c.$value)
+    .filter((v: unknown): v is string => typeof v === 'string');
+  return values.length > 0 ? values : undefined;
+}
+
+/**
+ * Whether the parameter elements of an operation are namespace-qualified:
+ * false for RPC style (message parts are unqualified) and for a document
+ * whose input element's children are all unqualified (elementFormDefault
+ * "unqualified", the XSD default, or form="unqualified"). Undefined when
+ * they are qualified, mixed or unknown: the engine's default, qualified.
+ */
+export function childElementsQualified(
+  wsdl: any,
+  portName: string,
+  operationName: string,
+  decls: InputElementDecl[] | undefined,
+): false | undefined {
+  const { method } = findWsdlMethod(wsdl, portName, operationName);
+  if (method?.style === 'rpc') return false;
+  if (decls && decls.length > 0 && decls.every((d) => !d.qualified)) return false;
+  return undefined;
+}
+
+/**
+ * Find an operation of a port in a WSDL parsed by the `soap` library.
+ *
+ * The port is followed to its binding: bindings are keyed by their own name,
+ * which only matches the port name in WCF WSDLs (`BasicHttpBinding_IService`
+ * for both); JAX-WS names them `ItemPort` and `ItemBinding`.
+ */
+export function resolveWsdlOperation(
+  wsdl: any,
+  portName: string,
+  operationName: string,
+): WsdlOperationInfo {
+  const { method, endpoint } = findWsdlMethod(wsdl, portName, operationName);
 
   const info: WsdlOperationInfo = {
     soapAction: method?.soapAction || '',
@@ -133,6 +380,7 @@ export class WsdlParser {
       for (const [portName, port] of Object.entries(service as any)) {
         for (const [operationName, operation] of Object.entries(port as any)) {
           const info = resolveWsdlOperation(wsdl, portName, operationName);
+          const decls = inputElementDecls(wsdl, portName, operationName);
 
           const tool = this.operationToTool(
             serviceName,
@@ -141,6 +389,14 @@ export class WsdlParser {
             operation as any,
             info,
             targetNamespace,
+            {
+              childElementsQualified: childElementsQualified(
+                wsdl,
+                portName,
+                operationName,
+                decls,
+              ),
+            },
           );
           tools.push(tool);
         }
@@ -157,7 +413,8 @@ export class WsdlParser {
     operationName: string,
     operation: any,
     info: WsdlOperationInfo,
-    targetNamespace?: string,
+    targetNamespace: string | undefined,
+    schema: { childElementsQualified?: false },
   ): ParsedTool {
     const { soapAction, endpoint } = info;
     // Stored only where they differ from what the engine assumes (the
@@ -234,6 +491,8 @@ export class WsdlParser {
         ...(inputElement ? { inputElement } : {}),
         ...(inputNamespace ? { inputNamespace } : {}),
         ...(Object.keys(elementOrder).length > 0 ? { elementOrder } : {}),
+        // Only written when false: tools without it keep qualified elements.
+        ...(schema.childElementsQualified === false ? { childElementsQualified: false } : {}),
       },
     };
 

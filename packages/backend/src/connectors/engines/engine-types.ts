@@ -54,6 +54,13 @@ export interface SoapEndpointMapping {
    * import; absent: the order of the value's keys.
    */
   elementOrder?: Record<string, string[]>;
+  /**
+   * `false`: the parameter elements, and those nested in them, are written
+   * without a prefix, i.e. in no namespace, as the schema's
+   * elementFormDefault="unqualified" (the XSD default) and RPC message parts
+   * require. Set on import; absent: qualified (`tns:`), as before.
+   */
+  childElementsQualified?: boolean;
 }
 
 export interface DatabaseEndpointMapping {

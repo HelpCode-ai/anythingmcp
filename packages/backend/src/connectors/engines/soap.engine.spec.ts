@@ -290,6 +290,44 @@ describe('SoapEngine', () => {
     });
   });
 
+  describe('element qualification', () => {
+    const okResponse = { status: 200, data: '<Envelope><Body><Resp/></Body></Envelope>' };
+    const params = { userId: '42', filter: { active: true, roles: ['a', 'b'] } };
+    const mapping = { ...baseMapping, paramOrder: ['userId', 'filter'] };
+
+    it('qualifies parameter elements when the tool does not say otherwise (stored tools)', async () => {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, mapping, params);
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+
+      expect(envelope).toContain('      <tns:userId>42</tns:userId>');
+      expect(envelope).toContain('        <tns:active>true</tns:active>');
+    });
+
+    it('writes parameter and nested elements unprefixed when childElementsQualified is false', async () => {
+      mockedAxios.post.mockResolvedValue(okResponse);
+      await engine.execute(baseConfig, { ...mapping, childElementsQualified: false }, params);
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+
+      expect(envelope).toContain(
+        [
+          '    <tns:GetUser>',
+          '      <userId>42</userId>',
+          '      <filter>',
+          '        <active>true</active>',
+          '        <roles>a</roles>',
+          '        <roles>b</roles>',
+          '      </filter>',
+          '    </tns:GetUser>',
+        ].join('\n'),
+      );
+      // The wrapper stays qualified, and no default namespace pulls the
+      // unprefixed elements into one.
+      expect(envelope).toContain('xmlns:tns="http://tempuri.org/"');
+      expect(envelope).not.toMatch(/xmlns=/);
+    });
+  });
+
   describe('SOAP response parsing', () => {
     it('should extract body content from SOAP response XML', async () => {
       const xml = `

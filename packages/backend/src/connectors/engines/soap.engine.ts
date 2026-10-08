@@ -65,10 +65,17 @@ const XML_NAME = /^[\p{L}_][\p{L}\p{N}\p{M}_.\-\u00B7\u203F\u2040]*$/u;
 interface EnvelopeOptions {
   /** Child element order of nested parameters, by path (`address`, `order/lines`). */
   elementOrder?: Record<string, string[]>;
+  /**
+   * Whether parameter elements (and those nested in them) carry the `tns:`
+   * prefix. Default true. Unprefixed elements are in no namespace, since the
+   * envelope declares no default namespace: that is what an unqualified
+   * element is.
+   */
+  qualified?: boolean;
 }
 
 interface SerializeContext {
-  /** `tns:` for qualified elements. */
+  /** `tns:` for qualified elements, '' for unqualified ones. */
   prefix: string;
   elementOrder: Record<string, string[]>;
 }
@@ -196,7 +203,11 @@ export class SoapEngine {
         soapParams,
         paramOrder,
         header,
-        { elementOrder },
+        {
+          elementOrder,
+          // Opt-in, set on import: older tools keep qualified elements.
+          qualified: endpointMapping.childElementsQualified !== false,
+        },
       );
     const envelope = buildEnvelope(securityHeader);
     // The envelope as it may be shown in error details: never the credentials.
@@ -316,7 +327,7 @@ export class SoapEngine {
         : Object.keys(params);
 
     const context: SerializeContext = {
-      prefix: 'tns:',
+      prefix: options.qualified === false ? '' : 'tns:',
       elementOrder: options.elementOrder ?? {},
     };
     const paramXml = orderedKeys

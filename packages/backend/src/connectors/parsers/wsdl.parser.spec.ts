@@ -141,10 +141,106 @@ describe('WsdlParser', () => {
         soapAction: 'urn:GetItem',
         endpoint: 'http://items.example.com/rpc',
         targetNamespace: 'http://example.com/items/rpc',
+        childElementsQualified: false,
       });
 
       const envelope = await envelopeFor(wsdl, tool.endpointMapping);
       expect(envelope).toContain('<tns:GetItem>');
+    });
+
+    it('writes the message parts unqualified', async () => {
+      const wsdl = fixture('rpc-literal');
+      const [tool] = await parser.parse(wsdl);
+      const envelope = await envelopeFor(wsdl, tool.endpointMapping);
+
+      expect(envelope).toContain(
+        [
+          '    <tns:GetItem>',
+          '      <itemId>7</itemId>',
+          '      <language>en</language>',
+          '    </tns:GetItem>',
+        ].join('\n'),
+      );
+    });
+  });
+
+  describe('element qualification', () => {
+    it('writes the children unqualified for elementFormDefault="unqualified" (the XSD default), without a default namespace', async () => {
+      const wsdl = fixture('jaxws-unqualified');
+      const [tool] = await parser.parse(wsdl);
+      expect(tool.endpointMapping).toMatchObject({ childElementsQualified: false });
+
+      await engine.execute(
+        { baseUrl: 'http://orders.example.com/OrderService', authType: 'NONE', specUrl: wsdl },
+        tool.endpointMapping as any,
+        { customerId: 'C-1', address: { street: 'Main St 1', city: 'Basel' } },
+      );
+      const envelope = post.mock.calls[0][1] as string;
+
+      expect(envelope).toContain(
+        [
+          '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://example.com/orders">',
+          '  <soapenv:Header/>',
+          '  <soapenv:Body>',
+          '    <tns:createOrder>',
+          '      <customerId>C-1</customerId>',
+          '      <address>',
+          '        <street>Main St 1</street>',
+          '        <city>Basel</city>',
+          '      </address>',
+          '    </tns:createOrder>',
+        ].join('\n'),
+      );
+      // Unprefixed elements must be in no namespace: no default xmlns anywhere.
+      expect(envelope).not.toMatch(/xmlns=/);
+    });
+
+    it('keeps WCF children (elementFormDefault="qualified") qualified and stores nothing new', async () => {
+      const [tool] = await parser.parse(fixture('wrapped-operation-name'));
+      expect(tool.endpointMapping).not.toHaveProperty('childElementsQualified');
+    });
+
+    const inlineWsdl = (schemaAttrs: string, elements: string) => `<?xml version="1.0" encoding="utf-8"?>
+<definitions name="S" targetNamespace="urn:s" xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:s">
+  <types>
+    <xs:schema targetNamespace="urn:s" ${schemaAttrs}>
+      <xs:element name="Op"><xs:complexType><xs:sequence>${elements}</xs:sequence></xs:complexType></xs:element>
+      <xs:element name="OpResponse"><xs:complexType><xs:sequence/></xs:complexType></xs:element>
+    </xs:schema>
+  </types>
+  <message name="OpIn"><part name="parameters" element="tns:Op"/></message>
+  <message name="OpOut"><part name="parameters" element="tns:OpResponse"/></message>
+  <portType name="PT"><operation name="Op"><input message="tns:OpIn"/><output message="tns:OpOut"/></operation></portType>
+  <binding name="B" type="tns:PT">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Op"><soap:operation soapAction="urn:Op"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://s.example.com/"/></port></service>
+</definitions>`;
+
+    it.each([
+      [
+        'form="unqualified" on every child of a qualified schema',
+        'elementFormDefault="qualified"',
+        '<xs:element name="a" type="xs:string" form="unqualified"/><xs:element name="b" type="xs:int" form="unqualified"/>',
+        false,
+      ],
+      [
+        'form="qualified" on every child of an unqualified schema',
+        '',
+        '<xs:element name="a" type="xs:string" form="qualified"/><xs:element name="b" type="xs:int" form="qualified"/>',
+        undefined,
+      ],
+      [
+        'qualified and unqualified children mixed (kept as before)',
+        '',
+        '<xs:element name="a" type="xs:string" form="qualified"/><xs:element name="b" type="xs:int"/>',
+        undefined,
+      ],
+    ])('reads %s', async (_label, schemaAttrs, elements, expected) => {
+      const [tool] = await parser.parse(inlineWsdl(schemaAttrs, elements));
+      expect((tool.endpointMapping as any).childElementsQualified).toBe(expected);
     });
   });
 
