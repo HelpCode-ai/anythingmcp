@@ -15,6 +15,7 @@
   "optionalEnvVars": [
     "FIC_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://secure.fattureincloud.it/settings-developers",
   "envVarMeta": {
     "FIC_REFRESH_TOKEN": {
       "label": "Refresh token",

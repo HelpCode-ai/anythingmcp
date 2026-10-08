@@ -40,6 +40,16 @@ function oauthCallbackUrl(): string {
  * to tap, and the URL alone in a code block to copy. Paraphrased as plain
  * text ("etsy.com/developers → Your apps" and the URL inline), neither was.
  */
+/**
+ * A bridge whose server registers the client itself (dynamic client
+ * registration: Notion, Helium 10) signs in without an app of the user's, so
+ * there is no app to create and no callback URL to register.
+ */
+function registersItsOwnClient(definition: { connector: { config?: unknown } }): boolean {
+  const config = (definition.connector.config ?? {}) as { mcpOAuth?: { registration?: string } };
+  return config.mcpOAuth?.registration === 'dcr';
+}
+
 function providerApp(definition: {
   appRegistrationUrl?: string;
   envVars?: Array<{ link?: string; advanced?: boolean }>;
@@ -174,13 +184,15 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             setup:
               full.setupKind === 'none'
                 ? 'Nothing to enter: installs and works right away.'
-                : full.setupKind === 'oauth_browser'
+                : full.setupKind === 'oauth_browser' && registersItsOwnClient(full)
+                  ? 'Needs only a sign-in at the provider, done on a page AnythingMCP links to. No app to create.'
+                  : full.setupKind === 'oauth_browser'
                   ? 'Needs the user\'s own app keys and a sign-in at the provider, done on a page AnythingMCP links to.'
                   : 'Needs credentials the user enters on a page AnythingMCP links to.',
             // The provider refuses the sign-in, without ever coming back here,
             // when the app does not list this URL. Users creating the app from
             // a chat never saw the setup page that shows it.
-            ...(full.setupKind === 'oauth_browser' ? providerApp(full) : {}),
+            ...(full.setupKind === 'oauth_browser' && !registersItsOwnClient(full) ? providerApp(full) : {}),
             settingsYouMayPass: vars
               .filter((v) => !v.secret)
               .map((v) => ({ name: v.name, label: v.label, required: v.required, help: v.help, example: v.example })),
@@ -287,7 +299,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         installed: definition.name,
         status: state.status,
-        ...(needsBrowserAuthorization(definition) ? providerApp(definition) : {}),
+        ...(needsBrowserAuthorization(definition) && !registersItsOwnClient(definition)
+          ? providerApp(definition)
+          : {}),
         whatTheUserDoes:
           state.status === 'needs_authorization'
             ? `Open the link, then sign in to ${definition.name} and approve. It takes a minute.`

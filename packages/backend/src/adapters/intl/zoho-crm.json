@@ -9,6 +9,7 @@
   "docsUrl": "https://www.zoho.com/crm/developer/docs/api/v8/",
   "requiredEnvVars": ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET"],
   "optionalEnvVars": ["ZOHO_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://api-console.zoho.com/",
   "envVarMeta": {
     "ZOHO_REFRESH_TOKEN": {
       "label": "Refresh token",

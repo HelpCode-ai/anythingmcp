@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "LINKEDIN_ADS_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://www.linkedin.com/developers/apps/new",
   "envVarMeta": {
     "LINKEDIN_ADS_CLIENT_ID": {
       "label": "Client ID",

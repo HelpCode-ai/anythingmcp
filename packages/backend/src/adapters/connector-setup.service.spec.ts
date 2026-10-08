@@ -103,6 +103,13 @@ describe('ConnectorSetupService — find', () => {
         expect(r.showToTheUser).toMatch(/fenced code block/);
       }
       expect(openplz.createTheAppAt).toBeUndefined();
+
+      // Notion's server registers the client itself: no app, no callback.
+      const notionOut: any = (await service.find(ctx, { query: 'notion', limit: 10 })).body;
+      const notion = notionOut.results.find((r: any) => r.adapter === 'notion');
+      expect(notion.setup).toMatch(/No app to create/);
+      expect(notion.callbackUrlToRegisterInTheProviderApp).toBeUndefined();
+      expect(notion.showToTheUser).toBeUndefined();
     } finally {
       process.env.SERVER_URL = before;
     }
