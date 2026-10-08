@@ -241,8 +241,12 @@ export class AdaptersService {
   ) {
     let credentials = input;
     // Values the operator provides for everyone (e.g. the cloud's own MOTIS
-    // URL) go in here, and override anything the request carried.
-    credentials = withOperatorProvided(credentials);
+    // URL) go in here, and override anything the request carried. Only the
+    // adapters that declare the variable get it.
+    credentials = withOperatorProvided(credentials, [
+      ...adapter.requiredEnvVars,
+      ...(adapter.optionalEnvVars ?? []),
+    ]);
 
     // Credentials arrive from the UI verbatim — a stray leading/trailing
     // space (easy to pick up when pasting) would otherwise be encrypted into

@@ -768,7 +768,7 @@
         "kaufland"
       ],
       "wave": 1,
-      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, shipments, tickets and storefronts.",
+      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, tickets, warehouses and storefronts.",
       "topics": [
         "kaufland",
         "marketplace",
