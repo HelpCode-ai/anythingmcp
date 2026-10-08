@@ -48,8 +48,8 @@ const refs = (v: unknown, out: Set<string>) => {
 };
 
 describe('printful adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the private token as a Bearer token with a User-Agent', () => {

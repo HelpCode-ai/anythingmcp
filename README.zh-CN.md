@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：320 个连接器，其中 17 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：324 个连接器，其中 17 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 320 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 17 个无需 API 密钥。
+  它自带 324 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 17 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 320 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 324 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|

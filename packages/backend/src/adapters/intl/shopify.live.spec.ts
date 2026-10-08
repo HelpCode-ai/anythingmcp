@@ -49,8 +49,8 @@ const operation = (t: Tool) =>
 const config = { get: () => 'test-encryption-key-32-chars-ok!' } as unknown as ConfigService;
 
 describe('shopify adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real store', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 8 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls the GraphQL Admin API of the store, version 2026-10', () => {

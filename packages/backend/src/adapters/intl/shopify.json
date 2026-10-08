@@ -7,7 +7,6 @@
   "category": "e-commerce",
   "icon": "shopify",
   "docsUrl": "https://shopify.dev/docs/api/admin-graphql",
-  "unlisted": true,
   "requiredEnvVars": [
     "SHOPIFY_STORE",
     "SHOPIFY_CLIENT_ID",
