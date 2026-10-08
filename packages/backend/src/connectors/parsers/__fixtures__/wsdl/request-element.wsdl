@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Document/literal where the input element is not named after the operation:
+  operation GetItem takes the element GetItemRequest. The schema has its own
+  namespace, the port and the binding have different names (JAX-WS style),
+  and the soapAction is empty.
+-->
+<definitions name="ItemService"
+    targetNamespace="http://example.com/items/wsdl"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/items/wsdl"
+    xmlns:it="http://example.com/items/schema">
+  <types>
+    <xs:schema elementFormDefault="qualified" targetNamespace="http://example.com/items/schema">
+      <xs:element name="GetItemRequest">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="itemId" type="xs:int"/>
+            <xs:element name="language" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="GetItemResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="name" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="GetItemInput">
+    <part name="body" element="it:GetItemRequest"/>
+  </message>
+  <message name="GetItemOutput">
+    <part name="body" element="it:GetItemResponse"/>
+  </message>
+  <portType name="ItemPortType">
+    <operation name="GetItem">
+      <input message="tns:GetItemInput"/>
+      <output message="tns:GetItemOutput"/>
+    </operation>
+  </portType>
+  <binding name="ItemBinding" type="tns:ItemPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetItem">
+      <soap:operation soapAction=""/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="ItemService">
+    <port name="ItemPort" binding="tns:ItemBinding">
+      <soap:address location="http://items.example.com/soap"/>
+    </port>
+  </service>
+</definitions>

@@ -63,6 +63,30 @@ describe('SoapEngine', () => {
       expect(lastNameIdx).toBeLessThan(firstNameIdx);
     });
 
+    it('wraps the parameters in the stored input element and namespace', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+
+      await engine.execute(
+        baseConfig,
+        {
+          ...baseMapping,
+          inputElement: 'GetUserRequest',
+          inputNamespace: 'http://example.com/users/schema',
+        },
+        { userId: '42' },
+      );
+
+      const envelope = mockedAxios.post.mock.calls[0][1] as string;
+      expect(envelope).toContain('xmlns:tns="http://example.com/users/schema"');
+      expect(envelope).toContain('<tns:GetUserRequest>');
+      expect(envelope).toContain('<tns:userId>42</tns:userId>');
+      expect(envelope).toContain('</tns:GetUserRequest>');
+      expect(envelope).not.toContain('<tns:GetUser>');
+    });
+
     it('should escape XML special characters in parameter values', async () => {
       mockedAxios.post.mockResolvedValue({
         status: 200,

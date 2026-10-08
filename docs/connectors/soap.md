@@ -82,6 +82,8 @@ SOAP tools use a specific endpoint mapping format:
 | `method` | SOAP operation name |
 | `path` | SOAP port/binding path |
 | `bodyMapping` | Maps tool params to SOAP envelope parameters |
+| `inputElement` | Body element that wraps the parameters, when the WSDL's input element is not named after the operation (set on import) |
+| `inputNamespace` | Namespace of that element, when it differs from the WSDL `targetNamespace` (set on import) |
 
 ---
 
@@ -154,7 +156,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 |-------|----------|
 | WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
-| "Unknown operation" or a schema fault | The engine sends document/literal *wrapped* requests: the body element is named after the operation (`<tns:GetItem>`), as WCF and JAX-WS generate. A WSDL whose input element has another name (`GetItemRequest`), RPC/encoded style, or nested complex-type parameters are not supported yet |
+| "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style and nested complex-type parameters are not supported yet |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
 | Authentication failures | Check the credentials and the auth type. A service that requires WS-Security headers or a client certificate cannot be called yet (see Authentication) |
 

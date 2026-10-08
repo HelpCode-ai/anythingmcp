@@ -4,6 +4,18 @@ import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http';
+import {
+  resolveWsdlOperation,
+  wsdlTargetNamespace,
+  WsdlOperationInfo,
+} from '../parsers/wsdl.parser';
+import { SoapEndpointMapping } from './engine-types';
+
+/** SOAP metadata of one operation, read from the WSDL when a tool lacks it. */
+type WsdlOperationMeta = WsdlOperationInfo & {
+  targetNamespace: string;
+  paramOrder: string[];
+};
 
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
@@ -25,17 +37,7 @@ export class SoapEngine {
       headers?: Record<string, string>;
       specUrl?: string;
     },
-    endpointMapping: {
-      method: string; // SOAP operation name
-      path: string; // port name
-      queryParams?: Record<string, unknown>;
-      bodyMapping?: Record<string, unknown>;
-      paramOrder?: string[]; // WSDL-defined parameter order (WCF is order-sensitive)
-      headers?: Record<string, string>;
-      soapAction?: string;
-      endpoint?: string;
-      targetNamespace?: string;
-    },
+    endpointMapping: SoapEndpointMapping,
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const operationName = endpointMapping.method;
@@ -45,6 +47,11 @@ export class SoapEngine {
     let endpoint = endpointMapping.endpoint || '';
     let targetNamespace = endpointMapping.targetNamespace || '';
     let paramOrder = endpointMapping.paramOrder || [];
+    // Body wrapper element and its namespace. A tool imported before these
+    // were stored has neither: with complete metadata it keeps sending
+    // `<tns:{operation}>` in targetNamespace, exactly as before.
+    let inputElement = endpointMapping.inputElement || '';
+    let inputNamespace = endpointMapping.inputNamespace || '';
 
     if (!soapAction || !endpoint || !targetNamespace || paramOrder.length === 0) {
       const wsdlUrl = config.specUrl || config.baseUrl;
@@ -58,6 +65,12 @@ export class SoapEngine {
       if (!endpoint) endpoint = meta.endpoint;
       if (!targetNamespace) targetNamespace = meta.targetNamespace;
       if (paramOrder.length === 0) paramOrder = meta.paramOrder;
+      // The WSDL is read anyway: take the input element from it too, unless
+      // the tool already says which one to use.
+      if (!endpointMapping.inputElement && !endpointMapping.inputNamespace) {
+        inputElement = meta.inputElement || '';
+        inputNamespace = meta.inputNamespace || '';
+      }
     }
 
     // Use connector baseUrl as endpoint fallback (for internal vs external IPs)
@@ -78,8 +91,8 @@ export class SoapEngine {
 
     // Build the SOAP envelope (respecting WSDL parameter order for WCF)
     const envelope = this.buildEnvelope(
-      operationName,
-      targetNamespace,
+      inputElement || operationName,
+      inputNamespace || targetNamespace,
       soapParams,
       paramOrder,
     );
@@ -160,11 +173,12 @@ export class SoapEngine {
   }
 
   /**
-   * Build a SOAP 1.1 envelope with the given operation and parameters.
+   * Build a SOAP 1.1 envelope: the parameters wrapped in the body element
+   * (the operation name unless the WSDL names another input element).
    * WCF services require parameters in WSDL-defined order.
    */
   private buildEnvelope(
-    operationName: string,
+    wrapperElement: string,
     targetNamespace: string,
     params: Record<string, unknown>,
     paramOrder: string[] = [],
@@ -185,9 +199,9 @@ export class SoapEngine {
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${ns}">
   <soapenv:Header/>
   <soapenv:Body>
-    <tns:${operationName}>
+    <tns:${wrapperElement}>
 ${paramXml}
-    </tns:${operationName}>
+    </tns:${wrapperElement}>
   </soapenv:Body>
 </soapenv:Envelope>`;
   }
@@ -245,12 +259,7 @@ ${paramXml}
     wsdlUrl: string,
     portName: string,
     operationName: string,
-  ): Promise<{
-    soapAction: string;
-    endpoint: string;
-    targetNamespace: string;
-    paramOrder: string[];
-  }> {
+  ): Promise<WsdlOperationMeta> {
     try {
       await assertSafeOutboundUrl(wsdlUrl);
       const client = await soap.createClientAsync(wsdlUrl, {
@@ -258,27 +267,9 @@ ${paramXml}
       });
       const wsdl = client.wsdl;
 
-      const targetNamespace =
-        (wsdl.definitions as any)?.$?.targetNamespace ||
-        (wsdl as any).xml?.match(/targetNamespace="([^"]+)"/)?.[1] ||
-        '';
-
-      let soapAction = '';
-      const bindings = wsdl.definitions?.bindings || {};
-      const binding = bindings[portName];
-      if (binding?.methods?.[operationName]?.soapAction) {
-        soapAction = binding.methods[operationName].soapAction;
-      }
-
-      let endpoint = '';
-      const services = wsdl.definitions?.services || {};
-      for (const service of Object.values(services) as any[]) {
-        const port = service.ports?.[portName];
-        if (port?.location) {
-          endpoint = port.location;
-          break;
-        }
-      }
+      const targetNamespace = wsdlTargetNamespace(wsdl);
+      const { soapAction, endpoint, inputElement, inputNamespace } =
+        resolveWsdlOperation(wsdl, portName, operationName);
 
       // Extract parameter order from WSDL description
       const paramOrder: string[] = [];
@@ -291,7 +282,14 @@ ${paramXml}
         }
       }
 
-      return { soapAction, endpoint, targetNamespace, paramOrder };
+      return {
+        soapAction,
+        endpoint,
+        targetNamespace,
+        paramOrder,
+        inputElement,
+        inputNamespace,
+      };
     } catch (err: any) {
       this.logger.warn(`Failed to extract WSDL metadata: ${err.message}`);
       return { soapAction: '', endpoint: '', targetNamespace: '', paramOrder: [] };
