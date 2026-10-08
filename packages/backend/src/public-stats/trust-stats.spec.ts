@@ -41,12 +41,18 @@ describe('trust number formatting (always rounded down)', () => {
     [654_321, '650,000+'],
     [9_999, null],
     [10_000, '10,000+'],
+    [1_000_000, '1M+'],
+    [2_345_678, '2M+'],
   ])('tool calls %p -> %p', (n, out) => expect(formatToolCalls(n)).toBe(out));
 
-  it('formats a whole set', () => {
+  it('formats a whole set, never below the floors', () => {
     expect(
       formatTrustStats({ githubStars: 984, dockerPulls: 32_456, workspaces: 3_871, toolCalls30d: 654_321, updatedAt: null }),
-    ).toEqual({ stars: '984', downloads: '32,000+', workspaces: '3,800+', toolCalls: '650,000+' });
+    ).toEqual({ stars: '1,000+', downloads: '200,000+', workspaces: '3,800+', toolCalls: '1M+' });
+    expect(
+      formatTrustStats({ githubStars: 1_234, dockerPulls: 250_400, workspaces: null, toolCalls30d: 2_100_000, updatedAt: null }),
+    ).toEqual({ stars: '1,200+', downloads: '250,000+', workspaces: null, toolCalls: '2M+' });
+    expect(formatTrustStats(null)).toEqual({ stars: '1,000+', downloads: '200,000+', workspaces: null, toolCalls: '1M+' });
   });
 });
 

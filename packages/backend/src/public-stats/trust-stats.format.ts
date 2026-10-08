@@ -1,8 +1,9 @@
 /**
  * The public trust numbers (GitHub stars, Docker pulls, Cloud workspaces, AI
- * tool calls in the last 30 days) and how they are shown. Every number is
- * real and rounded DOWN, so a displayed value never overstates the measured
- * one. A value below its rounding unit is not shown at all rather than as "0+".
+ * tool calls in the last 30 days) and how they are shown. Stars, downloads and
+ * tool calls are never shown below TRUST_FLOORS; above a floor the live number
+ * is shown, rounded DOWN. Workspaces are live only: a value below its rounding
+ * unit is not shown at all rather than as "0+".
  */
 export interface TrustStats {
   githubStars: number | null;
@@ -20,9 +21,19 @@ export interface TrustStatsDisplay {
   downloads: string | null;
   /** "3,800+". */
   workspaces: string | null;
-  /** "650,000+". */
+  /** "1M+", "2M+". */
   toolCalls: string | null;
 }
+
+/**
+ * The least each figure is shown as (Matteo, 8 Oct 2026): 1,000+ stars,
+ * 200,000+ downloads across all distribution channels, 1M+ AI tool calls last
+ * month. Docker Hub alone undercounts downloads, so the floor applies even
+ * when a live number is missing or lower.
+ */
+export const TRUST_FLOORS = { githubStars: 1_000, dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
+
+const atLeast = (n: number | null | undefined, floor: number) => (usable(n) && n > floor ? n : floor);
 
 export const EMPTY_TRUST_STATS: TrustStats = {
   githubStars: null,
@@ -57,15 +68,17 @@ export function formatWorkspaces(n: number | null | undefined): string | null {
   return floorPlus(n, 100);
 }
 
+/** Below a million: "650,000+"; from a million: whole millions, "1M+". */
 export function formatToolCalls(n: number | null | undefined): string | null {
+  if (usable(n) && n >= 1_000_000) return `${Math.floor(n / 1_000_000)}M+`;
   return floorPlus(n, 10_000);
 }
 
 export function formatTrustStats(stats: TrustStats | null | undefined): TrustStatsDisplay {
   return {
-    stars: formatStars(stats?.githubStars),
-    downloads: formatDownloads(stats?.dockerPulls),
+    stars: formatStars(atLeast(stats?.githubStars, TRUST_FLOORS.githubStars)),
+    downloads: formatDownloads(atLeast(stats?.dockerPulls, TRUST_FLOORS.dockerPulls)),
     workspaces: formatWorkspaces(stats?.workspaces),
-    toolCalls: formatToolCalls(stats?.toolCalls30d),
+    toolCalls: formatToolCalls(atLeast(stats?.toolCalls30d, TRUST_FLOORS.toolCalls30d)),
   };
 }

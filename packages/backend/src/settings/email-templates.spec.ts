@@ -56,6 +56,17 @@ describe.each([
       }
     });
 
+    it('names no customer in the footer', () => {
+      expect(email.html).not.toContain('KOCH');
+      expect(email.text).not.toContain('KOCH');
+    });
+
+    it('sells the product, not the price: no card, charge or price talk', () => {
+      // The win-back offers are about a discount by design.
+      if (id.startsWith('winback-discount')) return;
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/charged|payment method|your card|€\s?\d|\d\s?€/i);
+    });
+
     it('escapes every user-supplied value', () => {
       expect(email.html).not.toContain('<img src=x');
       expect(email.html).not.toContain('<script>');
@@ -116,18 +127,19 @@ describe.each([
 describe('trust band', () => {
   const verify = EMAIL_SAMPLES.find((s) => s.id === 'verification')!;
 
-  it('shows the formatted live numbers', () => {
+  it('shows the numbers, never below their floors', () => {
     const html = verify.render(cloud, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('984');
-    expect(html).toContain('32,000+');
-    expect(html).toContain('650,000+');
+    expect(html).toContain('1,000+');
+    expect(html).toContain('200,000+');
+    expect(html).toContain('1M+');
     expect(html).toContain('3,800+');
   });
 
-  it('drops the numbers it does not have instead of showing zeros', () => {
+  it('shows the floors without live numbers, and no workspace count', () => {
     const html = verify.render(noStats, { name: 'A', other: 'B' }).html;
-    expect(html).not.toContain('stars on GitHub');
-    expect(html).not.toContain('downloads');
+    expect(html).toContain('stars on GitHub');
+    expect(html).toContain('200,000+');
+    expect(html).not.toContain('workspaces on');
     expect(html).not.toMatch(/\b0\+/);
     // Badges and the client list stay.
     expect(html).toContain('AES-256-GCM');
