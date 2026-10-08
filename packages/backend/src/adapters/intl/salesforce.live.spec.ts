@@ -484,7 +484,7 @@ live('salesforce adapter: live read-only calls', () => {
   }, 30000);
 
   it('searches, lists views and recent items', async () => {
-    const found = await run('salesforce_search_text', { q: 'a*', sobject: ['Account'], fields: 'Id,Name', overall_limit: 5 });
+    const found = await run('salesforce_search_text', { q: 'Ed*', sobject: ['Account'], fields: 'Id,Name', overall_limit: 5 });
     expect(Array.isArray(found.searchRecords)).toBe(true);
     const views = await run('salesforce_list_list_views', { sobject: 'Account' });
     expect(Array.isArray(views.listviews)).toBe(true);
