@@ -66,6 +66,8 @@ export default function NewConnectorPage() {
   const [authType, setAuthType] = useState('NONE');
   const [authKey, setAuthKey] = useState('');
   const [authValue, setAuthValue] = useState('');
+  // WS_SECURITY (SOAP only): how the UsernameToken carries the password.
+  const [wsPasswordType, setWsPasswordType] = useState('PasswordText');
   const [oauthClientId, setOauthClientId] = useState('');
   const [oauthClientSecret, setOauthClientSecret] = useState('');
   const [oauthAuthUrl, setOauthAuthUrl] = useState('');
@@ -104,6 +106,8 @@ export default function NewConnectorPage() {
         return { token: authValue };
       case 'BASIC_AUTH':
         return { username: authKey, password: authValue };
+      case 'WS_SECURITY':
+        return { username: authKey, password: authValue, passwordType: wsPasswordType };
       case 'LOGIN_TOKEN': {
         let loginBody: unknown;
         const raw = ltLoginBody.trim();
@@ -276,7 +280,11 @@ export default function NewConnectorPage() {
             <button
               key={type.id}
               type="button"
-              onClick={() => setSelectedType(type.id)}
+              onClick={() => {
+                setSelectedType(type.id);
+                // WS-Security is only offered for SOAP.
+                if (type.id !== 'SOAP' && authType === 'WS_SECURITY') setAuthType('NONE');
+              }}
               className={cn(
                 typeCardClass,
                 selectedType === type.id
@@ -524,6 +532,10 @@ export default function NewConnectorPage() {
                     { value: 'API_KEY', label: 'API Key' },
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
+                    // A SOAP header: implemented by the SOAP engine only.
+                    ...(selectedType === 'SOAP'
+                      ? [{ value: 'WS_SECURITY', label: 'WS-Security (UsernameToken)' }]
+                      : []),
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
                     { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
                   ]}
@@ -616,6 +628,35 @@ export default function NewConnectorPage() {
                   <div>
                     <label className={labelClass}>Password</label>
                     <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className={inputClass} />
+                  </div>
+                </div>
+              )}
+              {authType === 'WS_SECURITY' && (
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Username</label>
+                      <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Password</label>
+                      <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className={inputClass} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Password type</label>
+                    <AppSelect
+                      value={wsPasswordType}
+                      onValueChange={setWsPasswordType}
+                      className={inputClass}
+                      options={[
+                        { value: 'PasswordText', label: 'PasswordText (default)' },
+                        { value: 'PasswordDigest', label: 'PasswordDigest' },
+                      ]}
+                    />
+                    <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                      Sent as a wsse:Security UsernameToken in the SOAP header. PasswordDigest sends a hash of the password with a nonce and timestamp instead of the password itself.
+                    </p>
                   </div>
                 </div>
               )}

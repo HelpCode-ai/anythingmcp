@@ -1,9 +1,61 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http';
+import {
+  resolveWsdlOperation,
+  wsdlTargetNamespace,
+  wsdlUrlForLog,
+  WsdlOperationInfo,
+} from '../parsers/wsdl.parser';
+import { SoapEndpointMapping } from './engine-types';
+
+/** SOAP metadata of one operation, read from the WSDL when a tool lacks it. */
+type WsdlOperationMeta = WsdlOperationInfo & {
+  targetNamespace: string;
+  paramOrder: string[];
+};
+
+/** What the engine keeps of a parsed WSDL: strings only, not the parsed document. */
+interface WsdlMetadata {
+  targetNamespace: string;
+  portEndpoints: Map<string, string>;
+  /** Keyed by `${port}\n${operation}`. */
+  operations: Map<string, WsdlOperationMeta>;
+}
+
+interface WsdlCacheEntry {
+  expiresAt: number;
+  /** null when the WSDL could not be read. */
+  metadata: Promise<WsdlMetadata | null>;
+}
+
+const WSDL_CACHE_TTL_MS = 10 * 60_000;
+const WSDL_FAILURE_TTL_MS = 60_000;
+const WSDL_CACHE_MAX_ENTRIES = 100;
+
+// OASIS WSS 1.0 UsernameToken profile.
+const WSSE_NS =
+  'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd';
+const WSU_NS =
+  'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
+const USERNAME_TOKEN_PROFILE =
+  'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0';
+const BASE64_BINARY =
+  'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary';
+/** Lifetime of the optional wsu:Timestamp. */
+const WSSE_TIMESTAMP_TTL_MS = 300_000;
+/**
+ * Stands in for the WS-Security header in every envelope that leaves the
+ * engine (error detail returned to MCP clients and the UI): the real one
+ * carries the password, or a digest and nonce that can be replayed.
+ */
+const REDACTED_SECURITY_HEADER = '<wsse:Security><!-- redacted --></wsse:Security>';
+/** Any Security header block, whatever its prefix, in a server's response. */
+const SECURITY_HEADER_BLOCK = /<([\w.-]+:)?Security\b[\s\S]*?<\/([\w.-]+:)?Security\s*>/g;
 
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
@@ -16,6 +68,13 @@ import { outboundAxiosOptions, outboundAxios } from '../../common/outbound-http'
 @Injectable()
 export class SoapEngine {
   private readonly logger = new Logger(SoapEngine.name);
+  /**
+   * WSDL metadata by WSDL URL, oldest first. Keyed by the URL as configured
+   * (it may carry credentials in its query string, so it stays in memory and
+   * is logged without them). A WSDL is the same for every tenant that uses
+   * the same URL; no tenant secret is part of it.
+   */
+  private readonly wsdlCache = new Map<string, WsdlCacheEntry>();
 
   async execute(
     config: {
@@ -25,17 +84,7 @@ export class SoapEngine {
       headers?: Record<string, string>;
       specUrl?: string;
     },
-    endpointMapping: {
-      method: string; // SOAP operation name
-      path: string; // port name
-      queryParams?: Record<string, unknown>;
-      bodyMapping?: Record<string, unknown>;
-      paramOrder?: string[]; // WSDL-defined parameter order (WCF is order-sensitive)
-      headers?: Record<string, string>;
-      soapAction?: string;
-      endpoint?: string;
-      targetNamespace?: string;
-    },
+    endpointMapping: SoapEndpointMapping,
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const operationName = endpointMapping.method;
@@ -45,10 +94,14 @@ export class SoapEngine {
     let endpoint = endpointMapping.endpoint || '';
     let targetNamespace = endpointMapping.targetNamespace || '';
     let paramOrder = endpointMapping.paramOrder || [];
+    // Body wrapper element and its namespace. A tool imported before these
+    // were stored has neither: with complete metadata it keeps sending
+    // `<tns:{operation}>` in targetNamespace, exactly as before.
+    let inputElement = endpointMapping.inputElement || '';
+    let inputNamespace = endpointMapping.inputNamespace || '';
 
     if (!soapAction || !endpoint || !targetNamespace || paramOrder.length === 0) {
       const wsdlUrl = config.specUrl || config.baseUrl;
-      this.logger.debug(`Fetching WSDL metadata from: ${wsdlUrl}`);
       const meta = await this.extractWsdlMetadata(
         wsdlUrl,
         endpointMapping.path,
@@ -58,6 +111,12 @@ export class SoapEngine {
       if (!endpoint) endpoint = meta.endpoint;
       if (!targetNamespace) targetNamespace = meta.targetNamespace;
       if (paramOrder.length === 0) paramOrder = meta.paramOrder;
+      // The WSDL is read anyway: take the input element from it too, unless
+      // the tool already says which one to use.
+      if (!endpointMapping.inputElement && !endpointMapping.inputNamespace) {
+        inputElement = meta.inputElement || '';
+        inputNamespace = meta.inputNamespace || '';
+      }
     }
 
     // Use connector baseUrl as endpoint fallback (for internal vs external IPs)
@@ -76,13 +135,30 @@ export class SoapEngine {
     // Map parameters
     const soapParams = this.mapParams(endpointMapping.bodyMapping, params);
 
+    // WS-Security travels in the SOAP header, not in an HTTP header.
+    const securityHeader =
+      config.authType === 'WS_SECURITY'
+        ? this.buildSecurityHeader(config.authConfig)
+        : undefined;
+
     // Build the SOAP envelope (respecting WSDL parameter order for WCF)
-    const envelope = this.buildEnvelope(
-      operationName,
-      targetNamespace,
-      soapParams,
-      paramOrder,
-    );
+    const buildEnvelope = (header?: string) =>
+      this.buildEnvelope(
+        inputElement || operationName,
+        inputNamespace || targetNamespace,
+        soapParams,
+        paramOrder,
+        header,
+      );
+    const envelope = buildEnvelope(securityHeader);
+    // The envelope as it may be shown in error details: never the credentials.
+    const shownEnvelope = securityHeader
+      ? buildEnvelope(REDACTED_SECURITY_HEADER)
+      : envelope;
+    const shownResponse = (data: unknown) =>
+      securityHeader && typeof data === 'string'
+        ? data.replace(SECURITY_HEADER_BLOCK, REDACTED_SECURITY_HEADER)
+        : data;
 
     // Build headers
     const headers: Record<string, string> = {
@@ -125,13 +201,19 @@ export class SoapEngine {
 
       // Parse the SOAP response
       if (response.status >= 400) {
+        // Some servers echo the request (and its Security header) in a fault.
+        const responseBody = shownResponse(response.data);
+        // SOAP 1.1 returns its faults with HTTP 500: say what the fault is
+        // (in full in responseBody; Java stacks may put a stack trace in it).
+        let fault = this.faultMessageOf(responseBody);
+        if (fault && fault.length > 500) fault = `${fault.slice(0, 500)}…`;
         const detail: Record<string, unknown> = {
-          error: `SOAP call failed with HTTP ${response.status}`,
+          error: `SOAP call failed with HTTP ${response.status}${fault ? `: ${fault}` : ''}`,
           status: response.status,
           statusText: response.statusText,
           endpoint,
-          responseBody: response.data,
-          requestBody: envelope,
+          responseBody,
+          requestBody: shownEnvelope,
         };
         const enrichedError = new Error(String(detail.error));
         (enrichedError as any).soapDetail = detail;
@@ -147,10 +229,10 @@ export class SoapEngine {
       const detail: Record<string, unknown> = {
         error: err.message,
         endpoint,
-        requestBody: envelope,
+        requestBody: shownEnvelope,
       };
       if (err.code) detail.code = err.code;
-      if (err.response?.data) detail.responseBody = err.response.data;
+      if (err.response?.data) detail.responseBody = shownResponse(err.response.data);
       if (err.response?.status) detail.status = err.response.status;
 
       const enrichedError = new Error(err.message);
@@ -160,16 +242,21 @@ export class SoapEngine {
   }
 
   /**
-   * Build a SOAP 1.1 envelope with the given operation and parameters.
+   * Build a SOAP 1.1 envelope: the parameters wrapped in the body element
+   * (the operation name unless the WSDL names another input element).
    * WCF services require parameters in WSDL-defined order.
    */
   private buildEnvelope(
-    operationName: string,
+    wrapperElement: string,
     targetNamespace: string,
     params: Record<string, unknown>,
     paramOrder: string[] = [],
+    headerXml?: string,
   ): string {
     const ns = targetNamespace || 'http://tempuri.org/';
+    const header = headerXml
+      ? `  <soapenv:Header>\n    ${headerXml}\n  </soapenv:Header>`
+      : '  <soapenv:Header/>';
 
     // Use paramOrder if available, otherwise fall back to object key order
     const orderedKeys =
@@ -183,11 +270,11 @@ export class SoapEngine {
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${ns}">
-  <soapenv:Header/>
+${header}
   <soapenv:Body>
-    <tns:${operationName}>
+    <tns:${wrapperElement}>
 ${paramXml}
-    </tns:${operationName}>
+    </tns:${wrapperElement}>
   </soapenv:Body>
 </soapenv:Envelope>`;
   }
@@ -202,17 +289,96 @@ ${paramXml}
   }
 
   /**
+   * The wsse:Security header with a UsernameToken (OASIS WSS 1.0 UsernameToken
+   * profile), from authConfig `username`, `password` and `passwordType`
+   * (`PasswordText`, the default, or `PasswordDigest`).
+   *
+   * PasswordDigest = Base64(SHA-1(nonce + created + password)) and always
+   * carries the Nonce and Created it was computed from; PasswordText carries
+   * them only with `includeNonce: true`. `includeTimestamp: true` adds a
+   * wsu:Timestamp valid for five minutes.
+   */
+  private buildSecurityHeader(authConfig?: Record<string, unknown>): string {
+    const username = authConfig?.username == null ? '' : String(authConfig.username);
+    const password = authConfig?.password == null ? undefined : String(authConfig.password);
+    if (!username || password === undefined) {
+      throw new Error(
+        'WS-Security needs a username and a password in the connector authentication settings',
+      );
+    }
+
+    const configuredType = String(authConfig?.passwordType || 'PasswordText');
+    const kind = configuredType.slice(configuredType.lastIndexOf('#') + 1).toLowerCase();
+    if (kind !== 'passwordtext' && kind !== 'passworddigest') {
+      throw new Error(
+        `Unsupported WS-Security passwordType "${configuredType}": use PasswordText or PasswordDigest`,
+      );
+    }
+    const digest = kind === 'passworddigest';
+    const enabled = (value: unknown) => value === true || value === 'true';
+
+    const now = this.currentTime();
+    const created = this.wsuDateTime(now);
+    const lines = [
+      `<wsse:Security xmlns:wsse="${WSSE_NS}" xmlns:wsu="${WSU_NS}" soapenv:mustUnderstand="1">`,
+    ];
+    if (enabled(authConfig?.includeTimestamp)) {
+      const expires = this.wsuDateTime(new Date(now.getTime() + WSSE_TIMESTAMP_TTL_MS));
+      lines.push(
+        '  <wsu:Timestamp>',
+        `    <wsu:Created>${created}</wsu:Created>`,
+        `    <wsu:Expires>${expires}</wsu:Expires>`,
+        '  </wsu:Timestamp>',
+      );
+    }
+    lines.push(
+      '  <wsse:UsernameToken>',
+      `    <wsse:Username>${this.escapeXml(username)}</wsse:Username>`,
+    );
+    if (digest || enabled(authConfig?.includeNonce)) {
+      const nonce = this.createNonce();
+      const value = digest
+        ? createHash('sha1')
+            .update(Buffer.concat([nonce, Buffer.from(created, 'utf8'), Buffer.from(password, 'utf8')]))
+            .digest('base64')
+        : this.escapeXml(password);
+      lines.push(
+        `    <wsse:Password Type="${USERNAME_TOKEN_PROFILE}#${digest ? 'PasswordDigest' : 'PasswordText'}">${value}</wsse:Password>`,
+        `    <wsse:Nonce EncodingType="${BASE64_BINARY}">${nonce.toString('base64')}</wsse:Nonce>`,
+        `    <wsu:Created>${created}</wsu:Created>`,
+      );
+    } else {
+      lines.push(
+        `    <wsse:Password Type="${USERNAME_TOKEN_PROFILE}#PasswordText">${this.escapeXml(password)}</wsse:Password>`,
+      );
+    }
+    lines.push('  </wsse:UsernameToken>', '</wsse:Security>');
+    return lines.join('\n    ');
+  }
+
+  /** UTC, ISO 8601 without milliseconds (2026-10-08T07:00:00Z). */
+  private wsuDateTime(date: Date): string {
+    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  }
+
+  /** Clock for WS-Security timestamps; tests replace it. */
+  protected currentTime(): Date {
+    return new Date();
+  }
+
+  /** 16 random bytes for the UsernameToken nonce; tests replace it. */
+  protected createNonce(): Buffer {
+    return randomBytes(16);
+  }
+
+  /**
    * Parse the SOAP response XML, extracting the body content.
    */
   private parseResponse(data: unknown): unknown {
     if (typeof data !== 'string') return data;
 
     try {
-      const parser = new XMLParser({
-        ignoreAttributes: false,
-        removeNSPrefix: true,
-      });
-      const parsed = parser.parse(data);
+      const parsed = this.parseXml(data);
 
       // Navigate: Envelope → Body → first child (operation result)
       const envelope = parsed.Envelope || parsed['soap:Envelope'] || parsed;
@@ -222,9 +388,7 @@ ${paramXml}
       // Check for SOAP fault
       if (body.Fault || body['soap:Fault']) {
         const fault = body.Fault || body['soap:Fault'];
-        throw new Error(
-          `SOAP Fault: ${fault.faultstring || fault.Reason || JSON.stringify(fault)}`,
-        );
+        throw new Error(`SOAP Fault: ${this.faultText(fault)}`);
       }
 
       // Return the first child of Body (the operation response)
@@ -238,63 +402,129 @@ ${paramXml}
     }
   }
 
+  private parseXml(data: string): any {
+    return new XMLParser({ ignoreAttributes: false, removeNSPrefix: true }).parse(data);
+  }
+
   /**
-   * Extract SOAP metadata from WSDL using the soap library (parsing only).
+   * The message of a SOAP fault: `faultstring` in SOAP 1.1, `Reason/Text` in
+   * SOAP 1.2 (an element with an xml:lang attribute, possibly one per
+   * language), which the XML parser turns into objects.
+   */
+  private faultText(fault: any): string {
+    const text = (node: unknown): string => {
+      if (node == null) return '';
+      if (Array.isArray(node)) return node.map(text).filter(Boolean).join('; ');
+      if (typeof node === 'object') {
+        const obj = node as Record<string, unknown>;
+        return text(obj['#text'] ?? obj.Text);
+      }
+      return String(node).trim();
+    };
+    return text(fault?.faultstring) || text(fault?.Reason) || JSON.stringify(fault);
+  }
+
+  /** The fault message of a SOAP response body, when it is a fault. */
+  private faultMessageOf(data: unknown): string | undefined {
+    if (typeof data !== 'string') return undefined;
+    try {
+      const parsed = this.parseXml(data);
+      const fault = (parsed?.Envelope ?? parsed)?.Body?.Fault;
+      return fault ? this.faultText(fault) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * SOAP metadata of one operation, read from the WSDL. Cached per WSDL URL
+   * (see wsdlCache), so a tool whose stored metadata is incomplete (an empty
+   * soapAction is common for document/literal services) does not parse the
+   * whole WSDL on every call.
    */
   private async extractWsdlMetadata(
     wsdlUrl: string,
     portName: string,
     operationName: string,
-  ): Promise<{
-    soapAction: string;
-    endpoint: string;
-    targetNamespace: string;
-    paramOrder: string[];
-  }> {
+  ): Promise<WsdlOperationMeta> {
+    const now = this.currentTime().getTime();
+    let entry = this.wsdlCache.get(wsdlUrl);
+    if (entry && entry.expiresAt <= now) {
+      this.wsdlCache.delete(wsdlUrl);
+      entry = undefined;
+    }
+    if (!entry) {
+      this.logger.debug(`Fetching WSDL metadata from: ${wsdlUrlForLog(wsdlUrl)}`);
+      const created: WsdlCacheEntry = {
+        expiresAt: now + WSDL_CACHE_TTL_MS,
+        metadata: this.readWsdlMetadata(wsdlUrl),
+      };
+      // A WSDL that could not be read is retried sooner.
+      void created.metadata.then((metadata) => {
+        if (!metadata) created.expiresAt = this.currentTime().getTime() + WSDL_FAILURE_TTL_MS;
+      });
+      entry = created;
+      this.wsdlCache.set(wsdlUrl, entry);
+      while (this.wsdlCache.size > WSDL_CACHE_MAX_ENTRIES) {
+        this.wsdlCache.delete(this.wsdlCache.keys().next().value as string);
+      }
+    }
+
+    const metadata = await entry.metadata;
+    const empty = { soapAction: '', endpoint: '', targetNamespace: '', paramOrder: [] };
+    if (!metadata) return empty;
+    return (
+      metadata.operations.get(`${portName}\n${operationName}`) ?? {
+        ...empty,
+        endpoint: metadata.portEndpoints.get(portName) ?? '',
+        targetNamespace: metadata.targetNamespace,
+      }
+    );
+  }
+
+  /** Read every operation of a WSDL, using the soap library for parsing only. */
+  private async readWsdlMetadata(wsdlUrl: string): Promise<WsdlMetadata | null> {
     try {
       await assertSafeOutboundUrl(wsdlUrl);
       const client = await soap.createClientAsync(wsdlUrl, {
         request: outboundAxios() as any,
+        // The library's own cache keeps every WSDL it ever parsed for the life
+        // of the process, with no limit; wsdlCache above is bounded.
+        disableCache: true,
       });
       const wsdl = client.wsdl;
+      const targetNamespace = wsdlTargetNamespace(wsdl);
 
-      const targetNamespace =
-        (wsdl.definitions as any)?.$?.targetNamespace ||
-        (wsdl as any).xml?.match(/targetNamespace="([^"]+)"/)?.[1] ||
-        '';
-
-      let soapAction = '';
-      const bindings = wsdl.definitions?.bindings || {};
-      const binding = bindings[portName];
-      if (binding?.methods?.[operationName]?.soapAction) {
-        soapAction = binding.methods[operationName].soapAction;
-      }
-
-      let endpoint = '';
-      const services = wsdl.definitions?.services || {};
-      for (const service of Object.values(services) as any[]) {
-        const port = service.ports?.[portName];
-        if (port?.location) {
-          endpoint = port.location;
-          break;
+      const portEndpoints = new Map<string, string>();
+      for (const service of Object.values(wsdl.definitions?.services || {}) as any[]) {
+        for (const [portName, port] of Object.entries((service?.ports || {}) as Record<string, any>)) {
+          if (port?.location && !portEndpoints.has(portName)) {
+            portEndpoints.set(portName, port.location);
+          }
         }
       }
 
-      // Extract parameter order from WSDL description
-      const paramOrder: string[] = [];
-      const description = client.describe();
-      for (const svc of Object.values(description)) {
-        const port = (svc as any)[portName];
-        if (port?.[operationName]?.input) {
-          paramOrder.push(...Object.keys(port[operationName].input));
-          break;
+      const operations = new Map<string, WsdlOperationMeta>();
+      for (const service of Object.values(client.describe())) {
+        for (const [portName, port] of Object.entries(service as Record<string, any>)) {
+          for (const [operationName, operation] of Object.entries(port as Record<string, any>)) {
+            const key = `${portName}\n${operationName}`;
+            // The first service with an input for the operation wins, as before.
+            if (operations.get(key)?.paramOrder.length) continue;
+            operations.set(key, {
+              ...resolveWsdlOperation(wsdl, portName, operationName),
+              targetNamespace,
+              paramOrder: operation?.input ? Object.keys(operation.input) : [],
+            });
+          }
         }
       }
-
-      return { soapAction, endpoint, targetNamespace, paramOrder };
+      return { targetNamespace, portEndpoints, operations };
     } catch (err: any) {
-      this.logger.warn(`Failed to extract WSDL metadata: ${err.message}`);
-      return { soapAction: '', endpoint: '', targetNamespace: '', paramOrder: [] };
+      this.logger.warn(
+        `Failed to extract WSDL metadata from ${wsdlUrlForLog(wsdlUrl)}: ${err.message}`,
+      );
+      return null;
     }
   }
 

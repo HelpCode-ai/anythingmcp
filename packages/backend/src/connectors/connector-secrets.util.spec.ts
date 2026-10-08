@@ -158,6 +158,10 @@ describe('masking', () => {
   it.each([
     ['the stored ciphertext', 'v1:iv:tag:ciphertext'],
     ['a decrypted object', { token: 'test-token-456' }],
+    [
+      'a WS-Security UsernameToken',
+      { username: 'ws-user', password: 'test-pass-789', passwordType: 'PasswordDigest' },
+    ],
     ['null', null],
   ])('toPublicConnector drops authConfig when it is %s', (_label, authConfig) => {
     const pub = toPublicConnector({
@@ -169,6 +173,7 @@ describe('masking', () => {
     });
     expect(pub).not.toHaveProperty('authConfig');
     expect(pub).toMatchObject({ id: 'c1', maskedEnvVars: [], maskedHeaders: [] });
+    expect(JSON.stringify(pub)).not.toMatch(/test-(token|pass)/);
   });
 });
 

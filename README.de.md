@@ -265,7 +265,7 @@ Installiere den Adapter deines ERP aus dem [Katalog](#connector-catalog), trage 
 Leg einen REST-Connector an und importiere die Spezifikation per URL oder durch Einfügen. Jede Operation wird ein MCP-Tool auf dem `/mcp`-Endpunkt deines Servers, ohne Code. [So funktioniert es](docs/connectors/rest.md#from-openapi--swagger)
 
 ### Kann ich einen SOAP-/WSDL-Dienst mit Claude verbinden?
-Ja. AnythingMCP liest die WSDL, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer oder API-Key-Header; WS-Security-Header sind noch nicht implementiert. [SOAP-Connector](docs/connectors/soap.md)
+Ja. AnythingMCP liest die WSDL, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer, API-Key-Header oder WS-Security-UsernameToken; signierte WS-Security-Nachrichten werden noch nicht unterstützt. [SOAP-Connector](docs/connectors/soap.md)
 
 ### Kann Claude meine SQL-Server-, Oracle- oder PostgreSQL-Datenbank sicher abfragen?
 Abfrage-Tools sind standardmäßig nur lesend. Zusätzlich: einen Datenbankbenutzer nur mit SELECT-Rechten verwenden, statische Abfragen bevorzugen, bei denen das Modell nur die Parameter liefert, und die Tools pro Rolle freigeben. Das Response-Mapping entfernt Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet in deinem Audit-Log.

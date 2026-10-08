@@ -4,70 +4,125 @@ import * as soap from 'soap';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { outboundAxios } from '../../common/outbound-http';
 
+/** What a SOAP call to one operation needs from the parsed WSDL. */
+export interface WsdlOperationInfo {
+  soapAction: string;
+  endpoint: string;
+  /**
+   * Document style only: the element that wraps the parameters in the body,
+   * taken from the operation's input message part. WCF and JAX-WS name it
+   * after the operation, but a WSDL may declare any element
+   * (`GetItemRequest` for operation `GetItem`).
+   */
+  inputElement?: string;
+  /** Namespace of `inputElement` (its schema's targetNamespace). */
+  inputNamespace?: string;
+}
+
+/**
+ * A WSDL URL as it may be logged: without user info and query string, which
+ * may carry credentials (`?wsdl&token=…`). Anything that is not a URL (a
+ * local path in tests) is not logged at all.
+ */
+export function wsdlUrlForLog(wsdlUrl: string): string {
+  try {
+    const url = new URL(wsdlUrl);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return '(not a URL)';
+  }
+}
+
+/** The targetNamespace of the WSDL definitions element. */
+export function wsdlTargetNamespace(wsdl: any): string {
+  return (
+    wsdl?.definitions?.$targetNamespace ||
+    wsdl?.definitions?.$?.targetNamespace ||
+    wsdl?.xml?.match(/targetNamespace="([^"]+)"/)?.[1] ||
+    ''
+  );
+}
+
+/**
+ * Find an operation of a port in a WSDL parsed by the `soap` library.
+ *
+ * The port is followed to its binding: bindings are keyed by their own name,
+ * which only matches the port name in WCF WSDLs (`BasicHttpBinding_IService`
+ * for both); JAX-WS names them `ItemPort` and `ItemBinding`.
+ */
+export function resolveWsdlOperation(
+  wsdl: any,
+  portName: string,
+  operationName: string,
+): WsdlOperationInfo {
+  const definitions = wsdl?.definitions;
+  let endpoint = '';
+  let method: any;
+  for (const service of Object.values(definitions?.services || {}) as any[]) {
+    const port = service?.ports?.[portName];
+    if (!port) continue;
+    endpoint = port.location || '';
+    method = port.binding?.methods?.[operationName];
+    break;
+  }
+  method ??= definitions?.bindings?.[portName]?.methods?.[operationName];
+
+  const info: WsdlOperationInfo = {
+    soapAction: method?.soapAction || '',
+    endpoint,
+  };
+  // Document style with an element part: the soap library resolves the
+  // input to that schema element. RPC style keeps the message and its typed
+  // parts, and the body wrapper stays the operation name.
+  const input = method?.input;
+  if (
+    method?.style !== 'rpc' &&
+    input?.name === 'element' &&
+    typeof input.$name === 'string' &&
+    input.$name
+  ) {
+    info.inputElement = input.$name;
+    if (typeof input.targetNamespace === 'string' && input.targetNamespace) {
+      info.inputNamespace = input.targetNamespace;
+    }
+  }
+  return info;
+}
+
 @Injectable()
 export class WsdlParser {
   private readonly logger = new Logger(WsdlParser.name);
 
   async parse(wsdlUrl: string): Promise<ParsedTool[]> {
-    this.logger.debug(`Parsing WSDL from: ${wsdlUrl}`);
+    this.logger.debug(`Parsing WSDL from: ${wsdlUrlForLog(wsdlUrl)}`);
 
     // The URL comes from the user: check it, and keep checking WSDL/XSD
     // imports and redirects through the guarded client.
     await assertSafeOutboundUrl(wsdlUrl);
     const client = await soap.createClientAsync(wsdlUrl, {
       request: outboundAxios() as any,
+      // Without this the library answers a re-import from a process-wide
+      // cache that never expires, so a changed WSDL was only seen after a
+      // restart (and every WSDL ever imported stayed in memory).
+      disableCache: true,
     });
     const description = client.describe();
     const wsdl = client.wsdl;
     const tools: ParsedTool[] = [];
 
-    // Extract target namespace from WSDL
-    const targetNamespace =
-      (wsdl.definitions as any)?.$?.targetNamespace ||
-      (wsdl as any).xml?.match(/targetNamespace="([^"]+)"/)?.[1];
-
-    // Build a map of SOAPAction and endpoint per port/operation
-    const bindings = wsdl.definitions?.bindings || {};
-    const services = wsdl.definitions?.services || {};
-
-    // Map portName → endpoint address
-    const portEndpoints: Record<string, string> = {};
-    for (const service of Object.values(services) as any[]) {
-      for (const [portName, portDef] of Object.entries(
-        (service.ports || {}) as Record<string, any>,
-      )) {
-        if (portDef.location) {
-          portEndpoints[portName] = portDef.location;
-        }
-      }
-    }
-
-    // Map bindingName → { operationName → soapAction }
-    const bindingSoapActions: Record<string, Record<string, string>> = {};
-    for (const [bindingName, binding] of Object.entries(bindings) as any[]) {
-      const methods = binding.methods || {};
-      bindingSoapActions[bindingName] = {};
-      for (const [opName, opDef] of Object.entries(methods) as any[]) {
-        if (opDef.soapAction) {
-          bindingSoapActions[bindingName][opName] = opDef.soapAction;
-        }
-      }
-    }
+    const targetNamespace = wsdlTargetNamespace(wsdl) || undefined;
 
     for (const [serviceName, service] of Object.entries(description)) {
       for (const [portName, port] of Object.entries(service as any)) {
         for (const [operationName, operation] of Object.entries(port as any)) {
-          const soapAction =
-            bindingSoapActions[portName]?.[operationName] || '';
-          const endpoint = portEndpoints[portName] || '';
+          const info = resolveWsdlOperation(wsdl, portName, operationName);
 
           const tool = this.operationToTool(
             serviceName,
             portName,
             operationName,
             operation as any,
-            soapAction,
-            endpoint,
+            info,
             targetNamespace,
           );
           tools.push(tool);
@@ -84,10 +139,21 @@ export class WsdlParser {
     portName: string,
     operationName: string,
     operation: any,
-    soapAction: string,
-    endpoint: string,
+    info: WsdlOperationInfo,
     targetNamespace?: string,
   ): ParsedTool {
+    const { soapAction, endpoint } = info;
+    // Stored only where they differ from what the engine assumes (the
+    // operation name, the WSDL targetNamespace), so the usual WCF/JAX-WS tool
+    // stays as small as before.
+    const inputElement =
+      info.inputElement && info.inputElement !== operationName
+        ? info.inputElement
+        : undefined;
+    const inputNamespace =
+      info.inputNamespace && info.inputNamespace !== targetNamespace
+        ? info.inputNamespace
+        : undefined;
     const properties: Record<string, any> = {};
     const required: string[] = [];
     const bodyMapping: Record<string, string> = {};
@@ -127,6 +193,8 @@ export class WsdlParser {
         ...(soapAction ? { soapAction } : {}),
         ...(endpoint ? { endpoint } : {}),
         ...(targetNamespace ? { targetNamespace } : {}),
+        ...(inputElement ? { inputElement } : {}),
+        ...(inputNamespace ? { inputNamespace } : {}),
       },
     };
 

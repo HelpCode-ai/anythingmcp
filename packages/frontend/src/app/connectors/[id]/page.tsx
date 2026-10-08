@@ -75,6 +75,9 @@ export default function ConnectorDetailPage() {
   const [editAuthType, setEditAuthType] = useState('NONE');
   const [editAuthKey, setEditAuthKey] = useState('');
   const [editAuthValue, setEditAuthValue] = useState('');
+  // WS_SECURITY (SOAP only). The stored type is not sent back with the rest of
+  // authConfig, so it is only written together with re-entered credentials.
+  const [editWsPasswordType, setEditWsPasswordType] = useState('PasswordText');
   // OAuth2 only: how client credentials reach the token endpoint.
   const [editTokenAuthMethod, setEditTokenAuthMethod] = useState('client_secret_post');
   // OAuth2 endpoints. Editable because a connector switched to OAUTH2 after
@@ -181,6 +184,7 @@ export default function ConnectorDetailPage() {
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
+      setEditWsPasswordType('PasswordText');
       resetOauth1Fields();
       // The auth method is not secret, so it can be shown. Without this the
       // select would always read "body" and saving any other field would
@@ -271,6 +275,17 @@ export default function ConnectorDetailPage() {
       case 'BASIC_AUTH':
         if (!editAuthKey && !editAuthValue) return undefined;
         return { username: editAuthKey, password: editAuthValue };
+      case 'WS_SECURITY': {
+        // The header needs both, so a half-filled pair would break every call.
+        if (!editAuthKey && !editAuthValue) {
+          if (connector.authType === 'WS_SECURITY') return undefined;
+          throw new Error('Enter the username and password to switch to WS-Security.');
+        }
+        if (!editAuthKey || !editAuthValue) {
+          throw new Error('Enter both the username and the password to change the WS-Security credentials.');
+        }
+        return { username: editAuthKey, password: editAuthValue, passwordType: editWsPasswordType };
+      }
       case 'OAUTH1': {
         // A connector that already signs with OAuth 1.0a is patched field by
         // field instead (see handleSave), so the stored secret
@@ -1131,13 +1146,17 @@ export default function ConnectorDetailPage() {
                 <label className="block text-sm font-medium mb-1">Authentication</label>
                 <AppSelect
                   value={editAuthType}
-                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditLtPassword(''); resetOauth1Fields(); }}
+                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditWsPasswordType('PasswordText'); setEditLtPassword(''); resetOauth1Fields(); }}
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   options={[
                     { value: 'NONE', label: 'None' },
                     { value: 'API_KEY', label: 'API Key' },
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
+                    // A SOAP header: implemented by the SOAP engine only.
+                    ...(connector.type === 'SOAP' || connector.authType === 'WS_SECURITY'
+                      ? [{ value: 'WS_SECURITY', label: 'WS-Security (UsernameToken)' }]
+                      : []),
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
                     // Signing is implemented by the REST engine only.
                     ...(connector.type === 'REST' || connector.type === 'ODATA' || connector.authType === 'OAUTH1'
@@ -1179,6 +1198,36 @@ export default function ConnectorDetailPage() {
                   <div>
                     <label className="block text-sm font-medium mb-1">Password</label>
                     <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                  </div>
+                </div>
+              )}
+              {editAuthType === 'WS_SECURITY' && (
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Username</label>
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Password</label>
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password type</label>
+                    <AppSelect
+                      value={editWsPasswordType}
+                      onValueChange={setEditWsPasswordType}
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                      options={[
+                        { value: 'PasswordText', label: 'PasswordText (default)' },
+                        { value: 'PasswordDigest', label: 'PasswordDigest' },
+                      ]}
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      Sent as a wsse:Security UsernameToken in the SOAP header. The password type is saved
+                      with the username and password: re-enter both to change it.
+                    </p>
                   </div>
                 </div>
               )}

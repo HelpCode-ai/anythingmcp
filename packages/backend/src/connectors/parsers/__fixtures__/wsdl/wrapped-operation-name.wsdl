@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Document/literal wrapped, WCF style: the input element is named after the operation. -->
+<wsdl:definitions name="ItemService"
+    targetNamespace="http://tempuri.org/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://tempuri.org/">
+  <wsdl:types>
+    <xs:schema elementFormDefault="qualified" targetNamespace="http://tempuri.org/">
+      <xs:element name="GetItem">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element minOccurs="0" name="itemId" type="xs:int"/>
+            <xs:element minOccurs="0" name="language" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="GetItemResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element minOccurs="0" name="GetItemResult" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="IItemService_GetItem_InputMessage">
+    <wsdl:part name="parameters" element="tns:GetItem"/>
+  </wsdl:message>
+  <wsdl:message name="IItemService_GetItem_OutputMessage">
+    <wsdl:part name="parameters" element="tns:GetItemResponse"/>
+  </wsdl:message>
+  <wsdl:portType name="IItemService">
+    <wsdl:operation name="GetItem">
+      <wsdl:input message="tns:IItemService_GetItem_InputMessage"/>
+      <wsdl:output message="tns:IItemService_GetItem_OutputMessage"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="BasicHttpBinding_IItemService" type="tns:IItemService">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetItem">
+      <soap:operation soapAction="http://tempuri.org/IItemService/GetItem" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="ItemService">
+    <wsdl:port name="BasicHttpBinding_IItemService" binding="tns:BasicHttpBinding_IItemService">
+      <soap:address location="http://items.example.com/ItemService.svc"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

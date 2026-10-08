@@ -38,6 +38,14 @@ export interface SoapEndpointMapping {
   soapAction?: string;
   endpoint?: string;
   targetNamespace?: string;
+  /**
+   * Element that wraps the parameters in the body, when the WSDL's input
+   * message part names one other than the operation (`GetItemRequest` for
+   * `GetItem`). Absent: the operation name.
+   */
+  inputElement?: string;
+  /** Namespace of the body element and its parameters, when it differs from `targetNamespace`. */
+  inputNamespace?: string;
 }
 
 export interface DatabaseEndpointMapping {
