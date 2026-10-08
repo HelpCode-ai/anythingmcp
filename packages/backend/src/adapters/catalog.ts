@@ -235,6 +235,7 @@ import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
 import * as prestashop from './intl/prestashop.json';
+import * as printful from './intl/printful.json';
 import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
@@ -262,6 +263,7 @@ import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
 import * as serply from './intl/serply.json';
 import * as shipstation from './intl/shipstation.json';
+import * as shopify from './intl/shopify.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as slack from './intl/slack.json';
@@ -766,6 +768,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomicPublic as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
   prestashop as unknown as AdapterDefinition,
+  printful as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
   procore as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
@@ -793,6 +796,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sentry as unknown as AdapterDefinition,
   serply as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
+  shopify as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   slack as unknown as AdapterDefinition,
