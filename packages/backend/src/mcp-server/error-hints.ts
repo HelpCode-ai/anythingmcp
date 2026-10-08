@@ -125,6 +125,13 @@ const SHOPIFY_NOT_INSTALLED_HINT =
   'open the app in the Shopify Dev Dashboard, click "Install app" and choose this ' +
   'store (the one in SHOPIFY_STORE), then the tools work. Tell the user exactly that.';
 
+const SHOPIFY_PROTECTED_DATA_HINT =
+  'Shopify withholds protected customer data (names, emails, phones, addresses) from ' +
+  'an app until access is requested. Retrying or asking for other fields of the same ' +
+  'object will not help. The store owner must open the Partner Dashboard → Apps → this ' +
+  'app → API access requests → Protected customer data access, request the fields and ' +
+  'save (no review for an app on their own store). Tell the user exactly that.';
+
 const PRINTFUL_STORE_ID_HINT =
   'The Printful token is account-level, so this call needs `store_id`. Call ' +
   'printful_list_stores and retry with the id of the store meant. If that list is ' +
@@ -203,6 +210,9 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
 
   if (hostMatches(input.host, 'myshopify.com') && /app_not_installed/.test(text)) {
     return SHOPIFY_NOT_INSTALLED_HINT;
+  }
+  if (hostMatches(input.host, 'myshopify.com') && /not approved to access the \w+ object|protected-customer-data/i.test(text)) {
+    return SHOPIFY_PROTECTED_DATA_HINT;
   }
 
   if (hostMatches(input.host, 'api.printful.com') && /requires `?store_id`?/i.test(text)) {

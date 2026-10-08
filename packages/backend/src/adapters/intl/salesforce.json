@@ -187,7 +187,7 @@
         "properties": {
           "q": {
             "type": "string",
-            "description": "Text to search for, e.g. Acme or ana@example.com. * matches the end of a word (Acm*)."
+            "description": "Text to search for, e.g. Acme or ana@example.com. * matches the end of a word (Acm*). At least two characters besides the wildcards: a* or ? alone is refused (INVALID_SEARCH)."
           },
           "sobject": {
             "type": "array",

@@ -141,6 +141,15 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(deriveErrorHint({ host: 'example.com', status: 400, body: 'app_not_installed' })).toBeUndefined();
   });
 
+  it('sends the Shopify owner to protected customer data access', () => {
+    const hint = deriveErrorHint({
+      host: 'acme.myshopify.com',
+      status: 200,
+      message: 'GraphQL errors: [{"message":"This app is not approved to access the Customer object."}]',
+    });
+    expect(hint).toMatch(/API access requests/);
+  });
+
   it('points an account-level Printful token at store_id', () => {
     const hint = deriveErrorHint({
       host: 'api.printful.com',
