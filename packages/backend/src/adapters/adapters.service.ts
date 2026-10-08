@@ -19,7 +19,7 @@ import { pickProbe } from './probe.util';
 import { odooDatabaseHint } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
-import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
+import { normalizeAddressVariables } from '../common/base-url-variable.util';
 import { STARTER_PACK } from './starter-pack';
 import {
   POPULAR_CACHE_MS,
@@ -265,14 +265,15 @@ export class AdaptersService {
       // refused while the user is still on the form, naming the variable.
       // The normalised value is what gets stored, so the environment-variable
       // editor shows what is actually used.
-      credentials = normalizeBaseUrlVariables(
+      // A tenant field (`{{WECLAPP_TENANT}}.weclapp.com`) given as the whole
+      // address the browser shows keeps the label it stands for; an address
+      // on another domain is refused, naming the variable.
+      credentials = normalizeAddressVariables(
         adapter.connector.baseUrl,
         credentials,
         adapter.connector.type,
+        { singleLabel: true },
       );
-      // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) given as the
-      // whole address the browser shows: keep the label it stands for.
-      credentials = normalizeSubdomainVariables(adapter.connector.baseUrl, credentials);
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials

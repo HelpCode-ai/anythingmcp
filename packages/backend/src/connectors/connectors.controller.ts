@@ -45,7 +45,7 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
-import { normalizeBaseUrlVariables, normalizeSubdomainVariables } from '../common/base-url-variable.util';
+import { normalizeAddressVariables } from '../common/base-url-variable.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -654,8 +654,12 @@ export class ConnectorsController {
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
     this.assertUsableBaseUrl(dto.baseUrl, dto.type);
+    // Variables typed with a hand-built connector: cleaned as on every later edit.
+    const data = dto.envVars
+      ? { ...dto, envVars: this.normalizeVariables({ ...dto, config: null }, dto.envVars) }
+      : dto;
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
-    const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, dto);
+    const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, data);
 
     // Auto-create default tools for DATABASE connectors
     if (dto.type === 'DATABASE') {
@@ -762,6 +766,28 @@ export class ConnectorsController {
     }
 
     return { ...toPublicConnector(connector), attachedToServer: attachedTo };
+  }
+
+  /**
+   * The variables to store for a connector, cleaned like the catalog import
+   * does it (see normalizeAddressVariables): a base-URL variable gets its
+   * https://, a tenant field pasted as a whole address keeps its first label.
+   * A catalog connector stores its resolved base URL, so the template comes
+   * from the catalog, and its tenant fields are single labels; a hand-built
+   * connector keeps its template as the base URL itself.
+   */
+  private normalizeVariables(
+    connector: { baseUrl: string | null; type: string; config?: unknown },
+    values: Record<string, string>,
+  ): Record<string, string> {
+    const cfg = connector.config as { adapterSlug?: string } | null | undefined;
+    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+    return normalizeAddressVariables(
+      adapter ? adapter.connector.baseUrl : connector.baseUrl,
+      values,
+      connector.type,
+      { singleLabel: !!adapter },
+    );
   }
 
   /**
@@ -923,7 +949,11 @@ export class ConnectorsController {
     const ctx = secretContext(connector);
     const data = { ...dto };
     if (dto.envVars) {
-      data.envVars = mergeMaskedEnvVars(dto.envVars, connector.envVars, ctx);
+      // Cleaned as in PUT :id/env-vars: this route stores variables too.
+      data.envVars = this.normalizeVariables(
+        { ...connector, baseUrl: dto.baseUrl ?? connector.baseUrl },
+        mergeMaskedEnvVars(dto.envVars, connector.envVars, ctx),
+      );
     }
     if (dto.headers) {
       data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
@@ -1802,11 +1832,7 @@ export class ConnectorsController {
     // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) pasted as the
     // whole address keeps only the label it stands for, as at install;
     // without it the edit stored `acme.freshdesk.com/api/v2.freshdesk.com/…`.
-    const baseTemplate = adapter ? adapter.connector.baseUrl : connector.baseUrl;
-    const envVars = normalizeSubdomainVariables(
-      baseTemplate,
-      normalizeBaseUrlVariables(baseTemplate, kept, connector.type),
-    );
+    const envVars = this.normalizeVariables(connector, kept);
 
     const updateData: {
       envVars: Record<string, string>;

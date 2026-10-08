@@ -216,44 +216,134 @@ function parses(url: string): boolean {
     return false;
   }
 }
+// `https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2`: the variable, then the
+// fixed rest of the host it is the first label of.
+const SUBDOMAIN_SLOT = /:\/\/\{\{([A-Za-z0-9_]+)\}\}(\.[^/{}?#]+)/g;
+// One or more host-name labels separated by single dots.
+const HOST_LABELS = /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/;
+
+export interface SubdomainOptions {
+  /**
+   * The variable is one label (`acme`), never a dotted name. True for every
+   * catalog adapter, whose instructions all ask for the first part of the
+   * address only; a hand-built template may take a dotted value on purpose
+   * (`xy123.eu-central-1` before `.snowflakecomputing.com`).
+   */
+  singleLabel?: boolean;
+}
 
 /**
- * Apply {@link subdomainOf} to every variable that stands for the first label
- * of a host in a base-URL template (`https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2`).
+ * Apply {@link normalizeSubdomainVariable} to every variable that stands for
+ * the first label of a host in a base-URL template
+ * (`https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2`).
  *
  * People paste what their browser shows: `https://acme.freshdesk.com/a/tickets`
  * for a field that wants `acme`. Unfixed, that became
  * `https://https://acme.freshdesk.com/a/tickets.freshdesk.com/api/v2` and every
  * check failed with an error naming neither the field nor the fix. Returns a
- * new map; a value that is already a bare label is untouched.
+ * new map; a value that is already a bare label is untouched. A variable that
+ * is the whole host (`https://{{SPLUNK_HOST}}:8089`) is not matched.
  */
 export function normalizeSubdomainVariables(
   template: string | null | undefined,
   values: Record<string, string>,
+  options: SubdomainOptions = {},
 ): Record<string, string> {
   if (!template) return values;
   let out = values;
-  for (const [, name, suffix] of template.matchAll(/:\/\/\{\{([A-Za-z0-9_]+)\}\}(\.[^/{}?#]+)/g)) {
+  for (const [, name, suffix] of template.matchAll(SUBDOMAIN_SLOT)) {
     const value = out[name];
     if (typeof value !== 'string' || !value.trim()) continue;
-    const label = subdomainOf(value, suffix);
+    const label = normalizeSubdomainVariable(name, value, suffix, options);
     if (label !== value) out = { ...out, [name]: label };
   }
   return out;
 }
 
 /**
+ * Save-time: the label to store for a variable that sits before `suffix` in
+ * the host, or a 400 that names the variable and shows the expected form.
+ *
+ * `acme`, ` ACME `, `acme.weclapp.com`, `https://acme.weclapp.com/webapp` all
+ * give `acme` for `.weclapp.com`. Refused: anything that is not a host name
+ * (spaces, `@`, …) and, with `singleLabel`, an address on another domain
+ * (`acme.example.com`), which would otherwise become
+ * `acme.example.com.weclapp.com`. The value is not echoed: it may be a secret
+ * pasted into the wrong field.
+ */
+export function normalizeSubdomainVariable(
+  name: string,
+  value: string,
+  suffix: string,
+  options: SubdomainOptions = {},
+): string {
+  const label = subdomainOf(value, suffix);
+  const reason = !HOST_LABELS.test(label)
+    ? 'the value given is not a host name'
+    : options.singleLabel && label.includes('.')
+      ? `the value given is an address that does not end in ${suffix}`
+      : null;
+  if (!reason) return label;
+  throw new BadRequestException(
+    `${name} must be only the part before ${suffix}, such as acme for ` +
+      `acme${suffix} — ${reason}.`,
+  );
+}
+
+/**
  * `https://acme.freshdesk.com/a/tickets` → `acme` for the suffix
- * `.freshdesk.com`; `acme` stays `acme`. A host on another domain keeps its
- * full name (minus scheme and path), which the call then reports clearly.
+ * `.freshdesk.com`; `acme` stays `acme`. Scheme, path, query, fragment, a port
+ * the suffix does not have and a trailing dot are dropped, and the result is
+ * lower-cased. A host on the suffix's parent domain gives its first label
+ * (`acme.kustomerapp.com` → `acme` for `.api.kustomerapp.com`). A host on
+ * another domain keeps its full name, for {@link normalizeSubdomainVariable}
+ * to judge.
  */
 export function subdomainOf(value: string, suffix: string): string {
   const host = value
     .trim()
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/^\/\//, '')
     .split(/[/?#]/)[0]
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\.$/, '');
   const tail = suffix.toLowerCase();
   if (host.endsWith(tail) && host.length > tail.length) return host.slice(0, -tail.length);
-  return host || value.trim();
+  // `acme.weclapp.com:443` for `.weclapp.com`.
+  const bare = host.replace(/:\d{1,5}$/, '');
+  const bareTail = tail.replace(/:\d{1,5}$/, '');
+  if (bare.endsWith(bareTail) && bare.length > bareTail.length) {
+    return bare.slice(0, -bareTail.length);
+  }
+  // The web address of a service whose API host has an extra label:
+  // `acme.kustomerapp.com` for `.api.kustomerapp.com`, `us6.admin.mailchimp.com`
+  // for `.api.mailchimp.com`. Only when the parent (the suffix minus its first
+  // label) still has two labels, so it is never reduced to a bare `.com`.
+  const parent = bareTail.replace(/^\.[^.]+/, '');
+  if (parent.split('.').length > 2 && bare.endsWith(parent) && bare.length > parent.length) {
+    return bare.split('.')[0];
+  }
+  return bare || value.trim();
+}
+
+/**
+ * Both save-time clean-ups for the variables a base-URL template is built
+ * from: {@link normalizeBaseUrlVariables} for the one it starts with,
+ * {@link normalizeSubdomainVariables} for those that are the first label of
+ * its host. Every path that stores connector variables goes through this, so
+ * a value typed after install is cleaned exactly like one typed at install.
+ * Non-HTTP connectors are left alone.
+ */
+export function normalizeAddressVariables(
+  template: string | null | undefined,
+  values: Record<string, string>,
+  connectorType?: string,
+  options: SubdomainOptions = {},
+): Record<string, string> {
+  if (connectorType && !HTTP_CONNECTOR_TYPES.has(connectorType)) return values;
+  return normalizeSubdomainVariables(
+    template,
+    normalizeBaseUrlVariables(template, values, connectorType),
+    options,
+  );
 }
