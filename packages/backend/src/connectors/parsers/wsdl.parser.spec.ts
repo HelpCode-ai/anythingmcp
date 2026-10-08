@@ -513,5 +513,75 @@ describe('WsdlParser', () => {
     </tns:GetItem>
   </soapenv:Body>
 </soapenv:Envelope>`);
+    expect(post.mock.calls[0][0]).toBe('http://items.example.com/ItemService.svc');
+    expect(post.mock.calls[0][2].headers).toEqual({
+      'Content-Type': 'text/xml; charset=utf-8',
+      SOAPAction: 'http://tempuri.org/IItemService/GetItem',
+    });
+  });
+
+  describe('stored tools without the fields this import adds', () => {
+    // Tools imported before soapVersion and childElementsQualified existed
+    // lack them. When their metadata is incomplete the engine reads the WSDL
+    // at call time, but must not opt them in from it: they keep sending
+    // what they sent before.
+    it('a tool on a SOAP 1.2 port still sends SOAP 1.1', async () => {
+      const wsdl = fixture('soap12-only');
+      await engine.execute(
+        { baseUrl: 'http://stock.example.com/soap12', authType: 'NONE', specUrl: wsdl },
+        {
+          method: 'GetStock',
+          path: 'StockSoap12Port',
+          bodyMapping: { sku: '$sku' },
+          paramOrder: ['sku'],
+          // no soapAction stored: read from the WSDL at call time
+          endpoint: 'http://stock.example.com/soap12',
+          targetNamespace: 'http://example.com/stock',
+        },
+        { sku: 'A-1' },
+      );
+      const [, envelope, options] = post.mock.calls[0];
+      expect(envelope).toContain('xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"');
+      expect(options.headers).toEqual({
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: 'urn:GetStock',
+      });
+    });
+
+    it('a JAX-WS tool still sends qualified elements, as stored by the old import', async () => {
+      const wsdl = fixture('jaxws-unqualified');
+      await engine.execute(
+        { baseUrl: 'http://orders.example.com/OrderService', authType: 'NONE', specUrl: wsdl },
+        {
+          method: 'createOrder',
+          path: 'OrderServicePort',
+          bodyMapping: {
+            customerId: '$customerId',
+            note: '$note',
+            targetNSAlias: '$targetNSAlias',
+            targetNamespace: '$targetNamespace',
+          },
+          paramOrder: ['customerId', 'note', 'targetNSAlias', 'targetNamespace'],
+          endpoint: 'http://orders.example.com/OrderService',
+          targetNamespace: 'http://example.com/orders',
+        },
+        { customerId: 'C-1', note: 'n', targetNSAlias: 'tns', targetNamespace: 'urn:x' },
+      );
+      const [, envelope, options] = post.mock.calls[0];
+      expect(envelope).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://example.com/orders">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <tns:createOrder>
+      <tns:customerId>C-1</tns:customerId>
+      <tns:note>n</tns:note>
+      <tns:targetNSAlias>tns</tns:targetNSAlias>
+      <tns:targetNamespace>urn:x</tns:targetNamespace>
+    </tns:createOrder>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+      // The WSDL's soapAction is empty: SOAP 1.1 requires the header anyway.
+      expect(options.headers).toEqual({ 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '""' });
+    });
   });
 });
