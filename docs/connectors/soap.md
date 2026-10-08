@@ -43,6 +43,17 @@ curl -s http://localhost:4000/api/connectors \
   }'
 ```
 
+### Testing the connection
+
+**Test connection** (and the dashboard's health check) reads the connector's WSDL the way an import does: from `specUrl` or, without one, from the base URL and, when that is not a WSDL and has no query string, from the base URL with `?wsdl` (WCF and JAX-WS serve it there). It calls no operation, since any of them may change data, so it does not check the credentials (HTTP Basic, bearer token, API key or WS-Security): run a read-only tool from the connector page for that. A WSDL read in the last ten minutes is not downloaded again.
+
+| Result | Status |
+|--------|--------|
+| The WSDL is read | OK, with the number of operations and ports |
+| The service answers below HTTP 500 but no WSDL can be read there (an HTML page, 404, 405, ...) | OK: tools that already have their metadata work without a WSDL. The message suggests setting the WSDL URL, which an import or a refresh needs |
+| The service answers 401 or 403 | OK, with a note: the WSDL is downloaded without the connector's credentials, so a WSDL behind authentication cannot be read |
+| DNS, connection, timeout or TLS failure, a host blocked by the SSRF guard, or HTTP 500 and above | Failed |
+
 ---
 
 ## Importing Tools from WSDL
@@ -84,6 +95,26 @@ SOAP tools use a specific endpoint mapping format:
 | `bodyMapping` | Maps tool params to SOAP envelope parameters |
 | `inputElement` | Body element that wraps the parameters, when the WSDL's input element is not named after the operation (set on import) |
 | `inputNamespace` | Namespace of that element, when it differs from the WSDL `targetNamespace` (set on import) |
+| `childElementsQualified` | `false` when the parameter elements carry no namespace: RPC style, or a schema with `elementFormDefault="unqualified"` (the XSD default, common in JAX-WS services) or `form="unqualified"`. The engine then writes `<customerId>` instead of `<tns:customerId>` (set on import; absent: qualified, as WCF needs) |
+| `soapVersion` | `"1.2"` for an operation of a SOAP 1.2 port (set on import; absent: SOAP 1.1) |
+| `elementOrder` | Order of the child elements of complex parameters, by path (`{"address": ["street", "city"]}`), because the schema's `xs:sequence` is order-sensitive and a stored tool does not keep the key order of objects (set on import) |
+
+### Parameter values
+
+Each parameter becomes an element in the body. Values are written as follows:
+
+| Value | XML |
+|-------|-----|
+| Text, number, boolean | The element with the value as text, escaped |
+| Object | The element with one child element per field, in the order the schema declares them (`elementOrder`); fields the schema does not list follow in the order sent |
+| List | The element repeated once per item, for elements with `maxOccurs` above 1 (imported as array parameters) |
+| `null` or missing | Left out |
+
+Values may nest up to 20 levels; field names must be valid XML names. Attributes and `xsi:type` are not written.
+
+### Required and optional parameters
+
+On import, a parameter is required only when its schema element has no `minOccurs` or `minOccurs` of at least 1, and is not one branch of an `xs:choice`. WCF marks nearly every element `minOccurs="0"`, so its parameters are optional and the AI client no longer has to invent values for them; `nillable` alone does not make an element optional. RPC parts, and every parameter of an operation whose schema cannot be resolved, stay required. `xs:enumeration` values become the parameter's `enum`, and `xs:dateTime`, `xs:date` and `xs:time` parameters get the JSON Schema format `date-time`, `date` and `time`. Tools imported earlier keep the parameters they were stored with: re-import the WSDL to update them.
 
 ---
 
@@ -93,7 +124,14 @@ AnythingMCP handles WCF-specific requirements:
 
 - **Parameter ordering** — WSDL-defined parameter order is preserved (WCF services are order-sensitive)
 - **Endpoint override** — The connector's `baseUrl` overrides the WSDL endpoint host, useful for internal networks where the WSDL advertises external IPs
-- **Multiple bindings** — Each port/binding generates separate tools
+- **Multiple bindings** — Each port/binding generates separate tools. An operation that a service offers on both a SOAP 1.1 and a SOAP 1.2 port (WCF's `BasicHttpBinding` next to a SOAP 1.2 binding) becomes one tool, on the SOAP 1.1 port, because tools are named after the service and the operation
+- **SOAPAction header** — Sent with the operation's `soapAction` from the WSDL; when the WSDL declares an empty action, the header is sent as `SOAPAction: ""`, as SOAP 1.1 requires
+
+### SOAP 1.2
+
+Operations of a SOAP 1.2 port (a binding with a `soap12:binding` element, namespace `http://schemas.xmlsoap.org/wsdl/soap12/`) are imported with `"soapVersion": "1.2"` and sent as SOAP 1.2: the envelope uses the `http://www.w3.org/2003/05/soap-envelope` namespace, and the action travels in the media type, `Content-Type: application/soap+xml; charset=utf-8; action="<soapAction>"` (without `action` when the WSDL declares none), instead of a `SOAPAction` header. SOAP 1.2 faults are read from `Reason/Text`.
+
+WCF bindings that also require WS-Addressing headers (`wsHttpBinding`, a `wsaw:UsingAddressing` policy) are not supported: use the service's `BasicHttpBinding` port.
 
 ---
 
@@ -179,9 +217,9 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 
 | Issue | Solution |
 |-------|----------|
-| WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
+| WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container; **Test connection** says whether the service answered and why no WSDL could be read. The WSDL is read without credentials |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
-| "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. RPC/encoded style and nested complex-type parameters are not supported yet |
+| "Unknown operation" or a schema fault | The engine sends document/literal requests: the body element is the operation's input element from the WSDL (`<tns:GetItemRequest>`), or the operation name (`<tns:GetItem>`) when the WSDL names it so, as WCF and JAX-WS do. Tools imported before this was read from the WSDL keep the operation name: re-import the WSDL to pick up the input element. Parameter elements are written with the `tns:` prefix unless the schema declares them unqualified; tools imported before that was read keep the prefix, so re-import the WSDL of a JAX-WS or RPC service that answers with an unmarshalling fault. RPC/encoded style is not supported. Tools imported before nested values were supported describe complex parameters as text: re-import the WSDL so they take objects and lists |
 | A changed WSDL is not picked up | Tools keep the metadata read at import: re-import the WSDL. A tool that lacks some of it (an empty `soapAction` is common) reads it from the WSDL at call time and keeps it for up to 10 minutes (1 minute when the WSDL could not be read) |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
 | Authentication failures | Check the credentials and the auth type. For WS-Security, try the other password type, set `includeNonce` or `includeTimestamp` if the service asks for them, and check the backend's clock for `PasswordDigest`. A service that requires signed WS-Security messages or a client certificate cannot be called yet (see Authentication) |

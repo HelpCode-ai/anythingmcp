@@ -46,6 +46,28 @@ export interface SoapEndpointMapping {
   inputElement?: string;
   /** Namespace of the body element and its parameters, when it differs from `targetNamespace`. */
   inputNamespace?: string;
+  /**
+   * Child element order of complex (nested) parameters, from the schema, by
+   * path of element names: `{ "address": ["street", "city"] }`. Needed
+   * because a JSON column does not keep object key order and an xs:sequence
+   * is order-sensitive. Fields not listed follow in the order given. Set on
+   * import; absent: the order of the value's keys.
+   */
+  elementOrder?: Record<string, string[]>;
+  /**
+   * `false`: the parameter elements, and those nested in them, are written
+   * without a prefix, i.e. in no namespace, as the schema's
+   * elementFormDefault="unqualified" (the XSD default) and RPC message parts
+   * require. Set on import; absent: qualified (`tns:`), as before.
+   */
+  childElementsQualified?: boolean;
+  /**
+   * `'1.2'` for an operation of a SOAP 1.2 port: the envelope is in the SOAP
+   * 1.2 namespace and the action travels in the Content-Type
+   * (`application/soap+xml; action="…"`) instead of a SOAPAction header.
+   * Set on import; absent: SOAP 1.1.
+   */
+  soapVersion?: '1.1' | '1.2';
 }
 
 export interface DatabaseEndpointMapping {
