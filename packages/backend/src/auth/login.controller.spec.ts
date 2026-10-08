@@ -802,6 +802,24 @@ describe('LoginController', () => {
       expect(html).toContain('Only continue if you started this');
     });
 
+    it('tells the sign-up page which client sent the user, so only Claude users see the directory badge', async () => {
+      session('https://claude.ai/api/mcp/auth_callback', 'Claude');
+      expect(await page(make(DEPLOY.cloud))).toContain(
+        'href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=claude"',
+      );
+
+      session('https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT');
+      const chatgpt = await page(make(DEPLOY.cloud));
+      expect(chatgpt).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=chatgpt"');
+      expect(chatgpt).not.toContain('Claude Directory');
+
+      // Muse and any other client: not recognised by host, so not Claude.
+      session('https://muse.example.com/oauth/callback', 'Muse');
+      const other = await page(make(DEPLOY.cloud));
+      expect(other).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=other"');
+      expect(other).not.toContain('Claude Directory');
+    });
+
     it('shows no directory badge on self-hosted, even for Claude', async () => {
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
       const html = await page(make(DEPLOY.selfHosted));

@@ -1018,7 +1018,12 @@ export class LoginController {
     // consent box: as a text link under the form it sat below the fold on a
     // phone. After a failed sign-in (that person has an account and is fixing a
     // typo) it shrinks back to the small link under the form.
-    const signupHref = '/login?mode=register&amp;redirect=%2Fauth%2Flogin';
+    //
+    // `client` tells the sign-up page who sent them: it shows the Claude
+    // Directory badge only to people coming from Claude (or from no client at
+    // all), not to someone connecting ChatGPT, Muse or another client.
+    const signupHref =
+      '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (consent ? `&amp;client=${known ?? 'other'}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();
     const signupHtml =
       offerSignup && !error
