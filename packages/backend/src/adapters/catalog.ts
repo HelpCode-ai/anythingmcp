@@ -248,6 +248,7 @@ import * as revolutBusiness from './intl/revolut-business.json';
 import * as rozetka from './intl/rozetka.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
+import * as salesforce from './intl/salesforce.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sapConcur from './intl/sap-concur.json';
 import * as sapS4hanaCloud from './intl/sap-s4hana-cloud.json';
@@ -778,6 +779,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   rozetka as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
+  salesforce as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sapConcur as unknown as AdapterDefinition,
   sapS4hanaCloud as unknown as AdapterDefinition,
