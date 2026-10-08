@@ -11,6 +11,7 @@
     "DATEV_CLIENT_ID",
     "DATEV_CLIENT_SECRET"
   ],
+  "appRegistrationUrl": "https://developer.datev.de",
   "connector": {
     "name": "DATEV Online APIs (Sandbox)",
     "type": "REST",

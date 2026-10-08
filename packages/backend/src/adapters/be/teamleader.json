@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "TEAMLEADER_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://marketplace.focus.teamleader.eu/build",
   "envVarMeta": {
     "TEAMLEADER_REFRESH_TOKEN": {
       "label": "Refresh token",

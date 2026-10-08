@@ -15,6 +15,7 @@
   "probe": {
     "tool": "revolut_list_accounts"
   },
+  "appRegistrationUrl": "https://business.revolut.com/settings/apis?tab=business-api",
   "connector": {
     "name": "Revolut Business",
     "type": "REST",

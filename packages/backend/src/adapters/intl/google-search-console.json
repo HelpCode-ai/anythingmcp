@@ -11,6 +11,7 @@
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET"
   ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
   "envVarMeta": {
     "GOOGLE_CLIENT_ID": {
       "label": "OAuth client ID",

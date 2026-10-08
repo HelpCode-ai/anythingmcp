@@ -410,6 +410,11 @@ export interface AdapterMeta {
    *  a paid plan), in a sentence or two of Markdown. Shown above the form, so
    *  nobody finds out halfway through. */
   prerequisites?: string;
+  /** The provider's page where the user creates the app whose keys the
+   *  connector needs (Etsy's "Create a New App"), for adapters that sign in
+   *  through the user's own app. A chat setup links it next to the callback
+   *  URL to register. */
+  appRegistrationUrl?: string;
   /** What to tell the user when the check fails, keyed by HTTP status ("404")
    *  or failure kind ("auth_failed"); replaces the generic hint. `suggest`
    *  names another adapter to offer instead (e.g. the JSON-RPC Odoo for an
@@ -907,6 +912,7 @@ export function listAdapters(): AdapterMeta[] {
     probe: adapter.probe,
     envVarMeta: adapter.envVarMeta,
     prerequisites: adapter.prerequisites,
+    appRegistrationUrl: adapter.appRegistrationUrl,
   }));
 }
 

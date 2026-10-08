@@ -9,6 +9,7 @@
   "docsUrl": "https://developers.google.com/analytics",
   "requiredEnvVars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
   "optionalEnvVars": ["GOOGLE_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
   "envVarMeta": {
     "GOOGLE_REFRESH_TOKEN": {
       "label": "Refresh token",

@@ -310,6 +310,9 @@ export function validateAdapter(adapter, file, region) {
   if (adapter.prerequisites !== undefined && (typeof adapter.prerequisites !== 'string' || !adapter.prerequisites.trim())) {
     errors.push(error('prerequisites', 'prerequisites', 'prerequisites must be a non-empty string', 'Say in a sentence or two what the user needs before starting, or remove the field.', 'adapter-fields'));
   }
+  if (adapter.appRegistrationUrl !== undefined && !/^https:\/\/\S+$/.test(String(adapter.appRegistrationUrl))) {
+    errors.push(error('app-registration-url', 'appRegistrationUrl', 'appRegistrationUrl must be an https URL', 'Link the provider page where the user creates the app, or remove the field.', 'adapter-fields'));
+  }
   if (adapter.verifyHints !== undefined) {
     const hints = adapter.verifyHints;
     if (!hints || typeof hints !== 'object' || Array.isArray(hints)) {
