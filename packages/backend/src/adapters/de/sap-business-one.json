@@ -1,13 +1,19 @@
 {
   "slug": "sap-business-one",
   "name": "SAP Business One",
-  "description": "Drive SAP Business One ERP (popular Mittelstand SMB target in DACH) from any AI agent: business partners, items, sales orders, A/R invoices, quotations, deliveries. Service Layer OData v4. Session-cookie auth via /Login.",
+  "description": "Drive SAP Business One ERP from any AI agent: business partners, items, sales orders and invoices, plus finance (A/P invoices, payments, journal entries, chart of accounts, bank statements). Service Layer OData v4, session-cookie auth via /Login.",
   "region": "de",
   "category": "erp",
   "icon": "sap-business-one",
   "docsUrl": "https://help.sap.com/doc/056f69366b5345a386bb8149f1700c19/10.0/en-US/Service%20Layer%20API%20Reference.html",
-  "instructions": "**Setup**:\n1. Identify your Service Layer host (typically the same machine that runs HANA + SAP B1). Default HTTPS port is `50000`.\n2. Create or pick a B1 user that has API access for the company database you want to expose.\n3. Find the `CompanyDB` name in **Choose Company** dialog of the B1 client (looks like `SBODEMOGB`).\n4. Set the five env vars below. The adapter logs in once per session (~25 min TTL) and re-uses the `B1SESSION` cookie.\n\n**OData**: this adapter targets the **v2 / OData v4** Service Layer endpoint at `/b1s/v2/`. Older `/b1s/v1/` (OData v3) deployments are not covered — upgrade to FP 2405+ first.\n\n**Filtering**: use standard OData `$filter` syntax, e.g. `CardCode eq 'C20000'` or `DocDate ge '2026-01-01'`.\n\n**Self-host caveat**: Business One is on-premise. The Service Layer is reachable from inside the customer network. To use the AnythingMCP Cloud, expose Service Layer via a reverse proxy + TLS cert; otherwise self-host the adapter on the same network.",
-  "requiredEnvVars": ["SAP_B1_HOST", "SAP_B1_PORT", "SAP_B1_COMPANY_DB", "SAP_B1_USERNAME", "SAP_B1_PASSWORD"],
+  "instructions": "**Setup**:\n1. Identify your Service Layer host (on HANA it usually runs on the database server; SQL Server installs and hosting partners run it on a separate host). Default HTTPS port is `50000`.\n2. Create or pick a B1 user that has API access for the company database you want to expose. A user without write authorizations is a safe start: every tool except `b1_create_order` only reads.\n3. Find the `CompanyDB` name in **Choose Company** dialog of the B1 client (looks like `SBODEMOGB`).\n4. Set the five env vars below. The adapter logs in once per session (~25 min TTL) and re-uses the `B1SESSION` cookie.\n\n**OData**: this adapter targets the **v2 / OData v4** Service Layer endpoint at `/b1s/v2/`. Older `/b1s/v1/` (OData v3) deployments are not covered — upgrade to FP 2405+ first.\n\n**Filtering**: use standard OData `$filter` syntax, e.g. `CardCode eq 'C20000'` or `DocDate ge '2026-01-01'`.\n\n**Paging**: the Service Layer returns 20 rows per call unless the client asks for more, whatever `$top` says. Every list tool asks for pages of up to 100 rows (`Prefer: odata.maxpagesize=100`); when a response carries `@odata.nextLink`, call the same tool again with `skip` raised by the rows already read. Use `select` to keep wide documents (journal entries with their lines, invoices) small.\n\n**Keys and enums**: documents are read by `DocEntry` (internal key), not by `DocNum` (the number printed on the document). Booleans are `tYES` / `tNO`, document status is `bost_Open` / `bost_Close`, and `OriginalJournal` tells what created a journal entry (`ttJournalEntry` for manual entries, `ttAPInvoice`, `ttARInvoice`, `ttVendorPayment`, `ttReceipt`…).\n\n**Finance**: A/P invoices, A/P and A/R credit memos, outgoing and incoming payments, journal entries, the chart of accounts and bank statements each have a list tool. Bank reconciliations are not a list in the Service Layer: `b1_list_external_reconciliations` calls its reconciliation service (a POST that only reads) and returns account and number pairs for `b1_get_external_reconciliation`; open items are the documents whose `PaidToDate` is below `DocTotal`.\n\n**Permissions**: a `403` with SAP error `-6006` (\"Modifying this object is not permitted for current user\") means the login works but the B1 user lacks the authorization for that object. Grant it in **Administration → System Initialization → Authorizations**, or keep the user read-only on purpose.\n\n**Self-host caveat**: Business One is on-premise. The Service Layer is reachable from inside the customer network. To use the AnythingMCP Cloud, expose Service Layer via a reverse proxy + TLS cert; otherwise self-host the adapter on the same network.",
+  "requiredEnvVars": [
+    "SAP_B1_HOST",
+    "SAP_B1_PORT",
+    "SAP_B1_COMPANY_DB",
+    "SAP_B1_USERNAME",
+    "SAP_B1_PASSWORD"
+  ],
   "connector": {
     "name": "SAP Business One Service Layer",
     "type": "REST",
@@ -36,30 +42,61 @@
   "tools": [
     {
       "name": "b1_list_business_partners",
-      "description": "List business partners (customers, suppliers, leads). Use $filter, $top, $select.",
+      "description": "List business partners (customers, suppliers, leads) with their code, name, type and balance.",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows (default 50, max 1000)" },
-          "filter": { "type": "string", "description": "OData $filter expression, e.g. CardType eq 'cCustomer'" },
-          "select": { "type": "string", "description": "OData $select list, e.g. CardCode,CardName,Phone1" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CardType eq 'cSupplier'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. CardCode,CardName,CurrentAccountBalance"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. CardName asc"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/BusinessPartners",
-        "queryParams": { "$top": "$top", "$filter": "$filter", "$select": "$select" }
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
       }
     },
     {
       "name": "b1_get_business_partner",
-      "description": "Get one business partner by CardCode.",
+      "description": "Read one business partner by CardCode: addresses, contacts, payment terms and balance.",
       "parameters": {
         "type": "object",
         "properties": {
-          "cardCode": { "type": "string", "description": "BP CardCode, e.g. C20000" }
+          "cardCode": {
+            "type": "string",
+            "description": "BP CardCode, e.g. C20000"
+          }
         },
-        "required": ["cardCode"]
+        "required": [
+          "cardCode"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -68,29 +105,61 @@
     },
     {
       "name": "b1_list_items",
-      "description": "List inventory items (articles). Use $filter, $top.",
+      "description": "List inventory items with their code, name, prices and stock per warehouse (ItemWarehouseInfoCollection).",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows" },
-          "filter": { "type": "string", "description": "OData $filter expression" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. QuantityOnStock gt 0"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. ItemCode,ItemName,QuantityOnStock"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. ItemCode asc"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Items",
-        "queryParams": { "$top": "$top", "$filter": "$filter" }
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
       }
     },
     {
       "name": "b1_get_item",
-      "description": "Get one item by ItemCode.",
+      "description": "Read one item by ItemCode: prices, units, groups and stock in each warehouse.",
       "parameters": {
         "type": "object",
         "properties": {
-          "itemCode": { "type": "string", "description": "Item code" }
+          "itemCode": {
+            "type": "string",
+            "description": "Item code"
+          }
         },
-        "required": ["itemCode"]
+        "required": [
+          "itemCode"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -99,12 +168,30 @@
     },
     {
       "name": "b1_list_orders",
-      "description": "List sales orders. Sorted by DocDate desc by default.",
+      "description": "List sales orders with their customer, dates, totals and status (bost_Open / bost_Close).",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows" },
-          "filter": { "type": "string", "description": "OData $filter expression" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocumentStatus eq 'bost_Open'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,DocTotal"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
         }
       },
       "endpointMapping": {
@@ -112,20 +199,30 @@
         "path": "/Orders",
         "queryParams": {
           "$top": "$top",
+          "$skip": "$skip",
           "$filter": "$filter",
-          "$orderby": "DocDate desc"
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
         }
       }
     },
     {
       "name": "b1_get_order",
-      "description": "Get one sales order by DocEntry (integer primary key).",
+      "description": "Read one sales order by DocEntry (integer key, not DocNum), with all its lines.",
       "parameters": {
         "type": "object",
         "properties": {
-          "docEntry": { "type": "number", "description": "Order DocEntry" }
+          "docEntry": {
+            "type": "number",
+            "description": "Order DocEntry"
+          }
         },
-        "required": ["docEntry"]
+        "required": [
+          "docEntry"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -138,15 +235,26 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "cardCode": { "type": "string", "description": "Customer CardCode" },
+          "cardCode": {
+            "type": "string",
+            "description": "Customer CardCode"
+          },
           "documentLines": {
             "type": "array",
             "description": "Array of {ItemCode, Quantity, Price?} line objects",
-            "items": { "type": "object" }
+            "items": {
+              "type": "object"
+            }
           },
-          "comments": { "type": "string", "description": "Free-text comments printed on the order" }
+          "comments": {
+            "type": "string",
+            "description": "Free-text comments printed on the order"
+          }
         },
-        "required": ["cardCode", "documentLines"]
+        "required": [
+          "cardCode",
+          "documentLines"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -160,29 +268,61 @@
     },
     {
       "name": "b1_list_invoices",
-      "description": "List A/R invoices. Use $filter, $top.",
+      "description": "List A/R invoices (sales invoices to customers). PaidToDate against DocTotal shows what is still open.",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows" },
-          "filter": { "type": "string", "description": "OData $filter expression" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-01-01' and DocumentStatus eq 'bost_Open'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,DocTotal,PaidToDate"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Invoices",
-        "queryParams": { "$top": "$top", "$filter": "$filter" }
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
       }
     },
     {
       "name": "b1_get_invoice",
-      "description": "Get one A/R invoice by DocEntry.",
+      "description": "Read one A/R invoice by DocEntry (integer key, not DocNum), with lines and taxes.",
       "parameters": {
         "type": "object",
         "properties": {
-          "docEntry": { "type": "number", "description": "Invoice DocEntry" }
+          "docEntry": {
+            "type": "number",
+            "description": "Invoice DocEntry"
+          }
         },
-        "required": ["docEntry"]
+        "required": [
+          "docEntry"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -191,34 +331,565 @@
     },
     {
       "name": "b1_list_quotations",
-      "description": "List sales quotations.",
+      "description": "List sales quotations with their customer, validity date, totals and status.",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows" },
-          "filter": { "type": "string", "description": "OData $filter expression" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-01-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocTotal"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Quotations",
-        "queryParams": { "$top": "$top", "$filter": "$filter" }
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
       }
     },
     {
       "name": "b1_list_delivery_notes",
-      "description": "List delivery notes (outgoing goods movements).",
+      "description": "List delivery notes (goods shipped to customers) with their customer, date and lines.",
       "parameters": {
         "type": "object",
         "properties": {
-          "top": { "type": "number", "description": "Max rows" },
-          "filter": { "type": "string", "description": "OData $filter expression" }
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-01-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/DeliveryNotes",
-        "queryParams": { "$top": "$top", "$filter": "$filter" }
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_credit_notes",
+      "description": "List A/R credit memos (credit notes issued to customers) with their totals and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-01-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,DocTotal"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CreditNotes",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_purchase_invoices",
+      "description": "List A/P invoices (supplier invoices). PaidToDate against DocTotal shows what is still open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocumentStatus eq 'bost_Open' or DocDate ge '2026-09-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,CardName,DocDate,DocDueDate,DocTotal,PaidToDate,DocCurrency"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/PurchaseInvoices",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_get_purchase_invoice",
+      "description": "Read one A/P invoice in full, with its lines, taxes and withholding tax.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docEntry": {
+            "type": "number",
+            "description": "DocEntry of the A/P invoice (not DocNum)."
+          }
+        },
+        "required": [
+          "docEntry"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/PurchaseInvoices({docEntry})"
+      }
+    },
+    {
+      "name": "b1_list_purchase_credit_notes",
+      "description": "List A/P credit memos (credit notes received from suppliers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-01-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,DocTotal"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/PurchaseCreditNotes",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_vendor_payments",
+      "description": "List outgoing payments to suppliers, with the invoices each one settles (PaymentInvoices).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-09-01' and Cancelled eq 'tNO'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,TransferSum,CashSum,CheckSum,DocCurrency"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/VendorPayments",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_incoming_payments",
+      "description": "List incoming payments from customers, with the invoices each one settles (PaymentInvoices).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. DocDate ge '2026-09-01' and Cancelled eq 'tNO'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,TransferSum,CashSum,CheckSum,DocCurrency"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. DocDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IncomingPayments",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_journal_entries",
+      "description": "List journal entries with their lines (JournalEntryLines: account, debit, credit).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. ReferenceDate ge '2026-09-01' and ReferenceDate le '2026-09-30' and OriginalJournal eq 'ttJournalEntry' (manual entries only)"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. JdtNum,ReferenceDate,Memo,OriginalJournal,JournalEntryLines"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. JdtNum desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/JournalEntries",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_get_journal_entry",
+      "description": "Read one journal entry by JdtNum (TransId) with all its lines: account, debit and credit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jdtNum": {
+            "type": "number",
+            "description": "Journal entry number (JdtNum, also called TransId)."
+          }
+        },
+        "required": [
+          "jdtNum"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/JournalEntries({jdtNum})"
+      }
+    },
+    {
+      "name": "b1_list_chart_of_accounts",
+      "description": "List G/L accounts of the chart of accounts with their code, name, type and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. ActiveAccount eq 'tYES' and AccountType eq 'at_Revenues'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. Code,Name,AccountLevel,FatherAccountKey,AccountType,ActiveAccount,Balance"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. Code asc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ChartOfAccounts",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_bank_statements",
+      "description": "List imported bank statements with their account, date and balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return, at most 100 per call. Use skip for the next page."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging (e.g. 100 for the second page)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. StatementDate ge '2026-09-01'"
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select, e.g. BankAccountKey,StatementNumber,StatementDate"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. StatementDate desc"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BankStatements",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby"
+        },
+        "headers": {
+          "Prefer": "odata.maxpagesize=100"
+        }
+      }
+    },
+    {
+      "name": "b1_list_external_reconciliations",
+      "description": "List external (bank) reconciliations of G/L or business partner accounts in a date or number range. Returns the account and reconciliation number of each; read one with b1_get_external_reconciliation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountType": {
+            "type": "string",
+            "enum": [
+              "rat_GLAccount",
+              "rat_BusinessPartner"
+            ],
+            "description": "rat_GLAccount (default) for G/L accounts such as a bank account, rat_BusinessPartner for customer or supplier accounts."
+          },
+          "accountCodeFrom": {
+            "type": "string",
+            "description": "First account code of the range (G/L account code or CardCode)."
+          },
+          "accountCodeTo": {
+            "type": "string",
+            "description": "Last account code of the range."
+          },
+          "dateFrom": {
+            "type": "string",
+            "description": "Earliest reconciliation date, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Latest reconciliation date, YYYY-MM-DD."
+          },
+          "numberFrom": {
+            "type": "number",
+            "description": "First reconciliation number."
+          },
+          "numberTo": {
+            "type": "number",
+            "description": "Last reconciliation number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ExternalReconciliationsService_GetReconciliationList",
+        "bodyMapping": {
+          "ExternalReconciliationFilterParams": {
+            "ReconciliationAccountType": "$accountType",
+            "AccountCodeFrom": "$accountCodeFrom",
+            "AccountCodeTo": "$accountCodeTo",
+            "ReconciliationDateFrom": "$dateFrom",
+            "ReconciliationDateTo": "$dateTo",
+            "ReconciliationNoFrom": "$numberFrom",
+            "ReconciliationNoTo": "$numberTo"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "b1_get_external_reconciliation",
+      "description": "Read one external (bank) reconciliation: amount, date, type and the journal entry and bank statement lines it matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountCode": {
+            "type": "string",
+            "description": "Account code from b1_list_external_reconciliations."
+          },
+          "reconciliationNo": {
+            "type": "number",
+            "description": "Reconciliation number from b1_list_external_reconciliations."
+          }
+        },
+        "required": [
+          "accountCode",
+          "reconciliationNo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ExternalReconciliationsService_GetReconciliation",
+        "bodyMapping": {
+          "ExternalReconciliationParams": {
+            "AccountCode": "$accountCode",
+            "ReconciliationNo": "$reconciliationNo"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {

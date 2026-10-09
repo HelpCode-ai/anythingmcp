@@ -4,3 +4,5 @@
 - Welche Angebote aus dem letzten Monat wurden noch nicht zum Auftrag?
 - Lege einen Auftrag für C20000 an: 10 Stück A00001. (schreibend)
 - Welche Artikel hatten in den letzten 90 Tagen keinen Umsatz?
+- Welche Eingangsrechnungen sind noch offen, und wie viel schulden wir welchem Lieferanten?
+- Zeig mir die manuellen Buchungen des letzten Monats mit ihren Konten.
