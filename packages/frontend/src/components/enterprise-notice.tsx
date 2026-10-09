@@ -4,20 +4,28 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { license, type EditionState } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { notifyEditionChanged } from '@/lib/use-edition';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-/** Inline notice on a page whose setup needs Business, with the ways to get it. */
-export function BusinessNotice({
+/**
+ * Inline notice on a page whose setup needs more than Community, with the ways
+ * to get it: the one-time trial, then the plans (`upgrade="plans"`, e.g. more
+ * users) or an Enterprise enquiry (`upgrade="enterprise"`, single sign-on and
+ * SCIM, which no self-service plan includes).
+ */
+export function EnterpriseNotice({
   edition,
   title,
   body,
+  upgrade,
 }: {
   edition: EditionState;
   title: string;
   body: string;
+  upgrade: 'plans' | 'enterprise';
 }) {
   const { token } = useAuth();
   const pricingUrl = usePricingUrl();
@@ -38,26 +46,30 @@ export function BusinessNotice({
     }
   };
 
+  const upgradeLink =
+    upgrade === 'enterprise'
+      ? { href: buildEnterpriseContactUrl(), label: 'Contact us about Enterprise' }
+      : { href: pricingUrl, label: 'View plans' };
+
   return (
     <div className="rounded-[12px] border border-[var(--brand)] bg-[var(--brand-tint)] p-4">
       <h3 className="text-sm font-semibold text-[var(--text)]">{title}</h3>
       <p className="text-[13px] text-[var(--text-2)] mt-1 max-w-2xl">{body}</p>
       {error && <p className="text-[13px] text-[var(--danger)] mt-2">{error}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        {edition.trialAvailable ? (
+        {edition.trialAvailable && (
           <Button size="sm" onClick={startTrial} disabled={starting}>
-            {starting ? 'Starting…' : `Try Business free for ${edition.trialDays} days`}
+            {starting ? 'Starting…' : `Try Enterprise free for ${edition.trialDays} days`}
           </Button>
-        ) : (
-          <a
-            href={pricingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(buttonVariants({ size: 'sm' }))}
-          >
-            View plans
-          </a>
         )}
+        <a
+          href={upgradeLink.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(buttonVariants({ size: 'sm', variant: edition.trialAvailable ? 'secondary' : 'primary' }))}
+        >
+          {upgradeLink.label}
+        </a>
         <Link href="/settings/license" className="text-[13px] text-[var(--brand)] hover:underline">
           Enter a license key
         </Link>

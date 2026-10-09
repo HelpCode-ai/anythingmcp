@@ -4,19 +4,32 @@ import { useState } from 'react';
 import { license, type EditionState } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { notifyEditionChanged, daysUntil, formatDay } from '@/lib/use-edition';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export const BUSINESS_CAPABILITIES = [
+export const ENTERPRISE_CAPABILITIES = [
   'Single sign-on with Entra ID, Google, Okta or any OIDC provider',
   'SCIM provisioning and role sync from directory groups',
   'Require single sign-on for the whole workspace',
 ];
 
-/** Self-hosted: which edition runs, its users, and the way to Business. */
+/**
+ * The name shown for an edition. The licensing layer still calls the trial and
+ * the transition period `business` (as it does a Business key someone already
+ * holds); the trial is offered as an Enterprise trial, and a transition keeps
+ * what was in use on top of Community.
+ */
+function editionLabel(edition: EditionState): string {
+  if (edition.source === 'trial') return 'Enterprise';
+  if (edition.source === 'transition') return 'Community';
+  return edition.edition.charAt(0).toUpperCase() + edition.edition.slice(1);
+}
+
+/** Self-hosted: which edition runs, its users, and the ways to more. */
 export function EditionCard({ edition, onChange }: { edition: EditionState; onChange?: () => void }) {
   const { token } = useAuth();
   const pricingUrl = usePricingUrl();
@@ -57,7 +70,7 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center gap-2 mb-1">
-        <h2 className="text-sm font-semibold text-[var(--text)] capitalize">{edition.edition}</h2>
+        <h2 className="text-sm font-semibold text-[var(--text)]">{editionLabel(edition)}</h2>
         {source && <Badge tone={edition.source === 'license' ? 'success' : 'info'}>{source}</Badge>}
       </div>
       <p className="text-sm text-[var(--text-2)]">
@@ -67,7 +80,7 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
 
       <div className="mt-4">
         <div className="text-xs font-medium text-[var(--text-3)] mb-2">
-          {edition.business ? 'Included' : 'With Business'}
+          {edition.business ? 'Included' : 'With Enterprise'}
         </div>
         <ul className="space-y-1.5 text-sm text-[var(--text-2)]">
           <li className="flex gap-2">
@@ -76,7 +89,7 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
             </span>
             More than {edition.communitySeatLimit} users
           </li>
-          {BUSINESS_CAPABILITIES.map((c) => (
+          {ENTERPRISE_CAPABILITIES.map((c) => (
             <li key={c} className="flex gap-2">
               <span aria-hidden className={edition.business ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
                 {edition.business ? '✓' : '+'}
@@ -107,7 +120,7 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
         <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap gap-3">
           {edition.trialAvailable && (
             <Button onClick={startTrial} disabled={starting}>
-              {starting ? 'Starting…' : `Try Business free for ${edition.trialDays} days`}
+              {starting ? 'Starting…' : `Try Enterprise free for ${edition.trialDays} days`}
             </Button>
           )}
           <a
@@ -117,6 +130,14 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
             className={cn(buttonVariants({ variant: edition.trialAvailable ? 'secondary' : 'primary' }))}
           >
             View plans
+          </a>
+          <a
+            href={buildEnterpriseContactUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(buttonVariants({ variant: 'ghost' }))}
+          >
+            Contact us about Enterprise
           </a>
         </div>
       )}

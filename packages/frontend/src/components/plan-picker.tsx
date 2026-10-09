@@ -8,6 +8,7 @@ import {
   type BillingPeriod,
   type PlanSelection,
 } from '@/lib/card-trial';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { cn } from '@/lib/utils';
 
 /** Monthly / yearly switch. Yearly is ten months' price for twelve. */
@@ -55,8 +56,9 @@ function PeriodToggle({
 }
 
 /**
- * The three Cloud plans with a billing-period switch, as a radio group.
- * `compact` lays the plans out as rows (for the licence wall's narrow modal).
+ * The self-service Cloud plans with a billing-period switch, as a radio group,
+ * and a line to Enterprise for anything beyond them. `compact` lays the plans
+ * out as rows (for the licence wall's narrow modal).
  */
 export function PlanPicker({
   value,
@@ -82,7 +84,7 @@ export function PlanPicker({
       <div
         role="radiogroup"
         aria-label="Plan"
-        className={cn('grid gap-3', compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3')}
+        className={cn('grid gap-3', compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2')}
       >
         {CLOUD_PLANS.map((plan) => {
           const selected = value.plan === plan.id;
@@ -139,7 +141,17 @@ export function PlanPicker({
           );
         })}
       </div>
-      <p className="text-center text-[11px] text-[var(--text-3)]">Prices in EUR, VAT included.</p>
+      <p className="text-center text-[11px] text-[var(--text-3)]">
+        Prices in EUR, VAT included. More users, single sign-on or SCIM?{' '}
+        <a
+          href={buildEnterpriseContactUrl()}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--brand)] hover:underline"
+        >
+          Ask about Enterprise
+        </a>
+      </p>
     </div>
   );
 }

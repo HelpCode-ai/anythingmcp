@@ -28,15 +28,17 @@ test.describe('card-trial helpers', () => {
   test('reads the plan the pricing page sends', () => {
     expect(parsePlanIntent('cloud_team', 'yearly')).toEqual({ plan: 'team', period: 'yearly' });
     expect(parsePlanIntent('cloud_starter', null)).toEqual({ plan: 'starter', period: 'monthly' });
-    expect(parsePlanIntent('business', 'weekly')).toEqual({ plan: 'business', period: 'monthly' });
+    expect(parsePlanIntent('team', 'weekly')).toEqual({ plan: 'team', period: 'monthly' });
     expect(parsePlanIntent('cloud_enterprise', 'monthly')).toBeNull();
+    // Retired on 8 Oct 2026; an old link falls back to the default selection.
+    expect(parsePlanIntent('cloud_business', 'monthly')).toBeNull();
     expect(parsePlanIntent(null, 'yearly')).toBeNull();
   });
 
   test('keeps a stored intent for seven days and no longer', () => {
     const now = Date.UTC(2026, 9, 1);
-    const raw = encodePlanIntent({ plan: 'business', period: 'yearly' }, now);
-    expect(decodePlanIntent(raw, now + INTENT_TTL_MS - 1)).toEqual({ plan: 'business', period: 'yearly' });
+    const raw = encodePlanIntent({ plan: 'team', period: 'yearly' }, now);
+    expect(decodePlanIntent(raw, now + INTENT_TTL_MS - 1)).toEqual({ plan: 'team', period: 'yearly' });
     expect(decodePlanIntent(raw, now + INTENT_TTL_MS + 1)).toBeNull();
     expect(decodePlanIntent('not json', now)).toBeNull();
     expect(decodePlanIntent(JSON.stringify({ plan: 'team', period: 'monthly' }), now)).toBeNull();
@@ -73,12 +75,12 @@ test.describe('card-trial helpers', () => {
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'short', 'UTC')).toBe('7 Oct');
     expect(formatTrialEnd('nonsense')).toBeNull();
 
-    const [starter, team, business] = CLOUD_PLANS;
+    const [starter, team] = CLOUD_PLANS;
     expect(formatPlanPrice(team, 'monthly')).toBe('49 €/month');
     expect(formatPlanPrice(starter, 'yearly')).toBe('190 €/year');
     expect(yearlyPerMonth(starter)).toBe(15.83);
-    expect(yearlyPerMonth(business)).toBe(82.5);
-    expect(CLOUD_PLANS.map(yearlySaving)).toEqual([38, 98, 198]);
+    expect(yearlyPerMonth(team)).toBe(40.83);
+    expect(CLOUD_PLANS.map(yearlySaving)).toEqual([38, 98]);
   });
 });
 
@@ -205,14 +207,27 @@ test.describe('card-trial offer (cloud)', () => {
   test('the plan picked on the pricing page survives sign-up and is preselected', async ({ page }) => {
     await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
     // Signed out on the register page first (the cookie is irrelevant there).
-    await page.goto('/login?mode=register&plan=cloud_business&period=yearly');
+    await page.goto('/login?mode=register&plan=cloud_team&period=yearly');
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('amcp_plan_intent')), { timeout: 15_000 })
-      .toContain('"plan":"business"');
+      .toContain('"plan":"team"');
 
     await page.goto('/start-trial');
-    await expect(page.getByRole('radio', { name: /Business/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radio', { name: 'Yearly' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('offers Starter and Team, and Enterprise only as an enquiry', async ({ page }) => {
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    await page.goto('/start-trial');
+    const plans = page.getByRole('radiogroup', { name: 'Plan' }).getByRole('radio');
+    await expect(plans).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.getByRole('radio', { name: /Business/ })).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('link', { name: 'Ask about Enterprise' })).toHaveAttribute(
+      'href',
+      /\/contact\?plan=enterprise$/,
+    );
   });
 
   test('a non-admin is never shown the offer', async ({ page }) => {
@@ -236,12 +251,12 @@ test.describe('card-trial entry points (cloud)', () => {
   });
 
   test('the trial banner goes straight to Checkout for the plan picked on the pricing page', async ({ page }) => {
-    const intent = JSON.stringify({ plan: 'business', period: 'monthly', savedAt: Date.now() });
+    const intent = JSON.stringify({ plan: 'team', period: 'monthly', savedAt: Date.now() });
     const { posted } = await cloudSession(page, { seed: { ...SHOWN, amcp_plan_intent: intent } });
     await page.goto('/connectors');
     await page.getByRole('button', { name: /Add a payment method/ }).click({ timeout: 15_000 });
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'business', billingPeriod: 'monthly', trial: true }]);
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'monthly', trial: true }]);
   });
 
   test('after the trial, an admin buys the chosen plan from the licence wall, without a trial', async ({ page }) => {
