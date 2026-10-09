@@ -112,6 +112,33 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
+  it('logs who was refused (ids and key name, no secret) and tells the client why', async () => {
+    const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
+    const req: any = {
+      user: {
+        sub: 'u-b',
+        organizationId: 'org-B',
+        authMethod: 'mcp_api_key',
+        apiKeyName: 'Codex (laptop)',
+        mcpServerId: 'srv-B',
+        key: 'mcp_secret_value',
+      },
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('refused'));
+    expect(line).toContain('server srv-A belongs to org org-A');
+    expect(line).toContain('user u-b, org org-B, auth mcp_api_key');
+    expect(line).toContain('key "Codex (laptop)"');
+    expect(line).toContain('key bound to server srv-B');
+    expect(line).not.toContain('mcp_secret_value');
+    const body = res.json.mock.calls[0][0];
+    expect(body.error.message).toMatch(/different workspace/);
+  });
+
   it('denies when the caller organization cannot be determined (fail closed)', async () => {
     const req: any = { user: { authMethod: 'jwt' } }; // no organizationId
     const res = makeRes();

@@ -814,6 +814,19 @@ export class McpEndpointController {
     }
   }
 
+  /** Who sent a refused request, for the log: ids and the key's name, never a secret or an email. */
+  private describePrincipal(user: any): string {
+    if (!user) return 'no principal';
+    const parts = [
+      `user ${user.sub ?? 'none'}`,
+      `org ${user.organizationId ?? 'none'}`,
+      `auth ${user.authMethod ?? 'unknown'}`,
+    ];
+    if (user.apiKeyName) parts.push(`key "${String(user.apiKeyName).slice(0, 60)}"`);
+    if (user.mcpServerId) parts.push(`key bound to server ${user.mcpServerId}`);
+    return parts.join(', ');
+  }
+
   private async handleMcpRequest(
     serverId: string,
     req: Request,
@@ -835,6 +848,9 @@ export class McpEndpointController {
     }
 
     if (!mcpServerConfig.isActive) {
+      this.logger.warn(
+        `MCP request refused: server ${serverId} is inactive (${this.describePrincipal((req as any).user)})`,
+      );
       return res.status(403).json({
         jsonrpc: '2.0',
         error: { code: -32001, message: 'MCP server is inactive' },
@@ -870,9 +886,22 @@ export class McpEndpointController {
             serverOrg,
           )));
       if (!isMember) {
+        // The auth headers are redacted from the request log, so without this
+        // line a refused client can't be told apart from a working one: a paying
+        // workspace was refused on every call for two weeks before anyone saw
+        // which credential its clients were sending.
+        this.logger.warn(
+          `MCP request refused: server ${serverId} belongs to org ${serverOrg ?? 'none'}, ` +
+            `caller is not a member (${this.describePrincipal(user)})`,
+        );
         return res.status(403).json({
           jsonrpc: '2.0',
-          error: { code: -32001, message: 'Access denied' },
+          error: {
+            code: -32001,
+            message:
+              'Access denied: this sign-in or API key belongs to a different workspace than this MCP server. ' +
+              'Connect with a key created in the workspace that owns the server, or sign in with an account that is a member of it.',
+          },
           id: null,
         });
       }
