@@ -7,6 +7,22 @@ describe('classifyToolExecutionError', () => {
     expect(r.hint).toMatch(/API key/i);
   });
 
+  it('tells a missing permission apart from a rejected login on 403', () => {
+    const sap = classifyToolExecutionError({
+      status: 403,
+      authType: 'LOGIN_TOKEN',
+      message:
+        'Request failed with status code 403: body={"error":{"code":"-6006","message":"Modifying this object is not permitted for current user"}}',
+    });
+    expect(sap.kind).toBe('auth_failed');
+    expect(sap.hint).toMatch(/not allowed to perform this action/);
+    expect(sap.hint).not.toMatch(/Login failed/);
+    // A plain 403 still points at the credentials.
+    expect(classifyToolExecutionError({ status: 403, authType: 'LOGIN_TOKEN', message: 'Forbidden' }).hint).toMatch(/Login failed/);
+    // Only 403: a 401 is a rejected credential whatever its text says.
+    expect(classifyToolExecutionError({ status: 401, authType: 'LOGIN_TOKEN', message: 'not permitted' }).hint).toMatch(/Login failed/);
+  });
+
   it('maps 403 to auth_failed', () => {
     expect(classifyToolExecutionError({ status: 403, authType: 'OAUTH2' }).kind).toBe(
       'auth_failed',

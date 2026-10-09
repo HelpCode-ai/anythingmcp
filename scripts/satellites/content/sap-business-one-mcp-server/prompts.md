@@ -9,4 +9,8 @@
 - Compare this month's invoiced total with last month's.
 - Which items have no sales in the last 90 days?
 - Show order 245 with all its lines.
+- Which supplier invoices are still open, and how much do we owe each supplier?
+- List last month's manual journal entries with their accounts.
+- Which customer payments came in this week, and which invoices did they settle?
+- Show the chart of accounts with the balance of each revenue account.
 - Is the connection working, and which company database is this?

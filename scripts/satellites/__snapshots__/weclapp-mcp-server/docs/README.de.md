@@ -133,7 +133,7 @@ Ja. Dieselbe MCP-URL funktioniert in ChatGPT (braucht eine öffentliche HTTPS-UR
 - [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server): ERP MCP server: connect 17 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.
 - [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server): Xentral MCP server: connect Xentral ERP to Claude & ChatGPT. Articles, customers, sales orders, invoices and stock as AI tools.
 - [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server): Billbee MCP server: connect Billbee order management to Claude & ChatGPT. Orders, products, customers and shipping providers.
-- [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server): SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices and quotations, and create sales orders.
+- [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server): SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices, payments and journal entries, and create sales orders.
 - [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp): der Open-Source-MCP-Server und -Gateway, auf dem dieses Repository aufbaut.
 
 ## Lizenz

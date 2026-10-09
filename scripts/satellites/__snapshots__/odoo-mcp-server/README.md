@@ -144,7 +144,7 @@ The API key inherits its owner's access rights and record rules. A restricted us
 - [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server): ERP MCP server: connect 17 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.
 - [erpnext-mcp-server](https://github.com/keysersoft/erpnext-mcp-server): ERPNext MCP server: connect ERPNext/Frappe to Claude & ChatGPT. Read and write any DocType: customers, orders, invoices, stock.
 - [dolibarr-mcp-server](https://github.com/keysersoft/dolibarr-mcp-server): Dolibarr MCP server: connect Dolibarr ERP & CRM to Claude & ChatGPT. Third parties, invoices, orders, proposals and stock.
-- [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server): SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices and quotations, and create sales orders.
+- [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server): SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices, payments and journal entries, and create sales orders.
 - [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp): the open-source MCP server and gateway this repository is built on.
 
 ## License
