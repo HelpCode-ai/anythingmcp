@@ -12,9 +12,12 @@ import {
   SharedSetupProvider,
   SharedSetupRegistry,
 } from '../mcp-server/shared-setup';
-import { isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
+import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
+
+/** Assistants a setup link can name (see assistantForRedirectUris). */
+const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
 
 /** How long a setup link handed to the user stays valid. */
 export const SETUP_LINK_TTL_MS = 30 * 60 * 1000;
@@ -437,8 +440,15 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     return createHash('sha256').update(token).digest('hex');
   }
 
-  /** A fresh one-time link to finish this connector, for this user. */
-  async createLink(ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase'>, connectorId: string): Promise<string> {
+  /**
+   * A fresh one-time link to finish this connector, for this user. It names
+   * the assistant the chat runs in, when known, so the setup page can send the
+   * user back there; it is no secret and changes nothing else.
+   */
+  async createLink(
+    ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase' | 'assistant'>,
+    connectorId: string,
+  ): Promise<string> {
     const token = randomBytes(24).toString('base64url');
     // Expired links stop working at once (resolveLink checks expiresAt); the
     // rows are kept a week so the share of links that get opened can be read.
@@ -454,14 +464,19 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         expiresAt: new Date(Date.now() + SETUP_LINK_TTL_MS),
       },
     });
-    return `${ctx.dashboardBase}/s/${token}`;
+    const from = ctx.assistant && RETURN_ASSISTANTS.includes(ctx.assistant) ? `?from=${ctx.assistant}` : '';
+    return `${ctx.dashboardBase}/s/${token}${from}`;
   }
 
   /**
    * Open a link: valid, unused, not expired, and opened by the user it was
    * made for. Marks it used and returns where the dashboard should go.
    */
-  async resolveLink(token: string, userId: string): Promise<{ redirect: string } | { error: string }> {
+  async resolveLink(
+    token: string,
+    userId: string,
+    from?: unknown,
+  ): Promise<{ redirect: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
     if (!row || row.expiresAt.getTime() < Date.now()) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
@@ -479,9 +494,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     });
     if (!connector) return { error: 'This connector no longer exists.' };
     const slug = (connector.config as { adapterSlug?: string } | null)?.adapterSlug;
+    // A setup link always comes from a chat. The assistant named on the link
+    // when it was made, or a neutral "your AI assistant" (links made before
+    // they named one, and clients that are not recognised).
+    const back = RETURN_ASSISTANTS.find((a) => a === from) ?? 'assistant';
     return {
       redirect: slug
-        ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=claude`
+        ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=${back}`
         : `/connectors/${encodeURIComponent(connector.id)}`,
     };
   }

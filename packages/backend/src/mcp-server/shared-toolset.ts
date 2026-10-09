@@ -4,6 +4,7 @@ import { listAdapters } from '../adapters/catalog';
 import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
 import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
+import { isMuseHost, knownClientFor } from '../auth/auth-page';
 
 /**
  * The fixed tool set of the shared `/mcp` endpoint.
@@ -87,6 +88,42 @@ export function profileForRedirectUris(
     if (CHATGPT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return 'chatgpt';
   }
   return 'default';
+}
+
+/** Assistants the connector setup page can send the user back to. */
+export type ReturnAssistant = 'claude' | 'chatgpt' | 'muse';
+
+/**
+ * The assistant an OAuth client belongs to, from the hosts of the redirect
+ * URIs it registered, like the profile above: Claude (claude.ai, claude.com),
+ * ChatGPT (chatgpt.com, openai.com) or Meta's Muse (meta.ai, muse.ai,
+ * meta.com). Null for anything else (Cursor, VS Code, an API key, a client
+ * that registered no https redirect): the setup page then names no assistant
+ * and links nowhere.
+ */
+export function assistantForRedirectUris(
+  uris: readonly string[] | null | undefined,
+): ReturnAssistant | null {
+  for (const host of httpsRedirectHosts(uris)) {
+    const known = knownClientFor(host);
+    if (known) return known;
+    if (isMuseHost(host)) return 'muse';
+  }
+  return null;
+}
+
+/** Hosts of the https redirect URIs among `uris`, lower-cased. */
+export function httpsRedirectHosts(uris: readonly string[] | null | undefined): string[] {
+  const hosts: string[] = [];
+  for (const uri of uris ?? []) {
+    try {
+      const url = new URL(uri);
+      if (url.protocol === 'https:') hosts.push(url.hostname.toLowerCase());
+    } catch {
+      // not a URL
+    }
+  }
+  return hosts;
 }
 
 export function sharedToolNames(profile: SharedToolsetProfile): string[] {
