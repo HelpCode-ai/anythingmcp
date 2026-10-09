@@ -12,7 +12,7 @@ export class EditionController {
   constructor(private readonly edition: EditionService) {}
 
   @Get('edition')
-  @ApiOperation({ summary: 'Edition of this instance, its user limit and Business availability' })
+  @ApiOperation({ summary: 'Edition of this instance, its user limit and Enterprise availability' })
   getEdition() {
     return this.edition.getState();
   }
@@ -21,7 +21,7 @@ export class EditionController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Start the one-time Business trial on a self-hosted instance (ADMIN)' })
+  @ApiOperation({ summary: 'Start the one-time Enterprise trial on a self-hosted instance (ADMIN)' })
   startTrial() {
     return this.edition.startTrial();
   }
