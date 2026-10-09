@@ -505,3 +505,69 @@ describe('parseLicenseBilling', () => {
     expect(parseLicenseBilling(null)).toBeNull();
   });
 });
+
+describe('LicenseService — subscription history (Cloud win-back)', () => {
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  const axios = require('axios');
+  beforeEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+  });
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.LICENSE_SERVICE_TOKEN;
+    else process.env.LICENSE_SERVICE_TOKEN = OLD;
+    jest.restoreAllMocks();
+  });
+
+  it('asks the licence site as this server, with lower-cased addresses, and returns its answer', async () => {
+    const { svc } = makeService({ isCloud: true, licenses: [] });
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ data: { results: { 'ada@gmail.com': true, 'bob@example.com': false } } });
+
+    const out = await svc.subscriptionHistory(['Ada@Gmail.com', 'bob@example.com', 'ada@gmail.com']);
+
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/license\/subscription-history$/),
+      { emails: ['ada@gmail.com', 'bob@example.com'] },
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+    expect(out).toEqual(new Map([['ada@gmail.com', true], ['bob@example.com', false]]));
+  });
+
+  it('sends at most 20 addresses per call', async () => {
+    const { svc } = makeService({ isCloud: true, licenses: [] });
+    const emails = Array.from({ length: 25 }, (_, i) => `u${i}@example.com`);
+    const post = jest.spyOn(axios, 'post').mockImplementation(async (_url: any, body: any) => ({
+      data: { results: Object.fromEntries(body.emails.map((e: string) => [e, false])) },
+    }));
+
+    const out = await svc.subscriptionHistory(emails);
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect((post.mock.calls[0][1] as any).emails).toHaveLength(20);
+    expect((post.mock.calls[1][1] as any).emails).toHaveLength(5);
+    expect(out?.size).toBe(25);
+  });
+
+  it('returns null when the site fails, leaves an address out or answers something else', async () => {
+    const { svc } = makeService({ isCloud: true, licenses: [] });
+    for (const reply of [
+      () => Promise.reject(new Error('down')),
+      () => Promise.resolve({ data: {} }),
+      () => Promise.resolve({ data: { results: [] } }),
+      () => Promise.resolve({ data: { results: { 'ada@gmail.com': true } } }),
+      () => Promise.resolve({ data: { results: { 'ada@gmail.com': true, 'bob@example.com': 'no' } } }),
+    ]) {
+      jest.spyOn(axios, 'post').mockImplementationOnce(reply);
+      await expect(svc.subscriptionHistory(['ada@gmail.com', 'bob@example.com'])).resolves.toBeNull();
+    }
+  });
+
+  it('returns null without a service token, and asks nothing', async () => {
+    delete process.env.LICENSE_SERVICE_TOKEN;
+    const { svc } = makeService({ isCloud: true, licenses: [] });
+    const post = jest.spyOn(axios, 'post');
+    await expect(svc.subscriptionHistory(['ada@gmail.com'])).resolves.toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+});

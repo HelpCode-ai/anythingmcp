@@ -10,8 +10,9 @@ password, and keep their AnythingMCP roles in step with your directory groups.
 > workspace at an arbitrary directory and provision accounts from it. Run your
 > own instance (Docker) to use it — see [deployment.md](deployment.md).
 >
-> Setting up SSO and SCIM needs **AnythingMCP Business**: a licence key, or
-> the 30-day trial an administrator can start under **Settings → License**.
+> Setting up SSO and SCIM needs **AnythingMCP Enterprise**: a licence key
+> ([contact us](https://anythingmcp.com/contact?plan=enterprise)), or the
+> 30-day trial an administrator can start under **Settings → License**.
 
 ---
 

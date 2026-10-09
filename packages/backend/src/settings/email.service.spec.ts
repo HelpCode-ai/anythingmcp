@@ -69,6 +69,26 @@ describe('EmailService', () => {
     expect(mail.html).toContain('1M+');
   });
 
+  describe('Reply-To of the system SMTP', () => {
+    const lastTransportDefaults = () => (nodemailer.createTransport as jest.Mock).mock.calls.at(-1)?.[1];
+    afterEach(() => {
+      delete process.env.SMTP_REPLY_TO;
+    });
+
+    it('sets SMTP_REPLY_TO as the default Reply-To of every system email', async () => {
+      process.env.SMTP_REPLY_TO = 'support@anythingmcp.com';
+      const { service } = make();
+      await service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1');
+      expect(lastTransportDefaults()).toEqual({ replyTo: 'support@anythingmcp.com' });
+    });
+
+    it('sets no Reply-To when SMTP_REPLY_TO is not configured', async () => {
+      const { service } = make();
+      await service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1');
+      expect(lastTransportDefaults()).toBeUndefined();
+    });
+  });
+
   it('escapes the inviter and role in invitations', async () => {
     const { service } = make();
     await service.sendInvitationEmail('a@b.com', 'https://cloud.anythingmcp.com/i', '<b onmouseover=x>Eve</b>', '<i>Admin</i>');
@@ -96,7 +116,7 @@ describe('EmailService', () => {
 
   it('falls back to the account settings when no account matches', async () => {
     const { service } = make({ user: null });
-    await service.sendTrialWinbackEmail('a@b.com', 'Ada', { kind: 'help' });
+    await service.sendTrialWinbackEmail('a@b.com', 'Ada', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
     const mail = sent();
     expect(mail.headers['List-Unsubscribe']).toBe('<https://cloud.anythingmcp.com/settings#email-preferences>');
     expect(mail.headers['List-Unsubscribe-Post']).toBeUndefined();

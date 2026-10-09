@@ -9,6 +9,7 @@
   "docsUrl": "https://www.dropbox.com/developers/documentation/http/documentation",
   "requiredEnvVars": ["DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET"],
   "optionalEnvVars": ["DROPBOX_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://www.dropbox.com/developers/apps/create",
   "envVarMeta": {
     "DROPBOX_REFRESH_TOKEN": {
       "label": "Refresh token",

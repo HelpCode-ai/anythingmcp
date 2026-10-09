@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "VISMA_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://selfservice.developer.vismaonline.com/",
   "envVarMeta": {
     "VISMA_REFRESH_TOKEN": {
       "label": "Refresh token",

@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "GOOGLE_ADS_LOGIN_CUSTOMER_ID"
   ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
   "envVarMeta": {
     "GOOGLE_CLIENT_ID": {
       "label": "OAuth client ID",

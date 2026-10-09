@@ -41,7 +41,16 @@ describe('kaufland adapter — static spec conformance', () => {
 
   it("covers method, url, body and timestamp in that order", () => {
     const sig = (a.connector.authConfig as Record<string, Record<string, unknown>>).signature;
-    expect(sig.template).toBe('${method}\\n${url}\\n${body}\\n${timestamp}\\n');
+    expect(sig.template).toBe('${method}\\n${url}\\n${body}\\n${timestamp}');
+  });
+
+  it("only calls endpoints the Seller API has", () => {
+    // Checked against a live seller account in Oct 2026: /storefronts and
+    // /shipments answer 404; the storefront list lives under /info.
+    const paths = a.tools.map((t) => t.endpointMapping.path);
+    expect(paths).toContain('/info/storefront');
+    expect(paths).not.toContain('/storefronts');
+    expect(paths).not.toContain('/shipments');
   });
 
   it("exposes no write tool", () => {

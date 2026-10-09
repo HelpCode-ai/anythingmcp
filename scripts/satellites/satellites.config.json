@@ -449,7 +449,7 @@
         "sap-business-one"
       ],
       "wave": 1,
-      "about": "SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices and quotations, and create sales orders.",
+      "about": "SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices, payments and journal entries, and create sales orders.",
       "topics": [
         "sap",
         "sap-business-one",
@@ -469,12 +469,15 @@
         "odoo-mcp-server",
         "weclapp-mcp-server"
       ],
-      "lastVerified": null,
-      "objects": {
-        "en": "business partners, items, sales orders, invoices, quotations and deliveries",
-        "de": "Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote und Lieferungen"
+      "lastVerified": {
+        "date": "2026-10-09",
+        "against": "a production SAP Business One company database on SQL Server, through AnythingMCP Cloud",
+        "how": "read traffic on business partners, items, A/R and A/P invoices, payments, journal entries and the chart of accounts"
       },
-      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
+      "objects": {
+        "en": "business partners, items, sales documents, supplier invoices, payments and journal entries",
+        "de": "Geschäftspartner, Artikel, Verkaufsbelege, Eingangsrechnungen, Zahlungen und Buchungen"
+      }
     },
     {
       "repo": "sap-hana-mcp-server",
@@ -768,7 +771,7 @@
         "kaufland"
       ],
       "wave": 1,
-      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, shipments, tickets and storefronts.",
+      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, tickets, warehouses and storefronts.",
       "topics": [
         "kaufland",
         "marketplace",
@@ -787,8 +790,11 @@
         "billbee-mcp-server",
         "jtl-wawi-mcp-server"
       ],
-      "lastVerified": null,
-      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
+      "lastVerified": {
+        "date": "2026-10-08",
+        "against": "a live Kaufland seller account on AnythingMCP Cloud",
+        "how": "read-only calls of all 7 tools through the production connector"
+      }
     },
     {
       "repo": "otto-market-mcp-server",

@@ -20,8 +20,9 @@ export class SetupLinksController {
   @HttpCode(200)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: 'Open a one-time connector setup link' })
-  async resolve(@Req() req: any, @Body() body: { token?: string }): Promise<{ redirect: string }> {
-    const out = await this.setup.resolveLink(String(body?.token ?? ''), req.user.sub);
+  async resolve(@Req() req: any, @Body() body: { token?: string; from?: string }): Promise<{ redirect: string }> {
+    // `from` only picks the setup page's way back, from a fixed list.
+    const out = await this.setup.resolveLink(String(body?.token ?? ''), req.user.sub, body?.from);
     if ('error' in out) throw new GoneException(out.error);
     return out;
   }

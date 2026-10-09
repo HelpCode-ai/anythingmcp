@@ -12,9 +12,10 @@ export function notifyEditionChanged(): void {
 }
 
 /**
- * The edition of this self-hosted instance (Community or Business), its user
- * limit and whether the Business trial is still available. Null on Cloud,
- * while loading, and when signed out.
+ * The edition of this self-hosted instance (Community or a licensed plan), its
+ * user limit and whether the one-time trial of the Enterprise capabilities
+ * (single sign-on, SCIM, more users) is still available. Null on Cloud, while
+ * loading, and when signed out.
  */
 export function useEdition(): { edition: EditionState | null; reload: () => void } {
   const { token, deploymentMode, deploymentModeLoaded } = useAuth();

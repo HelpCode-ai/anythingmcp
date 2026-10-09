@@ -46,6 +46,22 @@ test('a valid link leads to the guided setup of its connector', async ({ page })
   expect(resolved).toEqual([{ token: 'tok_abc123' }]);
 });
 
+test('passes on the assistant the link names, and nothing else', async ({ page }) => {
+  await signIn(page);
+  const resolved = await mockApi(page, {
+    status: 200,
+    body: { redirect: '/connectors/setup/etsy?connector=c1&from=chatgpt' },
+  });
+
+  await page.goto('/s/tok_abc123?from=chatgpt');
+  await page.waitForURL(/\/connectors\/setup\/etsy\?connector=c1&from=chatgpt$/, { timeout: 15_000 });
+
+  await page.goto('/s/tok_def456?from=https%3A%2F%2Fevil.example');
+  await page.waitForURL(/\/connectors\/setup\/etsy/, { timeout: 15_000 });
+
+  expect(resolved).toEqual([{ token: 'tok_abc123', from: 'chatgpt' }, { token: 'tok_def456' }]);
+});
+
 test('a used or expired link says so instead of opening anything', async ({ page }) => {
   await signIn(page);
   await mockApi(page, {
@@ -67,4 +83,13 @@ test('signed out, it asks to sign in and comes back to the link', async ({ page 
 
   await page.waitForURL(/\/login\?redirect=/, { timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get('redirect')).toBe('/s/tok_abc123');
+});
+
+test('signed out, the way back to the link keeps the assistant it names', async ({ page }) => {
+  await mockApi(page, { status: 200, body: { redirect: '/connectors' } });
+
+  await page.goto('/s/tok_abc123?from=muse');
+
+  await page.waitForURL(/\/login\?redirect=/, { timeout: 15_000 });
+  expect(new URL(page.url()).searchParams.get('redirect')).toBe('/s/tok_abc123?from=muse');
 });

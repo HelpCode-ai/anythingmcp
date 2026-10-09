@@ -9,6 +9,7 @@
   "docsUrl": "https://developer.box.com/reference/",
   "requiredEnvVars": ["BOX_CLIENT_ID", "BOX_CLIENT_SECRET"],
   "optionalEnvVars": ["BOX_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://app.box.com/developers/console",
   "envVarMeta": {
     "BOX_REFRESH_TOKEN": {
       "label": "Refresh token",

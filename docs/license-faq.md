@@ -10,7 +10,7 @@
 
 AnythingMCP is licensed under the **GNU Affero General Public License v3** (AGPL-3.0-only), an OSI-approved **open-source** license. It is the same license used by Twenty, Cal.com, Grafana, Plausible and Mastodon.
 
-The only exception is code under `ee/` directories (e.g. `packages/backend/src/ee/`), which contains the AnythingMCP Cloud operation and the licensing of the Business edition, and is licensed under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE).
+The only exception is code under `ee/` directories (e.g. `packages/backend/src/ee/`), which contains the AnythingMCP Cloud operation and the licensing of the paid self-hosted editions, and is licensed under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE).
 
 ---
 
@@ -59,9 +59,9 @@ This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and 
 
 ---
 
-## Community, Starter, Team and Business
+## Community, Starter, Team and Enterprise
 
-A self-hosted instance runs **Community** unless a licence key is activated. Community is meant for personal use, education and evaluation, and includes up to 3 active users. **Starter** and **Team** license an instance for small teams at work. **Business** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
+A self-hosted instance runs **Community** unless a licence key is activated. Community is meant for personal use, education and evaluation, and includes up to 3 active users. **Starter** and **Team** license an instance for small teams at work. **Enterprise** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; it is quoted rather than bought online ([contact us](https://anythingmcp.com/contact?plan=enterprise)), and administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
 
 ---
 

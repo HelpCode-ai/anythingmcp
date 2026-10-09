@@ -9,6 +9,7 @@
   "docsUrl": "https://developer.sage.com/accounting/reference/",
   "requiredEnvVars": ["SAGE_CLIENT_ID", "SAGE_CLIENT_SECRET"],
   "optionalEnvVars": ["SAGE_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://developerselfservice.sageone.com/",
   "envVarMeta": {
     "SAGE_CLIENT_ID": {
       "label": "Client ID",

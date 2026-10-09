@@ -447,11 +447,11 @@ export const connectors = {
 
 /** One-time links an AI client hands out to finish a connector's setup. */
 export const setupLinks = {
-  resolve: (token: string, authToken: string) =>
+  resolve: (token: string, authToken: string, from?: string) =>
     request<{ redirect: string }>('/api/setup-links/resolve', {
       method: 'POST',
       token: authToken,
-      body: { token },
+      body: { token, ...(from ? { from } : {}) },
     }),
 };
 
@@ -1364,7 +1364,7 @@ export const license = {
   checkoutLink: (
     token: string,
     body: {
-      plan: 'starter' | 'team' | 'business';
+      plan: 'starter' | 'team';
       billingPeriod: 'monthly' | 'yearly';
       trial: boolean;
       promo?: string;

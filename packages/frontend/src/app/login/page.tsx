@@ -427,7 +427,7 @@ function LoginForm() {
     }
   };
 
-  // A company starts on the Business trial right away: it runs on this
+  // A company starts on the Enterprise trial right away: it runs on this
   // instance, with no payment details and nothing sent anywhere.
   const handleCompanyUse = async () => {
     setError('');
@@ -690,7 +690,7 @@ function LoginForm() {
             >
               <div className="font-medium text-sm text-[var(--text)]">For a company or team</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Try Business free for 30 days: more users, single sign-on with
+                Try Enterprise free for 30 days: more users, single sign-on with
                 Entra ID, Google or Okta, and SCIM. No payment details.
               </div>
             </button>
@@ -793,7 +793,7 @@ function LoginForm() {
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Business and Enterprise license keys are available at{' '}
+            Starter, Team and Enterprise license keys are available at{' '}
             <a
               href={buildPricingUrl(undefined, null, true)}
               target="_blank"

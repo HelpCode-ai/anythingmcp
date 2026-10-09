@@ -46,12 +46,23 @@ export function withoutOperatorProvided(
  * of their choosing by posting `MOTIS_URL` in the request body, which would
  * otherwise turn the connector into an SSRF vector aimed at the internal
  * network.
+ *
+ * Only the adapter that declares the variable receives it. Every other
+ * adapter gets neither the operator's value nor one the request posted under
+ * that name: a Kaufland install stored `MOTIS_URL` and showed it on its
+ * variable form, where it made no sense.
  */
 export function withOperatorProvided(
   credentials: Record<string, string> | undefined,
+  declaredVars: ReadonlyArray<string>,
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> | undefined {
   const provided = operatorProvidedEnvVars(env);
   if (Object.keys(provided).length === 0) return credentials;
-  return { ...(credentials ?? {}), ...provided };
+  const declared = new Set(declaredVars);
+  const applies = Object.entries(provided).filter(([name]) => declared.has(name));
+  const strip = new Set(Object.keys(provided));
+  const kept = Object.entries(credentials ?? {}).filter(([name]) => !strip.has(name));
+  if (!credentials && applies.length === 0) return credentials;
+  return Object.fromEntries([...kept, ...applies]);
 }

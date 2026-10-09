@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
+import { isConsumerEmail } from '../../common/consumer-email-domains';
+import { getAdapter } from '../../adapters/catalog';
 import { EmailService } from '../../settings/email.service';
+import type { WinbackOffer } from '../../settings/email-templates';
 import { LicenseService } from '../../license/license.service';
 import { LicenseReleaseService } from '../../license/license-release.service';
 
@@ -22,16 +26,112 @@ const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
  * The site has no usage data; this cron does, so Cloud trials are won back from
  * here and the site keeps the self-hosted ones.
  *
- * Someone who made a successful call gets 30% a week after expiry and 50% a
+ * Someone who made a successful call gets 30% a day after expiry and 50% a
  * month after; someone who never did gets one email on how to connect an app
- * from the chat. Only trials that ended from WINBACK_FROM on: earlier ones were
- * already sent the site's win-back.
+ * from the chat, a day after. Only trials that ended from WINBACK_FROM on:
+ * earlier ones were already sent the site's win-back.
+ *
+ * The first stage went out a week after expiry until 8 Oct 2026, before any
+ * of it was sent. Its window now runs from 1 to 7 days: the hourly cron mails
+ * new trials at about a day, and the tail catches the trials that ended before
+ * the change shipped. It keeps its OrgSettings key `trial_email_winback7`, so
+ * no workspace can get the first stage twice.
+ *
+ * No discount goes to anyone who has or had a subscription: workspaces with
+ * any licence other than the free trial are skipped, and the licence site
+ * confirms, per address, that it never had a Stripe subscription.
+ *
+ * Self-hosted: none of this runs. CloudModule, which provides this service, is
+ * only imported when DEPLOYMENT_MODE=cloud (app.module.ts); self-hosted trials
+ * are won back by the licence site.
  */
 const WINBACK_FROM = new Date('2026-10-06T00:00:00Z');
 const WINBACK_STAGES = [
-  { stage: 'winback7', after: DAYS(7), until: DAYS(14), percentOff: 30, codeEnv: 'WINBACK_FIRST_PROMO_CODE', code: 'START30', endedAgo: 'week' },
-  { stage: 'winback30', after: DAYS(30), until: DAYS(37), percentOff: 50, codeEnv: 'WINBACK_FINAL_PROMO_CODE', code: 'WINBACK50', endedAgo: 'month' },
+  {
+    stage: 'first',
+    flagKey: 'trial_email_winback7',
+    after: DAYS(1),
+    until: DAYS(7),
+    percentOff: 30,
+    codeEnv: 'WINBACK_FIRST_PROMO_CODE',
+    code: 'START30',
+  },
+  {
+    stage: 'final',
+    flagKey: 'trial_email_winback30',
+    after: DAYS(30),
+    until: DAYS(37),
+    percentOff: 50,
+    codeEnv: 'WINBACK_FINAL_PROMO_CODE',
+    code: 'WINBACK50',
+  },
 ] as const;
+
+/**
+ * A/B test on the first win-back: private users may answer a low first-month
+ * price better than 30% off three months. Eligible: a workspace that made a
+ * successful call, whose active admins all write from a consumer mailbox
+ * (gmail.com, web.de…) and that has no business connector. Half of those
+ * (by a hash of the workspace id, so a re-run never switches arm) get Cloud
+ * Starter for €5.99 the first month; the other half get START30 as before,
+ * as the control. The arm is stored in OrgSettings `winback_test_arm` when
+ * the email goes out. Everyone else gets START30, outside the test.
+ */
+const WINBACK_TEST = {
+  armKey: 'winback_test_arm',
+  testArm: 'first_month_599',
+  controlArm: 'start30_control',
+  codeEnv: 'WINBACK_CONSUMER_PROMO_CODE',
+  code: 'STARTER599',
+  price: '€5.99',
+  regularPrice: '€19',
+} as const;
+type WinbackTestArm = typeof WINBACK_TEST.testArm | typeof WINBACK_TEST.controlArm;
+
+/**
+ * Connectors that mark a workspace as a business, by catalog category: an
+ * Etsy or Shopify seller writing from a Gmail address is a small business,
+ * not a private user, and stays out of the consumer test. Vinted is the
+ * exception: its sellers are private people selling their own things.
+ * Custom connectors (not from the catalog) say nothing either way.
+ */
+const BUSINESS_CONNECTORS = {
+  categories: new Set([
+    'e-commerce',
+    'crm',
+    'accounting',
+    'erp',
+    'payments',
+    'logistics',
+    'finance',
+    'hr',
+    'support',
+    'itsm',
+    'wholesale',
+    'advertising',
+    'marketing-automation',
+    'field-service',
+    'construction',
+    'dms',
+    'time-tracking',
+    'e-signature',
+    'banking',
+  ]),
+  privateSlugs: new Set(['vinted']),
+};
+
+/** The test arm of a workspace: even first byte of sha256(id) gets the €5.99 offer. */
+export function winbackTestArm(organizationId: string): WinbackTestArm {
+  const firstByte = createHash('sha256').update(organizationId).digest()[0];
+  return firstByte % 2 === 0 ? WINBACK_TEST.testArm : WINBACK_TEST.controlArm;
+}
+
+function isBusinessConnector(config: unknown): boolean {
+  const slug = (config as { adapterSlug?: unknown } | null)?.adapterSlug;
+  if (typeof slug !== 'string' || BUSINESS_CONNECTORS.privateSlugs.has(slug)) return false;
+  const category = getAdapter(slug)?.category;
+  return !!category && BUSINESS_CONNECTORS.categories.has(category);
+}
 
 /**
  * Onboarding drip — finds users who registered, verified their email,
@@ -54,6 +154,18 @@ const WINBACK_STAGES = [
  * + timing checks prevent duplicate sends. Worst case a missed run
  * sends a reminder a few hours late.
  */
+/**
+ * One run at a time, across processes. The cron is called by a timer on the
+ * Cloud host every hour and by the GitHub workflow as a fallback, and during a
+ * blue/green deploy two backends are up. Nothing in a run is atomic per email
+ * (send, then set the flag), so two runs at once could mail someone twice. A
+ * lease row in site_settings (value = holder, '' = free) is taken with one
+ * conditional update; a lease older than LEASE_MS counts as free, so a crashed
+ * run never blocks the next ones for long.
+ */
+const LEASE_KEY = 'onboarding_cron_lease';
+const LEASE_MS = 30 * 60 * 1000;
+
 @Injectable()
 export class OnboardingCronService {
   private readonly logger = new Logger(OnboardingCronService.name);
@@ -64,6 +176,42 @@ export class OnboardingCronService {
     private readonly license: LicenseService,
     private readonly licenseRelease: LicenseReleaseService,
   ) {}
+
+  /** run() unless another run holds the lease; null when skipped. */
+  async runExclusive(): Promise<Awaited<ReturnType<OnboardingCronService['run']>> | null> {
+    const holder = randomUUID();
+    if (!(await this.acquireLease(holder))) {
+      this.logger.log('Onboarding cron already running elsewhere; this call was skipped.');
+      return null;
+    }
+    try {
+      return await this.run();
+    } finally {
+      await this.prisma.siteSettings
+        .updateMany({ where: { key: LEASE_KEY, value: holder }, data: { value: '' } })
+        .catch((err) => this.logger.warn(`Could not release the onboarding cron lease: ${err?.message ?? err}`));
+    }
+  }
+
+  private async acquireLease(holder: string): Promise<boolean> {
+    const taken = await this.prisma.siteSettings.updateMany({
+      where: {
+        key: LEASE_KEY,
+        OR: [{ value: '' }, { updatedAt: { lt: new Date(Date.now() - LEASE_MS) } }],
+      },
+      data: { value: holder },
+    });
+    if (taken.count === 1) return true;
+    const exists = await this.prisma.siteSettings.findUnique({ where: { key: LEASE_KEY }, select: { id: true } });
+    if (exists) return false;
+    try {
+      await this.prisma.siteSettings.create({ data: { key: LEASE_KEY, value: holder } });
+      return true;
+    } catch {
+      // Another run created the row first (unique key): it holds the lease.
+      return false;
+    }
+  }
 
   async run(): Promise<{
     examined: number;
@@ -79,6 +227,8 @@ export class OnboardingCronService {
     licensesDeactivated: number;
     licensesReleased: number;
     winbackOffers: number;
+    winbackFirstMonth: number;
+    winbackControl: number;
     winbackHelp: number;
     skipped: number;
   }> {
@@ -97,6 +247,8 @@ export class OnboardingCronService {
       licensesDeactivated: 0,
       licensesReleased: 0,
       winbackOffers: 0,
+      winbackFirstMonth: 0,
+      winbackControl: 0,
       winbackHelp: 0,
       skipped: 0,
     };
@@ -267,7 +419,8 @@ export class OnboardingCronService {
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
-        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} winbackHelp=${out.winbackHelp} ` +
+        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
+        `winbackFirstMonth=${out.winbackFirstMonth} winbackControl=${out.winbackControl} winbackHelp=${out.winbackHelp} ` +
         `skipped=${out.skipped}`,
     );
     return out;
@@ -362,41 +515,55 @@ export class OnboardingCronService {
    * Win-back pass (see WINBACK_STAGES). One email per stage and workspace,
    * flagged in OrgSettings like the lifecycle emails; a stage is only sent
    * inside its window, so a late run never mails a month-old trial its
-   * one-week offer. Skips workspaces that bought a plan since, and admins who
+   * first offer. Skips workspaces that are or were customers, and admins who
    * opted out of marketing email.
    */
   private async runWinbackPass(
     now: number,
-    out: { examined: number; winbackOffers: number; winbackHelp: number; skipped: number },
+    out: {
+      examined: number;
+      winbackOffers: number;
+      winbackFirstMonth: number;
+      winbackControl: number;
+      winbackHelp: number;
+      skipped: number;
+    },
   ): Promise<void> {
     const trials = await this.prisma.license.findMany({
       where: {
         plan: 'trial',
         status: { in: ['active', 'expired'] },
         organizationId: { not: null },
-        expiresAt: { gte: WINBACK_FROM, lte: new Date(now - DAYS(7)) },
+        expiresAt: { gte: WINBACK_FROM, lte: new Date(now - WINBACK_STAGES[0].after) },
       },
       select: { organizationId: true, expiresAt: true },
     });
 
     for (const lic of trials) {
       const organizationId = lic.organizationId!;
-      const endedFor = now - lic.expiresAt!.getTime();
+      const trialEndedAt = lic.expiresAt!;
+      const endedFor = now - trialEndedAt.getTime();
       const step = WINBACK_STAGES.find((s) => endedFor >= s.after && endedFor < s.until);
       if (!step) continue;
       out.examined++;
-      const flagKey = `trial_email_${step.stage}`;
 
-      const [already, paid] = await Promise.all([
+      // Any licence besides the free trial, in any state, means the workspace
+      // went through Stripe checkout: a paid plan, a card trial (plan
+      // 'starter' while Stripe says trialing), or one since revoked or
+      // expired. None of them gets a discount, nor the how-to.
+      const [already, customer] = await Promise.all([
         this.prisma.orgSettings.findUnique({
-          where: { organizationId_key: { organizationId, key: flagKey } },
+          where: { organizationId_key: { organizationId, key: step.flagKey } },
           select: { id: true },
         }),
-        this.prisma.license.count({
-          where: { organizationId, status: 'active', plan: { not: 'trial' } },
-        }),
+        this.prisma.license.count({ where: { organizationId, plan: { not: 'trial' } } }),
       ]);
-      if (already || paid > 0) {
+      if (already) {
+        out.skipped++;
+        continue;
+      }
+      if (customer > 0) {
+        await this.flag(organizationId, step.flagKey);
         out.skipped++;
         continue;
       }
@@ -410,46 +577,118 @@ export class OnboardingCronService {
       ]);
       const used = successfulCalls > 0;
 
-      // Someone who never made a call gets the how-to once, a week after.
-      if (!used && step.stage !== 'winback7') {
-        await this.flag(organizationId, flagKey);
+      // Someone who never made a call gets the how-to once, in the first stage.
+      if (!used && step.stage !== 'first') {
+        await this.flag(organizationId, step.flagKey);
         out.skipped++;
         continue;
       }
 
-      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut);
-      let sentAny = false;
-      for (const a of recipients) {
-        const ok = await this.email.sendTrialWinbackEmail(
-          a.user.email,
-          a.user.name || 'there',
-          used
+      // Nobody to mail (no admin, all opted out) ends the stage.
+      let recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
+      if (recipients.length === 0) {
+        await this.flag(organizationId, step.flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      let offer: WinbackOffer;
+      let arm: WinbackTestArm | null = null;
+      if (!used) {
+        offer = { kind: 'help', trialEndedAt };
+      } else {
+        // A discount never reaches an address that had a Stripe subscription.
+        // Without a complete answer from the licence site nothing is sent and
+        // nothing flagged: the next hourly run asks again inside the window.
+        const history = await this.license.subscriptionHistory(recipients.map((r) => r.email));
+        if (!history) {
+          this.logger.warn(
+            `Win-back for workspace ${organizationId} postponed: no subscription history from the licence site.`,
+          );
+          out.skipped++;
+          continue;
+        }
+        recipients = recipients.filter((r) => history.get(r.email.trim().toLowerCase()) === false);
+        if (recipients.length === 0) {
+          await this.flag(organizationId, step.flagKey);
+          out.skipped++;
+          continue;
+        }
+
+        if (
+          step.stage === 'first' &&
+          (await this.inFirstMonthTest(
+            organizationId,
+            admins.map((a) => a.user.email),
+          ))
+        ) {
+          arm = winbackTestArm(organizationId);
+        }
+        offer =
+          arm === WINBACK_TEST.testArm
             ? {
+                kind: 'firstMonth',
+                price: WINBACK_TEST.price,
+                regularPrice: WINBACK_TEST.regularPrice,
+                promoCode: process.env[WINBACK_TEST.codeEnv] || WINBACK_TEST.code,
+                trialEndedAt,
+                successfulCalls,
+              }
+            : {
                 kind: 'discount',
                 percentOff: step.percentOff,
                 promoCode: process.env[step.codeEnv] || step.code,
-                endedAgo: step.endedAgo,
+                stage: step.stage,
+                trialEndedAt,
                 successfulCalls,
-              }
-            : { kind: 'help' },
-        );
+              };
+      }
+
+      let sentAny = false;
+      for (const r of recipients) {
+        const ok = await this.email.sendTrialWinbackEmail(r.email, r.name || 'there', offer);
         if (ok) sentAny = true;
       }
 
-      // Nobody to mail (no admin, all opted out) ends the stage too; a failed
-      // send does not, so the next run retries inside the window.
-      if (sentAny || recipients.length === 0) await this.flag(organizationId, flagKey);
-      if (!sentAny) out.skipped++;
-      else if (used) out.winbackOffers++;
-      else out.winbackHelp++;
+      // A failed send does not end the stage: the next run retries inside the window.
+      if (!sentAny) {
+        out.skipped++;
+        continue;
+      }
+      await this.flag(organizationId, step.flagKey);
+      if (!used) {
+        out.winbackHelp++;
+        continue;
+      }
+      out.winbackOffers++;
+      if (arm) {
+        await this.flag(organizationId, WINBACK_TEST.armKey, arm);
+        if (arm === WINBACK_TEST.testArm) out.winbackFirstMonth++;
+        else out.winbackControl++;
+      }
     }
   }
 
-  private async flag(organizationId: string, key: string): Promise<void> {
+  /**
+   * Whether a workspace takes part in the first-month test (WINBACK_TEST):
+   * every active admin on a consumer mailbox, and no business connector
+   * (BUSINESS_CONNECTORS). The caller has already checked for a successful call.
+   */
+  private async inFirstMonthTest(organizationId: string, adminEmails: string[]): Promise<boolean> {
+    if (adminEmails.length === 0 || !adminEmails.every((e) => isConsumerEmail(e))) return false;
+    const connectors = await this.prisma.connector.findMany({
+      where: { organizationId },
+      select: { config: true },
+    });
+    return !connectors.some((c) => isBusinessConnector(c.config));
+  }
+
+  /** Stores an OrgSettings value, by default the current time (a sent-flag). */
+  private async flag(organizationId: string, key: string, value = new Date().toISOString()): Promise<void> {
     await this.prisma.orgSettings.upsert({
       where: { organizationId_key: { organizationId, key } },
-      create: { organizationId, key, value: new Date().toISOString() },
-      update: { value: new Date().toISOString() },
+      create: { organizationId, key, value },
+      update: { value },
     });
   }
 

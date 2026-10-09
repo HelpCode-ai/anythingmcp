@@ -11,8 +11,9 @@ import { OnboardingCronService } from './onboarding-cron.service';
 /**
  * POST /api/cron/onboarding-reminders
  *
- * Triggered by the `onboarding-reminders.yml` GitHub Actions workflow
- * every 6 hours. Pings the cloud backend to run the drip pipeline.
+ * Triggered every hour by a timer on the Cloud host, with the
+ * `onboarding-reminders.yml` GitHub Actions workflow as a fallback. Runs
+ * never overlap: see OnboardingCronService.runExclusive().
  *
  * Auth: `Authorization: Bearer <CRON_SECRET>`. The secret is shared
  * between the workflow and the cloud env. Self-host deployments
@@ -45,7 +46,8 @@ export class OnboardingCronController {
       throw new UnauthorizedException('Invalid cron token');
     }
 
-    const result = await this.cron.run();
+    const result = await this.cron.runExclusive();
+    if (!result) return { ok: true, skipped: 'already running' };
     return { ok: true, ...result };
   }
 }

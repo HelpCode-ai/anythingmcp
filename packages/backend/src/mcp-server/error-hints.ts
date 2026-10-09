@@ -27,6 +27,12 @@ export interface ErrorHintInput {
   body?: unknown;
 }
 
+const ETSY_PROPERTY_NAME_HINT =
+  'Etsy needs every entry of property_values complete: property_id, property_name, ' +
+  'scale_id (when the listing has one), value_ids and values. Read the listing with ' +
+  'etsy_read_listing_inventory and send its property_values back unchanged, changing ' +
+  'only prices, quantities or SKUs.';
+
 const WECLAPP_FIELD_HINT =
   'weclapp rejects fields it does not know. Field names are camelCase and belong to ' +
   'the entity itself: line items live under `orderItems` / `salesInvoiceItems` / ' +
@@ -206,6 +212,10 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (/chat not found|bot is not a member|can't initiate conversation|need administrator rights|bot was blocked by the user/i.test(text)) {
       return TELEGRAM_CHAT_HINT;
     }
+  }
+
+  if (hostMatches(input.host, 'etsy.com') && /Expected string value for 'property_name'/.test(text)) {
+    return ETSY_PROPERTY_NAME_HINT;
   }
 
   if (hostMatches(input.host, 'myshopify.com') && /app_not_installed/.test(text)) {

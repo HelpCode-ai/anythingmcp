@@ -401,9 +401,34 @@ export function activationReminderEmail(
   });
 }
 
+/**
+ * What a win-back email offers. `trialEndedAt` dates the trial in the copy.
+ * The first win-back goes out about a day after the trial ends (up to a week
+ * for trials that ended before that timing shipped); the final one a month
+ * after.
+ */
 export type WinbackOffer =
-  | { kind: 'discount'; percentOff: number; promoCode: string; endedAgo: 'week' | 'month'; successfulCalls: number }
-  | { kind: 'help' };
+  | {
+      kind: 'discount';
+      percentOff: number;
+      promoCode: string;
+      stage: 'first' | 'final';
+      trialEndedAt: Date;
+      successfulCalls: number;
+    }
+  | {
+      /** A fixed price for the first month of Cloud Starter (first win-back, A/B test arm). */
+      kind: 'firstMonth';
+      price: string;
+      regularPrice: string;
+      promoCode: string;
+      trialEndedAt: Date;
+      successfulCalls: number;
+    }
+  | { kind: 'help'; trialEndedAt: Date };
+
+/** "7 October": the day a trial ended, as the win-back emails say it. */
+const dayAndMonth = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
 export function trialWinbackEmail(
   input: { name: string; offer: WinbackOffer; cloudUrl: string; marketingUrl: string },
@@ -412,33 +437,64 @@ export function trialWinbackEmail(
   const { offer, cloudUrl, marketingUrl } = input;
   const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
   const hi = greeting(input.name);
+  const endedOn = dayAndMonth(offer.trialEndedAt);
+  const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
+  const callsHtml = (n: number) =>
+    n > 0
+      ? ` Your AI made <strong style="font-weight:600;">${n.toLocaleString('en-US')} successful tool ${plural(n, 'call')}</strong> during the trial, and your connectors are still there.`
+      : ' Your connectors are still there.';
+  const callsText = (n: number) => (n > 0 ? `; your AI made ${n} successful tool ${plural(n, 'call')} during it` : '');
+
+  if (offer.kind === 'firstMonth') {
+    const price = esc(offer.price);
+    const regular = esc(offer.regularPrice);
+    const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
+    return build({
+      subject: `Your first month of AnythingMCP Cloud for ${offer.price}`,
+      preheader: `Your workspace is still there. Cloud Starter for ${offer.price} the first month, then ${offer.regularPrice}/month.`,
+      bodyHtml:
+        h1(`Your first month for ${price}.`, 'Pick up where you left off.') +
+        p(`${esc(hi)} your AnythingMCP trial ended on ${endedOn}.${callsHtml(offer.successfulCalls)}`) +
+        p(
+          `If you'd like to keep going, Cloud Starter is <strong style="font-weight:600;">${price} for the first month</strong>, then ${regular}/month. ` +
+            'You can cancel anytime from the billing portal. The code is applied when you use the button, or enter it at checkout:',
+        ) +
+        codeBox(offer.promoCode, { size: 22, spacing: 3 }) +
+        button(pricingUrl, `Continue for ${price}`) +
+        small(replyLine),
+      bodyText:
+        `${hi}\n\nYour AnythingMCP trial ended on ${endedOn}${callsText(offer.successfulCalls)}. Your connectors are still there.\n\n` +
+        `If you'd like to keep going, Cloud Starter is ${offer.price} for the first month, then ${offer.regularPrice}/month. ` +
+        `You can cancel anytime from the billing portal.\n\n` +
+        `Code: ${offer.promoCode}\nContinue for ${offer.price}: ${pricingUrl}\n\n` +
+        replyLine,
+      ctx,
+      unsubscribeUrl: ctx.unsubscribeUrl,
+    });
+  }
 
   if (offer.kind === 'discount') {
     const percent = Math.round(offer.percentOff);
     const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
-    const calls =
-      offer.successfulCalls > 0
-        ? ` Your AI made <strong style="font-weight:600;">${offer.successfulCalls.toLocaleString('en-US')} successful tool ${plural(offer.successfulCalls, 'call')}</strong> during the trial, and your connectors are still there.`
-        : ' Your connectors are still there.';
+    const ended = offer.stage === 'first' ? `ended on ${endedOn}` : 'ended a month ago';
     return build({
       subject:
-        offer.endedAgo === 'week'
+        offer.stage === 'first'
           ? `${percent}% off your first 3 months of AnythingMCP`
           : `One more try? ${percent}% off AnythingMCP for 3 months`,
       preheader: `Your workspace is still there. ${percent}% off your first 3 months on any Cloud plan.`,
       bodyHtml:
         h1(`${percent}% off for 3 months.`, 'Pick up where you left off.') +
-        p(`${esc(hi)} your AnythingMCP trial ended a ${offer.endedAgo} ago.${calls}`) +
+        p(`${esc(hi)} your AnythingMCP trial ${ended}.${callsHtml(offer.successfulCalls)}`) +
         p(`If you'd like to continue, here is <strong style="font-weight:600;">${percent}% off your first 3 months</strong> on any Cloud plan. The code is applied when you use the button, or enter it at checkout:`) +
         codeBox(offer.promoCode, { size: 22, spacing: 3 }) +
         button(pricingUrl, `Reactivate with ${percent}% off`) +
-        small("Not the right time, or something was missing? Reply and tell us; we read every answer."),
+        small(replyLine),
       bodyText:
-        `${hi}\n\nYour AnythingMCP trial ended a ${offer.endedAgo} ago` +
-        (offer.successfulCalls > 0 ? `; your AI made ${offer.successfulCalls} successful tool ${plural(offer.successfulCalls, 'call')} during it` : '') +
+        `${hi}\n\nYour AnythingMCP trial ${ended}${callsText(offer.successfulCalls)}` +
         `. Your connectors are still there.\n\nHere is ${percent}% off your first 3 months on any Cloud plan.\n\n` +
         `Code: ${offer.promoCode}\nReactivate: ${pricingUrl}\n\n` +
-        `Not the right time, or something was missing? Reply and tell us; we read every answer.`,
+        replyLine,
       ctx,
       unsubscribeUrl: ctx.unsubscribeUrl,
     });
@@ -452,7 +508,7 @@ export function trialWinbackEmail(
     preheader: 'Set it up from the chat: no API keys pasted, no code.',
     bodyHtml:
       h1('Your workspace is still here.', 'Connect your first app in two minutes.') +
-      p(`${esc(hi)} your AnythingMCP trial ended last week before you connected an app, so you never saw the part that matters. It is quicker than it looks.`) +
+      p(`${esc(hi)} your AnythingMCP trial ended on ${endedOn} before you connected an app, so you never saw the part that matters. It is quicker than it looks.`) +
       p(
         `<strong style="font-weight:600;">You can set it up from the chat.</strong> Add AnythingMCP to Claude (it is in ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')}) or to ChatGPT with ${code(mcpUrl)}, then just ask: <em>&ldquo;Connect my Shopify store&rdquo;</em> or <em>&ldquo;Add HubSpot&rdquo;</em>. The assistant finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.`,
       ) +
@@ -461,7 +517,7 @@ export function trialWinbackEmail(
       button(pricingUrl, 'See plans') +
       small("Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly."),
     bodyText:
-      `${hi}\n\nYour AnythingMCP trial ended last week before you connected an app.\n\n` +
+      `${hi}\n\nYour AnythingMCP trial ended on ${endedOn} before you connected an app.\n\n` +
       `You can set it up from the chat: add AnythingMCP to Claude (connector directory: ${CLAUDE_DIRECTORY_URL}) or ChatGPT with ${mcpUrl} and ask "Connect my Shopify store". ` +
       `The assistant installs the connector and gives you a one-time link to sign in to the app.\n\n` +
       `Or pick from 200+ apps: ${connectorsUrl}\nPlans: ${pricingUrl}\n\n` +

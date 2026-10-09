@@ -14,6 +14,7 @@
   "optionalEnvVars": [
     "ETSY_REFRESH_TOKEN"
   ],
+  "appRegistrationUrl": "https://www.etsy.com/developers/register",
   "envVarMeta": {
     "ETSY_CLIENT_ID": {
       "label": "Keystring",
@@ -36,7 +37,7 @@
       "advanced": true
     }
   },
-  "prerequisites": "An Etsy app of your own (etsy.com/developers → Create a New App). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, Etsy refuses the sign-in and the calls, and AnythingMCP tells you before sending you to Etsy. Use the **Keystring** and **Shared secret** of an active app.",
+  "prerequisites": "An Etsy app of your own ([create one on Etsy](https://www.etsy.com/developers/register)). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, Etsy refuses the sign-in and the calls, and AnythingMCP tells you before sending you to Etsy. Use the **Keystring** and **Shared secret** of an active app.",
   "verifyHints": {
     "403": "Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it (Etsy emails you), and signing in only works after that. If your app is already active, copy the Shared secret again from your app page: it must belong to this Keystring."
   },
@@ -954,7 +955,7 @@
     },
     {
       "name": "etsy_set_listing_inventory",
-      "description": "Set price, quantity and SKU of a listing, per variation. It REPLACES the whole inventory: read it with etsy_read_listing_inventory, change what you need, and send every product back. In each product keep sku and property_values; in each offering send price as a plain number (amount / divisor from the read, e.g. 2450/100 = 24.5), quantity, is_enabled and readiness_state_id. Etsy refuses an offering without readiness_state_id (\"All offerings need readiness state\"): keep the one from the read, or take an id from etsy_list_processing_profiles. Unless quantity_on_property lists the property that varies, every product must have the same quantity (\"quantity must be consistent across all products\"); the same holds for price with price_on_property. Leave out product_id, offering_id, is_deleted and scale_name.",
+      "description": "Set price, quantity and SKU of a listing, per variation. It REPLACES the whole inventory: read it with etsy_read_listing_inventory, change what you need, and send every product back. In each product keep sku and property_values exactly as read: every property value needs property_id, property_name, scale_id (when the read has one), value_ids and values (Etsy refuses a value without property_name); in each offering send price as a plain number (amount / divisor from the read, e.g. 2450/100 = 24.5), quantity, is_enabled and readiness_state_id. Etsy refuses an offering without readiness_state_id (\"All offerings need readiness state\"): keep the one from the read, or take an id from etsy_list_processing_profiles. Unless quantity_on_property lists the property that varies, every product must have the same quantity (\"quantity must be consistent across all products\"); the same holds for price with price_on_property. Leave out product_id, offering_id, is_deleted and scale_name.",
       "parameters": {
         "type": "object",
         "properties": {

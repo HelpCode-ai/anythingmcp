@@ -153,3 +153,44 @@ describe('trust band', () => {
     expect(trial.text).toContain('148 successful tool calls');
   });
 });
+
+describe('trial win-back', () => {
+  const render = (id: string) => EMAIL_SAMPLES.find((s) => s.id === id)!.render(cloud, { name: 'Anna', other: '' });
+
+  it('dates the trial instead of saying it ended a week ago', () => {
+    for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-help']) {
+      const email = render(id);
+      for (const part of [email.html, email.text]) {
+        expect(part).toContain('ended on 7 October');
+        expect(part).not.toMatch(/a week ago|last week/);
+      }
+    }
+    // The final offer goes out a month after.
+    expect(render('winback-discount-final').text).toContain('ended a month ago');
+  });
+
+  it('offers the first month at a fixed price, then the regular one, with the code in the link', () => {
+    const email = render('winback-discount-first-month');
+    expect(email.subject).toBe('Your first month of AnythingMCP Cloud for €5.99');
+    expect(email.html).toContain('STARTER599');
+    expect(email.html).toContain('Continue for €5.99');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('€5.99 for the first month');
+      expect(part).toContain('then €19/month');
+      expect(part).toContain('cancel anytime from the billing portal');
+      expect(part).toContain('37 successful tool calls');
+    }
+    expect(email.text).toContain(
+      'https://anythingmcp.com/pricing?promo=STARTER599&return_url=' +
+        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate'),
+    );
+    expect(email.marketing).toBe(true);
+  });
+
+  it('uses no em dashes in the win-back copy', () => {
+    for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-discount-final', 'winback-help']) {
+      const email = render(id);
+      expect(`${email.subject}\n${email.text}`).not.toContain('—');
+    }
+  });
+});

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { ReturnAssistant } from './shared-toolset';
 
 /**
  * Connector setup through the shared `/mcp` endpoint.
@@ -21,6 +22,11 @@ export interface SetupContext {
   serverIds: string[];
   /** Dashboard base URL for links handed to the user. */
   dashboardBase: string;
+  /**
+   * The assistant this connection belongs to, from its OAuth client, so the
+   * setup page can send the user back to it. Absent when unknown.
+   */
+  assistant?: ReturnAssistant | null;
 }
 
 export interface SetupCallResult {

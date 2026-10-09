@@ -4,7 +4,6 @@
 - Which customer tickets are still open?
 - Which of my units on kaufland.de are out of stock?
 - What is the price and stock of EAN 4006381333931 on each storefront?
-- Which shipments went out yesterday, and with which carrier?
 - On which storefronts am I active, and in which currency?
 - Which warehouses do I ship from?
 - How many units did I sell per storefront this month?

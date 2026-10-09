@@ -9,6 +9,7 @@
   "docsUrl": "https://www.freshbooks.com/api/start",
   "requiredEnvVars": ["FRESHBOOKS_CLIENT_ID", "FRESHBOOKS_CLIENT_SECRET", "FRESHBOOKS_ACCOUNT_ID"],
   "optionalEnvVars": ["FRESHBOOKS_REFRESH_TOKEN"],
+  "appRegistrationUrl": "https://my.freshbooks.com/#/developer",
   "envVarMeta": {
     "FRESHBOOKS_REFRESH_TOKEN": {
       "label": "Refresh token",

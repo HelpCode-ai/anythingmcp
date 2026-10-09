@@ -12,9 +12,12 @@ import {
   SharedSetupProvider,
   SharedSetupRegistry,
 } from '../mcp-server/shared-setup';
-import { isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
+import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
+
+/** Assistants a setup link can name (see assistantForRedirectUris). */
+const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
 
 /** How long a setup link handed to the user stays valid. */
 export const SETUP_LINK_TTL_MS = 30 * 60 * 1000;
@@ -31,6 +34,42 @@ const INSTALLS_PER_HOUR = 10;
 function oauthCallbackUrl(): string {
   const base = (process.env.SERVER_URL || 'http://localhost:4000').replace(/\/+$/, '');
   return `${base}/api/mcp-oauth/callback`;
+}
+
+/**
+ * For connectors that sign in through the user's own app (Etsy, Google, ...):
+ * where to create that app, and the callback URL to register in it. Written
+ * so the model shows both in a form the user can act on from a phone: a link
+ * to tap, and the URL alone in a code block to copy. Paraphrased as plain
+ * text ("etsy.com/developers → Your apps" and the URL inline), neither was.
+ */
+/**
+ * A bridge whose server registers the client itself (dynamic client
+ * registration: Notion, Helium 10) signs in without an app of the user's, so
+ * there is no app to create and no callback URL to register.
+ */
+function registersItsOwnClient(definition: { connector: { config?: unknown } }): boolean {
+  const config = (definition.connector.config ?? {}) as { mcpOAuth?: { registration?: string } };
+  return config.mcpOAuth?.registration === 'dcr';
+}
+
+function providerApp(definition: {
+  appRegistrationUrl?: string;
+  envVars?: Array<{ link?: string; advanced?: boolean }>;
+}): Record<string, string> {
+  const createAt =
+    definition.appRegistrationUrl ?? definition.envVars?.find((v) => !v.advanced && v.link)?.link;
+  return {
+    ...(createAt ? { createTheAppAt: createAt } : {}),
+    callbackUrlToRegisterInTheProviderApp: oauthCallbackUrl(),
+    showToTheUser:
+      (createAt
+        ? 'Give createTheAppAt as a clickable Markdown link with the full https address, e.g. [Create the app](' +
+          createAt +
+          '). '
+        : '') +
+      'Put the callback URL alone in a fenced code block, so it can be copied in one tap. Never shorten or reword either address.',
+  };
 }
 
 /**
@@ -148,15 +187,15 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             setup:
               full.setupKind === 'none'
                 ? 'Nothing to enter: installs and works right away.'
-                : full.setupKind === 'oauth_browser'
+                : full.setupKind === 'oauth_browser' && registersItsOwnClient(full)
+                  ? 'Needs only a sign-in at the provider, done on a page AnythingMCP links to. No app to create.'
+                  : full.setupKind === 'oauth_browser'
                   ? 'Needs the user\'s own app keys and a sign-in at the provider, done on a page AnythingMCP links to.'
                   : 'Needs credentials the user enters on a page AnythingMCP links to.',
             // The provider refuses the sign-in, without ever coming back here,
             // when the app does not list this URL. Users creating the app from
             // a chat never saw the setup page that shows it.
-            ...(full.setupKind === 'oauth_browser'
-              ? { callbackUrlToRegisterInTheProviderApp: oauthCallbackUrl() }
-              : {}),
+            ...(full.setupKind === 'oauth_browser' && !registersItsOwnClient(full) ? providerApp(full) : {}),
             settingsYouMayPass: vars
               .filter((v) => !v.secret)
               .map((v) => ({ name: v.name, label: v.label, required: v.required, help: v.help, example: v.example })),
@@ -263,8 +302,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         installed: definition.name,
         status: state.status,
-        ...(needsBrowserAuthorization(definition)
-          ? { callbackUrlToRegisterInTheProviderApp: oauthCallbackUrl() }
+        ...(needsBrowserAuthorization(definition) && !registersItsOwnClient(definition)
+          ? providerApp(definition)
           : {}),
         whatTheUserDoes:
           state.status === 'needs_authorization'
@@ -401,8 +440,15 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     return createHash('sha256').update(token).digest('hex');
   }
 
-  /** A fresh one-time link to finish this connector, for this user. */
-  async createLink(ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase'>, connectorId: string): Promise<string> {
+  /**
+   * A fresh one-time link to finish this connector, for this user. It names
+   * the assistant the chat runs in, when known, so the setup page can send the
+   * user back there; it is no secret and changes nothing else.
+   */
+  async createLink(
+    ctx: Pick<SetupContext, 'userId' | 'organizationId' | 'dashboardBase' | 'assistant'>,
+    connectorId: string,
+  ): Promise<string> {
     const token = randomBytes(24).toString('base64url');
     // Expired links stop working at once (resolveLink checks expiresAt); the
     // rows are kept a week so the share of links that get opened can be read.
@@ -418,14 +464,19 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         expiresAt: new Date(Date.now() + SETUP_LINK_TTL_MS),
       },
     });
-    return `${ctx.dashboardBase}/s/${token}`;
+    const from = ctx.assistant && RETURN_ASSISTANTS.includes(ctx.assistant) ? `?from=${ctx.assistant}` : '';
+    return `${ctx.dashboardBase}/s/${token}${from}`;
   }
 
   /**
    * Open a link: valid, unused, not expired, and opened by the user it was
    * made for. Marks it used and returns where the dashboard should go.
    */
-  async resolveLink(token: string, userId: string): Promise<{ redirect: string } | { error: string }> {
+  async resolveLink(
+    token: string,
+    userId: string,
+    from?: unknown,
+  ): Promise<{ redirect: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
     if (!row || row.expiresAt.getTime() < Date.now()) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
@@ -443,9 +494,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     });
     if (!connector) return { error: 'This connector no longer exists.' };
     const slug = (connector.config as { adapterSlug?: string } | null)?.adapterSlug;
+    // A setup link always comes from a chat. The assistant named on the link
+    // when it was made, or a neutral "your AI assistant" (links made before
+    // they named one, and clients that are not recognised).
+    const back = RETURN_ASSISTANTS.find((a) => a === from) ?? 'assistant';
     return {
       redirect: slug
-        ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=claude`
+        ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=${back}`
         : `/connectors/${encodeURIComponent(connector.id)}`,
     };
   }

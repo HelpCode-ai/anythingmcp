@@ -22,6 +22,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import {
+  CHECKOUT_PLANS,
   CheckoutUnavailableError,
   cardTrialEnd,
   checkoutAdMetadata,
@@ -284,9 +285,13 @@ describe('LicenseController.checkoutLink', () => {
     expect(plainPayload).not.toHaveProperty('promoCode');
   });
 
+  it('no longer sells Business: beyond Team, Enterprise is quoted', () => {
+    expect(CHECKOUT_PLANS).toEqual(['starter', 'team']);
+  });
+
   it('asks to pay now when no trial is requested', async () => {
     const { controller, licenseService } = makeController();
-    await controller.checkoutLink(adminReq, { plan: 'business', billingPeriod: 'monthly', trial: false });
+    await controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: false });
     const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
     expect(payload).not.toHaveProperty('trialEnd');
     expect(payload).not.toHaveProperty('adMetadata');
@@ -339,7 +344,7 @@ describe('LicenseController.checkoutLink', () => {
       license: trialLicense({ plan: 'cloud_team', expiresAt: null }),
     });
     await expect(
-      controller.checkoutLink(adminReq, { plan: 'business', billingPeriod: 'monthly', trial: false }),
+      controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: false }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
   });

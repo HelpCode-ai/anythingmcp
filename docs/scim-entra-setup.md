@@ -8,7 +8,7 @@ mechanics.
 
 > **Self-hosted only.** Every SCIM route answers **404** on AnythingMCP Cloud.
 > See [deployment.md](deployment.md) to run your own instance. Provisioning
-> new users needs AnythingMCP Business (see [the SSO guide](sso.md)).
+> new users needs AnythingMCP Enterprise (see [the SSO guide](sso.md)).
 
 **Time:** about 15 minutes. **Reversible:** yes, at every step.
 

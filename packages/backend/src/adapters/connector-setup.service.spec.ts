@@ -94,6 +94,22 @@ describe('ConnectorSetupService — find', () => {
 
       const installed: any = (await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abcdefghijklmnopqrstuvwx' } })).body;
       expect(installed.callbackUrlToRegisterInTheProviderApp).toBe('https://cloud.example.com/api/mcp-oauth/callback');
+
+      // Where to create the app, and how to show both addresses: a link to
+      // tap and the callback alone in a code block to copy.
+      for (const r of [etsy, installed]) {
+        expect(r.createTheAppAt).toBe('https://www.etsy.com/developers/register');
+        expect(r.showToTheUser).toMatch(/\[Create the app\]\(https:\/\/www\.etsy\.com\/developers\/register\)/);
+        expect(r.showToTheUser).toMatch(/fenced code block/);
+      }
+      expect(openplz.createTheAppAt).toBeUndefined();
+
+      // Notion's server registers the client itself: no app, no callback.
+      const notionOut: any = (await service.find(ctx, { query: 'notion', limit: 10 })).body;
+      const notion = notionOut.results.find((r: any) => r.adapter === 'notion');
+      expect(notion.setup).toMatch(/No app to create/);
+      expect(notion.callbackUrlToRegisterInTheProviderApp).toBeUndefined();
+      expect(notion.showToTheUser).toBeUndefined();
     } finally {
       process.env.SERVER_URL = before;
     }
@@ -316,10 +332,48 @@ describe('ConnectorSetupService — links', () => {
     const b = build();
     const token = await linkFor(b);
     await expect(b.service.resolveLink(token, 'someone-else')).resolves.toEqual({ error: expect.stringContaining('another account') });
-    await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({
+    await expect(b.service.resolveLink(token, 'u1', 'claude')).resolves.toEqual({
       redirect: '/connectors/setup/weclapp?connector=c-weclapp&from=claude',
     });
     await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('already used') });
+  });
+
+  it('names the assistant of the chat on the link, and nothing when it is not known', async () => {
+    for (const [assistant, suffix] of [
+      ['claude', '?from=claude'],
+      ['chatgpt', '?from=chatgpt'],
+      ['muse', '?from=muse'],
+      [null, ''],
+      [undefined, ''],
+    ] as const) {
+      const b = build();
+      const out: any = await b.service.install(
+        { ...b.ctx, assistant },
+        { adapter: 'weclapp', settings: { WECLAPP_TENANT: 'acme' } },
+      );
+      expect(out.body.finishSetupUrl).toMatch(
+        new RegExp(`^https://cloud\\.example\\.com/s/[A-Za-z0-9_-]{20,}${suffix.replace('?', '\\?')}$`),
+      );
+    }
+  });
+
+  it('sends the user back to that assistant, or to a neutral page for anything else', async () => {
+    for (const [from, back] of [
+      ['claude', 'claude'],
+      ['chatgpt', 'chatgpt'],
+      ['muse', 'muse'],
+      [undefined, 'assistant'],
+      ['', 'assistant'],
+      ['cursor', 'assistant'],
+      ['https://evil.example', 'assistant'],
+      [{ toString: () => 'claude' }, 'assistant'],
+    ] as const) {
+      const b = build();
+      const token = await linkFor(b);
+      await expect(b.service.resolveLink(token, 'u1', from)).resolves.toEqual({
+        redirect: `/connectors/setup/weclapp?connector=c-weclapp&from=${back}`,
+      });
+    }
   });
 
   it('does not open after it expires, or with a made-up token', async () => {

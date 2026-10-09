@@ -435,7 +435,7 @@ export class AuthController {
         needsLicenseSetup = !current && !ended;
       } else {
         const licenseKey = await this.siteSettings.get('license_key');
-        // Self-hosted: once the Business trial has been started the choice has
+        // Self-hosted: once the Enterprise trial has been started the choice has
         // been made, and the chooser would only offer a trial that cannot start.
         if (!licenseKey && (await this.edition.getState()).trialAvailable) {
           needsLicenseSetup = true;
