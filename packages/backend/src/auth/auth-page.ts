@@ -61,11 +61,19 @@ export function knownClientFor(redirectHost: string): KnownClient {
  */
 export type SignupClient = 'claude' | 'chatgpt' | 'muse' | 'other';
 
+/** Meta's domains, where Muse's redirect is expected (none seen in production yet). */
+const MUSE_DOMAINS = ['muse.ai', 'meta.ai', 'meta.com'];
+
+/** Whether a redirect host is on one of Meta's domains. */
+export function isMuseHost(redirectHost: string): boolean {
+  const host = (redirectHost || '').toLowerCase().replace(/:\d+$/, '');
+  return MUSE_DOMAINS.some((d) => hostMatches(host, d));
+}
+
 export function signupClientFor(clientName: string, redirectHost: string): SignupClient {
   const known = knownClientFor(redirectHost);
   if (known) return known;
-  const host = (redirectHost || '').toLowerCase().replace(/:\d+$/, '');
-  if (['muse.ai', 'meta.ai', 'meta.com'].some((d) => hostMatches(host, d)) || /\bmuse\b/i.test(clientName || '')) {
+  if (isMuseHost(redirectHost) || /\bmuse\b/i.test(clientName || '')) {
     return 'muse';
   }
   return 'other';

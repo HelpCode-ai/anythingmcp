@@ -35,6 +35,8 @@ import {
 } from '../mcp-servers/mcp-connection-grant.service';
 import {
   SharedToolsetDeps,
+  assistantForRedirectUris,
+  httpsRedirectHosts,
   profileForRedirectUris,
   registerSharedToolset,
   sharedEndpointMode,
@@ -300,14 +302,20 @@ export class McpEndpointController {
         : grant?.mode === 'servers'
           ? grant.servers[0]?.organizationId
           : user.organizationId;
+    // The OAuth client the token was issued to, by the redirect URIs it
+    // registered: which tool set this connection gets, and which assistant a
+    // setup link sends the user back to. API keys have none.
+    const redirectUris = await this.grants.clientRedirectUris(oauthClientId(user));
+    const assistant = assistantForRedirectUris(redirectUris);
     const setupProvider = this.sharedSetup?.get() ?? null;
     const setupCtx = setupOrg
-      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase }
+      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant }
       : null;
     const canSetUp =
       !!setupProvider && !!setupCtx && !user.mcpServerId && grant?.mode !== 'none'
         ? await setupProvider.canSetUp(setupCtx)
         : false;
+    if (canSetUp && !assistant) this.noteUnknownAssistant(redirectUris);
 
     const deps: SharedToolsetDeps = {
       execute: async (tool, args) => {
@@ -381,9 +389,7 @@ export class McpEndpointController {
     // Which assistant this connection belongs to, from the OAuth client the
     // token was issued to. API keys and anything unidentified get the default
     // set, the one the Claude directory reviewed.
-    const profile = profileForRedirectUris(
-      await this.grants.clientRedirectUris(oauthClientId(user)),
-    );
+    const profile = profileForRedirectUris(redirectUris);
 
     await this.serveStateless(
       req,
@@ -398,6 +404,23 @@ export class McpEndpointController {
         return mcpServer;
       },
       'shared /mcp',
+    );
+  }
+
+  /**
+   * Logs, once per host, an OAuth client whose redirect host names no known
+   * assistant, so a new one (Meta's Muse redirect host is not confirmed yet) shows
+   * up in the logs instead of silently getting the neutral setup page. Only
+   * hosts, never full URIs; bounded so a flood of registrations cannot grow it.
+   */
+  private static readonly unknownAssistantHosts = new Set<string>();
+  private noteUnknownAssistant(redirectUris: readonly string[]): void {
+    const seen = McpEndpointController.unknownAssistantHosts;
+    const hosts = httpsRedirectHosts(redirectUris).filter((h) => !seen.has(h));
+    if (hosts.length === 0 || seen.size >= 200) return;
+    hosts.forEach((h) => seen.add(h));
+    this.logger.log(
+      `Connector setup: no known assistant for OAuth redirect host(s) ${hosts.join(', ')}; setup links use the neutral return`,
     );
   }
 
