@@ -1,4 +1,4 @@
-import { McpOAuthService, chooseTokenAuthMethod, isLocalOnlyHost } from './mcp-oauth.service';
+import { McpOAuthService, TokenExchangeError, chooseTokenAuthMethod, isLocalOnlyHost } from './mcp-oauth.service';
 import axios from 'axios';
 import { generateKeyPairSync, verify } from 'crypto';
 
@@ -140,6 +140,29 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     await expect(service.exchangeCodeForTokens({ ...baseParams })).rejects.toThrow(
       'Token exchange failed: HTTP 400: invalid_request: The Token has expired.',
     );
+  });
+
+  it('marks a refused exchange as such, with the status and the OAuth error code', async () => {
+    // Mercado Libre's answer to a mistyped client secret.
+    mockedAxios.post.mockRejectedValue({
+      message: 'Request failed with status code 400',
+      response: {
+        status: 400,
+        data: { error: 'invalid_client', message: 'invalid client_id or client_secret' },
+      },
+    });
+    const err = await service.exchangeCodeForTokens({ ...baseParams }).catch((e) => e);
+    expect(err).toBeInstanceOf(TokenExchangeError);
+    expect(err).toMatchObject({ status: 400, providerError: 'invalid_client' });
+    expect(err.message).toBe(
+      'Token exchange failed: HTTP 400: invalid_client: invalid client_id or client_secret',
+    );
+  });
+
+  it('leaves a network failure as it is: nothing for the user to fix there', async () => {
+    mockedAxios.post.mockRejectedValue(new Error('connect ETIMEDOUT'));
+    const err = await service.exchangeCodeForTokens({ ...baseParams }).catch((e) => e);
+    expect(err).not.toBeInstanceOf(TokenExchangeError);
   });
 });
 
