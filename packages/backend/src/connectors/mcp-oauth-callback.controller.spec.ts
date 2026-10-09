@@ -1,4 +1,6 @@
+import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
+import { TokenExchangeError } from './mcp-oauth.service';
 
 /**
  * Regression test for the REST OAuth reload gap: after a REST/GraphQL connector
@@ -297,6 +299,57 @@ describe('McpOAuthCallbackController — failed sign-ins are recorded', () => {
     const { metadata } = productEvents.log.mock.calls[0][0];
     expect(metadata.kind).toBe('token_exchange');
     expect(metadata.error).toBe('invalid_client: client secret *** rejected by https://api.etsy.com/token');
+  });
+});
+
+describe('McpOAuthCallbackController — a refused code exchange is answered, not a 500', () => {
+  const complete = (exchangeThrows: Error, flow?: Record<string, unknown>) => {
+    const { controller } = makeController({ exchangeThrows, flow });
+    return controller
+      .complete(asUser('user-1'), { state: 'the-state', code: 'the-code' })
+      .catch((e) => e);
+  };
+
+  it('tells the user to check the client ID and secret when the provider refuses them', async () => {
+    // Mercado Libre, 9 Oct 2026: a mistyped secret came back as "Internal server error".
+    const err = await complete(
+      new TokenExchangeError(
+        'Token exchange failed: HTTP 400: invalid_client: invalid client_id or client_secret',
+        400,
+        'invalid_client',
+      ),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    const body = err.getResponse();
+    expect(body.connectorId).toBe('conn-1');
+    expect(body.message).toContain('HTTP 400: invalid_client: invalid client_id or client_secret');
+    expect(body.message).toMatch(/client ID or client secret/);
+  });
+
+  it('points at the redirect URI when the code itself is refused', async () => {
+    const err = await complete(
+      new TokenExchangeError('Token exchange failed: HTTP 400: invalid_grant', 400, 'invalid_grant'),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.getResponse().message).toContain('https://cloud.example.com/api/mcp-oauth/callback');
+  });
+
+  it('answers 502 when the provider itself failed', async () => {
+    const err = await complete(new TokenExchangeError('Token exchange failed: HTTP 503', 503));
+    expect(err).toBeInstanceOf(BadGatewayException);
+  });
+
+  it('never repeats the secret in the answer', async () => {
+    const err = await complete(
+      new TokenExchangeError('Token exchange failed: HTTP 401: bad secret sec-123456', 401),
+      { clientSecret: 'sec-123456' },
+    );
+    expect(err.getResponse().message).not.toContain('sec-123456');
+  });
+
+  it('leaves any other failure as it was', async () => {
+    const boom = new Error('database is down');
+    expect(await complete(boom)).toBe(boom);
   });
 });
 
