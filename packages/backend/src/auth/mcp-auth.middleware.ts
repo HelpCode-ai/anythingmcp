@@ -1,23 +1,25 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
-import { AuthService } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 import { presentedMcpApiKey } from './mcp-api-key.util';
 
 /**
- * Middleware for authenticating MCP endpoint requests (/mcp).
+ * Middleware in front of the MCP endpoints (/mcp, /mcp/:serverId) in the
+ * 'legacy' and 'both' auth modes (see AppModule.configure).
  *
- * Applied as middleware (not guard) because @rekog/mcp-nest controls
- * the /mcp route directly and guards can't easily be applied to it.
+ * McpCombinedAuthGuard runs after it on every MCP route and is the one place
+ * that decides who the caller is: it verifies JWTs (signature, revocation,
+ * organization), per-user mcp_ keys and the static credentials, and answers a
+ * missing credential with the 401 + `resource_metadata` an OAuth client needs
+ * to start its flow. This middleware only adds the 'legacy' rule that predates
+ * it: with no static credential configured, an MCP request is refused unless
+ * MCP_ALLOW_ANONYMOUS=true.
  *
- * Auth methods (checked in order):
- *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY;
- *      a per-user key is also accepted as `Authorization: Bearer mcp_...`
- *   2. Bearer token → matches MCP_BEARER_TOKEN env (static) or JWT
- *
- * If no auth is configured, allows all requests (development mode).
- * Returns proper 401 + WWW-Authenticate header for MCP client auth flow.
+ * 'both' passes straight through. OAuth is enabled there, and refusing here
+ * whenever no static credential was configured is what kept OAuth clients
+ * (Claude, ChatGPT) from connecting in that mode; the guard now treats 'both'
+ * exactly like 'oauth2', plus the static credentials when they are set.
  */
 @Injectable()
 export class McpAuthMiddleware implements NestMiddleware {
@@ -25,11 +27,13 @@ export class McpAuthMiddleware implements NestMiddleware {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly authService: AuthService,
     private readonly mcpApiKeysService: McpApiKeysService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
+    const mode = this.configService.get<string>('MCP_AUTH_MODE') || 'none';
+    if (mode !== 'legacy') return next();
+
     const configuredApiKey = this.configService.get<string>('MCP_API_KEY');
     const mcpBearerToken = this.configService.get<string>('MCP_BEARER_TOKEN');
 
@@ -82,7 +86,6 @@ export class McpAuthMiddleware implements NestMiddleware {
       return next();
     }
 
-    // Check Bearer token
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
 
@@ -92,14 +95,11 @@ export class McpAuthMiddleware implements NestMiddleware {
         return next();
       }
 
-      // JWT token
-      try {
-        const payload = this.authService.verifyToken(token);
-        (req as any).user = { ...payload, authMethod: 'jwt' };
-        return next();
-      } catch {
-        // Invalid JWT — fall through to 401
-      }
+      // Any other bearer token may be a JWT. It is verified by
+      // McpCombinedAuthGuard, which also checks revocation and resolves the
+      // organization; verifying it here as well only duplicated that, without
+      // either check. An mcp_ key that did not resolve above is no JWT.
+      if (!presentedKey) return next();
     }
 
     // Auth failed — return 401 with WWW-Authenticate

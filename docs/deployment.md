@@ -300,7 +300,7 @@ Configure `MCP_AUTH_MODE` in `.env`:
 |------|-------------|
 | `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials **(default)** |
 | `legacy` | Static Bearer Token (`MCP_BEARER_TOKEN`) or API Key (`MCP_API_KEY`) |
-| `both` | Accepts either OAuth2 or legacy tokens |
+| `both` | Accepts OAuth2 tokens, per-user MCP API keys, and the legacy static tokens when they are set |
 | `none` | No authentication (development only) |
 
 ### Legacy Auth

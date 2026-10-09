@@ -36,13 +36,34 @@ const ALL = [
   tool('t-b1', 'crm_find_customer', 'org-B', 'conn-B1'),
 ];
 
+// One workspace, two servers: srv-A1 serves conn-A1, srv-A2 serves conn-A2.
+const TWO_SERVERS = [
+  ...ALL.filter((t) => t.organizationId === 'org-A'),
+  tool('t-a3', 'erp_list_orders', 'org-A', 'conn-A2'),
+];
+const SERVER_CONNECTORS = { 'srv-A1': ['conn-A1'], 'srv-A2': ['conn-A2'] };
+const keyForServerA = {
+  sub: 'u-a',
+  organizationId: 'org-A',
+  authMethod: 'mcp_api_key',
+  apiKeyName: 'agent',
+  mcpServerId: 'srv-A1',
+};
+
 // Redirect URIs as the two assistants register them in production.
 const REDIRECTS: Record<string, string[]> = {
   'client-claude': ['https://claude.ai/api/mcp/auth_callback'],
   'client-chatgpt': ['https://chatgpt.com/connector_platform_oauth_redirect'],
 };
 
-function build(opts: { grant?: unknown; allowedByOrg?: Record<string, string[] | null> } = {}) {
+function build(
+  opts: {
+    grant?: unknown;
+    allowedByOrg?: Record<string, string[] | null>;
+    tools?: RegisteredTool[];
+    serverConnectors?: Record<string, string[]>;
+  } = {},
+) {
   const executor = {
     executeTool: jest.fn(async () => ({
       content: [{ type: 'text' as const, text: '{"ok":true}' }],
@@ -54,7 +75,7 @@ function build(opts: { grant?: unknown; allowedByOrg?: Record<string, string[] |
     lookup: jest.fn(async (org: string) => ({ org })),
   };
   const servers = {
-    getConnectorIds: jest.fn(async () => []),
+    getConnectorIds: jest.fn(async (id: string) => opts.serverConnectors?.[id] ?? []),
     getConnectorSummaries: jest.fn(async (ids: string[]) =>
       ids.map((id) => ({ id, name: `Connector ${id}`, hasGuide: false })),
     ),
@@ -64,7 +85,7 @@ function build(opts: { grant?: unknown; allowedByOrg?: Record<string, string[] |
   };
   const controller = new McpEndpointController(
     servers as any,
-    { getAllTools: () => ALL, countByName: () => 1 } as any,
+    { getAllTools: () => opts.tools ?? ALL, countByName: () => 1 } as any,
     executor as any,
     {
       getAllowedToolIds: jest.fn(async (_sub: string, org: string) =>
@@ -214,6 +235,36 @@ describe('shared /mcp in fixed mode', () => {
     expect(cfg.body.servers[0].url).toMatch(/\/mcp\/srv-org-A$/);
   });
 
+  it('limits a key created for a server to that server\'s tools', async () => {
+    const { executor, connect } = build({ tools: TWO_SERVERS, serverConnectors: SERVER_CONNECTORS });
+    const client = await connect(keyForServerA);
+    const search = await call(client, 'anythingmcp_search_tools', {});
+    expect(search.body.tools.map((t: any) => t.name).sort()).toEqual(['crm_find_customer', 'crm_list_deals']);
+
+    const other = await call(client, 'anythingmcp_run_read_tool', { tool: 'erp_list_orders' });
+    expect(other.isError).toBe(true);
+    expect(executor.executeTool).not.toHaveBeenCalled();
+
+    const own = await call(client, 'anythingmcp_run_read_tool', { tool: 'crm_list_deals' });
+    expect(own.isError).toBe(false);
+    expect((executor.executeTool.mock.calls[0] as any[])[2]).toMatchObject({ connectorIds: ['conn-A1'] });
+  });
+
+  it('gives a key without a server, and an OAuth token, the whole workspace', async () => {
+    for (const user of [
+      { ...keyForServerA, mcpServerId: null },
+      { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
+    ]) {
+      const client = await build({ tools: TWO_SERVERS, serverConnectors: SERVER_CONNECTORS }).connect(user);
+      const search = await call(client, 'anythingmcp_search_tools', {});
+      expect(search.body.tools.map((t: any) => t.name).sort()).toEqual([
+        'crm_find_customer',
+        'crm_list_deals',
+        'erp_list_orders',
+      ]);
+    }
+  });
+
   it('answers GET and DELETE with 405 for an identified caller', async () => {
     const { controller } = build();
     for (const method of ['handleGlobalGet', 'handleGlobalDelete'] as const) {
@@ -249,5 +300,39 @@ describe('shared /mcp in direct mode', () => {
     const listed = res.json.mock.calls[0][0].result.tools.map((t: any) => t.name);
     expect(listed).toEqual(['crm_find_customer']);
     expect((controller as any).serveStateless).not.toHaveBeenCalled();
+  });
+
+  it('lists only its server\'s tools to a key created for a server, and refuses the others', async () => {
+    process.env.MCP_SHARED_ENDPOINT_TOOLS = 'direct';
+    const prev = process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    process.env.MCP_STREAMABLE_JSON_RESPONSE = 'true';
+    try {
+      const listFor = async (user: Record<string, unknown>) => {
+        const { controller } = build({ tools: TWO_SERVERS, serverConnectors: SERVER_CONNECTORS });
+        const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        await controller.handleGlobalPost({ user, body: { method: 'tools/list', id: 1 } } as any, res);
+        return res.json.mock.calls[0][0].result.tools.map((t: any) => t.name).sort();
+      };
+      expect(await listFor({ ...keyForServerA })).toEqual(['crm_find_customer', 'crm_list_deals']);
+      expect(await listFor({ ...keyForServerA, mcpServerId: null })).toEqual([
+        'crm_find_customer',
+        'crm_list_deals',
+        'erp_list_orders',
+      ]);
+
+      const { controller } = build({ tools: TWO_SERVERS, serverConnectors: SERVER_CONNECTORS });
+      const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await controller.handleGlobalPost(
+        {
+          user: { ...keyForServerA },
+          body: { method: 'tools/call', id: 2, params: { name: 'erp_list_orders', arguments: {} } },
+        } as any,
+        res,
+      );
+      expect(res.json.mock.calls[0][0].error.message).toMatch(/not available to you/);
+    } finally {
+      if (prev === undefined) delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+      else process.env.MCP_STREAMABLE_JSON_RESPONSE = prev;
+    }
   });
 });
