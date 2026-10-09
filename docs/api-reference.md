@@ -287,18 +287,25 @@ curl -s -X PUT http://localhost:4000/api/roles/$ROLE_ID/tools \
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/mcp-api-keys` | List your MCP API keys |
-| POST | `/api/mcp-api-keys` | Generate a new MCP API key |
-| DELETE | `/api/mcp-api-keys/:id` | Revoke an MCP API key |
+| GET | `/api/mcp-keys` | List your MCP API keys |
+| POST | `/api/mcp-keys` | Generate a new MCP API key |
+| POST | `/api/mcp-keys/:id/revoke` | Revoke (deactivate) an MCP API key |
+| DELETE | `/api/mcp-keys/:id` | Delete an MCP API key |
 
 ### Generate API Key
 
 ```bash
-curl -s http://localhost:4000/api/mcp-api-keys \
+curl -s http://localhost:4000/api/mcp-keys \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name": "My Claude Desktop Key", "mcpServerId": "optional-server-id"}'
 ```
+
+A key created with `mcpServerId` (as the dashboard does, from a server's page)
+works only for that server: on `/mcp/<that server>`, and on the shared `/mcp`
+with that server's tools. Other servers answer `403`. The server must be one of
+an organization you belong to, and deleting it deactivates its keys. A key
+created without `mcpServerId` reaches every server of your organization.
 
 ---
 

@@ -234,7 +234,9 @@ export class AppModule implements NestModule {
       consumer.apply(AuthorizationIssuerMiddleware).forRoutes('callback');
     }
 
-    // Apply legacy auth middleware for MCP endpoint
+    // Apply legacy auth middleware for MCP endpoint. In 'both' it passes every
+    // request on to McpCombinedAuthGuard, so OAuth works as in 'oauth2'; only
+    // 'legacy' keeps its own refusal when no static credential is configured.
     if (mode === 'legacy' || mode === 'both') {
       consumer
         .apply(McpAuthMiddleware, McpRateLimitMiddleware)

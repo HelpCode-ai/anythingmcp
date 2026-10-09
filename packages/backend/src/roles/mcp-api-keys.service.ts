@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 
@@ -13,6 +13,26 @@ export class McpApiKeysService {
    * Key format: mcp_<32 random hex chars>
    */
   async generate(userId: string, organizationId: string, name: string, mcpServerId?: string) {
+    // A key for a server is limited to that server, so the server must be one
+    // the user can reach: an existing server of an organization they are an
+    // active member of. Same answer whether it does not exist or is not
+    // theirs. A key without a server (API only) is not affected.
+    if (mcpServerId) {
+      const server = await this.prisma.mcpServerConfig.findUnique({
+        where: { id: mcpServerId },
+        select: { organizationId: true },
+      });
+      const membership = server
+        ? await this.prisma.organizationMember.findUnique({
+            where: { userId_organizationId: { userId, organizationId: server.organizationId } },
+            select: { deactivatedAt: true },
+          })
+        : null;
+      if (!membership || membership.deactivatedAt) {
+        throw new NotFoundException('MCP server not found');
+      }
+    }
+
     const key = `mcp_${randomBytes(32).toString('hex')}`;
 
     return this.prisma.mcpApiKey.create({
