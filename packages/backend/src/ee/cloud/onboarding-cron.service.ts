@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { isConsumerEmail } from '../../common/consumer-email-domains';
 import { getAdapter } from '../../adapters/catalog';
@@ -154,6 +154,18 @@ function isBusinessConnector(config: unknown): boolean {
  * + timing checks prevent duplicate sends. Worst case a missed run
  * sends a reminder a few hours late.
  */
+/**
+ * One run at a time, across processes. The cron is called by a timer on the
+ * Cloud host every hour and by the GitHub workflow as a fallback, and during a
+ * blue/green deploy two backends are up. Nothing in a run is atomic per email
+ * (send, then set the flag), so two runs at once could mail someone twice. A
+ * lease row in site_settings (value = holder, '' = free) is taken with one
+ * conditional update; a lease older than LEASE_MS counts as free, so a crashed
+ * run never blocks the next ones for long.
+ */
+const LEASE_KEY = 'onboarding_cron_lease';
+const LEASE_MS = 30 * 60 * 1000;
+
 @Injectable()
 export class OnboardingCronService {
   private readonly logger = new Logger(OnboardingCronService.name);
@@ -164,6 +176,42 @@ export class OnboardingCronService {
     private readonly license: LicenseService,
     private readonly licenseRelease: LicenseReleaseService,
   ) {}
+
+  /** run() unless another run holds the lease; null when skipped. */
+  async runExclusive(): Promise<Awaited<ReturnType<OnboardingCronService['run']>> | null> {
+    const holder = randomUUID();
+    if (!(await this.acquireLease(holder))) {
+      this.logger.log('Onboarding cron already running elsewhere; this call was skipped.');
+      return null;
+    }
+    try {
+      return await this.run();
+    } finally {
+      await this.prisma.siteSettings
+        .updateMany({ where: { key: LEASE_KEY, value: holder }, data: { value: '' } })
+        .catch((err) => this.logger.warn(`Could not release the onboarding cron lease: ${err?.message ?? err}`));
+    }
+  }
+
+  private async acquireLease(holder: string): Promise<boolean> {
+    const taken = await this.prisma.siteSettings.updateMany({
+      where: {
+        key: LEASE_KEY,
+        OR: [{ value: '' }, { updatedAt: { lt: new Date(Date.now() - LEASE_MS) } }],
+      },
+      data: { value: holder },
+    });
+    if (taken.count === 1) return true;
+    const exists = await this.prisma.siteSettings.findUnique({ where: { key: LEASE_KEY }, select: { id: true } });
+    if (exists) return false;
+    try {
+      await this.prisma.siteSettings.create({ data: { key: LEASE_KEY, value: holder } });
+      return true;
+    } catch {
+      // Another run created the row first (unique key): it holds the lease.
+      return false;
+    }
+  }
 
   async run(): Promise<{
     examined: number;
