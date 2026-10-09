@@ -66,6 +66,7 @@ import * as zalandoZds from './de/zalando-zds.json';
 import * as zammad from './de/zammad.json';
 import * as znuny from './de/znuny.json';
 import * as companiesHouse from './gb/companies-house.json';
+import * as oddsrelay from './gb/oddsrelay.json';
 import * as peoplehr from './gb/peoplehr.json';
 import * as pinpoint from './gb/pinpoint.json';
 import * as sage200 from './gb/sage-200.json';
@@ -610,6 +611,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zammad as unknown as AdapterDefinition,
   znuny as unknown as AdapterDefinition,
   companiesHouse as unknown as AdapterDefinition,
+  oddsrelay as unknown as AdapterDefinition,
   peoplehr as unknown as AdapterDefinition,
   pinpoint as unknown as AdapterDefinition,
   sage200 as unknown as AdapterDefinition,
