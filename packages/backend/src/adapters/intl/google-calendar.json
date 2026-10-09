@@ -1,0 +1,813 @@
+{
+  "slug": "google-calendar",
+  "name": "Google Calendar",
+  "description": "Let your AI work with Google Calendar: see the calendars you have, list and search events in any time range, read event details and guests, create and reschedule meetings with guests and Google Meet links, answer invitations, add events from a sentence and check when people are free. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Calendar\nThis connector reads and manages the signed-in user's Google Calendar through the **Google Calendar API v3** (`https://www.googleapis.com/calendar/v3`): calendars, events (list, search, read, create, change, delete), invitations, Google Meet links, quick add and free/busy. It works with personal Google accounts and Google Workspace. Everything runs as the Google account that authorized the connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Calendar API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose calendars the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/calendar.events` (create, change and delete events on every calendar the user can edit) and `https://www.googleapis.com/auth/calendar.readonly` (read the calendar list, calendars, colors and free/busy). It cannot create or delete calendars or change their sharing. For a read-only setup, change the scopes to `https://www.googleapis.com/auth/calendar.readonly` in the connector's OAuth settings, authorize again, and disable `gcal_create_event`, `gcal_update_event`, `gcal_respond_to_event` and `gcal_quick_add`.\n\n**Switched off at install**: `gcal_delete_event`. Turn it on per tool if the AI should delete events.\n\n**Ids**: `calendar_id` is `primary` for the user's main calendar; other calendars' ids come from `gcal_list_calendars` (an email address, or `...@group.calendar.google.com`). Event ids come from `gcal_list_events`. With `single_events` true each occurrence of a recurring event has its own id (`<series id>_20261009T070000Z`) and `recurringEventId` points to the series: change or delete the occurrence id for one date, the series id for all.\n\n**Times**: RFC 3339 with an offset, e.g. `2026-10-09T09:00:00+02:00` or `...Z`. `start` and `end` are objects: `{\"dateTime\": \"2026-10-09T09:00:00+02:00\", \"timeZone\": \"Europe/Berlin\"}` for a timed event (the time zone is required for recurring events), `{\"date\": \"2026-10-09\"}` for an all-day event, whose end date is exclusive (a one-day event on 9 October ends on `2026-10-10`). Check the calendar's time zone with `gcal_get_calendar` when the user gives local times.\n\n**Listing and searching**: `gcal_list_events` reads one calendar between `time_min` (compared with each event's end) and `time_max` (compared with its start). By default recurring events are expanded into occurrences and sorted by start time (`single_events` true, `order_by` startTime); `order_by` startTime is refused when `single_events` is false. `q` searches the title, description, location, guests and organizer. For \"what is on my agenda\" use `time_min` = now and a `time_max` a few days later.\n\n**Writing events**\n- `gcal_create_event` needs `start` and `end`; `summary` is the title. Guests are `[{\"email\": \"ana@example.com\"}]`, with `\"optional\": true` for optional guests.\n- Guests receive an email only when `send_updates` is `all` (or `externalOnly` for guests outside Google Calendar). Without it nobody is notified, the event still appears in their calendars.\n- **Google Meet**: pass `conference_data` `{\"createRequest\": {\"requestId\": \"<any unique string>\", \"conferenceSolutionKey\": {\"type\": \"hangoutsMeet\"}}}` on create or update (the connector always sends `conferenceDataVersion=1`). The link is returned in `hangoutLink`; if `conferenceData.createRequest.status.statusCode` is `pending`, read the event again a moment later.\n- `gcal_update_event` changes only the fields given. Lists replace the whole current value: to add a guest, read the event, append to its `attendees` and send the full list.\n- `gcal_quick_add` turns a sentence into an event (\"Dentist Tuesday 3pm\"); Google parses it, English works best. Check the returned start and end.\n\n**Responding to an invitation**: read the event with `gcal_get_event`, change `responseStatus` (`accepted`, `declined`, `tentative`) on the attendee with `\"self\": true` and pass the whole `attendees` list to `gcal_respond_to_event`; add `send_updates: \"all\"` so the organizer gets the answer by email.\n\n**Free/busy**: `gcal_query_free_busy` with `items: [{\"id\": \"primary\"}, {\"id\": \"ana@example.com\"}]` returns busy intervals only. Colleagues' calendars answer only when their free/busy is visible to the user (usually inside the same Workspace organisation); otherwise the calendar carries an `errors` entry such as `notFound`.\n\n**Pagination**: list responses carry `nextPageToken` while more results exist; call the same tool with the same arguments and `page_token` set to it. `max_results` goes up to 2500 events (250 calendars).\n\n**Quotas**: the Calendar API meters requests per minute per project and per user. Over the limit Google answers 403 `rateLimitExceeded` / `userRateLimitExceeded` or 429: wait a little and retry, and avoid tight loops of single-event calls.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `insufficientPermissions`: the scope does not allow the call (a write on a read-only setup), or the user has only read access to that calendar. 403 `accessNotConfigured`: enable the Google Calendar API in the Cloud project.\n- 404: the calendar or event id does not exist or is not visible to this account. 410: the event was deleted.\n- 400 `timeRangeEmpty` or `Bad Request`: a start after the end, a missing offset in a date-time, or `order_by` startTime without `single_events`.\n\n**Out of scope here**: creating, deleting or sharing calendars, event attachments, settings and push notifications.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "google-calendar",
+  "docsUrl": "https://developers.google.com/workspace/calendar/api/v3/reference",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Calendar API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Calendar is throttling this account or project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gcal_list_calendars",
+    "params": {
+      "max_results": 1
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google Calendar API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Calendar",
+    "type": "REST",
+    "baseUrl": "https://www.googleapis.com/calendar/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/colors"
+  },
+  "tools": [
+    {
+      "name": "gcal_list_calendars",
+      "description": "List the calendars in the signed-in user's calendar list (own, shared and subscribed) with id, summary, timeZone, accessRole and primary flag. Use an id as calendar_id elsewhere; \"primary\" always works for the user's main calendar. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "description": "Calendars per page, 1 to 250 (default 100).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response."
+          },
+          "min_access_role": {
+            "type": "string",
+            "description": "Only calendars where the user has at least this role.",
+            "enum": [
+              "freeBusyReader",
+              "reader",
+              "writer",
+              "owner"
+            ]
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true to include calendars hidden from the list in the Calendar UI."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/calendarList",
+        "queryParams": {
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "minAccessRole": "$min_access_role",
+          "showHidden": "$show_hidden"
+        }
+      }
+    },
+    {
+      "name": "gcal_get_calendar",
+      "description": "Get one calendar's metadata: summary, description, location and time zone. Use calendar_id \"primary\" for the signed-in user's main calendar and its time zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          }
+        },
+        "required": [
+          "calendar_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/{calendar_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gcal_list_events",
+      "description": "List or search events of one calendar in a time window. time_min and time_max are RFC 3339 with offset (2026-10-09T00:00:00+02:00); q searches summary, description, location, guests and organizer. Recurring events are expanded into single occurrences sorted by start time by default. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "time_min": {
+            "type": "string",
+            "description": "Lower bound (exclusive) on an event's end time, RFC 3339 with offset, e.g. 2026-10-09T00:00:00+02:00."
+          },
+          "time_max": {
+            "type": "string",
+            "description": "Upper bound (exclusive) on an event's start time, RFC 3339 with offset."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free-text search over summary, description, location, guest names and emails, and organizer."
+          },
+          "single_events": {
+            "type": "boolean",
+            "description": "true (default) expands recurring events into their occurrences; false returns the series themselves.",
+            "default": true
+          },
+          "order_by": {
+            "type": "string",
+            "description": "\"startTime\" (default, needs single_events true) or \"updated\" (last modification).",
+            "enum": [
+              "startTime",
+              "updated"
+            ],
+            "default": "startTime"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Events per page, 1 to 2500 (default 250).",
+            "minimum": 1,
+            "maximum": 2500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, with the same other arguments."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the response, e.g. Europe/Berlin (default: the calendar's)."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include cancelled events (status \"cancelled\")."
+          },
+          "updated_min": {
+            "type": "string",
+            "description": "Only events modified after this RFC 3339 time."
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these event types, e.g. [\"default\", \"outOfOffice\", \"focusTime\", \"workingLocation\", \"birthday\"]."
+          }
+        },
+        "required": [
+          "calendar_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/{calendar_id}/events",
+        "encodePathParams": true,
+        "queryParams": {
+          "timeMin": "$time_min",
+          "timeMax": "$time_max",
+          "q": "$q",
+          "singleEvents": "$single_events",
+          "orderBy": "$order_by",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "timeZone": "$time_zone",
+          "showDeleted": "$show_deleted",
+          "updatedMin": "$updated_min",
+          "eventTypes": "$event_types"
+        }
+      }
+    },
+    {
+      "name": "gcal_get_event",
+      "description": "Get one event with all details: start and end, attendees and their responseStatus, organizer, recurrence, reminders, hangoutLink and conferenceData, htmlLink and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id from gcal_list_events or gcal_get_event. With single_events true, an occurrence of a recurring event has its own id (<series id>_<start>)."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone for the times in the response, e.g. Europe/Berlin."
+          },
+          "max_attendees": {
+            "type": "integer",
+            "description": "Return at most this many attendees.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/{calendar_id}/events/{event_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "timeZone": "$time_zone",
+          "maxAttendees": "$max_attendees"
+        }
+      }
+    },
+    {
+      "name": "gcal_create_event",
+      "description": "Create an event: title, start and end (timed or all-day), location, description, guests, recurrence, reminders and optionally a Google Meet link (conference_data). Guests are emailed only when send_updates is \"all\" or \"externalOnly\". Returns the event with id and htmlLink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Title of the event."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description or agenda; may contain simple HTML."
+          },
+          "location": {
+            "type": "string",
+            "description": "Free-text location or address."
+          },
+          "start": {
+            "type": "object",
+            "description": "Start of the event. Timed: {\"dateTime\": \"2026-10-09T09:00:00+02:00\"} (RFC 3339 with offset), optionally with \"timeZone\": \"Europe/Berlin\" (required for recurring events). All-day: {\"date\": \"2026-10-09\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "RFC 3339 date-time with offset, e.g. 2026-10-09T09:00:00+02:00."
+              },
+              "date": {
+                "type": "string",
+                "description": "YYYY-MM-DD, for all-day events."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "IANA time zone, e.g. Europe/Berlin."
+              }
+            }
+          },
+          "end": {
+            "type": "object",
+            "description": "End of the event. Timed: {\"dateTime\": \"2026-10-09T09:00:00+02:00\"} (RFC 3339 with offset), optionally with \"timeZone\": \"Europe/Berlin\" (required for recurring events). All-day: {\"date\": \"2026-10-09\"}, where the end date is exclusive (a one-day event on 9 Oct ends on 10 Oct).",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "RFC 3339 date-time with offset, e.g. 2026-10-09T09:00:00+02:00."
+              },
+              "date": {
+                "type": "string",
+                "description": "YYYY-MM-DD, for all-day events."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "IANA time zone, e.g. Europe/Berlin."
+              }
+            }
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Guest email address."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "description": "true for an optional guest."
+                },
+                "displayName": {
+                  "type": "string",
+                  "description": "Guest name."
+                },
+                "responseStatus": {
+                  "type": "string",
+                  "description": "needsAction, declined, tentative or accepted."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            },
+            "description": "Guests, each {\"email\": \"ana@example.com\"} with optional \"optional\": true, \"displayName\" and \"responseStatus\". On update this list replaces the current one: include everyone who should stay."
+          },
+          "recurrence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "RRULE, EXRULE, RDATE or EXDATE lines (RFC 5545), e.g. [\"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10\"]. Needs a timeZone in start and end."
+          },
+          "reminders": {
+            "type": "object",
+            "description": "Reminders, e.g. {\"useDefault\": false, \"overrides\": [{\"method\": \"popup\", \"minutes\": 10}]}. Omit to keep the calendar's default reminders."
+          },
+          "conference_data": {
+            "type": "object",
+            "description": "To add a Google Meet link: {\"createRequest\": {\"requestId\": \"<any unique string>\", \"conferenceSolutionKey\": {\"type\": \"hangoutsMeet\"}}}. The link comes back in hangoutLink and conferenceData.entryPoints."
+          },
+          "color_id": {
+            "type": "string",
+            "description": "Event color id \"1\" to \"11\" (see gcal_list_colors)."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "default, public, private or confidential.",
+            "enum": [
+              "default",
+              "public",
+              "private",
+              "confidential"
+            ]
+          },
+          "transparency": {
+            "type": "string",
+            "description": "\"opaque\" blocks time (busy, default), \"transparent\" shows the time as free.",
+            "enum": [
+              "opaque",
+              "transparent"
+            ]
+          },
+          "guests_can_modify": {
+            "type": "boolean",
+            "description": "true to let guests edit the event."
+          },
+          "send_updates": {
+            "type": "string",
+            "description": "Who gets an email about the change: \"all\" (every guest), \"externalOnly\" (guests outside Google Calendar only) or \"none\" (default: nobody is notified).",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calendars/{calendar_id}/events",
+        "encodePathParams": true,
+        "queryParams": {
+          "conferenceDataVersion": 1,
+          "sendUpdates": "$send_updates"
+        },
+        "bodyMapping": {
+          "summary": "$summary",
+          "description": "$description",
+          "location": "$location",
+          "start": "$start",
+          "end": "$end",
+          "attendees": "$attendees",
+          "recurrence": "$recurrence",
+          "reminders": "$reminders",
+          "conferenceData": "$conference_data",
+          "colorId": "$color_id",
+          "visibility": "$visibility",
+          "transparency": "$transparency",
+          "guestsCanModify": "$guests_can_modify"
+        }
+      }
+    },
+    {
+      "name": "gcal_update_event",
+      "description": "Change an event: only the fields given are changed (PATCH). attendees, recurrence and reminders replace the whole current value, so read the event first with gcal_get_event when adding a guest. Can add a Meet link with conference_data. Returns the updated event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id from gcal_list_events or gcal_get_event. With single_events true, an occurrence of a recurring event has its own id (<series id>_<start>)."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Title of the event."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description or agenda; may contain simple HTML."
+          },
+          "location": {
+            "type": "string",
+            "description": "Free-text location or address."
+          },
+          "start": {
+            "type": "object",
+            "description": "Start of the event. Timed: {\"dateTime\": \"2026-10-09T09:00:00+02:00\"} (RFC 3339 with offset), optionally with \"timeZone\": \"Europe/Berlin\" (required for recurring events). All-day: {\"date\": \"2026-10-09\"}.",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "RFC 3339 date-time with offset, e.g. 2026-10-09T09:00:00+02:00."
+              },
+              "date": {
+                "type": "string",
+                "description": "YYYY-MM-DD, for all-day events."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "IANA time zone, e.g. Europe/Berlin."
+              }
+            }
+          },
+          "end": {
+            "type": "object",
+            "description": "End of the event. Timed: {\"dateTime\": \"2026-10-09T09:00:00+02:00\"} (RFC 3339 with offset), optionally with \"timeZone\": \"Europe/Berlin\" (required for recurring events). All-day: {\"date\": \"2026-10-09\"}, where the end date is exclusive (a one-day event on 9 Oct ends on 10 Oct).",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "RFC 3339 date-time with offset, e.g. 2026-10-09T09:00:00+02:00."
+              },
+              "date": {
+                "type": "string",
+                "description": "YYYY-MM-DD, for all-day events."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "IANA time zone, e.g. Europe/Berlin."
+              }
+            }
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Guest email address."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "description": "true for an optional guest."
+                },
+                "displayName": {
+                  "type": "string",
+                  "description": "Guest name."
+                },
+                "responseStatus": {
+                  "type": "string",
+                  "description": "needsAction, declined, tentative or accepted."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            },
+            "description": "Guests, each {\"email\": \"ana@example.com\"} with optional \"optional\": true, \"displayName\" and \"responseStatus\". On update this list replaces the current one: include everyone who should stay."
+          },
+          "recurrence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "RRULE, EXRULE, RDATE or EXDATE lines (RFC 5545), e.g. [\"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10\"]. Needs a timeZone in start and end."
+          },
+          "reminders": {
+            "type": "object",
+            "description": "Reminders, e.g. {\"useDefault\": false, \"overrides\": [{\"method\": \"popup\", \"minutes\": 10}]}. Omit to keep the calendar's default reminders."
+          },
+          "conference_data": {
+            "type": "object",
+            "description": "To add a Google Meet link: {\"createRequest\": {\"requestId\": \"<any unique string>\", \"conferenceSolutionKey\": {\"type\": \"hangoutsMeet\"}}}. The link comes back in hangoutLink and conferenceData.entryPoints."
+          },
+          "color_id": {
+            "type": "string",
+            "description": "Event color id \"1\" to \"11\" (see gcal_list_colors)."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "default, public, private or confidential.",
+            "enum": [
+              "default",
+              "public",
+              "private",
+              "confidential"
+            ]
+          },
+          "transparency": {
+            "type": "string",
+            "description": "\"opaque\" blocks time (busy, default), \"transparent\" shows the time as free.",
+            "enum": [
+              "opaque",
+              "transparent"
+            ]
+          },
+          "guests_can_modify": {
+            "type": "boolean",
+            "description": "true to let guests edit the event."
+          },
+          "send_updates": {
+            "type": "string",
+            "description": "Who gets an email about the change: \"all\" (every guest), \"externalOnly\" (guests outside Google Calendar only) or \"none\" (default: nobody is notified).",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/calendars/{calendar_id}/events/{event_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "conferenceDataVersion": 1,
+          "sendUpdates": "$send_updates"
+        },
+        "bodyMapping": {
+          "summary": "$summary",
+          "description": "$description",
+          "location": "$location",
+          "start": "$start",
+          "end": "$end",
+          "attendees": "$attendees",
+          "recurrence": "$recurrence",
+          "reminders": "$reminders",
+          "conferenceData": "$conference_data",
+          "colorId": "$color_id",
+          "visibility": "$visibility",
+          "transparency": "$transparency",
+          "guestsCanModify": "$guests_can_modify"
+        }
+      }
+    },
+    {
+      "name": "gcal_respond_to_event",
+      "description": "Accept, decline or tentatively accept an invitation. Read the event with gcal_get_event, take its full attendees list, set responseStatus (\"accepted\", \"declined\", \"tentative\") on the entry with \"self\": true and pass the whole list here; entries left out are removed when you are the organizer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id from gcal_list_events or gcal_get_event. With single_events true, an occurrence of a recurring event has its own id (<series id>_<start>)."
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Guest email address."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "description": "true for an optional guest."
+                },
+                "displayName": {
+                  "type": "string",
+                  "description": "Guest name."
+                },
+                "responseStatus": {
+                  "type": "string",
+                  "description": "needsAction, declined, tentative or accepted."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            },
+            "description": "Guests, each {\"email\": \"ana@example.com\"} with optional \"optional\": true, \"displayName\" and \"responseStatus\". On update this list replaces the current one: include everyone who should stay."
+          },
+          "send_updates": {
+            "type": "string",
+            "description": "Who gets an email about the change: \"all\" (every guest), \"externalOnly\" (guests outside Google Calendar only) or \"none\" (default: nobody is notified).",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id",
+          "attendees"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/calendars/{calendar_id}/events/{event_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sendUpdates": "$send_updates"
+        },
+        "bodyMapping": {
+          "attendees": "$attendees"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gcal_quick_add",
+      "description": "Create an event from one line of natural language, the way Calendar's quick add does, e.g. \"Lunch with Ana tomorrow 12:30-13:30 at Café Central\". Google parses date, time and title (English works best). Returns the created event; check its start and end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "text": {
+            "type": "string",
+            "description": "The event in one sentence, e.g. \"Team sync Friday 10am-11am\"."
+          },
+          "send_updates": {
+            "type": "string",
+            "description": "Who gets an email about the change: \"all\" (every guest), \"externalOnly\" (guests outside Google Calendar only) or \"none\" (default: nobody is notified).",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calendars/{calendar_id}/events/quickAdd",
+        "encodePathParams": true,
+        "queryParams": {
+          "text": "$text",
+          "sendUpdates": "$send_updates"
+        }
+      }
+    },
+    {
+      "name": "gcal_delete_event",
+      "description": "Delete an event (all occurrences when it is a recurring series; pass an occurrence id to cancel one occurrence). Guests are told only when send_updates is \"all\" or \"externalOnly\". Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id: \"primary\" for the signed-in user's main calendar, otherwise an `id` from gcal_list_calendars (often an email address or ...@group.calendar.google.com)."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id from gcal_list_events or gcal_get_event. With single_events true, an occurrence of a recurring event has its own id (<series id>_<start>)."
+          },
+          "send_updates": {
+            "type": "string",
+            "description": "Who gets an email about the change: \"all\" (every guest), \"externalOnly\" (guests outside Google Calendar only) or \"none\" (default: nobody is notified).",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/calendars/{calendar_id}/events/{event_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sendUpdates": "$send_updates"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "gcal_query_free_busy",
+      "description": "Check when calendars are busy in a time window, without event details: returns busy intervals per calendar. Works for the user's calendars and for colleagues whose free/busy is visible to the user (same Google Workspace organisation, or shared). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_min": {
+            "type": "string",
+            "description": "Start of the window, RFC 3339 with offset, e.g. 2026-10-09T08:00:00+02:00."
+          },
+          "time_max": {
+            "type": "string",
+            "description": "End of the window, RFC 3339 with offset."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Calendar id or email address."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Calendars to check, each {\"id\": \"primary\"} or {\"id\": \"ana@example.com\"}; up to 50."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone for the response, e.g. Europe/Berlin (default UTC)."
+          }
+        },
+        "required": [
+          "time_min",
+          "time_max",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/freeBusy",
+        "bodyMapping": {
+          "timeMin": "$time_min",
+          "timeMax": "$time_max",
+          "items": "$items",
+          "timeZone": "$time_zone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gcal_list_colors",
+      "description": "List the color palette: event colors (color_id \"1\" to \"11\") and calendar colors, each with background and foreground hex values. Use it to pick a color_id for gcal_create_event.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/colors"
+      }
+    }
+  ]
+}

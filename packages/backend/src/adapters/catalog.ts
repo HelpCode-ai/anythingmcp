@@ -154,7 +154,12 @@ import * as gmail from './intl/gmail.json';
 import * as gocardless from './intl/gocardless.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
+import * as googleCalendar from './intl/google-calendar.json';
+import * as googleDocs from './intl/google-docs.json';
+import * as googleDrive from './intl/google-drive.json';
 import * as googleSearchConsole from './intl/google-search-console.json';
+import * as googleSheets from './intl/google-sheets.json';
+import * as googleTasks from './intl/google-tasks.json';
 import * as gorgias from './intl/gorgias.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
@@ -693,7 +698,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gocardless as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
+  googleCalendar as unknown as AdapterDefinition,
+  googleDocs as unknown as AdapterDefinition,
+  googleDrive as unknown as AdapterDefinition,
   googleSearchConsole as unknown as AdapterDefinition,
+  googleSheets as unknown as AdapterDefinition,
+  googleTasks as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,

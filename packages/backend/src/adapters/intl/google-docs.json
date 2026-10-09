@@ -1,0 +1,321 @@
+{
+  "slug": "google-docs",
+  "name": "Google Docs",
+  "description": "Let your AI work with Google Docs: read a document as plain text or as headings and paragraphs with positions, create new documents, append or insert text and replace text everywhere, for example to fill a template. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Docs\nThis connector reads and edits Google Docs through the **Google Docs API v1** (`https://docs.googleapis.com/v1`): it reads a document as plain text or as positioned blocks, creates documents, appends and inserts text and replaces text everywhere in a document. It works with personal Google accounts and Google Workspace, on every document the authorizing Google account can open.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Docs API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose documents the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/documents` (read and edit every document the user can open). It does not include Google Drive, so it cannot list, search, share or delete documents. For a read-only setup, change the scope to `https://www.googleapis.com/auth/documents.readonly` in the connector's OAuth settings, authorize again, and disable `gdocs_create_document`, `gdocs_append_text`, `gdocs_insert_text` and `gdocs_replace_all_text`.\n\n**Switched off at install**: `gdocs_batch_update`, which accepts any Docs API request including deleting content. Turn it on per tool if the AI needs it.\n\n**Finding a document**: the id is the long string in the link, `https://docs.google.com/document/d/<id>/edit`. To find one by name, use the Google Drive connector's `gdrive_search_files` with `mimeType = 'application/vnd.google-apps.document' and name contains '...'`, or ask the user for the link.\n\n**Reading**\n- `gdocs_get_document_text` returns `title`, `revisionId` and `text`: the body as plain text, paragraphs and table cells in order. Images, drawings, footnotes, headers, footers and formatting are left out.\n- `gdocs_get_document_structure` returns `blocks`, one per paragraph or table, with `startIndex`, `endIndex`, `type`, the paragraph `style` (`TITLE`, `HEADING_1` to `HEADING_6`, `NORMAL_TEXT`) and its text. Use it to find where to insert.\n- Both read the document's **first tab** only and are cut at 200 KB. A document with several tabs, or a very long one, reads better through the Google Drive connector: `gdrive_export_file` with `text/markdown` or `text/plain`.\n\n**Editing**\n- `gdocs_append_text` adds text at the end of the body; `\\n` separates paragraphs (begin with `\\n` to start a new paragraph).\n- `gdocs_insert_text` inserts at an `index`. Indexes count UTF-16 code units (an emoji counts 2) from 1, the start of the body; each paragraph ends with a newline that belongs to it. Insert before a block at its `startIndex`, or at the end of a paragraph at `endIndex - 1`. An index inside a table's structure, rather than inside a cell's paragraph, is refused. After an insert, later indexes shift by the inserted length: read the structure again before the next index-based edit, or work from the end of the document backwards.\n- `gdocs_replace_all_text` replaces every occurrence of a literal text, in every tab, header and footer; `replace_with: \"\"` deletes them. It is the reliable way to fill templates (`[Customer name]`, `<date>`) and returns `occurrencesChanged`.\n- `gdocs_batch_update` (switched off) takes raw Docs API requests, e.g. `deleteContentRange`, `updateTextStyle`, `updateParagraphStyle`, `createParagraphBullets`, `insertTable`, `insertPageBreak`. Pass `write_control` `{\"requiredRevisionId\": \"<revisionId>\"}` from the last read to fail instead of editing a document someone changed in between.\n- `gdocs_create_document` takes only a title; the API ignores content on creation. The file lands in the root of My Drive.\n\n**Quotas**: Google allows about 300 read and 60 write requests per minute per user (3,000 and 600 per project). Over the limit it answers 429 `RESOURCE_EXHAUSTED`: wait a minute and retry. Several edits in one `gdocs_batch_update` count as one write.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED`: the account cannot open (or cannot edit) that document, or the scope is read-only. 403 \"Docs API has not been used in project\": enable the Google Docs API in the Cloud project.\n- 404: the document id is wrong, or the id belongs to another file type (a Sheet or a Word file uploaded to Drive).\n- 400 `Index N must be less than the end index of the referenced segment` or `must be inside the bounds of an existing paragraph`: read the structure again and pick an index inside a paragraph.\n\n**Out of scope here**: comments and suggestions, sharing, moving and deleting documents (Google Drive connector), and editing Word files stored in Drive.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "google-docs",
+  "docsUrl": "https://developers.google.com/workspace/docs/api/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Docs API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Docs is throttling this account or project (60 writes per minute per user). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gdocs_get_document_text",
+    "params": {
+      "document_id": "195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE"
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google Docs API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Docs",
+    "type": "REST",
+    "baseUrl": "https://docs.googleapis.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/documents"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/documents/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE?fields=documentId"
+  },
+  "tools": [
+    {
+      "name": "gdocs_get_document_text",
+      "description": "Read a Google Doc as plain text: documentId, title, revisionId, endIndex and text, the body's paragraphs and table cells in order (images, drawings and formatting left out). Covers the document's first tab. Output over 200 KB is cut and marked _truncated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{document_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "documentId,title,revisionId,body(content(startIndex,endIndex,paragraph(elements(textRun(content))),table(tableRows(tableCells(content(paragraph(elements(textRun(content)))))))))"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{documentId: documentId, title: title, revisionId: revisionId, endIndex: body.content[-1].endIndex, text: join('', body.content[].[paragraph.elements[].textRun.content, table.tableRows[].tableCells[].content[].paragraph.elements[].textRun.content][][])}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gdocs_get_document_structure",
+      "description": "Read a Google Doc as a list of blocks with their positions, for precise edits: each paragraph or table with startIndex, endIndex, type, paragraph style (TITLE, HEADING_1..6, NORMAL_TEXT), table size and text. Use the indexes with gdocs_insert_text or gdocs_batch_update. Output over 200 KB is cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{document_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "documentId,title,revisionId,body(content(startIndex,endIndex,paragraph(paragraphStyle(namedStyleType),elements(textRun(content))),table(rows,columns,tableRows(tableCells(content(paragraph(elements(textRun(content)))))))))"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{documentId: documentId, title: title, revisionId: revisionId, endIndex: body.content[-1].endIndex, blocks: body.content[?paragraph || table].{startIndex: startIndex, endIndex: endIndex, type: paragraph && 'paragraph' || 'table', style: paragraph.paragraphStyle.namedStyleType, rows: table.rows, columns: table.columns, text: join('', [paragraph.elements[].textRun.content, table.tableRows[].tableCells[].content[].paragraph.elements[].textRun.content][][])}}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gdocs_create_document",
+      "description": "Create a new, empty Google Doc with a title, in the root of the user's My Drive. Returns documentId, title and revisionId; add content with gdocs_append_text. The link is https://docs.google.com/document/d/<documentId>/edit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the new document."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents",
+        "queryParams": {
+          "fields": "documentId,title,revisionId"
+        },
+        "bodyMapping": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "gdocs_append_text",
+      "description": "Append text at the end of a document's body. Start text with \"\\n\" to begin a new paragraph and use \"\\n\" between paragraphs; the new text takes the style of the last paragraph. Returns documentId and writeControl.requiredRevisionId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to add, with \\n for line breaks between paragraphs."
+          }
+        },
+        "required": [
+          "document_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{document_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "insertText": {
+                "text": "$text",
+                "endOfSegmentLocation": {}
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "gdocs_insert_text",
+      "description": "Insert text at a position in the body. index counts UTF-16 code units from 1 (the very start of the body) and must fall inside a paragraph: take startIndex of a block from gdocs_get_document_structure to insert before it. Text after the index moves; indexes of later blocks shift.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position to insert at, at least 1; e.g. a paragraph's startIndex to insert before it, or its endIndex - 1 to insert before its line break.",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to insert, with \\n for paragraph breaks."
+          }
+        },
+        "required": [
+          "document_id",
+          "index",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{document_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "insertText": {
+                "text": "$text",
+                "location": {
+                  "index": "$index"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "gdocs_replace_all_text",
+      "description": "Replace every occurrence of a text in the document (all tabs, headers and footers included) with another text; an empty replace_with deletes the occurrences. Returns replies[0].replaceAllText.occurrencesChanged. Good for filling templates such as [Customer name].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          },
+          "find": {
+            "type": "string",
+            "description": "Text to search for (literal, not a pattern)."
+          },
+          "replace_with": {
+            "type": "string",
+            "description": "Replacement text; \"\" deletes every occurrence."
+          },
+          "match_case": {
+            "type": "boolean",
+            "description": "true for a case-sensitive match (default false)."
+          }
+        },
+        "required": [
+          "document_id",
+          "find",
+          "replace_with"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{document_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "$find",
+                  "matchCase": "$match_case"
+                },
+                "replaceText": "$replace_with"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gdocs_batch_update",
+      "description": "Run Docs API batchUpdate requests for edits the other tools do not cover: deleting ranges (deleteContentRange), styling text or paragraphs (updateTextStyle, updateParagraphStyle), bullets, tables, page breaks, images. Requests run in order, atomically. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id, the long string in its link: https://docs.google.com/document/d/<id>/edit."
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Docs API Request objects, e.g. [{\"updateParagraphStyle\": {\"range\": {\"startIndex\": 1, \"endIndex\": 20}, \"paragraphStyle\": {\"namedStyleType\": \"HEADING_1\"}, \"fields\": \"namedStyleType\"}}]. Order edits from the end of the document backwards so earlier indexes stay valid."
+          },
+          "write_control": {
+            "type": "object",
+            "description": "Optional {\"requiredRevisionId\": \"<revisionId>\"} to fail if the document changed since it was read."
+          }
+        },
+        "required": [
+          "document_id",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{document_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": "$requests",
+          "writeControl": "$write_control"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
