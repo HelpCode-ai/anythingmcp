@@ -61,3 +61,15 @@ export function buildManagePlanUrl(params?: Record<string, string>): string {
   for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
   return url.toString();
 }
+
+/**
+ * Enterprise has no checkout: the contact form on the marketing site, with
+ * Enterprise preselected (`?plan=enterprise`). Single sign-on, SCIM and
+ * anything beyond Team's limits are sold this way.
+ */
+export function buildEnterpriseContactUrl(params?: Record<string, string>): string {
+  const url = new URL(`${getMarketingUrl()}/contact`);
+  url.searchParams.set('plan', 'enterprise');
+  for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
+  return url.toString();
+}

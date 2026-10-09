@@ -887,7 +887,7 @@ export class SsoService {
       select: { id: true },
     });
     if (!collision) {
-      // Creating accounts on first sign-in needs Business and a free seat.
+      // Creating accounts on first sign-in needs Enterprise and a free seat.
       // People who already have an identity here never reach this point, so
       // their sign-in is unaffected.
       if (!(await this.edition.hasBusiness())) {

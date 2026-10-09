@@ -1364,7 +1364,7 @@ export const license = {
   checkoutLink: (
     token: string,
     body: {
-      plan: 'starter' | 'team' | 'business';
+      plan: 'starter' | 'team';
       billingPeriod: 'monthly' | 'yearly';
       trial: boolean;
       promo?: string;

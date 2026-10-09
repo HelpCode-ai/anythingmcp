@@ -27,6 +27,7 @@ describe('ScimController — provisioning and the edition', () => {
     const err = await controller.createUser(req, {}).catch((e) => e);
     expect(err).toBeInstanceOf(ScimError);
     expect(err.getStatus()).toBe(403);
+    expect(err.getResponse().detail).toContain('AnythingMCP Enterprise');
     expect(users.create).not.toHaveBeenCalled();
   });
 

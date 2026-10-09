@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useEdition } from '@/lib/use-edition';
-import { BusinessNotice } from '@/components/business-notice';
+import { EnterpriseNotice } from '@/components/enterprise-notice';
 import {
   identityProviders,
   roles,
@@ -135,7 +135,8 @@ export default function IdentityProvidersPage() {
   // 404, so do not even ask — render the explanation instead.
   const isCloud = deploymentMode === 'cloud';
   const { edition } = useEdition();
-  // Existing providers stay listed and deletable; setting one up needs Business.
+  // Existing providers stay listed and deletable; setting one up needs Enterprise
+  // (a licence, the trial or the transition period: `edition.business`).
   const locked = edition !== null && !edition.business;
 
   const [providers, setProviders] = useState<IdentityProvider[]>([]);
@@ -379,14 +380,15 @@ export default function IdentityProvidersPage() {
   return (
     <div className="space-y-6">
       {locked && (
-        <BusinessNotice
+        <EnterpriseNotice
           edition={edition!}
-          title="Single sign-on and SCIM are part of AnythingMCP Business"
+          title="Single sign-on and SCIM are part of AnythingMCP Enterprise"
           body={
             providers.length > 0
-              ? 'The providers below keep signing members in. Adding or changing a provider, turning on SCIM or requiring single sign-on needs Business.'
+              ? 'The providers below keep signing members in. Adding or changing a provider, turning on SCIM or requiring single sign-on needs Enterprise.'
               : 'Connect Entra ID, Google, Okta or any OIDC provider, provision users with SCIM and map directory groups to roles.'
           }
+          upgrade="enterprise"
         />
       )}
       {loading ? (
