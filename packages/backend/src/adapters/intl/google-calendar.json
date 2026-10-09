@@ -7,7 +7,6 @@
   "category": "scheduling",
   "icon": "google-calendar",
   "docsUrl": "https://developers.google.com/workspace/calendar/api/v3/reference",
-  "unlisted": true,
   "requiredEnvVars": [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET"

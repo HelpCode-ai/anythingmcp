@@ -7,7 +7,6 @@
   "category": "productivity",
   "icon": "google-tasks",
   "docsUrl": "https://developers.google.com/workspace/tasks/reference/rest",
-  "unlisted": true,
   "requiredEnvVars": [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET"

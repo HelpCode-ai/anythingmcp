@@ -7,7 +7,6 @@
   "category": "storage",
   "icon": "google-drive",
   "docsUrl": "https://developers.google.com/workspace/drive/api/reference/rest/v3",
-  "unlisted": true,
   "requiredEnvVars": [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET"
