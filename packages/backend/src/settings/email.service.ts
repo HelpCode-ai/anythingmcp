@@ -124,16 +124,22 @@ export class EmailService {
     secure: boolean;
     user: string;
     pass: string;
+    replyTo?: string;
   }) {
-    return nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth: { user: smtp.user, pass: smtp.pass },
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 20_000,
-    });
+    return nodemailer.createTransport(
+      {
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: { user: smtp.user, pass: smtp.pass },
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
+      },
+      // Message defaults: our emails say "just reply", and a noreply sender
+      // would swallow the answer. Only the operator's system SMTP sets one.
+      smtp.replyTo ? { replyTo: smtp.replyTo } : undefined,
+    );
   }
 
   private normalizeSmtp(raw: any) {
@@ -145,6 +151,7 @@ export class EmailService {
       user: raw.user ?? '',
       pass: raw.pass ?? '',
       from: raw.from,
+      replyTo: typeof raw.replyTo === 'string' && raw.replyTo ? raw.replyTo : undefined,
     };
   }
 
@@ -152,7 +159,8 @@ export class EmailService {
    * System (operator) SMTP from ENV — the transactional fallback (e.g. Resend)
    * used when an org hasn't configured its own SMTP. Read ONLY here and never
    * returned by any API, so our credentials are never exposed to workspace
-   * admins. Configure on the server via SMTP_HOST/PORT/USER/PASS/FROM/SECURE.
+   * admins. Configure on the server via SMTP_HOST/PORT/USER/PASS/FROM/SECURE
+   * and, optionally, SMTP_REPLY_TO (where replies to a noreply sender go).
    */
   private systemSmtp() {
     const host = process.env.SMTP_HOST;
@@ -167,6 +175,7 @@ export class EmailService {
       from:
         process.env.SMTP_FROM ||
         (process.env.SMTP_USER ? `AnythingMCP <${process.env.SMTP_USER}>` : 'AnythingMCP'),
+      replyTo: process.env.SMTP_REPLY_TO,
     });
   }
 
