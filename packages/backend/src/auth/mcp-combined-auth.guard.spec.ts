@@ -227,17 +227,19 @@ describe('McpCombinedAuthGuard', () => {
       }
     });
 
-    it('leaves organizationId undefined when the user cannot be resolved (fail closed downstream)', async () => {
+    it('answers 401 invalid_token for a token whose user no longer exists, so the client signs in again', async () => {
       mockConfig.get.mockReturnValue(undefined);
       mockAuth.verifyToken.mockReturnValue({ sub: 'ghost', user_data: {} });
       mockPrisma.user.findUnique.mockResolvedValue(null);
 
       const ctx = mockContext({ authorization: 'Bearer oauth-token' });
-      await guard.canActivate(ctx);
+      const result = await guard.canActivate(ctx);
 
-      expect(
-        ctx.switchToHttp().getRequest().user.organizationId,
-      ).toBeUndefined();
+      expect(result).toBe(false);
+      const res = ctx.switchToHttp().getResponse();
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.setHeader).toHaveBeenCalledWith('WWW-Authenticate', expect.stringContaining('error="invalid_token"'));
+      expect(ctx.switchToHttp().getRequest().user).toBeUndefined();
     });
   });
 
