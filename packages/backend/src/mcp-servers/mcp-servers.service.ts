@@ -213,7 +213,17 @@ export class McpServersService {
   }
 
   async delete(id: string) {
-    await this.prisma.mcpServerConfig.delete({ where: { id } });
+    // Keys created for this server are switched off with it. The column is
+    // cleared on delete (ON DELETE SET NULL), and a key without a server is
+    // not limited to one, so left active they would start opening every
+    // server of the organization.
+    await this.prisma.$transaction([
+      this.prisma.mcpApiKey.updateMany({
+        where: { mcpServerId: id },
+        data: { isActive: false },
+      }),
+      this.prisma.mcpServerConfig.delete({ where: { id } }),
+    ]);
   }
 
   async assignConnectors(serverId: string, connectorIds: string[]) {

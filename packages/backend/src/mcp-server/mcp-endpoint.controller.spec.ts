@@ -120,7 +120,8 @@ describe('McpEndpointController — tenant isolation', () => {
         organizationId: 'org-B',
         authMethod: 'mcp_api_key',
         apiKeyName: 'Codex (laptop)',
-        mcpServerId: 'srv-B',
+        // Bound to this very server, so the workspace check is what refuses it.
+        mcpServerId: 'srv-A',
         key: 'mcp_secret_value',
       },
     };
@@ -133,7 +134,7 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(line).toContain('server srv-A belongs to org org-A');
     expect(line).toContain('user u-b, org org-B, auth mcp_api_key');
     expect(line).toContain('key "Codex (laptop)"');
-    expect(line).toContain('key bound to server srv-B');
+    expect(line).toContain('key bound to server srv-A');
     expect(line).not.toContain('mcp_secret_value');
     const body = res.json.mock.calls[0][0];
     expect(body.error.message).toMatch(/different workspace/);
@@ -217,6 +218,158 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
     expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+});
+
+/**
+ * An MCP API key created for one server opens that server only. Keys without a
+ * server, OAuth and app JWTs keep the organization-membership rule above.
+ */
+describe('McpEndpointController — keys created for a server', () => {
+  let controller: McpEndpointController;
+  let mcpServersService: any;
+  let sessionManager: any;
+
+  const SERVERS: Record<string, any> = {
+    'srv-A': { id: 'srv-A', name: 'A', version: '1.0.0', isActive: true, organizationId: 'org-A' },
+    'srv-B': { id: 'srv-B', name: 'B', version: '1.0.0', isActive: true, organizationId: 'org-A' },
+  };
+  const keyFor = (mcpServerId: string | null) => ({
+    sub: 'u-a',
+    organizationId: 'org-A',
+    authMethod: 'mcp_api_key',
+    apiKeyName: 'agent',
+    mcpServerId,
+  });
+  const makeRes = () => {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    res.headersSent = false;
+    return res;
+  };
+  const denied = (res: any) => {
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: expect.stringMatching(/^Access denied: this API key was created for a different MCP server/) },
+      id: null,
+    });
+  };
+
+  beforeEach(() => {
+    mcpServersService = {
+      findById: jest.fn(async (id: string) => SERVERS[id] ?? null),
+      getConnectorIds: jest.fn().mockResolvedValue([]),
+      getVisibleContent: jest
+        .fn()
+        .mockResolvedValue({ instructions: undefined, connectors: [], resources: [] }),
+      isUserInOrganization: jest.fn().mockResolvedValue(true),
+    };
+    sessionManager = {
+      get: jest.fn(),
+      touch: jest.fn(),
+      add: jest.fn(),
+      remove: jest.fn().mockResolvedValue(undefined),
+      notifyToolsChanged: jest.fn().mockResolvedValue(undefined),
+    };
+    controller = new McpEndpointController(
+      mcpServersService,
+      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      { executeTool: jest.fn() } as any,
+      { getAllowedToolIds: jest.fn().mockResolvedValue(null) } as any,
+      {
+        lookup: jest.fn(),
+        isEnabled: jest.fn().mockResolvedValue(false),
+        captureIntentEnabled: jest.fn().mockResolvedValue(false),
+      } as any,
+      sessionManager,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create: jest.fn() } as any,
+    );
+    (controller as any).serveStateless = jest.fn().mockResolvedValue(undefined);
+  });
+
+  it('opens the server it was created for', async () => {
+    const res = makeRes();
+    await controller.handlePost('srv-A', { user: keyFor('srv-A'), headers: {} } as any, res, {});
+    expect(res.status).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+    expect((controller as any).serveStateless).toHaveBeenCalled();
+  });
+
+  it('is refused on another server of the same organization, before the server is looked up', async () => {
+    const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
+    const res = makeRes();
+    await controller.handlePost('srv-B', { user: keyFor('srv-A'), headers: {} } as any, res, {});
+    denied(res);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(
+      'server srv-B is not the one the key was created for (user u-a, org org-A, auth mcp_api_key, key "agent", key bound to server srv-A)',
+    );
+    expect(mcpServersService.findById).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+    expect((controller as any).serveStateless).not.toHaveBeenCalled();
+  });
+
+  it('gets the same answer for a server that does not exist, so nothing is disclosed', async () => {
+    const res = makeRes();
+    await controller.handlePost('srv-missing', { user: keyFor('srv-A'), headers: {} } as any, res, {});
+    denied(res);
+  });
+
+  it('cannot reach a live session of another server, by POST, GET or DELETE', async () => {
+    const prev = process.env.MCP_STATEFUL_SESSIONS;
+    process.env.MCP_STATEFUL_SESSIONS = 'true';
+    // A session of the same user on srv-B, opened over OAuth.
+    const transport = { handleRequest: jest.fn() };
+    sessionManager.get.mockReturnValue({ serverId: 'srv-B', principalKey: 'sub:u-a', transport });
+    try {
+      const req = () => ({ user: keyFor('srv-A'), headers: { 'mcp-session-id': 'sess-B' } }) as any;
+      const post = makeRes();
+      await controller.handlePost('srv-B', req(), post, {});
+      denied(post);
+      const get = makeRes();
+      await controller.handleGet('srv-B', req(), get);
+      denied(get);
+      const del = makeRes();
+      await controller.handleDelete('srv-B', req(), del);
+      denied(del);
+      expect(sessionManager.get).not.toHaveBeenCalled();
+      expect(transport.handleRequest).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.MCP_STATEFUL_SESSIONS;
+      else process.env.MCP_STATEFUL_SESSIONS = prev;
+    }
+  });
+
+  it('a key without a server keeps opening every server of its organization', async () => {
+    for (const id of ['srv-A', 'srv-B']) {
+      const res = makeRes();
+      await controller.handlePost(id, { user: keyFor(null), headers: {} } as any, res, {});
+      expect(res.status).not.toHaveBeenCalled();
+      expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith(id);
+    }
+  });
+
+  it('OAuth and app JWTs are not affected', async () => {
+    for (const id of ['srv-A', 'srv-B']) {
+      const res = makeRes();
+      await controller.handlePost(
+        id,
+        { user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' }, headers: {} } as any,
+        res,
+        {},
+      );
+      expect(res.status).not.toHaveBeenCalled();
+    }
+  });
+
+  it('GET without a session still answers 405, for a key or anyone', async () => {
+    for (const user of [keyFor('srv-A'), { authMethod: 'none' }]) {
+      const res = makeRes();
+      await controller.handleGet('srv-A', { user, headers: {} } as any, res);
+      expect(res.status).toHaveBeenCalledWith(405);
+    }
   });
 });
 
