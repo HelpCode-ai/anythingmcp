@@ -160,6 +160,8 @@ x-backend: &backend
     - SMTP_USER=${SMTP_USER:-}
     - SMTP_PASS=${SMTP_PASS:-}
     - SMTP_FROM=${SMTP_FROM:-}
+    # Where replies go when SMTP_FROM is a noreply address.
+    - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
     - SMTP_SECURE=${SMTP_SECURE:-false}
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
