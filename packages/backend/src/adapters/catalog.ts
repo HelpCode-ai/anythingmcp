@@ -306,6 +306,7 @@ import * as workable from './intl/workable.json';
 import * as worksection from './intl/worksection.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
+import * as xero from './intl/xero.json';
 import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
@@ -844,6 +845,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   worksection as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  xero as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,

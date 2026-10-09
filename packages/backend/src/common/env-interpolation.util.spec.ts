@@ -104,6 +104,22 @@ describe('EnvInterpolation', () => {
       expect(result.endpointMapping.path).toBeUndefined();
       expect(result.config.baseUrl).toBe('https://v3.football.api-sports.io');
     });
+
+    it('keeps the placeholder of a tool header that is only an empty variable', () => {
+      const mapping = {
+        method: 'GET',
+        path: '/Organisation',
+        headers: { 'xero-tenant-id': '{{XERO_TENANT_ID}}', 'X-Note': 'id {{XERO_TENANT_ID}}', 'X-Key': '{{TOKEN}}' },
+      };
+      const empty = interpolateConnectorConfig({ baseUrl: 'https://api.example.com' }, mapping, { ...envVars, XERO_TENANT_ID: ' ' });
+      expect(empty.endpointMapping.headers).toEqual({
+        'xero-tenant-id': '{{XERO_TENANT_ID}}',
+        'X-Note': 'id  ',
+        'X-Key': 'secret-token-123',
+      });
+      const set = interpolateConnectorConfig({ baseUrl: 'https://api.example.com' }, mapping, { ...envVars, XERO_TENANT_ID: 'tenant-1' });
+      expect(set.endpointMapping.headers!['xero-tenant-id']).toBe('tenant-1');
+    });
   });
 
   // ── ReDoS regression ──────────────────────────────────────────────────────
