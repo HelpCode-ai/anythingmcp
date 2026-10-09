@@ -18,13 +18,17 @@
       "label": "App ID",
       "kind": "credential",
       "help": "Developer center → your application: the App ID (Client ID).",
-      "link": "https://developers.mercadolibre.com/devcenter"
+      "link": "https://developers.mercadolibre.com/devcenter",
+      "pattern": "^[0-9]{6,20}$",
+      "patternMessage": "The App ID is a number of about 16 digits, shown at the top of your application in the developer center."
     },
     "MERCADO_LIBRE_CLIENT_SECRET": {
       "label": "Secret key",
       "kind": "credential",
       "help": "Same page: the Secret Key (Client Secret).",
-      "link": "https://developers.mercadolibre.com/devcenter"
+      "link": "https://developers.mercadolibre.com/devcenter",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "The Secret Key is a string of about 32 letters and digits, on the same page as the App ID. It is not your Mercado Libre password."
     },
     "MERCADO_LIBRE_SITE_DOMAIN": {
       "label": "Country site",
