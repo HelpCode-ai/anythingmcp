@@ -21,6 +21,7 @@ import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
 import { copyText } from '@/lib/clipboard';
+import { returnAssistant } from '@/lib/return-assistant';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -33,7 +34,8 @@ import { copyText } from '@/lib/clipboard';
  *   connector=<id>  finish a connector that already exists (a draft, or one
  *                   installed from a chat), instead of installing a new one
  *   step=done       back from the provider's sign-in
- *   from=claude     show "Back to Claude" at the end
+ *   from=<client>   set up from a chat: at the end, the way back to that
+ *                   assistant (see lib/return-assistant.ts for the list)
  */
 
 type Phase = 'form' | 'working' | 'done';
@@ -50,7 +52,7 @@ function SetupContent() {
   const router = useRouter();
   const { token } = useAuth();
   const existingId = params.get('connector');
-  const fromClaude = params.get('from') === 'claude';
+  const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
 
   const [info, setInfo] = useState<AdapterSetupInfo | null>(null);
@@ -211,7 +213,7 @@ function SetupContent() {
       }
       if (info.setupKind === 'oauth_browser') {
         const id = await save();
-        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${fromClaude ? '&from=claude' : ''}`;
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.oauthAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || 'Could not start the authorization.');
         productEvents.track('oauth_started', token, { adapterSlug: slug });
@@ -269,13 +271,16 @@ function SetupContent() {
             <pre className="max-h-48 overflow-auto rounded-[9px] bg-[var(--surface-2)] p-3 text-xs text-[var(--text)]">{result.sample}</pre>
           </div>
         )}
+        {back && !back.href && (
+          <p className="text-sm text-[var(--text-2)]">You can close this tab and return to {back.name}.</p>
+        )}
         <div className="flex flex-wrap gap-2">
-          {fromClaude && (
-            <a href="https://claude.ai/new" className={cn(buttonVariants({ size: 'sm' }))}>
-              Back to Claude
+          {back?.href && (
+            <a href={back.href} className={cn(buttonVariants({ size: 'sm' }))}>
+              Back to {back.name}
             </a>
           )}
-          <Link href={`/connectors/${result.connectorId}`} className={cn(buttonVariants({ variant: fromClaude ? 'secondary' : 'primary', size: 'sm' }))}>
+          <Link href={`/connectors/${result.connectorId}`} className={cn(buttonVariants({ variant: back?.href ? 'secondary' : 'primary', size: 'sm' }))}>
             Open the connector
           </Link>
           <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>

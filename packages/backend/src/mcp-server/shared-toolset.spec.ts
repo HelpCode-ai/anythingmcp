@@ -8,6 +8,7 @@ import {
   SharedToolsetDeps,
   SharedToolsetProfile,
   excludedOnSharedEndpoint,
+  assistantForRedirectUris,
   profileForRedirectUris,
   registerSharedToolset,
   sharedEndpointMode,
@@ -434,6 +435,33 @@ describe('which tool set a client gets', () => {
     expect(profileForRedirectUris(['https://notchatgpt.com/cb'])).toBe('default');
     expect(profileForRedirectUris(['http://chatgpt.com/cb'])).toBe('default');
     expect(profileForRedirectUris(['not a url'])).toBe('default');
+  });
+
+  it('names the assistant a setup page sends the user back to, by redirect host only', () => {
+    expect(assistantForRedirectUris(['https://claude.ai/api/mcp/auth_callback'])).toBe('claude');
+    expect(assistantForRedirectUris(['https://claude.com/api/mcp/auth_callback'])).toBe('claude');
+    expect(assistantForRedirectUris(['https://chatgpt.com/connector_platform_oauth_redirect'])).toBe('chatgpt');
+    expect(assistantForRedirectUris(['https://platform.openai.com/apps-manage/oauth'])).toBe('chatgpt');
+    expect(assistantForRedirectUris(['https://www.meta.ai/oauth/callback'])).toBe('muse');
+    expect(assistantForRedirectUris(['https://muse.ai/cb'])).toBe('muse');
+    expect(assistantForRedirectUris(['https://connectors.meta.com/cb'])).toBe('muse');
+    // The first recognised URI decides, unrecognised ones are skipped.
+    expect(assistantForRedirectUris(['http://localhost:3334/cb', 'https://claude.ai/api/mcp/auth_callback'])).toBe('claude');
+    // Everything else gets the neutral page: other clients, API keys (no URIs),
+    // look-alikes, cleartext, custom schemes.
+    for (const uris of [
+      ['cursor://anysphere.cursor-mcp/oauth/callback'],
+      ['http://127.0.0.1:33418/callback'],
+      ['https://grok.com/connectors-oauth-exchange-code/'],
+      ['https://claude.ai.evil.example/cb'],
+      ['https://notmeta.ai/cb'],
+      ['http://claude.ai/cb'],
+      ['not a url'],
+      [],
+      undefined,
+    ]) {
+      expect(assistantForRedirectUris(uris)).toBeNull();
+    }
   });
 
   it('leaves the default set exactly as the Claude directory reviewed it', async () => {

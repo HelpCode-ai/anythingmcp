@@ -8,6 +8,7 @@ import { setupLinks } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { returnAssistant } from '@/lib/return-assistant';
 
 /**
  * A one-time link from an AI client ("open this to finish connecting Etsy").
@@ -23,13 +24,17 @@ export default function SetupLinkPage() {
 
   useEffect(() => {
     if (isLoading || started.current) return;
+    // The assistant the link was made in, for the setup page's way back; only
+    // a name from the fixed list is passed on.
+    const from = returnAssistant(new URLSearchParams(window.location.search).get('from'))?.id;
     if (!authToken) {
-      router.replace(`/login?redirect=${encodeURIComponent(`/s/${token}`)}`);
+      const self = `/s/${token}${from ? `?from=${from}` : ''}`;
+      router.replace(`/login?redirect=${encodeURIComponent(self)}`);
       return;
     }
     started.current = true;
     setupLinks
-      .resolve(token, authToken)
+      .resolve(token, authToken, from)
       .then((out) => router.replace(out.redirect))
       .catch((e: Error) => setError(e.message || 'This link cannot be opened.'));
   }, [isLoading, authToken, token, router]);
