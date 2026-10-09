@@ -4,6 +4,7 @@ import {
   COMMUNITY_SEAT_LIMIT,
   EditionService,
   TRANSITION_DAYS,
+  seatLimitMessage,
 } from './edition.service';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -189,6 +190,16 @@ describe('EditionService', () => {
           message: expect.stringContaining('Single sign-on'),
         }),
       });
+      // Business was retired on 8 Oct 2026; the refusal names Enterprise.
+      const err = await service.assertBusiness('Single sign-on').catch((e) => e);
+      expect(err.getResponse().message).toContain('AnythingMCP Enterprise');
+      expect(err.getResponse().message).not.toContain('Business');
+    });
+
+    it('names no retired plan when the seat limit is reached', () => {
+      expect(seatLimitMessage(3)).toBe(
+        'This instance has reached its limit of 3 active users. An administrator can add more with a license key under Settings → License.',
+      );
     });
 
     it('passes with Business', async () => {

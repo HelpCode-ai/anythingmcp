@@ -48,7 +48,7 @@ export interface EditionState {
   transitionUntil: string | null;
 }
 
-/** Error code the frontend reads to offer the Business options. */
+/** Error code the frontend reads to offer the Enterprise options. */
 export const EDITION_REQUIRED = 'edition_required';
 export const SEAT_LIMIT = 'seat_limit';
 
@@ -188,7 +188,7 @@ export class EditionService implements OnModuleInit {
     throw new ForbiddenException({
       statusCode: 403,
       code: EDITION_REQUIRED,
-      message: `${capability} is available with AnythingMCP Business. Start a trial or activate a license key under Settings → License.`,
+      message: `${capability} is available with AnythingMCP Enterprise. Start the trial or activate a license key under Settings → License.`,
     });
   }
 
@@ -217,11 +217,11 @@ export class EditionService implements OnModuleInit {
   async startTrial(now = new Date()): Promise<EditionState> {
     if (this.deployment.isCloud()) throw new NotFoundException('Not found');
     if ((await this.siteSettings.get(TRIAL_KEY)) !== null) {
-      throw new ConflictException('The Business trial has already been used on this instance.');
+      throw new ConflictException('The Enterprise trial has already been used on this instance.');
     }
     const ends = new Date(now.getTime() + BUSINESS_TRIAL_DAYS * DAY_MS);
     await this.siteSettings.set(TRIAL_KEY, ends.toISOString());
-    this.logger.log(`Business trial started, ends ${ends.toISOString()}.`);
+    this.logger.log(`Enterprise trial started, ends ${ends.toISOString()}.`);
     return this.getState(now);
   }
 
@@ -247,7 +247,7 @@ export class EditionService implements OnModuleInit {
 }
 
 export function seatLimitMessage(limit: number): string {
-  return `This instance has reached its limit of ${limit} active users. An administrator can add more with AnythingMCP Business under Settings → License.`;
+  return `This instance has reached its limit of ${limit} active users. An administrator can add more with a license key under Settings → License.`;
 }
 
 function parseDate(value: string | null): Date | null {
