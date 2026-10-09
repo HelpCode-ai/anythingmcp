@@ -67,7 +67,7 @@ function makeController(overrides: {
       findMany: jest.fn().mockResolvedValue(overrides.existingTools ?? []),
     },
     connector: {
-      findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1', config: { adapterSlug: 'etsy' } }),
+      findUnique: jest.fn().mockResolvedValue({ name: 'Mercado Libre', organizationId: 'org-1', config: { adapterSlug: 'etsy' } }),
     },
   };
   const productEvents: any = { log: jest.fn().mockResolvedValue(undefined) };
@@ -323,7 +323,10 @@ describe('McpOAuthCallbackController — a refused code exchange is answered, no
     const body = err.getResponse();
     expect(body.connectorId).toBe('conn-1');
     expect(body.message).toContain('HTTP 400: invalid_client: invalid client_id or client_secret');
-    expect(body.message).toMatch(/client ID or client secret/);
+    expect(body.message).toMatch(
+      /^The client ID or client secret saved in the connector "Mercado Libre" is wrong or expired/,
+    );
+    expect(body.message).toMatch(/OAuth settings of your app/);
   });
 
   it('points at the redirect URI when the code itself is refused', async () => {
