@@ -137,6 +137,14 @@ export class McpCombinedAuthGuard implements CanActivate {
             })
           : null;
 
+        // A valid signature for a user who no longer exists (a deleted
+        // workspace) is a dead token: 401 with invalid_token, so the client
+        // signs in again instead of retrying it.
+        if (subId && !dbUser) {
+          this.logger.warn(`Rejected token for unknown user ${subId} on ${reqPath}`);
+          return this.deny(req, res, reqPath);
+        }
+
         if (dbUser && isTokenRevoked(payload, dbUser.sessionsValidFrom)) {
           this.logger.warn(
             `Rejected revoked token for user ${dbUser.id} on ${reqPath}`,
