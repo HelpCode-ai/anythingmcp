@@ -1,0 +1,296 @@
+{
+  "slug": "oddsrelay",
+  "name": "OddsRelay",
+  "description": "Pre-match odds from UK and Irish bookmakers, bet365 included, with Betfair, Smarkets, Matchbook and BETDAQ lay prices. Look up sports, events and bookmakers, then read one matched board or one event's prices.",
+  "instructions": "## OddsRelay\nThis connector reads the OddsRelay odds API (`https://api.oddsrelay.io/v2`): pre-match prices from UK and Irish bookmakers, bet365 included, beside Betfair, Smarkets, Matchbook and BETDAQ lay prices. Every tool only reads. Create an API key from your account at https://oddsrelay.io and paste it as `ODDSRELAY_KEY`: it is sent as a Bearer token on every call and is never a tool argument.\n\n**Tokens.** `oddsrelay_list_sports`, `oddsrelay_list_events`, `oddsrelay_list_bookmakers`, `oddsrelay_get_coverage`, `oddsrelay_get_usage` and the two quote tools cost nothing. `oddsrelay_get_board` and `oddsrelay_get_event_odds` spend tokens from the account behind the key, and this connector has no cap: it cannot refuse a call that costs more than the user expects. Before either one, call the matching quote tool with exactly the same arguments, tell the user the `cost` and `remaining` it returns, and go ahead only when they agree. Keep every call narrow: one competition key rather than a whole sport, only the bookmakers the user asked about, a `markets` filter and a start-time window.\n\n**Workflow.**\n1. `oddsrelay_get_coverage`: which bookmakers carry which sports on each board, and each board's market keys.\n2. `oddsrelay_list_sports`: competition keys. Each starts with its sport, such as `soccer`, and the sport alone covers all of its competitions.\n3. `oddsrelay_list_bookmakers`: bookmaker and exchange keys such as `william_hill` or `betfair_exchange`.\n4. `oddsrelay_quote_board`, then `oddsrelay_get_board` with `type`, `sport` and `bookmakers`.\n5. For one event: an `event_id` from a board, or `oddsrelay_list_events`; then `oddsrelay_quote_event_odds` and `oddsrelay_get_event_odds`. Event odds need a key that can read raw odds.\n\n**Paging.** `oddsrelay_list_sports` and `oddsrelay_list_events` return `meta.next_cursor`. Pass it back as `cursor`, with the same other arguments, until it is null. A cursor expires after a few minutes; start again from the first page when it does.\n\n**Errors** carry an `error.code` and a message:\n- 401: the key is missing or wrong.\n- 402 `insufficient_tokens`: the balance cannot cover this call; `oddsrelay_get_usage` shows the balance and when it resets.\n- 400 with `valid`: an unknown sport, bookmaker, exchange or market; pick a key from the `valid` list.\n- 403: the request reaches past what the key may read; pick from `valid` when it is given, otherwise tell the user.\n- 404 `unknown_event`: the event is no longer listed; find it again with `oddsrelay_list_events`.\n- 429: too many calls at once; wait for the `Retry-After` time, then try once more.\n- 503: not available right now; try again later.\n\n**Times** are ISO 8601 in UTC, such as `2026-10-10T12:00:00Z`.",
+  "region": "gb",
+  "category": "sports",
+  "icon": "oddsrelay",
+  "docsUrl": "https://oddsrelay.io/docs",
+  "prerequisites": "An OddsRelay account and an API key from it. Event odds need a key that can read raw odds.",
+  "requiredEnvVars": ["ODDSRELAY_KEY"],
+  "envVarMeta": {
+    "ODDSRELAY_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Create a key from your account at oddsrelay.io, then paste it here.",
+      "link": "https://oddsrelay.io"
+    }
+  },
+  "probe": { "tool": "oddsrelay_get_usage" },
+  "connector": {
+    "name": "OddsRelay",
+    "type": "REST",
+    "baseUrl": "https://api.oddsrelay.io",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ODDSRELAY_KEY}}"
+    },
+    "headers": {
+      "Accept-Encoding": "gzip"
+    },
+    "healthcheckPath": "/v2/usage"
+  },
+  "tools": [
+    {
+      "name": "oddsrelay_list_sports",
+      "description": "Lists the competition keys for the sport argument of the board and event tools. Each starts with its sport (such as soccer), which alone covers all of that sport's competitions. Costs no tokens. Paged: pass meta.next_cursor back as cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "meta.next_cursor from the previous page. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/sports",
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "oddsrelay_list_events",
+      "description": "Lists the events of one sport with their event ids, teams and start times, for oddsrelay_get_event_odds. Costs no tokens. Paged: pass meta.next_cursor back as cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+$",
+            "description": "One competition key from oddsrelay_list_sports, or a sport such as tennis for all of its competitions."
+          },
+          "commenceTimeFrom": {
+            "type": "string",
+            "description": "Only events starting at or after this time, ISO 8601 in UTC."
+          },
+          "commenceTimeTo": {
+            "type": "string",
+            "description": "Only events starting at or before this time, ISO 8601 in UTC."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "meta.next_cursor from the previous page, with the same other arguments."
+          }
+        },
+        "required": ["sport"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/events",
+        "queryParams": {
+          "sport": "$sport",
+          "commenceTimeFrom": "$commenceTimeFrom",
+          "commenceTimeTo": "$commenceTimeTo",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "oddsrelay_list_bookmakers",
+      "description": "Lists the bookmaker and exchange keys (such as william_hill or betfair_exchange) that the board tools take. Costs no tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bookmakers"
+      }
+    },
+    {
+      "name": "oddsrelay_get_coverage",
+      "description": "Shows which bookmakers carry which sports on each matched board, and each board's market keys (the values the markets argument takes). Costs no tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/coverage"
+      }
+    },
+    {
+      "name": "oddsrelay_quote_board",
+      "description": "Returns what a matched board request would cost in tokens, and the tokens remaining, without reading the board. Costs no tokens. Call it with exactly the arguments you will pass to oddsrelay_get_board, and confirm the cost with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["standard", "2up", "dutching", "each-way", "extra-place", "bog"],
+            "description": "Which matched board. oddsrelay_get_coverage lists the sports and market keys of each."
+          },
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+$",
+            "description": "One competition key from oddsrelay_list_sports, or a sport such as soccer for all of its competitions. A competition key spends fewer tokens than a whole sport."
+          },
+          "bookmakers": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,4}$",
+            "description": "Bookmaker keys from oddsrelay_list_bookmakers, comma-separated, such as ladbrokes,william_hill. At most five keys; fewer keys spend fewer tokens."
+          },
+          "exchanges": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,3}$",
+            "description": "Optional exchange keys, comma-separated, such as betfair_exchange. Left out, every exchange on the board."
+          },
+          "markets": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,4}$",
+            "description": "Optional market keys for this board from oddsrelay_get_coverage, comma-separated, such as h2h. Left out, every market on the board."
+          },
+          "commenceTimeFrom": {
+            "type": "string",
+            "description": "Optional: only events starting at or after this time, ISO 8601 in UTC."
+          },
+          "commenceTimeTo": {
+            "type": "string",
+            "description": "Optional: only events starting at or before this time, ISO 8601 in UTC."
+          }
+        },
+        "required": ["type", "sport", "bookmakers"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/odds/{type}",
+        "queryParams": {
+          "quote": "true",
+          "sports": "$sport",
+          "bookmakers": "$bookmakers",
+          "exchanges": "$exchanges",
+          "markets": "$markets",
+          "commenceTimeFrom": "$commenceTimeFrom",
+          "commenceTimeTo": "$commenceTimeTo"
+        }
+      }
+    },
+    {
+      "name": "oddsrelay_get_board",
+      "description": "Reads one matched board: bookmaker back prices beside exchange lay prices, for one sport at the bookmakers you name. Spends tokens, and this connector has no cap: run oddsrelay_quote_board with the same arguments first and confirm the cost with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["standard", "2up", "dutching", "each-way", "extra-place", "bog"],
+            "description": "Which matched board. oddsrelay_get_coverage lists the sports and market keys of each."
+          },
+          "sport": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+$",
+            "description": "One competition key from oddsrelay_list_sports, or a sport such as soccer for all of its competitions. A competition key spends fewer tokens than a whole sport."
+          },
+          "bookmakers": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,4}$",
+            "description": "Bookmaker keys from oddsrelay_list_bookmakers, comma-separated, such as ladbrokes,william_hill. At most five keys; fewer keys spend fewer tokens."
+          },
+          "exchanges": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,3}$",
+            "description": "Optional exchange keys, comma-separated, such as betfair_exchange. Left out, every exchange on the board."
+          },
+          "markets": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+(,[a-z0-9_.-]+){0,4}$",
+            "description": "Optional market keys for this board from oddsrelay_get_coverage, comma-separated, such as h2h. Left out, every market on the board."
+          },
+          "commenceTimeFrom": {
+            "type": "string",
+            "description": "Optional: only events starting at or after this time, ISO 8601 in UTC."
+          },
+          "commenceTimeTo": {
+            "type": "string",
+            "description": "Optional: only events starting at or before this time, ISO 8601 in UTC."
+          }
+        },
+        "required": ["type", "sport", "bookmakers"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/odds/{type}",
+        "queryParams": {
+          "sports": "$sport",
+          "bookmakers": "$bookmakers",
+          "exchanges": "$exchanges",
+          "markets": "$markets",
+          "commenceTimeFrom": "$commenceTimeFrom",
+          "commenceTimeTo": "$commenceTimeTo"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "oddsrelay_quote_event_odds",
+      "description": "Returns what one event's odds would cost in tokens, and the tokens remaining, without reading them. Costs no tokens. Call it with the event_id you will pass to oddsrelay_get_event_odds, and confirm the cost with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "An event id such as or_evt_917dd44bce05, from a board or oddsrelay_list_events."
+          }
+        },
+        "required": ["event_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/odds/event/{event_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "quote": "true"
+        }
+      }
+    },
+    {
+      "name": "oddsrelay_get_event_odds",
+      "description": "Reads one event's prices at every bookmaker and exchange carrying it, market by market. Needs a key that can read raw odds. Spends tokens, and this connector has no cap: run oddsrelay_quote_event_odds first and confirm the cost with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "An event id such as or_evt_917dd44bce05, from a board or oddsrelay_list_events."
+          }
+        },
+        "required": ["event_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/odds/event/{event_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "oddsrelay_get_usage",
+      "description": "Shows the key's token balance and when it resets, and which boards the key can read. Costs no tokens, and is the connection check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/usage"
+      }
+    }
+  ]
+}
