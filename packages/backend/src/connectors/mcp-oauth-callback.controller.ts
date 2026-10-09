@@ -161,7 +161,7 @@ export class McpOAuthCallbackController {
     } catch (err: any) {
       void this.recordFailure(flow, 'token_exchange', err?.message, [flow.clientSecret, String(body.code)]);
       if (err instanceof TokenExchangeError) {
-        throw refusedExchange(err, flow, [flow.clientSecret, String(body.code)]);
+        throw refusedExchange(err, flow, [flow.clientSecret, String(body.code)], await this.connectorName(flow.connectorId));
       }
       throw err;
     }
@@ -199,6 +199,19 @@ export class McpOAuthCallbackController {
       });
     } catch (err: any) {
       this.logger.warn(`oauth_failed not recorded: ${err?.message ?? err}`);
+    }
+  }
+
+  /** The connector's name for a message, or undefined if it cannot be read. */
+  private async connectorName(connectorId: string): Promise<string | undefined> {
+    try {
+      const row = await this.prisma.connector.findUnique({
+        where: { id: connectorId },
+        select: { name: true },
+      });
+      return row?.name || undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -418,6 +431,7 @@ function refusedExchange(
   err: TokenExchangeError,
   flow: PendingOAuthFlow,
   secrets: unknown[],
+  connectorName?: string,
 ): HttpException {
   const said = scrubProviderMessage(err.message.replace(/^Token exchange failed:\s*/, ''), secrets);
   const detail = said ? ` (${said})` : '';
@@ -425,10 +439,11 @@ function refusedExchange(
   if (err.status >= 500) {
     message = `The provider could not complete the sign-in${detail}. Try again in a few minutes.`;
   } else if (err.providerError === 'invalid_client' || err.providerError === 'unauthorized_client') {
+    const where = connectorName ? `the connector "${connectorName.slice(0, 80)}"` : 'this connector';
     message =
-      `The provider refused the app's client ID or client secret${detail}. ` +
-      "Copy both again from your app in the provider's developer console, " +
-      "paste them into this connector's settings, then authorize again.";
+      `The client ID or client secret saved in ${where} is wrong or expired: the provider refused it${detail}. ` +
+      "Check the credentials in the OAuth settings of your app in the provider's developer console, " +
+      "copy both again into the connector's settings, then authorize again.";
   } else if (err.providerError === 'invalid_grant') {
     message =
       `The provider refused the authorization code${detail}. Start the authorization again; ` +
