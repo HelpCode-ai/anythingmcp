@@ -40,6 +40,23 @@ interface SsrfPolicy {
   allowedHosts: string[];
 }
 
+/**
+ * `skipAllowlists: true` ignores both the env (`SSRF_ALLOWED_HOSTS`) and
+ * DB-backed (`setDbAllowedHostsProvider`) allowlists, falling straight
+ * through to the literal-IP / loopback / DNS-resolution checks.
+ *
+ * Those allowlists exist so an admin can let a *connector* reach a specific
+ * internal host for a reason that has nothing to do with any other feature.
+ * A caller that sends a user-supplied URL to a *different* destination (e.g.
+ * an outbound alert webhook) must not inherit that trust: a workspace could
+ * otherwise point its webhook at a host the admin allowlisted for something
+ * else entirely. Use this for any outbound call whose target the allowlist
+ * was never meant to vouch for.
+ */
+export interface VetHostOptions {
+  skipAllowlists?: boolean;
+}
+
 function readPolicy(env: NodeJS.ProcessEnv = process.env): SsrfPolicy {
   // The guard performs real DNS resolution and would make most unit tests
   // depend on the network. Disable it under jest unless the test explicitly
@@ -185,6 +202,7 @@ function ipv6Groups(ip: string): number[] | null {
 export async function assertSafeOutboundUrl(
   url: string,
   env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
 ): Promise<void> {
   const policy = readPolicy(env);
   if (!policy.enabled) return;
@@ -203,7 +221,7 @@ export async function assertSafeOutboundUrl(
   }
 
   // An IPv6 literal comes back bracketed ("[::1]"); the checks want the address.
-  await assertSafeOutboundHost(parsed.hostname.replace(/^\[|\]$/g, ''), env);
+  await assertSafeOutboundHost(parsed.hostname.replace(/^\[|\]$/g, ''), env, opts);
 }
 
 /**
@@ -218,10 +236,11 @@ export async function assertSafeOutboundUrl(
 export async function assertSafeOutboundHost(
   hostname: string,
   env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
 ): Promise<void> {
   const policy = readPolicy(env);
   if (!policy.enabled) return;
-  await vetHost(hostname, policy);
+  await vetHost(hostname, policy, opts);
 }
 
 /**
@@ -232,23 +251,26 @@ export async function assertSafeOutboundHost(
 async function vetHost(
   hostname: string,
   policy: SsrfPolicy,
+  opts: VetHostOptions = {},
 ): Promise<LookupAddress[] | null> {
   if (!hostname) {
     throw new SsrfBlockedError('SSRF guard: empty hostname');
   }
 
-  // Env-driven allowlist (synchronous).
-  if (hostMatchesAllowlist(hostname, policy.allowedHosts)) return null;
+  if (!opts.skipAllowlists) {
+    // Env-driven allowlist (synchronous).
+    if (hostMatchesAllowlist(hostname, policy.allowedHosts)) return null;
 
-  // DB-driven allowlist (admin-configured, async). The provider caches
-  // internally so this is effectively a Map lookup after the first call.
-  if (dbAllowedHostsProvider) {
-    try {
-      const dbHosts = await dbAllowedHostsProvider();
-      if (hostMatchesAllowlist(hostname, dbHosts)) return null;
-    } catch {
-      // Provider failure: fall through to IP-based checks rather than
-      // hard-failing every outbound call.
+    // DB-driven allowlist (admin-configured, async). The provider caches
+    // internally so this is effectively a Map lookup after the first call.
+    if (dbAllowedHostsProvider) {
+      try {
+        const dbHosts = await dbAllowedHostsProvider();
+        if (hostMatchesAllowlist(hostname, dbHosts)) return null;
+      } catch {
+        // Provider failure: fall through to IP-based checks rather than
+        // hard-failing every outbound call.
+      }
     }
   }
 
@@ -319,6 +341,7 @@ async function vetHost(
  */
 export function ssrfGuardedLookup(
   env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
 ): LookupFunction {
   return (hostname, options, callback) => {
     const policy = readPolicy(env);
@@ -326,7 +349,7 @@ export function ssrfGuardedLookup(
     // when it is in use the proxy resolves the target, not us.
     const vetted =
       policy.enabled && !envProxyHosts(env).has(hostname.toLowerCase())
-        ? vetHost(hostname, policy)
+        ? vetHost(hostname, policy, opts)
         : Promise.resolve(null);
     vetted
       .then((addrs) => addrs ?? dns.lookup(hostname, { all: true }))
@@ -373,11 +396,14 @@ function envProxyHosts(env: NodeJS.ProcessEnv): Set<string> {
  * Pass both to axios (`httpAgent`, `httpsAgent`) together with `proxy: false`:
  * an env proxy would make the agent resolve the proxy, not the target.
  */
-export function createSsrfGuardedAgents(env: NodeJS.ProcessEnv = process.env): {
+export function createSsrfGuardedAgents(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
+): {
   httpAgent: http.Agent;
   httpsAgent: https.Agent;
 } {
-  const lookup = ssrfGuardedLookup(env);
+  const lookup = ssrfGuardedLookup(env, opts);
   // Same socket reuse as Node's global agents, which these replace.
   const options = { lookup, keepAlive: true, scheduling: 'lifo' as const, timeout: 5000 };
   return {

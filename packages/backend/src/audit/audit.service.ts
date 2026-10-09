@@ -28,6 +28,7 @@ const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
 import { InvocationStatus, Prisma } from '../generated/prisma/client';
 import { AdsActivationService } from './ads-activation.service';
+import { AlertsService } from '../alerts/alerts.service';
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -41,6 +42,7 @@ export class AuditService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly adsActivation?: AdsActivationService,
+    @Optional() private readonly alerts?: AlertsService,
   ) {
     this.flushTimer = setInterval(() => void this.flushRepeats(false), 30_000);
     this.flushTimer.unref?.();
@@ -79,6 +81,24 @@ export class AuditService implements OnModuleDestroy {
     error?: string;
     clientInfo?: string;
   }): Promise<void> {
+    // Every failing call, not just the ones that end up as a fresh row: the
+    // repeat-dedup check just below collapses an identical, fast-repeating
+    // failure into a counter on the first row instead of writing it again,
+    // so a hook placed after that check (or after the DB write) would miss
+    // most of a real outage. Fire-and-forget; recordFailure never throws,
+    // and this catch is defense in depth so it can never affect the call
+    // that triggered it either way.
+    if (data.status !== 'SUCCESS' && data.organizationId && data.connectorId) {
+      this.alerts
+        ?.recordFailure({
+          organizationId: data.organizationId,
+          connectorId: data.connectorId,
+          toolId: data.toolId,
+          error: data.error,
+        })
+        .catch((err: any) => this.logger.warn(`Alert dispatch failed: ${err?.message || err}`));
+    }
+
     const repeatKey = data.status === 'SUCCESS' ? null : repeatSignature(data);
     if (repeatKey && this.countRepeat(repeatKey)) return;
 

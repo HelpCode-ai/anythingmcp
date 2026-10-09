@@ -6,9 +6,11 @@ import { SecurityEventService } from './security-event.service';
 import { ProductEventService } from './product-event.service';
 import { ProductEventController } from './product-event.controller';
 import { SignupAttributionController } from './signup-attribution.controller';
+import { AlertsModule } from '../alerts/alerts.module';
 
 @Global()
 @Module({
+  imports: [AlertsModule],
   controllers: [AuditController, ProductEventController, SignupAttributionController],
   providers: [AuditService, SecurityEventService, ProductEventService, AdsActivationService],
   exports: [AuditService, SecurityEventService, ProductEventService],
