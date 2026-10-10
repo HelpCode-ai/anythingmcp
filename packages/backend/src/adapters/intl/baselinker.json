@@ -1,0 +1,799 @@
+{
+  "slug": "baselinker",
+  "name": "Base (Baselinker)",
+  "description": "Let your AI work in Base (Baselinker): find orders across shops and marketplaces, check statuses and shipments, move orders between statuses, and look up products, prices and stock per warehouse. One account, with its API token.",
+  "instructions": "## Base (Baselinker)\nThis connector works with one Base account (formerly Baselinker) through its **API** (`https://api.baselinker.com/connector.php`): orders with statuses, sources, event journal and shipments, product catalogs (inventories) with products, prices and stock, warehouses and couriers. It authenticates with the account's **API token** in the `X-BLToken` header.\n\n**Setup (about 2 minutes)**\n1. In Base open **Account & other → My account → API**.\n2. Generate a token (or copy the existing one) and paste it into `BASELINKER_TOKEN`.\n3. To use `baselinker_get_journal_list`, enable the order journal in the same API settings; otherwise it returns an empty list.\n4. A token sees the whole account. Generating a new token invalidates the old one.\n\n**Read-only setup**: switch off `baselinker_set_order_status`. `baselinker_add_order`, `baselinker_update_inventory_products_stock` and `baselinker_create_package` are installed switched off: they create orders, overwrite stock that is pushed to your shops and marketplaces, and order paid courier labels.\n\n**How calls work**: every tool posts one API method (`method`) with its arguments as JSON (`parameters`). Ids are integers. Dates are Unix timestamps in seconds. Order statuses are account-specific ids from `baselinker_get_order_status_list`. Stock and locations are keyed by warehouse `<type>_<id>`, e.g. `bl_123`, from `baselinker_get_inventory_warehouses`; prices by price group id. `baselinker_get_inventory_products_data` returns `products` as an object keyed by product id.\n\n**Pagination**: `baselinker_get_orders` returns at most 100 orders, oldest first. For the next batch set `date_confirmed_from` to the last order's `date_confirmed` + 1 and repeat until fewer than 100 come back. Product list and stock tools return 1000 products per `page`, starting at 1. The journal covers only the last 3 days; continue from the last event id with `last_log_id`.\n\n**Rate limit**: 100 requests per minute per account. Exceeding it blocks the API for the account for a while, so prefer filters (status, source, date) over paging through everything, and avoid tight loops.\n\n**Errors**: Base answers HTTP 200 with `\"status\": \"ERROR\"`, an `error_code` and an `error_message`; the connector reports these as errors. `ERROR_BAD_TOKEN`: the token is wrong or was regenerated. `ERROR_USER_ACCOUNT_BLOCKED`: the account or API access is blocked, often after exceeding the request limit; wait before retrying. `ERROR_UNKNOWN_METHOD`, `ERROR_PARSE_JSON_PARAMETERS` or a message naming a field: wrong input. Partial success is possible: `baselinker_update_inventory_products_stock` lists per-product problems under `warnings`.\n\n**Out of scope here**: invoices and receipts, returns, CRM clients, product creation and editing, price updates, documents, purchase orders and labels download.",
+  "unlisted": true,
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "baselinker",
+  "docsUrl": "https://api.baselinker.com/",
+  "requiredEnvVars": [
+    "BASELINKER_TOKEN"
+  ],
+  "envVarMeta": {
+    "BASELINKER_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Base panel → Account & other → My account → API → generate or copy the token.",
+      "link": "https://api.baselinker.com/",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the token, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Base refused the token (ERROR_BAD_TOKEN). Copy it again from Account & other → My account → API; generating a new token invalidates the old one.",
+    "403": "Base reports the account or its API access as blocked. This often follows exceeding 100 requests per minute; wait a few minutes, then try again.",
+    "rate_limited": "Base allows 100 requests per minute per account. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "baselinker_get_order_status_list"
+  },
+  "prerequisites": "A Base (Baselinker) account and access to Account & other → My account → API to generate the API token.",
+  "connector": {
+    "name": "Base (Baselinker) API",
+    "type": "REST",
+    "baseUrl": "https://api.baselinker.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-BLToken",
+      "apiKey": "{{BASELINKER_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": [
+            "error_code",
+            "error_message"
+          ],
+          "messageMatches": "^ERROR_(BAD_TOKEN|EMPTY_TOKEN|NO_TOKEN)\\b",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": [
+            "error_code",
+            "error_message"
+          ],
+          "messageMatches": "limit exceeded|too many requests",
+          "status": 429
+        },
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": [
+            "error_code",
+            "error_message"
+          ],
+          "messageMatches": "^ERROR_USER_ACCOUNT_BLOCKED\\b",
+          "status": 403
+        },
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": [
+            "error_code",
+            "error_message"
+          ],
+          "messageMatches": "_NOT_FOUND\\b",
+          "status": 404
+        },
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": [
+            "error_code",
+            "error_message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "baselinker_get_order_status_list",
+      "description": "List the order statuses defined in the order manager: id, name, color, group id and the name shown to customers. Status ids are what getOrders filters and setOrderStatus take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getOrderStatusList",
+          "parameters": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_order_sources",
+      "description": "List order sources grouped by type (personal, shop, allegro, amazon, ebay and other marketplaces): per source its id and name. The type matches order_source in orders, the id order_source_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getOrderSources",
+          "parameters": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_orders",
+      "description": "Get orders from the order manager with buyer, delivery and invoice data, payment, status, products and prices. At most 100 orders per call, oldest first: to page, call again with date_confirmed_from set to the last order's date_confirmed plus 1 until fewer than 100 come back. Dates are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Get this one order."
+          },
+          "date_confirmed_from": {
+            "type": "integer",
+            "description": "Orders confirmed at or after this Unix time (seconds). The recommended paging key."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Orders created at or after this Unix time (seconds)."
+          },
+          "id_from": {
+            "type": "integer",
+            "description": "Orders with an id from this number on."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Only orders in this status (id from baselinker_get_order_status_list)."
+          },
+          "filter_email": {
+            "type": "string",
+            "description": "Only orders with this buyer email."
+          },
+          "filter_order_source": {
+            "type": "string",
+            "description": "Only orders from this source type, e.g. \"shop\", \"allegro\", \"amazon\", \"ebay\", \"personal\"."
+          },
+          "filter_order_source_id": {
+            "type": "integer",
+            "description": "Only orders from this source id (with filter_order_source)."
+          },
+          "filter_shop_order_id": {
+            "type": "integer",
+            "description": "Only the order with this id in the online shop."
+          },
+          "filter_external_order_id": {
+            "type": "string",
+            "description": "Only the order with this marketplace order id."
+          },
+          "get_unconfirmed_orders": {
+            "type": "boolean",
+            "description": "true to include unconfirmed (possibly incomplete) orders (default false)."
+          },
+          "include_custom_extra_fields": {
+            "type": "boolean",
+            "description": "true to add custom extra field values."
+          },
+          "include_commissions": {
+            "type": "boolean",
+            "description": "true to add marketplace commission data."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getOrders",
+          "parameters": {
+            "__json": {
+              "order_id": "$order_id",
+              "date_confirmed_from": "$date_confirmed_from",
+              "date_from": "$date_from",
+              "id_from": "$id_from",
+              "status_id": "$status_id",
+              "filter_email": "$filter_email",
+              "filter_order_source": "$filter_order_source",
+              "filter_order_source_id": "$filter_order_source_id",
+              "filter_shop_order_id": "$filter_shop_order_id",
+              "filter_external_order_id": "$filter_external_order_id",
+              "get_unconfirmed_orders": "$get_unconfirmed_orders",
+              "include_custom_extra_fields": "$include_custom_extra_fields",
+              "include_commissions": "$include_commissions"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_journal_list",
+      "description": "List order events of the last 3 days (created, confirmed, paid, status changed, package created, ...) with event id, order id, type and date, to see what changed since a known event. Must be enabled in the account's API settings, otherwise the list is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_log_id": {
+            "type": "integer",
+            "description": "Only events after this event id (the last id you processed)."
+          },
+          "logs_types": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these event types, e.g. [1, 18]: 1 created, 2 confirmed, 3 paid, 9 package created, 18 status changed, 22 package status changed."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Only events of this order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getJournalList",
+          "parameters": {
+            "__json": {
+              "last_log_id": "$last_log_id",
+              "logs_types": "$logs_types",
+              "order_id": "$order_id"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_order_packages",
+      "description": "List the shipments created for an order: package id, consignment (tracking) number, courier code, tracking status (0 unknown, 1 label created, 2 shipped, 4 out for delivery, 5 delivered, 6 return, 8 waiting at point, 9 lost, 10 canceled), tracking URL and whether it is a return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getOrderPackages",
+          "parameters": {
+            "__json": {
+              "order_id": "$order_id"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_set_order_status",
+      "description": "Move an order to another status. Status changes can start automatic actions configured in the account (customer emails, invoices, marketplace updates), so show the user the order and target status and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Target status id from baselinker_get_order_status_list."
+          }
+        },
+        "required": [
+          "order_id",
+          "status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "setOrderStatus",
+          "parameters": {
+            "__json": {
+              "order_id": "$order_id",
+              "status_id": "$status_id"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "baselinker_add_order",
+      "description": "Create an order in the order manager, with buyer, delivery and invoice data and products. Returns the new order_id. Installed switched off: turn it on only if the AI should create orders, and confirm every order with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "object",
+            "description": "The order. Required: order_status_id, date_add (Unix seconds), currency (e.g. \"EUR\"), payment_method, payment_method_cod (bool), paid (bool), user_comments, admin_comments, email, phone, user_login, delivery_method, delivery_price, delivery_fullname, delivery_company, delivery_address, delivery_postcode, delivery_city, delivery_state, delivery_country_code, delivery_point_id, delivery_point_name, delivery_point_address, delivery_point_postcode, delivery_point_city, invoice_fullname, invoice_company, invoice_nip, invoice_address, invoice_postcode, invoice_city, invoice_state, invoice_country_code, want_invoice (bool), extra_field_1, extra_field_2 (empty strings where unknown). Optional: custom_source_id, custom_extra_fields. products: [{storage: \"db\", storage_id: 0, product_id, variant_id, name, sku, ean, location, warehouse_id, attributes, price_brutto, tax_rate, quantity, weight}]."
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "addOrder",
+          "parameters": {
+            "__json": "$order"
+          }
+        }
+      }
+    },
+    {
+      "name": "baselinker_get_inventories",
+      "description": "List the product catalogs (inventories): inventory id, name, description, languages, price group ids and default price group, warehouse ids and default warehouse, and whether it is the default catalog.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getInventories",
+          "parameters": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_inventory_warehouses",
+      "description": "List warehouses: type (bl for own warehouses, shop, warehouse, fulfillment), id, name, address, whether stock may be edited by hand and whether it is the default. Stock keys elsewhere are \"<type>_<id>\", e.g. bl_123.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getInventoryWarehouses",
+          "parameters": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_inventory_products_list",
+      "description": "List or search products of a catalog with id, parent id, SKU, EAN, name, gross prices per price group and stock per warehouse. 1000 products per page; page from 1 until fewer come back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_id": {
+            "type": "integer",
+            "description": "Catalog (inventory) id from baselinker_get_inventories."
+          },
+          "filter_id": {
+            "type": "integer",
+            "description": "Only this product id."
+          },
+          "filter_category_id": {
+            "type": "integer",
+            "description": "Only products in this category."
+          },
+          "filter_ean": {
+            "type": "string",
+            "description": "Only products with this EAN (additional EANs included)."
+          },
+          "filter_sku": {
+            "type": "string",
+            "description": "Only products with this SKU."
+          },
+          "filter_name": {
+            "type": "string",
+            "description": "Products whose name contains this text."
+          },
+          "filter_price_from": {
+            "type": "number",
+            "description": "Minimum price."
+          },
+          "filter_price_to": {
+            "type": "number",
+            "description": "Maximum price."
+          },
+          "filter_stock_from": {
+            "type": "integer",
+            "description": "Minimum stock."
+          },
+          "filter_stock_to": {
+            "type": "integer",
+            "description": "Maximum stock."
+          },
+          "filter_sort": {
+            "type": "string",
+            "enum": [
+              "id ASC",
+              "id DESC"
+            ],
+            "description": "Sort order."
+          },
+          "include_variants": {
+            "type": "boolean",
+            "description": "true to list variants too."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1 (1000 products per page)."
+          }
+        },
+        "required": [
+          "inventory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getInventoryProductsList",
+          "parameters": {
+            "__json": {
+              "inventory_id": "$inventory_id",
+              "filter_id": "$filter_id",
+              "filter_category_id": "$filter_category_id",
+              "filter_ean": "$filter_ean",
+              "filter_sku": "$filter_sku",
+              "filter_name": "$filter_name",
+              "filter_price_from": "$filter_price_from",
+              "filter_price_to": "$filter_price_to",
+              "filter_stock_from": "$filter_stock_from",
+              "filter_stock_to": "$filter_stock_to",
+              "filter_sort": "$filter_sort",
+              "include_variants": "$include_variants",
+              "page": "$page"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_inventory_products_data",
+      "description": "Get full data of selected products: SKU, EAN, tax rate, weight and size, category, manufacturer, prices per price group, stock and locations per warehouse, names and descriptions (text_fields), images, links to shops and variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_id": {
+            "type": "integer",
+            "description": "Catalog (inventory) id from baselinker_get_inventories."
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Product ids, e.g. [1234, 5678]. Keep it to about 100 per call."
+          },
+          "include_suppliers": {
+            "type": "boolean",
+            "description": "true to add supplier data."
+          },
+          "include_relations": {
+            "type": "boolean",
+            "description": "true to add related, substitute and cross-sell products."
+          }
+        },
+        "required": [
+          "inventory_id",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getInventoryProductsData",
+          "parameters": {
+            "__json": {
+              "inventory_id": "$inventory_id",
+              "products": "$products",
+              "include_suppliers": "$include_suppliers",
+              "include_relations": "$include_relations"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_inventory_products_stock",
+      "description": "Get stock (and reservations, where enabled) per warehouse for the products of a catalog, variants included, optionally filtered. 1000 products per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_id": {
+            "type": "integer",
+            "description": "Catalog (inventory) id from baselinker_get_inventories."
+          },
+          "filter_id": {
+            "type": "integer",
+            "description": "Only this product id."
+          },
+          "filter_sku": {
+            "type": "string",
+            "description": "Only products with this SKU."
+          },
+          "filter_ean": {
+            "type": "string",
+            "description": "Only products with this EAN."
+          },
+          "filter_name": {
+            "type": "string",
+            "description": "Products whose name contains this text."
+          },
+          "filter_category_id": {
+            "type": "integer",
+            "description": "Only products in this category."
+          },
+          "filter_stock_from": {
+            "type": "integer",
+            "description": "Minimum stock."
+          },
+          "filter_stock_to": {
+            "type": "integer",
+            "description": "Maximum stock."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1 (1000 products per page)."
+          }
+        },
+        "required": [
+          "inventory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getInventoryProductsStock",
+          "parameters": {
+            "__json": {
+              "inventory_id": "$inventory_id",
+              "filter_id": "$filter_id",
+              "filter_sku": "$filter_sku",
+              "filter_ean": "$filter_ean",
+              "filter_name": "$filter_name",
+              "filter_category_id": "$filter_category_id",
+              "filter_stock_from": "$filter_stock_from",
+              "filter_stock_to": "$filter_stock_to",
+              "page": "$page"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_update_inventory_products_stock",
+      "description": "Set the stock of products or variants in a catalog's own warehouses to absolute quantities (not a delta); connected shops and marketplaces pick the new stock up. Up to 1000 products per call. Returns the number updated and warnings per product. Installed switched off: turn it on only if the AI should change stock, and confirm the quantities with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_id": {
+            "type": "integer",
+            "description": "Catalog (inventory) id from baselinker_get_inventories."
+          },
+          "products": {
+            "type": "object",
+            "description": "Product or variant id mapped to new stock per warehouse, e.g. {\"1234\": {\"bl_1\": 10}, \"5678\": {\"bl_1\": 0, \"bl_2\": 4}}. Warehouse keys from baselinker_get_inventory_warehouses; warehouses created for shops or wholesalers cannot be set.",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "required": [
+          "inventory_id",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "updateInventoryProductsStock",
+          "parameters": {
+            "__json": {
+              "inventory_id": "$inventory_id",
+              "products": "$products"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_couriers_list",
+      "description": "List the couriers available in the account, with the courier code (e.g. dpd, inpost, gls) and name. The code is what package tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getCouriersList",
+          "parameters": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_get_courier_fields",
+      "description": "Get the form fields a courier needs to create a shipment (id, name, type, options, defaults) and the package fields (weight, size), plus whether it supports multi-parcel shipments. Needed before baselinker_create_package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "courier_code": {
+            "type": "string",
+            "description": "Courier code from baselinker_get_couriers_list."
+          }
+        },
+        "required": [
+          "courier_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "getCourierFields",
+          "parameters": {
+            "__json": {
+              "courier_code": "$courier_code"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "baselinker_create_package",
+      "description": "Create a shipment with a courier for an order, which orders a real label and may be charged by the courier. Returns package id and consignment number. Installed switched off: turn it on only if the AI should book shipments, and confirm every shipment with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "courier_code": {
+            "type": "string",
+            "description": "Courier code from baselinker_get_couriers_list."
+          },
+          "account_id": {
+            "type": "integer",
+            "description": "Courier account id; the first account when left out."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Form fields from baselinker_get_courier_fields as [{\"id\": \"service\", \"value\": \"...\"}]; repeat an id for each checked option. Dates as Unix time."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Parcels with the package fields, weight in kg and sizes in cm, e.g. [{\"weight\": 1.5, \"length\": 30, \"width\": 20, \"height\": 10}]."
+          }
+        },
+        "required": [
+          "order_id",
+          "courier_code",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/connector.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "method": "createPackage",
+          "parameters": {
+            "__json": {
+              "order_id": "$order_id",
+              "courier_code": "$courier_code",
+              "account_id": "$account_id",
+              "fields": "$fields",
+              "packages": "$packages"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

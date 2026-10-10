@@ -1,0 +1,1211 @@
+{
+  "slug": "microsoft-sharepoint",
+  "name": "SharePoint (Microsoft 365)",
+  "description": "Let your AI work in SharePoint: find sites, browse and search document libraries, see file details and who has access, read, create and update list items, create lists, folders and text files, read site pages, and search everything with Microsoft Search. Microsoft 365 through Microsoft Graph, signed in with your work account.",
+  "instructions": "## SharePoint\nThis connector works with SharePoint Online through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`): find sites, browse and search document libraries, read file details and who has access, read and write list items, create lists, folders and small text files, and read modern pages. It works with Microsoft 365 work or school accounts (personal Microsoft accounts have no SharePoint). Everything runs as the user who authorized the connector: the AI sees and changes exactly what that user can in SharePoint.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Sites.ReadWrite.All`, `Files.ReadWrite.All`.\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose SharePoint sites the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration → **API permissions → Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Sites.ReadWrite.All Files.ReadWrite.All`. `offline_access` is what makes Microsoft issue a refresh token. The *.All* in these delegated permissions means \"every site the signed-in user can open\", never more than the user's own SharePoint access. For a read-only setup, use `offline_access User.Read Sites.Read.All Files.Read.All` in the connector's OAuth settings (and add those two permissions to the app registration), authorize again, and disable `sharepoint_create_list_item`, `sharepoint_update_list_item`, `sharepoint_create_list`, `sharepoint_create_folder`, `sharepoint_upload_text_file`, `sharepoint_rename_drive_item`, `sharepoint_move_drive_item`.\n\n**Switched off at install**: `sharepoint_delete_list_item`, `sharepoint_delete_drive_item`, `sharepoint_create_sharing_link` and `sharepoint_invite`. Sharing gives other people access to the organisation's files, and a document the AI reads could ask it to share something, so turn these on per tool only if the AI should share or delete. Deleted items go to the site's recycle bin.\n\n**Finding your way**\n1. Site: `sharepoint_search_sites` by keyword, `sharepoint_get_site_by_path` from an address (https://contoso.sharepoint.com/sites/Marketing → hostname `contoso.sharepoint.com`, site_path `sites/Marketing`), or `sharepoint_get_root_site`. A site id looks like `contoso.sharepoint.com,<guid>,<guid>`.\n2. Files: `sharepoint_list_drives` lists a site's document libraries (\"Documents\" is the default one); then `sharepoint_list_drive_root`, `sharepoint_list_folder`, `sharepoint_search_drive` and `sharepoint_get_drive_item` with that drive id.\n3. Lists: `sharepoint_list_lists`, then `sharepoint_list_columns` for the internal column names, then `sharepoint_list_items`.\n4. Across everything: `sharepoint_search` uses Microsoft Search (KQL) over all sites, files and list items the user can see.\n\n**List items**: values live in `fields`, keyed by the column's internal name, which can differ from the name shown (a column shown as \"Due date\" may be `DueDate` or `Due_x0020_date`). Filter with `fields/<name>`, e.g. `fields/Status eq 'Open'`. On lists over 5,000 items, filter and sort only on indexed columns; otherwise SharePoint refuses the query. Choice columns take one of their choices; lookup and person columns are written as `<Name>LookupId` with the id; dates as ISO 8601 in UTC.\n\n**Files**: this connector does not download file content (Graph answers with a redirect to the whole file, whose size AnythingMCP cannot cap); give the user `webUrl`. `sharepoint_upload_text_file` creates text files up to about 4 MB, never overwriting with `conflict_behavior` `fail` (default). For cell values of Excel workbooks in a library, use the Microsoft Excel connector with the library's drive id.\n\n**Pages**: `sharepoint_list_pages` and `sharepoint_get_page` read modern site pages; text web parts carry HTML in `innerHtml`. Classic pages, news posting and page editing are not covered.\n\n**Pagination**: responses carry `@odata.nextLink` while more results exist. Call the same tool again with the same arguments and `skip_token` set to the `$skiptoken` value in that link. `sharepoint_search` pages with `from` and `size` instead and reports `moreResultsAvailable`.\n\n**Rate limits**: SharePoint throttles per user and per app and answers 429 or 503 with Retry-After; wait and retry, and prefer filtered list queries over reading whole lists.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `accessDenied`: a permission from step 4 is missing or was not consented, or the user has no access to that site, library or list.\n- 404 `itemNotFound`: wrong site, drive, list or item id, or a site path that does not exist. Personal Microsoft accounts get 404 or 400 for every SharePoint call.\n- 400 `invalidRequest` on list items: a column name in `fields` or `filter` is not an internal name, or a value does not fit the column type. 400 with \"cannot be referenced in filter or orderby as it is not indexed\": index the column in the list settings, or filter on another column.\n- 409 `nameAlreadyExists`: an item with that name exists in the folder.\n\n**Out of scope here**: downloading file content, binary uploads, site creation and site permissions, list and column deletion, page editing, term store and content types.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "microsoft-sharepoint",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/sharepoint",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Sites.ReadWrite.All, Files.ReadWrite.All and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "404": "Microsoft Graph found no SharePoint for this account. SharePoint needs a Microsoft 365 work or school account; personal Microsoft accounts have none.",
+    "rate_limited": "SharePoint is throttling this account. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "sharepoint_get_root_site"
+  },
+  "prerequisites": "A Microsoft 365 work or school account and an app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read`, `Sites.ReadWrite.All` and `Files.ReadWrite.All`, and a client secret. The app registration of the Outlook connector can be reused: add the permissions to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "SharePoint (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Sites.ReadWrite.All Files.ReadWrite.All"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/sites/root"
+  },
+  "tools": [
+    {
+      "name": "sharepoint_get_root_site",
+      "description": "Get the organisation's root SharePoint site (e.g. https://contoso.sharepoint.com): its id, name, displayName, webUrl and hostname (siteCollection.hostname). A cheap check that SharePoint is reachable; the hostname is what sharepoint_get_site_by_path needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/root",
+        "queryParams": {
+          "$select": "id,name,displayName,description,webUrl,createdDateTime,lastModifiedDateTime,siteCollection"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_search_sites",
+      "description": "Find SharePoint sites the user can open by keyword in their name or description, e.g. \"marketing\". \"*\" lists all sites the user can reach. Returns id, name, displayName, webUrl and description. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keyword, e.g. \"finance\", or \"*\" for all sites."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites",
+        "queryParams": {
+          "search": "$query",
+          "$top": "$top",
+          "$skiptoken": "$skip_token",
+          "$select": "id,name,displayName,description,webUrl,createdDateTime,lastModifiedDateTime,siteCollection"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_get_site_by_path",
+      "description": "Get a site from its address: hostname plus server-relative path, as in https://contoso.sharepoint.com/sites/Marketing → hostname \"contoso.sharepoint.com\", site_path \"sites/Marketing\". Returns the site id the other tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "description": "SharePoint hostname, e.g. contoso.sharepoint.com (sharepoint_get_root_site → siteCollection.hostname)."
+          },
+          "site_path": {
+            "type": "string",
+            "description": "Server-relative path of the site without a leading slash, e.g. \"sites/Marketing\" or \"teams/Project-X\"."
+          }
+        },
+        "required": [
+          "hostname",
+          "site_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{hostname}:/{site_path}",
+        "queryParams": {
+          "$select": "id,name,displayName,description,webUrl,createdDateTime,lastModifiedDateTime,siteCollection"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_get_site",
+      "description": "Get one site by id: name, displayName, description, webUrl, dates and hostname.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,displayName,description,webUrl,createdDateTime,lastModifiedDateTime,siteCollection"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_list_subsites",
+      "description": "List the subsites of a site: id, name, displayName, webUrl. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/sites",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,displayName,description,webUrl,createdDateTime,lastModifiedDateTime,siteCollection",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_list_drives",
+      "description": "List the document libraries (drives) of a site, e.g. \"Documents\" (Shared Documents) and other libraries: id, name, description, driveType, webUrl and quota. The drive id is what the file tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/drives",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,description,driveType,webUrl,createdDateTime,lastModifiedDateTime,quota"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_list_drive_root",
+      "description": "List the files and folders at the top level of a document library: id, name, size, dates, last modifier, file mimeType or folder child count, webUrl. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\", \"lastModifiedDateTime desc\" or \"size desc\". OneDrive for work or school sorts only by some properties and answers 400 for others."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/root/children",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_list_folder",
+      "description": "List the files and folders inside one folder of a document library. Returns the same fields as sharepoint_list_drive_root. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Id of the folder in that library."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\", \"lastModifiedDateTime desc\" or \"size desc\". OneDrive for work or school sorts only by some properties and answers 400 for others."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/children",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_search_drive",
+      "description": "Search one document library for files and folders whose name, metadata or content matches the text. Returns id, name, size, dates, parentReference and webUrl per hit. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against file names, metadata and content, e.g. \"budget 2026\". Write a single quote as two (''), e.g. \"O''Brien\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "drive_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/root/search(q='{query}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,searchResult",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_get_drive_item",
+      "description": "Get one file's or folder's metadata in a document library: name, size, dates, creator and last modifier, parentReference, file mimeType or folder child count, webUrl. Does not return the content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,description,createdBy,fileSystemInfo,eTag,cTag,specialFolder,root"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_search",
+      "description": "Search everything the user can see across SharePoint and OneDrive with Microsoft Search: files (driveItem), list items (listItem), lists (list), sites (site) or libraries (drive). Supports KQL, e.g. \"budget filetype:xlsx\", \"author:\\\"Ana Diaz\\\"\", \"path:\\\"https://contoso.sharepoint.com/sites/Finance\\\"\". Returns hitsContainers with hits (summary, resource with id, name, webUrl, parentReference). Page with from and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text or KQL, e.g. \"quarterly report filetype:docx\"."
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "What to search for (default driveItem: files and folders).",
+            "enum": [
+              "driveItem",
+              "listItem",
+              "list",
+              "site",
+              "drive"
+            ],
+            "default": "driveItem"
+          },
+          "from": {
+            "type": "integer",
+            "description": "0-based offset of the first hit, for the next page (from + size of the previous call).",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Hits per page, 1 to 500 (default 25).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/query",
+        "bodyMapping": {
+          "requests": [
+            {
+              "entityTypes": [
+                "$entity_type"
+              ],
+              "query": {
+                "queryString": "$query"
+              },
+              "from": "$from",
+              "size": "$size"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sharepoint_list_lists",
+      "description": "List the lists and libraries of a site: id, name, displayName, description, list.template (genericList, documentLibrary, events...), list.hidden, webUrl and dates. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/lists",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,displayName,description,list,webUrl,createdDateTime,lastModifiedDateTime",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_list_columns",
+      "description": "List the columns of a list with their internal name (the key used in fields), displayName, type (text, number, dateTime, choice with its choices, lookup, personOrGroup...), required and readOnly flags. Call it before reading, filtering or writing list items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/lists/{list_id}/columns",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "sharepoint_list_items",
+      "description": "List the items of a list with their column values (fields), id, dates, creator and last modifier, webUrl. Filter on columns with OData, e.g. \"fields/Status eq 'Open'\"; limit the columns with expand, e.g. \"fields(select=Title,Status,DueDate)\". Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter on columns, prefixed with fields/, e.g. \"fields/Status eq 'Open'\" or \"fields/Modified ge '2026-10-01'\". Filtering on a column that is not indexed works on lists up to 5,000 items."
+          },
+          "expand": {
+            "type": "string",
+            "description": "\"fields\" (default) returns every column; \"fields(select=Title,Status,DueDate)\" only the named columns (internal names).",
+            "default": "fields"
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort, e.g. \"fields/Modified desc\" (indexed columns only on large lists)."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/lists/{list_id}/items",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "HonorNonIndexedQueriesWarningMayFailRandomly"
+        },
+        "queryParams": {
+          "expand": "$expand",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_get_list_item",
+      "description": "Get one list item with all its column values (fields), id, dates, creator, last modifier and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "List item id, a number as text, e.g. \"12\" (the id field of sharepoint_list_items)."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/lists/{list_id}/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "expand": "fields"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_create_list_item",
+      "description": "Create an item in a list. fields maps internal column names (sharepoint_list_columns) to values, e.g. {\"Title\": \"Order 4711\", \"Status\": \"Open\", \"DueDate\": \"2026-11-01T00:00:00Z\", \"Amount\": 120.5}. Returns the new item with its id and fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Column values by internal name. Lookup and person columns take <Name>LookupId with the id, e.g. {\"AssignedToLookupId\": \"11\"}."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/lists/{list_id}/items",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_update_list_item",
+      "description": "Change column values of a list item; columns not named keep their values. fields maps internal column names to new values, e.g. {\"Status\": \"Done\"}. Returns the item's updated fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "List item id, a number as text, e.g. \"12\" (the id field of sharepoint_list_items)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Column values to set, by internal name, e.g. {\"Status\": \"Done\", \"Amount\": 99}."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id",
+          "item_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/sites/{site_id}/lists/{list_id}/items/{item_id}/fields",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_delete_list_item",
+      "description": "Delete a list item. It goes to the site's recycle bin. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "List id (a GUID) or the list's display name, from sharepoint_list_lists."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "List item id, a number as text, e.g. \"12\" (the id field of sharepoint_list_items)."
+          }
+        },
+        "required": [
+          "site_id",
+          "list_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sites/{site_id}/lists/{list_id}/items/{item_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "sharepoint_create_list",
+      "description": "Create a new list in a site, optionally with columns, e.g. columns [{\"name\": \"Status\", \"text\": {}}, {\"name\": \"Amount\", \"number\": {}}, {\"name\": \"DueDate\", \"dateTime\": {}}]. Every list has a Title column. Returns the list with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Name of the list."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          },
+          "columns": {
+            "type": "array",
+            "description": "Optional column definitions in Graph's columnDefinition format: {\"name\": \"Status\", \"choice\": {\"choices\": [\"Open\", \"Done\"]}}, {\"name\": \"Amount\", \"number\": {}}, {\"name\": \"Notes\", \"text\": {\"allowMultipleLines\": true}}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "template": {
+            "type": "string",
+            "description": "List template (default genericList).",
+            "enum": [
+              "genericList",
+              "documentLibrary",
+              "events",
+              "tasks",
+              "contacts",
+              "links",
+              "announcements",
+              "issueTracking"
+            ],
+            "default": "genericList"
+          }
+        },
+        "required": [
+          "site_id",
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/lists",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "displayName": "$display_name",
+          "description": "$description",
+          "columns": "$columns",
+          "list": {
+            "template": "$template"
+          }
+        }
+      }
+    },
+    {
+      "name": "sharepoint_create_folder",
+      "description": "Create a folder in a document library, inside a parent folder (default: the library's top level). Returns the new folder's id, name, parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "name": {
+            "type": "string",
+            "description": "Folder name. Not allowed: \" * : < > ? / \\ |."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the folder in that library, or \"root\" for its top level.",
+            "default": "root"
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "What to do when an item with that name already exists: \"fail\" (default) or \"rename\" (Graph appends a number).",
+            "enum": [
+              "fail",
+              "rename"
+            ],
+            "default": "fail"
+          }
+        },
+        "required": [
+          "drive_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{parent_id}/children",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "folder": {},
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_upload_text_file",
+      "description": "Create a new text file (.txt, .md, .csv, .json, .html, .xml...) with the given content in a folder of a document library, up to about 4 MB. Returns the new file's id, name, size and webUrl. With conflict_behavior \"fail\" (default) an existing file of that name is left alone and Graph answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name with extension, e.g. \"Meeting notes.md\", \"export.csv\". The extension decides the file type. Not allowed: \" * : < > ? / \\ |."
+          },
+          "content": {
+            "type": "string",
+            "description": "The full text content (UTF-8), not empty, at most about 4 MB.",
+            "minLength": 1
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the folder in that library, or \"root\" for its top level.",
+            "default": "root"
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "What to do when an item with that name already exists: \"fail\" (default) or \"rename\" (Graph appends a number).",
+            "enum": [
+              "fail",
+              "rename"
+            ],
+            "default": "fail"
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_name",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/drives/{drive_id}/items/{parent_id}:/{file_name}:/content",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "queryParams": {
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        },
+        "bodyMapping": {
+          "__raw": "$content"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      }
+    },
+    {
+      "name": "sharepoint_rename_drive_item",
+      "description": "Rename a file or folder in a document library in place. Keep the extension for files. Returns the item's id, name, parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name. Not allowed: \" * : < > ? / \\ |."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "sharepoint_move_drive_item",
+      "description": "Move a file or folder to another folder of the same document library, optionally renaming it on the way. Returns the item's id, name, new parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "new_parent_id": {
+            "type": "string",
+            "description": "Id of the target folder in the same library."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional new name."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "new_parent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "parentReference": {
+            "id": "$new_parent_id"
+          },
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "sharepoint_delete_drive_item",
+      "description": "Delete a file or folder (with its contents) from a document library. It goes to the site's recycle bin. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "sharepoint_list_permissions",
+      "description": "List who has access to a file or folder in a document library: roles, people and groups (grantedToV2), sharing links (link.type, link.scope, link.webUrl), inheritance and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/permissions",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "sharepoint_create_sharing_link",
+      "description": "Create a sharing link for a file or folder in a document library: type \"view\" or \"edit\", scope \"anonymous\", \"organization\" or \"users\". Returns the link with its webUrl. Installed switched off: a link gives other people access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "type": {
+            "type": "string",
+            "description": "Link type.",
+            "enum": [
+              "view",
+              "edit"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Who the link works for (the organisation's sharing settings decide what is allowed).",
+            "enum": [
+              "anonymous",
+              "organization",
+              "users"
+            ]
+          },
+          "expiration_date_time": {
+            "type": "string",
+            "description": "Optional ISO 8601 expiry, e.g. 2026-12-31T23:00:00Z."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/createLink",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "type": "$type",
+          "scope": "$scope",
+          "expirationDateTime": "$expiration_date_time"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "sharepoint_invite",
+      "description": "Give people access to a file or folder in a document library by email address, with role \"read\" or \"write\", optionally emailing them. Returns the permissions created. Installed switched off: inviting gives other people access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Document library (drive) id from sharepoint_list_drives, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result in that library (sharepoint_list_drive_root, sharepoint_list_folder, sharepoint_search_drive). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "People to invite, e.g. [{\"email\": \"ana@example.com\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Email address."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "roles": {
+            "type": "array",
+            "description": "[\"read\"] or [\"write\"].",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write"
+              ]
+            }
+          },
+          "send_invitation": {
+            "type": "boolean",
+            "description": "true to email the people; false to grant access silently."
+          },
+          "require_sign_in": {
+            "type": "boolean",
+            "description": "true (recommended) so the recipients must sign in."
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional message in the invitation email."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "recipients",
+          "roles"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/invite",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "recipients": "$recipients",
+          "roles": "$roles",
+          "sendInvitation": "$send_invitation",
+          "requireSignIn": "$require_sign_in",
+          "message": "$message"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "sharepoint_list_pages",
+      "description": "List the modern pages of a site: id, name, title, webUrl, pageLayout, publishing state, dates and author. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/pages/microsoft.graph.sitePage",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,title,webUrl,pageLayout,publishingState,createdDateTime,lastModifiedDateTime,createdBy,description",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "sharepoint_get_page",
+      "description": "Read one modern page with its content: title, description and canvasLayout (sections, columns and web parts; text web parts carry innerHtml). Output over 200 KB is cut and marked _truncated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id from sharepoint_search_sites, sharepoint_get_site_by_path or sharepoint_get_root_site, e.g. contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Page id (a GUID) from sharepoint_list_pages."
+          }
+        },
+        "required": [
+          "site_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/pages/{page_id}/microsoft.graph.sitePage",
+        "encodePathParams": true,
+        "queryParams": {
+          "$expand": "canvasLayout"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    }
+  ]
+}

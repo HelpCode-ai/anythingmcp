@@ -90,6 +90,7 @@ import * as attio from './intl/attio.json';
 import * as autotask from './intl/autotask.json';
 import * as bamboohr from './intl/bamboohr.json';
 import * as basecamp from './intl/basecamp.json';
+import * as baselinker from './intl/baselinker.json';
 import * as baserow from './intl/baserow.json';
 import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
@@ -170,6 +171,7 @@ import * as height from './intl/height.json';
 import * as helium10 from './intl/helium10.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
+import * as hubspot from './intl/hubspot.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as inoreader from './intl/inoreader.json';
@@ -182,6 +184,7 @@ import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
 import * as keycrm from './intl/keycrm.json';
 import * as klaviyo from './intl/klaviyo.json';
+import * as kommo from './intl/kommo.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
 import * as lemlist from './intl/lemlist.json';
@@ -204,10 +207,14 @@ import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
+import * as microsoftExcel from './intl/microsoft-excel.json';
+import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
 import * as microsoftOutlook from './intl/microsoft-outlook.json';
+import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
+import * as monday from './intl/monday.json';
 import * as mongodb from './intl/mongodb.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
@@ -245,6 +252,7 @@ import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
+import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
@@ -639,6 +647,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   autotask as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
+  baselinker as unknown as AdapterDefinition,
   baserow as unknown as AdapterDefinition,
   beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
@@ -719,6 +728,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helium10 as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
+  hubspot as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
@@ -731,6 +741,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kashflow as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
+  kommo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
@@ -753,10 +764,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
+  microsoftExcel as unknown as AdapterDefinition,
+  microsoftOnedrive as unknown as AdapterDefinition,
   microsoftOutlook as unknown as AdapterDefinition,
+  microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
+  monday as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
@@ -794,6 +809,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   procore as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
+  quickbooksOnline as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,

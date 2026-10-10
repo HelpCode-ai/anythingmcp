@@ -1,0 +1,924 @@
+{
+  "slug": "kommo",
+  "name": "Kommo",
+  "description": "Let your AI work in Kommo CRM: find and update leads across pipelines, look up contacts and companies, follow tasks and notes, and log new tasks and notes. One account, with a long-lived token from a private integration.",
+  "instructions": "## Kommo\nThis connector works with one Kommo CRM account through the **API v4** (`https://<subdomain>.kommo.com/api/v4`): leads with pipelines and stages, contacts, companies, custom fields, tasks, notes and users. It can create and update leads, create contacts and tasks, and add notes. It authenticates with a **long-lived token** of a private integration in your own account.\n\n**Setup (account administrator, about 3 minutes)**\n1. In Kommo open **Settings → Integrations** and click **Create integration** (top right). Choose a private integration, leave **Redirect URL** empty, keep the access scopes you need and **Save**.\n2. Open the integration's **Keys and scopes** tab and click **Generate long-lived token**. Pick an expiry date and copy the token right away: Kommo shows it only once.\n3. Paste it into `KOMMO_ACCESS_TOKEN`, and your account's subdomain into `KOMMO_SUBDOMAIN`: for `https://acme.kommo.com` enter `acme`.\n4. The token acts as the administrator who created it. Revoke it on the integration's **Authorization** tab; when it expires, generate a new one.\n\n**Read-only setup**: Kommo tokens cannot be limited to reading, so switch off `kommo_create_lead`, `kommo_update_lead`, `kommo_create_contact`, `kommo_create_task` and `kommo_add_note`. Nothing in this connector deletes data.\n\n**Ids and values**: every id is an integer. Lead stages are `status_id` values inside a `pipeline_id` from `kommo_list_pipelines`; 142 is Closed-won and 143 Closed-lost in every pipeline. Responsible users come from `kommo_list_users`. Phone, email and all other extra data live in `custom_fields_values`: `[{\"field_id\": 123, \"values\": [{\"value\": \"...\"}]}]`, select options by `enum_id`, contact phone and email by `field_code` PHONE or EMAIL with `enum_code` such as WORK; `kommo_list_custom_fields` lists ids and options. Dates are Unix timestamps in seconds. Linked entities are in `_embedded`; add `with=contacts` (leads) or `with=leads` (contacts) to get them.\n\n**Pagination**: list tools take `page` (from 1) and `limit` (up to 250). The response's `_links.next` shows that more exists; an empty answer (HTTP 204, no body) means there are no results or no more pages.\n\n**Rate limits**: at most 7 requests per second per account. Over it Kommo answers 429; repeated violations block the IP address with 403 for every call. Avoid paging through all leads when a filter or search does the job.\n\n**Errors**: 401 means the token is wrong, expired or revoked: generate a new one. 402 means the account's subscription has lapsed. 403 can mean the token's user lacks rights or the IP was blocked after too many requests. 404 is a wrong id or subdomain. 400 lists the invalid fields under `validation-errors`, for example a stage that does not belong to the pipeline or a custom field value of the wrong type.\n\n**Out of scope here**: deleting entities, unsorted (incoming) leads, chats and messages, lists (catalogs), webhooks and Salesbot.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "kommo",
+  "docsUrl": "https://developers.kommo.com/reference/getting-started-with-your-api",
+  "requiredEnvVars": [
+    "KOMMO_SUBDOMAIN",
+    "KOMMO_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "KOMMO_SUBDOMAIN": {
+      "label": "Kommo subdomain",
+      "kind": "address",
+      "help": "The first part of your account address: acme for https://acme.kommo.com. A pasted full address is shortened to it.",
+      "example": "acme"
+    },
+    "KOMMO_ACCESS_TOKEN": {
+      "label": "Long-lived token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Kommo → Settings → Integrations → your private integration → Keys and scopes → Generate long-lived token. It is shown only once.",
+      "link": "https://developers.kommo.com/docs/long-lived-token",
+      "pattern": "^(?!Bearer\\s)\\S+$",
+      "patternMessage": "Paste only the token, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Kommo refused the token. It may be wrong, expired or revoked: generate a new long-lived token under Settings → Integrations → your integration → Keys and scopes.",
+    "402": "Kommo reports that the account's subscription has expired. Renew it in Kommo, then try again.",
+    "403": "Kommo denied access: the token's user lacks rights, or the IP address was blocked after too many requests. Wait a few minutes and try again.",
+    "404": "No Kommo account answers at this subdomain. Use the first part of your address, e.g. acme for https://acme.kommo.com.",
+    "rate_limited": "Kommo allows 7 requests per second. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "kommo_get_account"
+  },
+  "prerequisites": "A Kommo account (a trial works) and an account administrator, who creates a private integration and generates its long-lived token (about 3 minutes).",
+  "connector": {
+    "name": "Kommo API v4",
+    "type": "REST",
+    "baseUrl": "https://{{KOMMO_SUBDOMAIN}}.kommo.com/api/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KOMMO_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/account"
+  },
+  "tools": [
+    {
+      "name": "kommo_get_account",
+      "description": "Get the Kommo account: id, name, subdomain, current user id, country, currency, language, and with the default extras its task types (ids for tasks) and date and time settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with": {
+            "type": "string",
+            "default": "task_types,datetime_settings",
+            "description": "Comma-separated extras: task_types, users_groups, datetime_settings, version, entity_names (default task_types,datetime_settings)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "kommo_list_leads",
+      "description": "List or search leads (deals): id, name, price, pipeline and stage (status_id), responsible user, dates, tags, custom fields and, with with=contacts, linked contacts. Free-text query, filters by pipeline, stage, responsible user and dates, sorting. Up to 250 per page; an empty answer means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against the lead's filled fields (name, custom fields, linked contact data)."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Only leads in this pipeline."
+          },
+          "status_pipeline_id": {
+            "type": "integer",
+            "description": "With status_id: the pipeline of that stage. Filters one stage of one pipeline."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "With status_pipeline_id: only leads in this stage."
+          },
+          "responsible_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only entries whose responsible user is one of these user ids."
+          },
+          "created_from": {
+            "type": "integer",
+            "description": "Created at or after this Unix time (seconds)."
+          },
+          "created_to": {
+            "type": "integer",
+            "description": "Created at or before this Unix time (seconds)."
+          },
+          "updated_from": {
+            "type": "integer",
+            "description": "Updated at or after this Unix time (seconds)."
+          },
+          "updated_to": {
+            "type": "integer",
+            "description": "Updated at or before this Unix time (seconds)."
+          },
+          "closed_from": {
+            "type": "integer",
+            "description": "Closed at or after this Unix time (seconds)."
+          },
+          "closed_to": {
+            "type": "integer",
+            "description": "Closed at or before this Unix time (seconds)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these lead ids."
+          },
+          "order_by_updated_at": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by last update."
+          },
+          "order_by_created_at": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by creation."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated extras: contacts, loss_reason, source, catalog_elements."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads",
+        "queryParams": {
+          "query": "$query",
+          "filter[pipeline_id][]": "$pipeline_id",
+          "filter[statuses][0][pipeline_id]": "$status_pipeline_id",
+          "filter[statuses][0][status_id]": "$status_id",
+          "filter[responsible_user_id][]": "$responsible_user_ids",
+          "filter[created_at][from]": "$created_from",
+          "filter[created_at][to]": "$created_to",
+          "filter[updated_at][from]": "$updated_from",
+          "filter[updated_at][to]": "$updated_to",
+          "filter[closed_at][from]": "$closed_from",
+          "filter[closed_at][to]": "$closed_to",
+          "filter[id][]": "$ids",
+          "order[updated_at]": "$order_by_updated_at",
+          "order[created_at]": "$order_by_created_at",
+          "with": "$with",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_get_lead",
+      "description": "Get one lead by id with its name, price, pipeline, stage, responsible user, dates, tags, custom field values, linked company and, by default, linked contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id."
+          },
+          "with": {
+            "type": "string",
+            "default": "contacts",
+            "description": "Comma-separated extras: contacts, loss_reason, source, catalog_elements (default contacts)."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/{lead_id}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "kommo_create_lead",
+      "description": "Create a lead, optionally in a given pipeline and stage, with price, responsible user, custom fields, tags and links to existing contacts and a company. Returns the new lead id. Show the user what will be created and wait for confirmation; never retry a successful create.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Lead name."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Sale value in the account currency."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id from kommo_list_pipelines (default: main pipeline)."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Stage id in that pipeline (default: its first stage)."
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "description": "Responsible user id from kommo_list_users (default: the token's user)."
+          },
+          "custom_fields_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"field_id\": 123, \"values\": [{\"value\": \"text or number\"}]}]; select fields take [{\"enum_id\": 456}]; contact phone and email use {\"field_code\": \"PHONE\", \"values\": [{\"value\": \"+1 555 0100\", \"enum_code\": \"WORK\"}]}. Field ids from kommo_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to add, e.g. [{\"name\": \"vip\"}] or [{\"id\": 12}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contact_ids": {
+            "type": "array",
+            "description": "Contacts to link, e.g. [{\"id\": 123, \"is_main\": true}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "company_ids": {
+            "type": "array",
+            "description": "Company to link, e.g. [{\"id\": 456}] (a lead has at most one).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads",
+        "bodyMapping": [
+          {
+            "name": "$name",
+            "price": "$price",
+            "pipeline_id": "$pipeline_id",
+            "status_id": "$status_id",
+            "responsible_user_id": "$responsible_user_id",
+            "custom_fields_values": "$custom_fields_values",
+            "_embedded": {
+              "tags": "$tags",
+              "contacts": "$contact_ids",
+              "companies": "$company_ids"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "kommo_update_lead",
+      "description": "Change a lead: name, price, stage or pipeline (moving it through the funnel; Closed-won is status 142, Closed-lost 143), responsible user, loss reason, custom fields or tags. Only the given fields change. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "integer",
+            "description": "Lead id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "price": {
+            "type": "integer",
+            "description": "New sale value."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id; send with status_id when moving to another pipeline."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Stage id from kommo_list_pipelines; 142 closes as won, 143 as lost."
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "description": "New responsible user id."
+          },
+          "loss_reason_id": {
+            "type": "integer",
+            "description": "Loss reason id, when closing as lost."
+          },
+          "custom_fields_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"field_id\": 123, \"values\": [{\"value\": \"text or number\"}]}]; select fields take [{\"enum_id\": 456}]; contact phone and email use {\"field_code\": \"PHONE\", \"values\": [{\"value\": \"+1 555 0100\", \"enum_code\": \"WORK\"}]}. Field ids from kommo_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags_to_add": {
+            "type": "array",
+            "description": "Tags to add, e.g. [{\"name\": \"vip\"}] or [{\"id\": 12}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/leads/{lead_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "pipeline_id": "$pipeline_id",
+          "status_id": "$status_id",
+          "responsible_user_id": "$responsible_user_id",
+          "loss_reason_id": "$loss_reason_id",
+          "custom_fields_values": "$custom_fields_values",
+          "tags_to_add": "$tags_to_add"
+        }
+      }
+    },
+    {
+      "name": "kommo_list_contacts",
+      "description": "List or search contacts: id, name, first and last name, responsible user, dates, tags, custom fields (phone and email are custom fields) and, with with=leads, linked leads. Up to 250 per page; an empty answer means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against names and custom field values such as phone or email."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these contact ids."
+          },
+          "responsible_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only entries whose responsible user is one of these user ids."
+          },
+          "updated_from": {
+            "type": "integer",
+            "description": "Updated at or after this Unix time (seconds)."
+          },
+          "updated_to": {
+            "type": "integer",
+            "description": "Updated at or before this Unix time (seconds)."
+          },
+          "order_by_updated_at": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by last update."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated extras: leads, catalog_elements."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "query": "$query",
+          "filter[id][]": "$ids",
+          "filter[responsible_user_id][]": "$responsible_user_ids",
+          "filter[updated_at][from]": "$updated_from",
+          "filter[updated_at][to]": "$updated_to",
+          "order[updated_at]": "$order_by_updated_at",
+          "with": "$with",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_get_contact",
+      "description": "Get one contact by id with names, responsible user, tags, custom field values (phones, emails, position), linked companies and, by default, linked leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          },
+          "with": {
+            "type": "string",
+            "default": "leads",
+            "description": "Comma-separated extras: leads, catalog_elements (default leads)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "kommo_create_contact",
+      "description": "Create a contact with name, responsible user, phone, email and other custom fields, and tags. Returns the new contact id; link it to a lead with kommo_create_lead or in Kommo. Confirm with the user before writing; Kommo does not check for duplicates here, so search first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name (or set first_name and last_name)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "description": "Responsible user id (default: the token's user)."
+          },
+          "custom_fields_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"field_id\": 123, \"values\": [{\"value\": \"text or number\"}]}]; select fields take [{\"enum_id\": 456}]; contact phone and email use {\"field_code\": \"PHONE\", \"values\": [{\"value\": \"+1 555 0100\", \"enum_code\": \"WORK\"}]}. Field ids from kommo_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to add, e.g. [{\"name\": \"vip\"}] or [{\"id\": 12}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": [
+          {
+            "name": "$name",
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "responsible_user_id": "$responsible_user_id",
+            "custom_fields_values": "$custom_fields_values",
+            "_embedded": {
+              "tags": "$tags"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "kommo_list_companies",
+      "description": "List or search companies: id, name, responsible user, dates, tags, custom fields and, with with=leads,contacts, linked leads and contacts. Up to 250 per page; an empty answer means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against the name and custom field values."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these company ids."
+          },
+          "responsible_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only entries whose responsible user is one of these user ids."
+          },
+          "updated_from": {
+            "type": "integer",
+            "description": "Updated at or after this Unix time (seconds)."
+          },
+          "with": {
+            "type": "string",
+            "description": "Comma-separated extras: leads, contacts, catalog_elements."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "query": "$query",
+          "filter[id][]": "$ids",
+          "filter[responsible_user_id][]": "$responsible_user_ids",
+          "filter[updated_at][from]": "$updated_from",
+          "with": "$with",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_list_pipelines",
+      "description": "List the lead pipelines with their stages: pipeline id, name, whether main or archived, and per stage (in _embedded.statuses) its id, name, sort order, color and type. Every pipeline also has the system stages 142 (Closed-won) and 143 (Closed-lost).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/pipelines"
+      }
+    },
+    {
+      "name": "kommo_list_custom_fields",
+      "description": "List the custom fields of leads, contacts or companies: id, name, code (PHONE, EMAIL for contacts), type and, for select fields, the enum options with their ids. Use them to read and write custom_fields_values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "leads",
+              "contacts",
+              "companies"
+            ],
+            "description": "Which entity's fields to list."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        },
+        "required": [
+          "entity_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_type}/custom_fields",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_list_tasks",
+      "description": "List tasks: id, text, type, deadline (complete_till), whether completed, result, responsible user and the lead, contact or company it belongs to. Filter by responsible user, state, type or entity. Up to 250 per page; an empty answer means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "responsible_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only entries whose responsible user is one of these user ids."
+          },
+          "is_completed": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for completed tasks, 0 for open ones."
+          },
+          "task_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these task types (1 follow-up, 2 meeting, others from kommo_get_account)."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "leads",
+              "contacts",
+              "companies"
+            ],
+            "description": "Only tasks of this entity type (needed with entity_ids)."
+          },
+          "entity_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only tasks of these entities."
+          },
+          "order_by_complete_till": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by deadline."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "filter[responsible_user_id][]": "$responsible_user_ids",
+          "filter[is_completed]": "$is_completed",
+          "filter[task_type][]": "$task_type_ids",
+          "filter[entity_type]": "$entity_type",
+          "filter[entity_id][]": "$entity_ids",
+          "order[complete_till]": "$order_by_complete_till",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_create_task",
+      "description": "Create a task with a deadline, linked to a lead, contact or company, for a responsible user. Returns the new task id. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Task text."
+          },
+          "complete_till": {
+            "type": "integer",
+            "description": "Deadline as Unix time in seconds."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "leads",
+              "contacts",
+              "companies"
+            ],
+            "description": "Type of the entity the task belongs to."
+          },
+          "entity_id": {
+            "type": "integer",
+            "description": "Id of that entity."
+          },
+          "task_type_id": {
+            "type": "integer",
+            "description": "Task type: 1 follow-up (default), 2 meeting, or a custom type id from kommo_get_account."
+          },
+          "responsible_user_id": {
+            "type": "integer",
+            "description": "Responsible user id (default: the token's user)."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Duration in seconds, for meetings."
+          }
+        },
+        "required": [
+          "text",
+          "complete_till"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": [
+          {
+            "text": "$text",
+            "complete_till": "$complete_till",
+            "entity_type": "$entity_type",
+            "entity_id": "$entity_id",
+            "task_type_id": "$task_type_id",
+            "responsible_user_id": "$responsible_user_id",
+            "duration": "$duration"
+          }
+        ]
+      }
+    },
+    {
+      "name": "kommo_list_notes",
+      "description": "Read the notes (timeline entries) of one lead, contact or company: id, type (common text note, call_in, call_out, sms, service messages, ...), params with the text or call data, author and dates. Up to 250 per page; an empty answer means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "leads",
+              "contacts",
+              "companies"
+            ],
+            "description": "Type of the entity."
+          },
+          "entity_id": {
+            "type": "integer",
+            "description": "Id of the entity."
+          },
+          "note_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these note types, e.g. [\"common\", \"call_in\", \"call_out\"]."
+          },
+          "order_by_updated_at": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by last update."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_type}/{entity_id}/notes",
+        "queryParams": {
+          "filter[note_type][]": "$note_types",
+          "order[updated_at]": "$order_by_updated_at",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "kommo_add_note",
+      "description": "Add a text note to the timeline of a lead, contact or company. Returns the new note id. Confirm the text with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "leads",
+              "contacts",
+              "companies"
+            ],
+            "description": "Type of the entity."
+          },
+          "entity_id": {
+            "type": "integer",
+            "description": "Id of the entity."
+          },
+          "text": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{entity_type}/notes",
+        "bodyMapping": [
+          {
+            "entity_id": "$entity_id",
+            "note_type": "common",
+            "params": {
+              "text": "$text"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "kommo_list_users",
+      "description": "List the account's users: id, name, email, language and rights, and with with=role,group their role and group. User ids are what responsible_user_id fields hold. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with": {
+            "type": "string",
+            "description": "Comma-separated extras: role, group, phone_number."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Entries per page, 1 to 250 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "with": "$with",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

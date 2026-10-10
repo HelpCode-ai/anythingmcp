@@ -1,0 +1,777 @@
+{
+  "slug": "quickbooks-online",
+  "name": "QuickBooks Online",
+  "description": "Let your AI work with QuickBooks Online: query customers, vendors, items, invoices, bills, payments and accounts, read single records, run Profit and Loss, Balance Sheet and aged receivables and payables reports, and create customers and invoices. Intuit OAuth sign-in, sandbox or production company.",
+  "instructions": "## QuickBooks Online\nThis connector reads and writes one QuickBooks Online company through the **QuickBooks Online Accounting API v3** (`https://quickbooks.api.intuit.com/v3/company/<realm id>`): company info, a read-only query language over every accounting entity (customers, vendors, items, accounts, invoices, bills, payments...), single records by Id, Profit and Loss, Balance Sheet and aged receivables and payables, and creating customers and invoices. It runs as the QuickBooks user who authorized the connector, on the company chosen at sign-in.\n\n**Setup (one-time, about 15 minutes)**\n1. Sign in at https://developer.intuit.com → **My Hub → App dashboard → Create an app** → *QuickBooks Online and Payments*, and select the scope **com.intuit.quickbooks.accounting**.\n2. Under **Settings → Redirect URIs** add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, for **Development** and, later, **Production**. It must match exactly.\n3. Copy the **Client ID** and **Client Secret** from **Keys & credentials**. Development keys work only with sandbox companies; production keys need Intuit's app assessment (questionnaire on the app dashboard) and work with real companies.\n4. Find the company's **realm id** (Company ID): in QuickBooks, gear icon → **Account and settings → Billing & subscription** (Company ID, without spaces); for a sandbox company, on the developer site under **Sandboxes**. Paste it into `QBO_REALM_ID`.\n5. Set `QBO_API_URL` to `https://quickbooks.api.intuit.com` for real companies or `https://sandbox-quickbooks.api.intuit.com` for a sandbox company. It must match the keys: development keys with the sandbox URL, production keys with the production URL.\n6. Install, then on the connector page click **Authorize with Provider**, sign in to Intuit and connect the same company. AnythingMCP exchanges the code with HTTP Basic client authentication and stores the tokens encrypted.\n7. Run `qbo_get_company_info` and check the company name before reading or writing anything. One connector reads one company; install another for a second company.\n\n**Tokens**: access tokens last one hour and are renewed automatically. Intuit replaces the refresh token about every 24 hours and AnythingMCP stores each new one; a refresh token not used for 100 days expires, and every refresh token expires 5 years after the first authorization at the latest. After that, or after the app is disconnected in QuickBooks, click **Authorize with Provider** again. Do not use the same Intuit app's refresh token in another tool at the same time: one of the two will hold a replaced token.\n\n**Scope**: `com.intuit.quickbooks.accounting` gives read and write access to the accounting data, as far as the signing-in user's QuickBooks role allows. Intuit has no read-only accounting scope: for a read-only setup, sign in with a QuickBooks user whose role cannot create transactions, and disable `qbo_create_customer`, `qbo_update_customer`, `qbo_create_invoice`.\n\n**Switched off at install**: `qbo_send_invoice` (it emails the customer in the company's name) and `qbo_delete_invoice`. Turn them on per tool if the AI should send or delete invoices.\n\n**Creating records**: `qbo_create_invoice` books a real invoice at once: QuickBooks has no drafts, it raises the customer's balance and appears in reports, but nothing is emailed. Look up the customer and the items with `qbo_query` first; each sales line needs `Amount` and `SalesItemLineDetail.ItemRef.value` (an Item Id). Companies with sales tax may also need `TxnTaxDetail` or a TaxCodeRef per line (non-US companies especially). Customers cannot be deleted, only made inactive with `qbo_update_customer` (`active: false`). Updates need the record's current `SyncToken`; read the record again if QuickBooks answers error 5010 (stale object).\n\n**Query language** (`qbo_query`): `SELECT * | fields | COUNT(*) FROM <Entity> [WHERE ...] [ORDERBY <field> [ASC|DESC]] [STARTPOSITION n] [MAXRESULTS n]`.\n- One entity per query, no joins, no `OR`, no `GROUP BY`; combine conditions with `AND`. Operators `=`, `<`, `>`, `<=`, `>=`, `IN ('1','2')`, `LIKE '%Acme%'` (only `%`, only on name fields).\n- Strings and dates in single quotes: `TxnDate >= '2026-01-01'`, `DisplayName = 'Acme GmbH'`; a quote inside a string as `\\'`. Booleans unquoted: `Active = true`.\n- Only filterable fields can be used in `WHERE`, e.g. Id, DisplayName, Active, Balance, TxnDate, DueDate, DocNumber, CustomerRef, VendorRef, `MetaData.LastUpdatedTime`. Inactive customers, vendors and items are left out unless the query says `Active IN (true, false)`.\n- Results come in `QueryResponse.<Entity>`; `STARTPOSITION` is 1-based and `MAXRESULTS` goes up to 1000 (default 100). Page by raising STARTPOSITION by MAXRESULTS until fewer rows come back. `COUNT(*)` returns `totalCount`.\n- Examples: open invoices `select * from Invoice where Balance > '0' orderby DueDate`; a customer's invoices `select * from Invoice where CustomerRef = '58'`; changed since `select * from Customer where MetaData.LastUpdatedTime > '2026-10-01T00:00:00Z'`.\n\n**Reports**: `qbo_report_profit_and_loss` and `qbo_report_balance_sheet` take `start_date`/`end_date` (YYYY-MM-DD) or a `date_macro` such as \"This Fiscal Year\", optionally `accounting_method` (Accrual or Cash) and `summarize_column_by` (Month, Quarter...). The aged receivables and payables reports take a `report_date`. Report JSON has `Header`, `Columns` and nested `Rows` whose `ColData` values are strings.\n\n**Minor version**: every call sends `minorversion=75`, the lowest version Intuit still serves since August 2025.\n\n**Rate limits**: 500 requests per minute and 10 concurrent requests per company; over the limit Intuit answers 429. Prefer one query with MAXRESULTS 1000 over many small ones.\n\n**Common errors**\n- 401 `AuthenticationFailed` / 3200: the authorization expired or was revoked, or `QBO_API_URL` does not match the keys (sandbox keys against production or the other way round). Check the URL, then click **Authorize with Provider** again.\n- 403 / 3100 `ApplicationAuthorizationFailed`: the realm id belongs to a company this authorization was not granted for, or the user's role lacks access. Check `QBO_REALM_ID` against the company connected at sign-in.\n- 400 `QueryParserError` / `QueryValidationError`: query syntax (quotes, an unsupported operator such as OR, a field that cannot be filtered).\n- 400 `ValidationFault` 6240 `Duplicate Name Exists Error`: the DisplayName is taken; 2040 `Invalid String`: a name contains a colon (it separates sub-customers), tab or line break; 610 `Object Not Found`: an Id that does not exist; 5010 `Stale Object Error`: read the record again for its SyncToken; 6000 business validation (for example a missing tax code).\n- 429 `ThrottleExceeded`: wait a minute and retry.\n\n**Out of scope here**: invoice PDFs and attachments, payments and bank feeds, payroll, QuickBooks Desktop, batch and change-data-capture calls, deleting anything except invoices.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "quickbooks-online",
+  "docsUrl": "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
+  "requiredEnvVars": [
+    "QBO_CLIENT_ID",
+    "QBO_CLIENT_SECRET",
+    "QBO_REALM_ID",
+    "QBO_API_URL"
+  ],
+  "appRegistrationUrl": "https://developer.intuit.com/app/developer/dashboard",
+  "envVarMeta": {
+    "QBO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Intuit Developer → App dashboard → your app → Keys & credentials (Development for sandbox companies, Production for real ones): Client ID.",
+      "link": "https://developer.intuit.com/app/developer/dashboard"
+    },
+    "QBO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "help": "Same page: Client Secret, from the same Development or Production section as the Client ID.",
+      "link": "https://developer.intuit.com/app/developer/dashboard"
+    },
+    "QBO_REALM_ID": {
+      "label": "Company ID (realm id)",
+      "kind": "setting",
+      "help": "QuickBooks → gear icon → Account and settings → Billing & subscription → Company ID (digits only, no spaces). Sandbox companies: developer.intuit.com → Sandboxes.",
+      "example": "9341453050071234",
+      "pattern": "^\\d{6,20}$",
+      "patternMessage": "The realm id is the company's numeric Company ID, digits only, without spaces."
+    },
+    "QBO_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "https://quickbooks.api.intuit.com for real companies (production keys), https://sandbox-quickbooks.api.intuit.com for sandbox companies (development keys).",
+      "example": "https://sandbox-quickbooks.api.intuit.com",
+      "link": "https://developer.intuit.com/app/developer/qbo/docs/develop/sandboxes",
+      "pattern": "^https://(sandbox-)?quickbooks\\.api\\.intuit\\.com$",
+      "patternMessage": "Use https://quickbooks.api.intuit.com or https://sandbox-quickbooks.api.intuit.com, without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Intuit refused the access token. Check that QBO_API_URL matches the keys (sandbox URL with development keys, production URL with production keys), then click Authorize with Provider again.",
+    "403": "This authorization has no access to the company in QBO_REALM_ID. Check the Company ID and connect that same company when you authorize.",
+    "rate_limited": "QuickBooks is throttling this company (500 requests per minute). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "qbo_get_company_info"
+  },
+  "prerequisites": "An Intuit Developer account (free) with an app for QuickBooks Online using the accounting scope, the redirect URI below, and the company's realm id. Development keys work with sandbox companies only; real companies need production keys, which Intuit grants after a short app assessment. About 15 minutes.",
+  "connector": {
+    "name": "QuickBooks Online Accounting API",
+    "type": "REST",
+    "baseUrl": "{{QBO_API_URL}}/v3/company/{{QBO_REALM_ID}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{QBO_CLIENT_ID}}",
+      "clientSecret": "{{QBO_CLIENT_SECRET}}",
+      "authorizationUrl": "https://appcenter.intuit.com/connect/oauth2",
+      "tokenUrl": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "com.intuit.quickbooks.accounting"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/preferences?minorversion=75",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Fault.Error[0].Message",
+          "messagePath": [
+            "Fault.Error[0].Message",
+            "Fault.Error[0].Detail"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "qbo_get_company_info",
+      "description": "Read the connected company: CompanyName, LegalName, addresses, email, phone, Country, FiscalYearStartMonth, the company's start date and its settings. Call it first to confirm which company (realm) the connector reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companyinfo/{QBO_REALM_ID}",
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_query",
+      "description": "Run a read-only QuickBooks query (SQL-like, one entity, no joins): e.g. \"select * from Invoice where Balance > '0' orderby DueDate startposition 1 maxresults 100\", \"select Id, DisplayName, Balance from Customer where Active = true\", \"select count(*) from Bill where TxnDate >= '2026-01-01'\". Returns QueryResponse with the entity list, startPosition and maxResults. Page with STARTPOSITION (1-based) and MAXRESULTS (up to 1000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The query. Grammar: SELECT * | Field1, Field2 | COUNT(*) FROM Entity [WHERE Field op value [AND Field op value ...]] [ORDERBY Field [ASC|DESC]] [STARTPOSITION n] [MAXRESULTS n]. Operators: =, <, >, <=, >=, IN ('a','b'), LIKE '%text%' (on names). Strings and dates in single quotes, a quote inside as \\'. No OR, no JOIN, no GROUP BY. Entities: Customer, Vendor, Employee, Item, Account, Invoice, Estimate, SalesReceipt, Payment, CreditMemo, RefundReceipt, Bill, BillPayment, Purchase, PurchaseOrder, VendorCredit, Deposit, Transfer, JournalEntry, TimeActivity, Class, Department, Term, TaxCode, TaxRate, PaymentMethod, CompanyCurrency."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query",
+        "queryParams": {
+          "query": "$query",
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_customer",
+      "description": "Read one customer by its Id (the numeric Id from qbo_query, not a document number or name), with contact details, addresses, Balance and terms. Returns {\"Customer\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The customer's Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_invoice",
+      "description": "Read one invoice by its Id (the numeric Id from qbo_query, not a document number or name), with its lines, totals, Balance, due date, EmailStatus and linked payments. Returns {\"Invoice\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The invoice's Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_item",
+      "description": "Read one item (product or service) by its Id (the numeric Id from qbo_query, not a document number or name), with prices, income and expense accounts and, for inventory items, QtyOnHand. Returns {\"Item\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The item (product or service)'s Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_vendor",
+      "description": "Read one vendor by its Id (the numeric Id from qbo_query, not a document number or name), with contact details, addresses and Balance. Returns {\"Vendor\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The vendor's Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_bill",
+      "description": "Read one bill (a vendor's invoice to the company) by its Id (the numeric Id from qbo_query, not a document number or name), with its lines, due date and Balance. Returns {\"Bill\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The bill (a vendor's invoice to the company)'s Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bill/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_get_payment",
+      "description": "Read one customer payment by its Id (the numeric Id from qbo_query, not a document number or name), with the invoices it was applied to (Line.LinkedTxn). Returns {\"Payment\": {...}} with every field, including SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The customer payment's Id, e.g. \"42\"."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_create_customer",
+      "description": "Create a customer. DisplayName must be unique across customers, vendors and employees (error 6240 otherwise; search with qbo_query first). Returns {\"Customer\": {...}} with the new Id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Unique display name, e.g. \"Acme GmbH\" or \"Ana Diaz\". No colon (:), tab or line break: QuickBooks rejects them with error 2040 (a colon separates sub-customers)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "given_name": {
+            "type": "string",
+            "description": "First name of the contact person."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Last name of the contact person."
+          },
+          "primary_email_addr": {
+            "type": "object",
+            "description": "Email, e.g. {\"Address\": \"billing@acme.example\"}."
+          },
+          "primary_phone": {
+            "type": "object",
+            "description": "Phone, e.g. {\"FreeFormNumber\": \"+49 761 1234567\"}."
+          },
+          "bill_addr": {
+            "type": "object",
+            "description": "Billing address, e.g. {\"Line1\": \"Hauptstr. 1\", \"City\": \"Freiburg\", \"PostalCode\": \"79098\", \"Country\": \"DE\"}."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free-form notes on the customer."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other Customer fields as QuickBooks names them, e.g. {\"CurrencyRef\": {\"value\": \"EUR\"}, \"SalesTermRef\": {\"value\": \"3\"}, \"Taxable\": true}."
+          }
+        },
+        "required": [
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer",
+        "queryParams": {
+          "minorversion": "75"
+        },
+        "bodyMapping": {
+          "DisplayName": "$display_name",
+          "CompanyName": "$company_name",
+          "GivenName": "$given_name",
+          "FamilyName": "$family_name",
+          "PrimaryEmailAddr": "$primary_email_addr",
+          "PrimaryPhone": "$primary_phone",
+          "BillAddr": "$bill_addr",
+          "Notes": "$notes",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "qbo_update_customer",
+      "description": "Change some fields of a customer (sparse update); fields not named keep their values. Needs the customer's Id and current SyncToken from qbo_get_customer. Set active false to make a customer inactive (QuickBooks does not delete customers). Returns the updated customer with its new SyncToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The customer's Id."
+          },
+          "sync_token": {
+            "type": "string",
+            "description": "The SyncToken from the latest read of the customer; a stale one fails with error 5010."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "New display name, unique, without colon (:), tab or line break."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false makes the customer inactive (hidden from lists), true reactivates it."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Other fields to set, e.g. {\"PrimaryEmailAddr\": {\"Address\": \"new@acme.example\"}, \"Notes\": \"...\"}."
+          }
+        },
+        "required": [
+          "id",
+          "sync_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer",
+        "queryParams": {
+          "minorversion": "75"
+        },
+        "bodyMapping": {
+          "Id": "$id",
+          "SyncToken": "$sync_token",
+          "sparse": true,
+          "DisplayName": "$display_name",
+          "Active": "$active",
+          "__merge": "$additional_fields"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "qbo_create_invoice",
+      "description": "Create an invoice for a customer. It is booked right away (QuickBooks has no draft invoices) and is not emailed. Lines reference items by Id, e.g. [{\"DetailType\": \"SalesItemLineDetail\", \"Amount\": 200, \"Description\": \"Consulting\", \"SalesItemLineDetail\": {\"ItemRef\": {\"value\": \"1\"}, \"Qty\": 2, \"UnitPrice\": 100}}]. Returns {\"Invoice\": {...}} with Id, DocNumber and TotalAmt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer's Id (qbo_query on Customer)."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Invoice lines in QuickBooks format. Each SalesItemLineDetail line needs Amount (= Qty x UnitPrice) and ItemRef.value (an Item Id from qbo_query on Item); a DescriptionOnly line holds text.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "txn_date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD (default today).",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD (default from the customer's terms).",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "doc_number": {
+            "type": "string",
+            "description": "Invoice number; leave empty to let QuickBooks number it when custom transaction numbers are off."
+          },
+          "bill_email": {
+            "type": "object",
+            "description": "Recipient for a later qbo_send_invoice, e.g. {\"Address\": \"billing@acme.example\"}."
+          },
+          "private_note": {
+            "type": "string",
+            "description": "Internal memo, not shown to the customer."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Other Invoice fields, e.g. {\"CustomerMemo\": {\"value\": \"Thank you!\"}, \"SalesTermRef\": {\"value\": \"3\"}, \"CurrencyRef\": {\"value\": \"EUR\"}, \"TxnTaxDetail\": {...}}."
+          }
+        },
+        "required": [
+          "customer_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice",
+        "queryParams": {
+          "minorversion": "75"
+        },
+        "bodyMapping": {
+          "CustomerRef": {
+            "value": "$customer_id"
+          },
+          "Line": "$lines",
+          "TxnDate": "$txn_date",
+          "DueDate": "$due_date",
+          "DocNumber": "$doc_number",
+          "BillEmail": "$bill_email",
+          "PrivateNote": "$private_note",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "qbo_send_invoice",
+      "description": "Email an invoice to the customer as a PDF from QuickBooks, to the invoice's BillEmail or to send_to (which also becomes the invoice's BillEmail). Sets EmailStatus to EmailSent. Installed switched off: it sends email to a customer in the company's name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The invoice's Id."
+          },
+          "send_to": {
+            "type": "string",
+            "description": "Optional recipient address; default: the invoice's BillEmail."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/{id}/send",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "application/octet-stream"
+        },
+        "queryParams": {
+          "sendTo": "$send_to",
+          "minorversion": "75"
+        },
+        "bodyMapping": {
+          "__raw": ""
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "qbo_delete_invoice",
+      "description": "Delete an invoice permanently (it disappears from reports; QuickBooks keeps it in the audit log). Needs Id and the current SyncToken from qbo_get_invoice. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The invoice's Id."
+          },
+          "sync_token": {
+            "type": "string",
+            "description": "The invoice's current SyncToken."
+          }
+        },
+        "required": [
+          "id",
+          "sync_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice",
+        "queryParams": {
+          "operation": "delete",
+          "minorversion": "75"
+        },
+        "bodyMapping": {
+          "Id": "$id",
+          "SyncToken": "$sync_token"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "qbo_report_profit_and_loss",
+      "description": "Profit and Loss report (income, cost of goods sold, expenses, net income) for a period, as QuickBooks' report JSON: Header, Columns and nested Rows with ColData values. Use start_date and end_date or date_macro; summarize_column_by \"Month\" gives one column per month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. With end_date; or use date_macro instead.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "date_macro": {
+            "type": "string",
+            "description": "A named period instead of start_date and end_date, e.g. \"This Fiscal Year\", \"Last Month\", \"This Quarter-to-date\", \"Last Year\".",
+            "enum": [
+              "Today",
+              "Yesterday",
+              "This Week",
+              "Last Week",
+              "This Week-to-date",
+              "This Month",
+              "Last Month",
+              "This Month-to-date",
+              "This Fiscal Quarter",
+              "Last Fiscal Quarter",
+              "This Fiscal Quarter-to-date",
+              "This Fiscal Year",
+              "Last Fiscal Year",
+              "This Fiscal Year-to-date",
+              "This Calendar Year",
+              "Last Calendar Year",
+              "This Calendar Year-to-date"
+            ]
+          },
+          "accounting_method": {
+            "type": "string",
+            "description": "\"Accrual\" or \"Cash\" (default: the company's preference).",
+            "enum": [
+              "Accrual",
+              "Cash"
+            ]
+          },
+          "summarize_column_by": {
+            "type": "string",
+            "description": "Columns of the report: \"Total\" (default), or one per Month, Quarter, Year, Week, Days, or per Customers, Vendors, Classes, Departments, ProductsAndServices.",
+            "enum": [
+              "Total",
+              "Month",
+              "Week",
+              "Days",
+              "Quarter",
+              "Year",
+              "Customers",
+              "Vendors",
+              "Classes",
+              "Departments",
+              "Employees",
+              "ProductsAndServices"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "Optional customer Id(s), comma-separated, to filter."
+          },
+          "department": {
+            "type": "string",
+            "description": "Optional department (location) Id(s), comma-separated."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/ProfitAndLoss",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_macro": "$date_macro",
+          "accounting_method": "$accounting_method",
+          "summarize_column_by": "$summarize_column_by",
+          "customer": "$customer",
+          "department": "$department",
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_report_balance_sheet",
+      "description": "Balance Sheet report (assets, liabilities, equity) as of the end of a period, as QuickBooks' report JSON with nested Rows. Use start_date and end_date or date_macro; summarize_column_by \"Month\" or \"Quarter\" compares periods.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. With end_date; or use date_macro instead.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "date_macro": {
+            "type": "string",
+            "description": "A named period instead of start_date and end_date, e.g. \"This Fiscal Year\", \"Last Month\", \"This Quarter-to-date\", \"Last Year\".",
+            "enum": [
+              "Today",
+              "Yesterday",
+              "This Week",
+              "Last Week",
+              "This Week-to-date",
+              "This Month",
+              "Last Month",
+              "This Month-to-date",
+              "This Fiscal Quarter",
+              "Last Fiscal Quarter",
+              "This Fiscal Quarter-to-date",
+              "This Fiscal Year",
+              "Last Fiscal Year",
+              "This Fiscal Year-to-date",
+              "This Calendar Year",
+              "Last Calendar Year",
+              "This Calendar Year-to-date"
+            ]
+          },
+          "accounting_method": {
+            "type": "string",
+            "description": "\"Accrual\" or \"Cash\" (default: the company's preference).",
+            "enum": [
+              "Accrual",
+              "Cash"
+            ]
+          },
+          "summarize_column_by": {
+            "type": "string",
+            "description": "Columns of the report: \"Total\" (default), or one per Month, Quarter, Year, Week, Days, or per Customers, Vendors, Classes, Departments, ProductsAndServices.",
+            "enum": [
+              "Total",
+              "Month",
+              "Week",
+              "Days",
+              "Quarter",
+              "Year",
+              "Customers",
+              "Vendors",
+              "Classes",
+              "Departments",
+              "Employees",
+              "ProductsAndServices"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/BalanceSheet",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_macro": "$date_macro",
+          "accounting_method": "$accounting_method",
+          "summarize_column_by": "$summarize_column_by",
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_report_aged_receivables",
+      "description": "Aged Receivables summary: what each customer owes, split into Current, 1-30, 31-60, 61-90 and 91+ days past due, as of report_date (default today).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_date": {
+            "type": "string",
+            "description": "As-of date, YYYY-MM-DD (default today).",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "aging_period": {
+            "type": "integer",
+            "description": "Days per aging column (default 30).",
+            "minimum": 1
+          },
+          "num_periods": {
+            "type": "integer",
+            "description": "Number of aging columns (default 4).",
+            "minimum": 1
+          },
+          "customer": {
+            "type": "string",
+            "description": "Optional customer Id(s), comma-separated."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/AgedReceivables",
+        "queryParams": {
+          "report_date": "$report_date",
+          "aging_period": "$aging_period",
+          "num_periods": "$num_periods",
+          "customer": "$customer",
+          "minorversion": "75"
+        }
+      }
+    },
+    {
+      "name": "qbo_report_aged_payables",
+      "description": "Aged Payables summary: what the company owes each vendor, split into Current, 1-30, 31-60, 61-90 and 91+ days past due, as of report_date (default today).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_date": {
+            "type": "string",
+            "description": "As-of date, YYYY-MM-DD (default today).",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "aging_period": {
+            "type": "integer",
+            "description": "Days per aging column (default 30).",
+            "minimum": 1
+          },
+          "num_periods": {
+            "type": "integer",
+            "description": "Number of aging columns (default 4).",
+            "minimum": 1
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Optional vendor Id(s), comma-separated."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/AgedPayables",
+        "queryParams": {
+          "report_date": "$report_date",
+          "aging_period": "$aging_period",
+          "num_periods": "$num_periods",
+          "vendor": "$vendor",
+          "minorversion": "75"
+        }
+      }
+    }
+  ]
+}

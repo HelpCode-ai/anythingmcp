@@ -1,0 +1,608 @@
+{
+  "slug": "monday",
+  "name": "monday.com",
+  "description": "Let your AI work in monday.com: find boards and items, read column values and comments, create items, update statuses, dates and owners, and post updates. One account, with your personal API token.",
+  "instructions": "## monday.com\nThis connector works with one monday.com account through the **GraphQL API** (`https://api.monday.com/v2`, API version 2026-07 sent in the `API-Version` header): workspaces, boards with their groups and columns, items with column values, updates (comments) and users. It can create items and groups, change column values, move items and post updates. It authenticates with your **personal API token**, so it sees and does exactly what you can in monday.com.\n\n**Setup (about 2 minutes)**\n1. In monday.com click your profile picture (top right) and choose **Developers**; the Developer Center opens in a new tab.\n2. Open **API token** (called **My access tokens** in older menus), click **Show** and copy the token. Account admins also find it under **Administration → Connections → Personal API token**.\n3. Paste it into `MONDAY_API_TOKEN`. It is sent as is in the `Authorization` header, without the word Bearer.\n4. Regenerating the token in the same place invalidates the old one immediately.\n\n**Read-only setup**: personal tokens carry all of the user's permissions and cannot be limited. Give the token's user only the board access it needs, and switch off `monday_create_item`, `monday_change_column_values`, `monday_move_item_to_group`, `monday_create_group`, `monday_create_update` and the generic `monday_graphql_mutation`. `monday_archive_item` is installed switched off.\n\n**Workflow**: `monday_list_boards` (or `monday_list_workspaces` first), then `monday_get_board` for the board's groups and columns. Column ids (`status`, `date4`, `person`) and the status labels in each column's `settings` are what filters and writes need. `monday_get_items_page` reads items; `monday_get_items` reads specific items from any board.\n\n**Ids and values**: board, item, user and update ids are numbers sent as strings; group ids are strings such as `topics`. `column_values` returns `text` (what the user sees) and `value` (raw JSON). Writes take a JSON **string** keyed by column id: status `{\"label\": \"Done\"}`, date `{\"date\": \"2026-10-15\"}`, people `{\"personsAndTeams\": [{\"id\": 123, \"kind\": \"person\"}]}`, text and numbers a plain string, item name via the `name` column.\n\n**Pagination**: `monday_get_items_page` returns up to 500 items and a `cursor`; pass it to `monday_next_items_page` until the cursor is null. A cursor expires 60 minutes after the first request. Boards, users and workspaces page with `limit` and `page`; an empty page means the end. Updates page with their own `cursor`.\n\n**Rate limits**: personal tokens share a budget of 10,000,000 complexity points per minute (1,000,000 on free and trial accounts), and accounts have a daily call limit (1,000 on Free, Basic and Standard, 10,000 on Pro, 25,000 on Enterprise) plus 1,000 to 5,000 requests per minute by plan. Over a limit the error carries `retry_in_seconds`; wait that long.\n\n**Errors**: monday answers HTTP 200 with an `errors` array for most failures; the connector reports them as errors. `Not Authenticated` or 401: the token is wrong or was regenerated. `UserUnauthorizedException`: no access to that board or item. `InvalidColumnIdException`, `ColumnValueException`: wrong column id or value format; check `monday_get_board`. `ComplexityException`, `DAILY_LIMIT_EXCEEDED`, `Minute limit rate exceeded`: wait and use smaller pages.\n\n**Other operations**: `monday_graphql_schema` and `monday_graphql_query` reach anything else in the API, such as docs, dashboards or activity logs.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "monday",
+  "docsUrl": "https://developer.monday.com/api-reference/docs/basics",
+  "requiredEnvVars": [
+    "MONDAY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "MONDAY_API_TOKEN": {
+      "label": "Personal API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "monday.com → your profile picture → Developers → API token → Show → copy. Admins also find it under Administration → Connections → Personal API token.",
+      "link": "https://developer.monday.com/api-reference/docs/authentication",
+      "pattern": "^(?!Bearer\\s)\\S+$",
+      "patternMessage": "Paste only the token, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "monday.com refused the token. Copy it again from Developers → API token; regenerating it invalidates the old one.",
+    "403": "The token's user has no access to this board or item. Ask a board owner to add the user, or use a token of a user who has access.",
+    "rate_limited": "monday.com is rate limiting this token (complexity, minute or daily limit). Wait for the retry time in the error and try again."
+  },
+  "probe": {
+    "tool": "monday_get_me"
+  },
+  "prerequisites": "A monday.com account and the personal API token of an admin or member user the AI should act as. Guests and viewers have no personal token.",
+  "connector": {
+    "name": "monday.com GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.monday.com/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{MONDAY_API_TOKEN}}"
+    },
+    "headers": {
+      "API-Version": "2026-07",
+      "User-Agent": "AnythingMCP"
+    },
+    "schemaUrl": "https://api.monday.com/v2/get_schema?format=sdl&version=2026-07"
+  },
+  "tools": [
+    {
+      "name": "monday_get_me",
+      "description": "Check the token and return who it acts as: user id, name, email, title, time zone, and the account's id, name, slug and plan tier.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Me { me { id name email title kind time_zone_identifier account { id name slug tier plan { tier max_users } } } }"
+      }
+    },
+    {
+      "name": "monday_list_workspaces",
+      "description": "List the workspaces the user can see: id, name, kind (open, closed, template) and description, a page at a time. Workspace ids narrow monday_list_boards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Workspaces per page (default 25)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Workspaces($limit: Int = 25, $page: Int = 1) { workspaces(limit: $limit, page: $page) { id name kind description } }",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "monday_list_boards",
+      "description": "List boards the user can access: id, name, description, kind (public, private, share), state, workspace id, item count, last update and URL. Pages with limit and page; an empty list means no more pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only boards in these workspaces (ids from monday_list_workspaces)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted",
+              "all"
+            ],
+            "description": "Board state (default active)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "used_at"
+            ],
+            "description": "Sort by creation date or last use, newest first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Boards per page (default 25)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Boards($workspaceIds: [ID], $state: State = active, $orderBy: BoardsOrderBy, $limit: Int = 25, $page: Int = 1) { boards(workspace_ids: $workspaceIds, state: $state, order_by: $orderBy, limit: $limit, page: $page) { id name description board_kind state workspace_id items_count updated_at url } }",
+        "queryParams": {
+          "workspaceIds": "$workspace_ids",
+          "state": "$state",
+          "orderBy": "$order_by",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "monday_get_board",
+      "description": "Get one board's structure: name, workspace, owners, item count, its groups (id, title, color, position) and its columns (id, title, type and settings, which hold the allowed status and dropdown labels). Read this before filtering items or writing column values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. \"1234567890\" (the number in the board URL)."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Board($boardId: ID!) { boards(ids: [$boardId]) { id name description board_kind state items_count url workspace { id name } owners { id name } groups { id title color position archived } columns { id title type description settings } } }",
+        "queryParams": {
+          "boardId": "$board_id"
+        }
+      }
+    },
+    {
+      "name": "monday_get_items_page",
+      "description": "Read a board's items with their column values (id, type, text and raw JSON value), optionally filtered and sorted with query_params, up to 500 per page. Returns items and a cursor: while it is not null, call monday_next_items_page with it. Cursors expire 60 minutes after the first request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Items per page, 1 to 500 (default 25)."
+          },
+          "column_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these column ids (from monday_get_board), e.g. [\"status\", \"person\", \"date4\"]. Leave out for all columns."
+          },
+          "query_params": {
+            "type": "object",
+            "description": "Optional filter and sort. Example: {\"rules\": [{\"column_id\": \"status\", \"compare_value\": [1], \"operator\": \"any_of\"}], \"operator\": \"and\", \"order_by\": [{\"column_id\": \"date4\", \"direction\": \"desc\"}]}. Rule operators: any_of, not_any_of, is_empty, is_not_empty, greater_than, greater_than_or_equals, lower_than, lower_than_or_equal, between, contains_text, not_contains_text, contains_terms, starts_with, ends_with, within_the_last, within_the_next. Status columns compare label indexes from the column settings; people columns compare \"person-<user id>\"; \"group\" as column_id filters by group id; ids: [item ids] limits to given items.",
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Filter rules: {column_id, compare_value, operator, compare_attribute?}."
+              },
+              "operator": {
+                "type": "string",
+                "enum": [
+                  "and",
+                  "or"
+                ],
+                "description": "How rules combine (default and)."
+              },
+              "order_by": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Sorting: [{column_id, direction: asc|desc}]."
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Only these item ids."
+              }
+            }
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ItemsPage($boardId: ID!, $limit: Int! = 25, $queryParams: ItemsQuery, $columnIds: [String!]) { boards(ids: [$boardId]) { id name items_page(limit: $limit, query_params: $queryParams) { cursor items { id name state url created_at updated_at group { id title } column_values(ids: $columnIds) { id type text value } } } } }",
+        "queryParams": {
+          "boardId": "$board_id",
+          "limit": "$limit",
+          "queryParams": "$query_params",
+          "columnIds": "$column_ids"
+        }
+      }
+    },
+    {
+      "name": "monday_next_items_page",
+      "description": "Fetch the next page of items for a cursor returned by monday_get_items_page (or by a previous call of this tool), with the same item fields. Returns a new cursor, null on the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Items per page, 1 to 500 (default 25)."
+          },
+          "column_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these column ids (from monday_get_board), e.g. [\"status\", \"person\", \"date4\"]. Leave out for all columns."
+          }
+        },
+        "required": [
+          "cursor"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query NextItemsPage($cursor: String!, $limit: Int! = 25, $columnIds: [String!]) { next_items_page(cursor: $cursor, limit: $limit) { cursor items { id name state url created_at updated_at group { id title } column_values(ids: $columnIds) { id type text value } } } }",
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit",
+          "columnIds": "$column_ids"
+        }
+      }
+    },
+    {
+      "name": "monday_get_items",
+      "description": "Get items by id, from any board: name, board, group, state, creator, timestamps, URL, all column values and their subitems (id and name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Item ids, up to 100."
+          },
+          "column_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these column ids (from monday_get_board), e.g. [\"status\", \"person\", \"date4\"]. Leave out for all columns."
+          }
+        },
+        "required": [
+          "item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Items($ids: [ID!], $columnIds: [String!]) { items(ids: $ids, limit: 100) { id name state url created_at updated_at creator { id name } board { id name } group { id title } column_values(ids: $columnIds) { id type text value } subitems { id name } } }",
+        "queryParams": {
+          "ids": "$item_ids",
+          "columnIds": "$column_ids"
+        }
+      }
+    },
+    {
+      "name": "monday_create_item",
+      "description": "Create an item on a board, optionally in a group and with column values. Returns the new item's id, name and URL. Show the user what will be created and wait for confirmation; never retry a successful create.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "item_name": {
+            "type": "string",
+            "description": "Item name (the first column)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id from monday_get_board, e.g. \"topics\". Default: the board's top group."
+          },
+          "column_values": {
+            "type": "string",
+            "description": "Column values as a JSON string keyed by column id, e.g. \"{\\\"status\\\": {\\\"label\\\": \\\"Working on it\\\"}, \\\"date4\\\": {\\\"date\\\": \\\"2026-10-15\\\"}, \\\"person\\\": {\\\"personsAndTeams\\\": [{\\\"id\\\": 123, \\\"kind\\\": \\\"person\\\"}]}, \\\"text\\\": \\\"Hello\\\"}\". Simple columns (text, numbers) take a plain string."
+          },
+          "create_labels_if_missing": {
+            "type": "boolean",
+            "description": "true to add status or dropdown labels that do not exist yet (needs board owner rights)."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateItem($boardId: ID!, $itemName: String!, $groupId: String, $columnValues: JSON, $createLabels: Boolean) { create_item(board_id: $boardId, item_name: $itemName, group_id: $groupId, column_values: $columnValues, create_labels_if_missing: $createLabels) { id name url group { id title } } }",
+        "queryParams": {
+          "boardId": "$board_id",
+          "itemName": "$item_name",
+          "groupId": "$group_id",
+          "columnValues": "$column_values",
+          "createLabels": "$create_labels_if_missing"
+        }
+      }
+    },
+    {
+      "name": "monday_change_column_values",
+      "description": "Change one or more column values of an item, including its name (column id \"name\"). Only the given columns change. Returns the item with the changed columns' text. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id of the item."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "column_values": {
+            "type": "string",
+            "description": "JSON string keyed by column id, e.g. \"{\\\"status\\\": {\\\"label\\\": \\\"Done\\\"}, \\\"numbers\\\": \\\"42\\\", \\\"name\\\": \\\"New name\\\"}\". To clear a column send an empty value, e.g. {\\\"status\\\": null} or {\\\"text\\\": \\\"\\\"}."
+          },
+          "create_labels_if_missing": {
+            "type": "boolean",
+            "description": "true to add status or dropdown labels that do not exist yet."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id",
+          "column_values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation ChangeColumnValues($boardId: ID!, $itemId: ID, $columnValues: JSON!, $createLabels: Boolean) { change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues, create_labels_if_missing: $createLabels) { id name column_values { id text } } }",
+        "queryParams": {
+          "boardId": "$board_id",
+          "itemId": "$item_id",
+          "columnValues": "$column_values",
+          "createLabels": "$create_labels_if_missing"
+        }
+      }
+    },
+    {
+      "name": "monday_move_item_to_group",
+      "description": "Move an item to another group of the same board. Returns the item with its new group. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Target group id from monday_get_board."
+          }
+        },
+        "required": [
+          "item_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation MoveItem($itemId: ID, $groupId: String!) { move_item_to_group(item_id: $itemId, group_id: $groupId) { id name group { id title } } }",
+        "queryParams": {
+          "itemId": "$item_id",
+          "groupId": "$group_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "monday_create_group",
+      "description": "Add a group (section) to a board, at the top by default or next to another group. Returns the group id and title. Confirm with the user before writing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id."
+          },
+          "group_name": {
+            "type": "string",
+            "description": "Group title."
+          },
+          "relative_to": {
+            "type": "string",
+            "description": "Id of an existing group to place the new one next to."
+          },
+          "position_relative_method": {
+            "type": "string",
+            "enum": [
+              "before_at",
+              "after_at"
+            ],
+            "description": "Place before or after relative_to."
+          }
+        },
+        "required": [
+          "board_id",
+          "group_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateGroup($boardId: ID!, $groupName: String!, $relativeTo: String, $method: PositionRelative) { create_group(board_id: $boardId, group_name: $groupName, relative_to: $relativeTo, position_relative_method: $method) { id title } }",
+        "queryParams": {
+          "boardId": "$board_id",
+          "groupName": "$group_name",
+          "relativeTo": "$relative_to",
+          "method": "$position_relative_method"
+        }
+      }
+    },
+    {
+      "name": "monday_list_updates",
+      "description": "Read the updates (comments) on an item, newest first, with their replies: id, plain text, HTML body, creator and time. Returns a cursor for older updates while it is not null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Updates per page (default 25)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Updates($itemId: ID!, $limit: Int = 25, $cursor: String) { items(ids: [$itemId]) { id name updates_page(limit: $limit, cursor: $cursor) { cursor updates { id text_body body created_at creator { id name } replies { id text_body created_at creator { id name } } } } } }",
+        "queryParams": {
+          "itemId": "$item_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "monday_create_update",
+      "description": "Post an update (comment) on an item, or a reply to an update with parent_id. The body accepts simple HTML. People who follow the item are notified. Confirm the text with the user before posting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id to comment on."
+          },
+          "body": {
+            "type": "string",
+            "description": "Update text; HTML such as <p>, <b>, <ul><li> is allowed."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Update id to reply to, instead of starting a new update."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateUpdate($itemId: ID, $body: String!, $parentId: ID) { create_update(item_id: $itemId, body: $body, parent_id: $parentId) { id text_body created_at item_id } }",
+        "queryParams": {
+          "itemId": "$item_id",
+          "body": "$body",
+          "parentId": "$parent_id"
+        }
+      }
+    },
+    {
+      "name": "monday_list_users",
+      "description": "List the account's users: id, name, email, title, kind (admin, member, guest, view_only), status and time zone. Filter by name or email. User ids are what people columns and mentions use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only users whose name contains this text."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only users with these email addresses."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Users per page (default 50)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Users($name: String, $emails: [String!], $limit: Int = 50, $page: Int = 1) { users(name: $name, emails: $emails, limit: $limit, page: $page) { id name email title kind status is_deleted time_zone_identifier } }",
+        "queryParams": {
+          "name": "$name",
+          "emails": "$emails",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "monday_archive_item",
+      "description": "Archive an item and its subitems: it leaves the board and can be restored from the board's archive. Installed switched off; turn it on only if the AI should remove items, and confirm every archive with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id to archive."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation ArchiveItem($itemId: ID) { archive_item(item_id: $itemId) { id name state } }",
+        "queryParams": {
+          "itemId": "$item_id"
+        }
+      }
+    }
+  ]
+}
