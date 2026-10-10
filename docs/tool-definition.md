@@ -339,6 +339,27 @@ instead of a text field containing the URL. Declare the parameter with `"type": 
 "format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
 configuration error — that encoding cannot carry a file at all.
 
+### JSON-encoded fields (`__json`)
+
+Some APIs take a method's arguments as one field holding JSON text, e.g. a form body
+`method=getOrders&parameters={"order_id":42}`. Wrap that field in a `__json` marker and it goes
+out as the JSON text of its resolved value:
+
+```json
+{
+  "bodyEncoding": "form-urlencoded",
+  "bodyMapping": {
+    "method": "getOrders",
+    "parameters": { "__json": { "order_id": "$order_id", "status_id": "$status_id" } }
+  }
+}
+```
+
+Arguments the caller leaves out are dropped first, so the example sends `{"order_id":42}` when only
+`order_id` is given, and `{}` when nothing is. `{ "__json": "$order" }` passes a whole object
+argument through. The marker works in JSON bodies too, where the field becomes a string. Only
+markers written in the tool's own mapping count; one inside a caller's argument is an ordinary object.
+
 ### XML bodies
 
 APIs that take an XML request (TallyPrime, SOAP-like endpoints) get their body

@@ -345,6 +345,9 @@ export class RestEngine {
           );
         } else {
           const mapped = this.mapParams(bodyMapping, bodyParams);
+          // `{ "__json": … }`: the field goes out as the JSON text of its
+          // resolved value (Baselinker's `parameters` form field).
+          stringifyJsonMarkers(mapped, bodyMapping);
           const encoding = endpointMapping.bodyEncoding || 'json';
           // Only fields whose marker is written in the tool's own bodyMapping
           // may fetch a file. A `$param` resolves to whatever the caller sent,
@@ -1184,6 +1187,39 @@ function configuredFileKeys(bodyMapping: Record<string, unknown>): Set<string> {
       .filter(([, template]) => isFileMarker(template))
       .map(([key]) => key),
   );
+}
+
+/** A `{ __json: <template> }` wrapper in a bodyMapping entry. */
+function isJsonMarker(value: unknown): value is { __json?: unknown } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    '__json' in (value as Record<string, unknown>)
+  );
+}
+
+/**
+ * Replace every top-level field the tool's own bodyMapping wraps in
+ * `{ "__json": … }` with the JSON text of its resolved value. Some APIs take
+ * a method's arguments as one JSON-encoded form field (Baselinker's
+ * `method=getOrders&parameters={"order_id":1}`), which the form encoders
+ * would otherwise spell as `parameters[order_id]=1`. Optional arguments the
+ * caller left out are dropped before encoding, and a marker whose value
+ * resolved to nothing sends `{}`. Only markers written in the mapping count:
+ * a caller-supplied `{ "__json": … }` argument stays an ordinary object.
+ */
+function stringifyJsonMarkers(
+  mapped: Record<string, unknown>,
+  bodyMapping: Record<string, unknown>,
+): void {
+  if (Array.isArray(bodyMapping) || Array.isArray(mapped)) return;
+  for (const [key, template] of Object.entries(bodyMapping)) {
+    if (!isJsonMarker(template)) continue;
+    const resolved = mapped[key];
+    const inner = isJsonMarker(resolved) ? resolved.__json : undefined;
+    mapped[key] = JSON.stringify(inner ?? {});
+  }
 }
 
 interface FetchedFile {
