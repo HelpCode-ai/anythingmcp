@@ -27,6 +27,21 @@ export interface ErrorHintInput {
   body?: unknown;
 }
 
+const MISSING_SCOPE_HINT =
+  'The connector was authorized without a permission this tool needs (the error names it). ' +
+  'Retrying will not help: ask the user to open this connector in AnythingMCP and click ' +
+  '"Authorize with Provider" again, which requests the missing permission, then retry.';
+
+const ODOO_FIELD_HINT =
+  'That field does not exist on this model in this Odoo database; field names differ between ' +
+  'Odoo versions and installed apps. Do not guess another spelling: list the model\'s fields ' +
+  'first (odoo_fields_get, or fields_get on the model) and use only the names it returns.';
+
+const ODOO_MODEL_HINT =
+  'That model does not exist in this Odoo database: it was renamed in newer versions or its ' +
+  'app is not installed (for example stock.production.lot is stock.lot since Odoo 16). Check ' +
+  'the model name before retrying, e.g. search ir.model by name.';
+
 const ETSY_PROPERTY_NAME_HINT =
   'Etsy needs every entry of property_values complete: property_id, property_name, ' +
   'scale_id (when the listing has one), value_ids and values. Read the listing with ' +
@@ -185,6 +200,25 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   }
   if (/Falsche Syntax in der Nähe von|Incorrect syntax near/i.test(text)) {
     return SQL_SYNTAX_HINT;
+  }
+
+  // OAuth tokens granted before an adapter gained a scope (Etsy's listings_w
+  // when its write tools arrived). Wording differs per vendor; the fix is the
+  // same: re-authorize, which now asks for the catalog's current scopes.
+  if (
+    (input.status === 401 || input.status === 403 || input.status === undefined) &&
+    /lacks scope|insufficient[_ ]scope|requires? scope|missing (the )?(required )?scopes?|scope is not granted/i.test(text)
+  ) {
+    return MISSING_SCOPE_HINT;
+  }
+
+  // Odoo answers an unknown field or model with a 500 ValueError (REST) or a
+  // JSON-RPC "Odoo Server Error", and the host is the customer's own domain.
+  if (/Invalid field '[^']+' on '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
+    return ODOO_FIELD_HINT;
+  }
+  if (/Object [\w.]+ doesn't exist|Model not found: [\w.]+/i.test(text)) {
+    return ODOO_MODEL_HINT;
   }
 
   if (hostMatches(input.host, 'weclapp.com')) {
