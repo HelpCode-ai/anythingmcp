@@ -90,6 +90,7 @@ import * as attio from './intl/attio.json';
 import * as autotask from './intl/autotask.json';
 import * as bamboohr from './intl/bamboohr.json';
 import * as basecamp from './intl/basecamp.json';
+import * as baselinker from './intl/baselinker.json';
 import * as baserow from './intl/baserow.json';
 import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
@@ -170,6 +171,7 @@ import * as height from './intl/height.json';
 import * as helium10 from './intl/helium10.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
+import * as hubspot from './intl/hubspot.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as inoreader from './intl/inoreader.json';
@@ -182,6 +184,7 @@ import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
 import * as keycrm from './intl/keycrm.json';
 import * as klaviyo from './intl/klaviyo.json';
+import * as kommo from './intl/kommo.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
 import * as lemlist from './intl/lemlist.json';
@@ -208,6 +211,7 @@ import * as microsoftOutlook from './intl/microsoft-outlook.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
+import * as monday from './intl/monday.json';
 import * as mongodb from './intl/mongodb.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
@@ -634,6 +638,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   autotask as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
+  baselinker as unknown as AdapterDefinition,
   baserow as unknown as AdapterDefinition,
   beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
@@ -714,6 +719,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helium10 as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
+  hubspot as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
@@ -726,6 +732,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kashflow as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
+  kommo as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
@@ -752,6 +759,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
+  monday as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
