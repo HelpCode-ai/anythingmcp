@@ -154,7 +154,7 @@ docker compose up -d
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的租户上测试。如果你正在使用其中某个系统，非常欢迎提交问题反馈或修复。
 
-**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 </details>
 
@@ -182,7 +182,7 @@ docker compose up -d
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的卖家账户上测试。
 
-**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
+**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 </details>
 
@@ -288,27 +288,8 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 
 ## 参与贡献
 
-提交 PR 前请阅读[贡献指南](.github/CONTRIBUTING.md)。最简单也最有用的贡献是一个适配器：只需一个 JSON 文件，并且有一个[分步说明 issue](https://github.com/HelpCode-ai/anythingmcp/issues/150)。
+提交 PR 前请阅读[贡献指南](.github/CONTRIBUTING.md)。最简单也最有用的贡献是一个适配器：只需一个 JSON 文件，并且有一个[分步说明 issue](https://github.com/HelpCode-ai/anythingmcp/issues/982)。
 
 ## License
 
 基于 [GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）**开源**。在你自己公司内部的商业使用始终包含在内；只有当你修改 AnythingMCP 并通过网络向他人提供修改后的版本时，才会产生 copyleft 义务。`ee/` 下面向云运营方的代码采用单独许可，自行托管时并不需要；参见[许可证 FAQ](docs/license-faq.md)。
-
----
-
-<p align="center">
-  <strong>⭐ 如果它帮你省下了一周编写 MCP 服务器的时间，请给个 Star。</strong><br/>
-  <em>Star 能让下一个人找到它，也帮助我们决定下一个要构建的适配器。</em>
-</p>
-
-<p align="center">
-  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
-  </a>
-</p>

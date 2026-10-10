@@ -3,8 +3,8 @@ title: "odoo-mcp-server: Odoo MCP server: connect Odoo ERP to Claude & ChatGPT. 
 message: "If you use this software, please cite AnythingMCP, which it is built on."
 type: software
 authors:
-  - name: "keysersoft"
-repository-code: "https://github.com/keysersoft/odoo-mcp-server"
+  - name: "helpcodeai"
+repository-code: "https://github.com/helpcodeai/odoo-mcp-server"
 url: "https://anythingmcp.com/guides/connect-odoo-to-claude"
 references:
   - type: software

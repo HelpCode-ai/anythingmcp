@@ -154,7 +154,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
 
-**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 </details>
 
@@ -182,7 +182,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Verkäuferkonto getestet.
 
-**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 </details>
 
@@ -288,27 +288,8 @@ Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für d
 
 ## Mitwirken
 
-Lies vor einem PR die [Contributing-Anleitung](.github/CONTRIBUTING.md). Der einfachste nützliche Beitrag ist ein Adapter: eine JSON-Datei, und es gibt ein [Walkthrough-Issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) dazu.
+Lies vor einem PR die [Contributing-Anleitung](.github/CONTRIBUTING.md). Der einfachste nützliche Beitrag ist ein Adapter: eine JSON-Datei, und es gibt ein [Walkthrough-Issue](https://github.com/HelpCode-ai/anythingmcp/issues/982) dazu.
 
 ## License
 
 **Open Source** unter der [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Kommerzielle Nutzung im eigenen Unternehmen ist erlaubt und war es schon immer; die Copyleft-Pflicht beginnt erst, wenn du AnythingMCP veränderst und die veränderte Version anderen über ein Netzwerk anbietest. Code für Cloud-Betreiber unter `ee/` ist gesondert lizenziert und für den Selbstbetrieb nicht nötig; siehe [Lizenz-FAQ](docs/license-faq.md).
-
----
-
-<p align="center">
-  <strong>⭐ Wenn dir das eine Woche MCP-Server-Programmierung erspart hat, gib einen Stern.</strong><br/>
-  <em>Über Sterne findet die nächste Person das Projekt, und an ihnen entscheiden wir, welchen Adapter wir als Nächstes bauen.</em>
-</p>
-
-<p align="center">
-  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
-  </a>
-</p>
