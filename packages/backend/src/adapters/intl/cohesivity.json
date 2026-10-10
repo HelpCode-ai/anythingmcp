@@ -1,0 +1,748 @@
+{
+  "slug": "cohesivity",
+  "name": "Cohesivity",
+  "description": "Set up a backend for the project an AI agent is building: Postgres, hosting, email, storage and more, from Claude, ChatGPT or Copilot through Cohesivity's hosted MCP server. No account or API key needed.",
+  "instructions": "This connector bridges **Cohesivity's hosted MCP server** (`https://cohesivity.ai/mcp`). Cohesivity gives an AI agent a backend for the project it is building: Postgres, Redis, object and vector storage, hosting, an email inbox, auth and social login, realtime, cron, and AI model APIs, all behind one tenant. The server needs no account or API key, so the connector installs with nothing to fill in.\n\n**The tools come from the server.** At install AnythingMCP asks Cohesivity's server which tools it has. When Cohesivity adds tools, open the connector and click **Discover tools** to pick them up.\n\n**Tenants**: `create_tenant` creates a new ephemeral tenant on every confirmed call and returns its `tenant_id`, a management key and an application key. Every other tool takes the `tenant_id` and the management key. An ephemeral tenant expires after 72 hours; `claim_tenant` returns an approval link a person opens to keep it in their Cohesivity account. Tenant creation is limited to 10 calls per 60 seconds per IP address, and every user of this connector shares the gateway's address, so reuse a tenant instead of creating one per conversation.\n\n**Safety**:\n- The tenant keys pass through the conversation as tool results and arguments, so they are stored in AnythingMCP's audit log with the rest of each call. Limit who can use this connector and read its audit log with roles, and claim the tenant before relying on it.\n- An ephemeral tenant runs under fixed usage caps and pauses when it reaches one. A claimed tenant moves to its owner's Cohesivity plan and wallet, where provisioned services can cost money.\n- `give_feedback` installs switched off, because its text goes to Cohesivity.\n\n**Working with it**: start with `get_cohesivity_documentation` (`offerings`, then `offering` for the service you need), then `create_tenant` once, then `provision_resource` for each service and `tenant_status` to check what is provisioned. The application code then calls the provisioned services over HTTPS with the application key, as the offering documents describe.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "cohesivity",
+  "docsUrl": "https://cohesivity.ai/docs?ref=gh-anythingmcp",
+  "requiredEnvVars": [],
+  "prerequisites": "- Nothing to set up for a first tenant: Cohesivity's server needs no account or API key.\n- A Cohesivity account to keep a tenant past 72 hours; `claim_tenant` returns the link that adds it to one.\n- Network access from the AnythingMCP server to cohesivity.ai over HTTPS.",
+  "connector": {
+    "name": "Cohesivity",
+    "type": "MCP",
+    "baseUrl": "https://cohesivity.ai/mcp",
+    "authType": "NONE",
+    "config": {
+      "mcpToolPrefix": "cohesivity_"
+    }
+  },
+  "tools": [
+    {
+      "name": "cohesivity_get_cohesivity_documentation",
+      "description": "Read a current Cohesivity overview, reference, onboarding guide, pricing guide, offerings catalog, or individual offering document.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "document"
+        ],
+        "properties": {
+          "document": {
+            "type": "string",
+            "enum": [
+              "docs",
+              "quick-reference",
+              "full-reference",
+              "onboarding",
+              "pricing",
+              "offerings",
+              "offering"
+            ],
+            "description": "Which document to read: `offerings` lists every service, `offering` reads one service named in `offering`, and `docs`, `quick-reference`, `full-reference`, `onboarding` and `pricing` cover the platform."
+          },
+          "offering": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Offering slug. Required only when document is \"offering\"."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "get_cohesivity_documentation",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cohesivity_create_tenant",
+      "description": "Create an ephemeral Cohesivity tenant without login. Call this first when the project has no .cohesivity file. Each confirmed call creates a new tenant; do not retry automatically when the outcome is unknown. Write credentials_file.content verbatim to a private (0600), gitignored .cohesivity file. Never overwrite a different tenant without approval, print the contents, or commit them. Use its tenant_id and coh_management_key for follow-up tools. If the client cannot write files, say so. This response contains project secrets and may be retained in client tool history. Sign in before creating new tenants to have them owned by your account without a separate claim.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "confirmed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create_tenant",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "cohesivity_provision_resource",
+      "description": "Provision one resource with resource/configuration, or several with resources/configurations. Requires an existing tenant: pass its tenant_id, and if the project has no .cohesivity file, call create_tenant first. Fetch every requested offering's live documentation and obtain any required user consent before calling.",
+      "parameters": {
+        "type": "object",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "enum": [
+                  "openweather-api",
+                  "google-geocoding-api",
+                  "openai-api",
+                  "ai-gateway",
+                  "deepgram-api",
+                  "exa-api",
+                  "steel-browser",
+                  "redis",
+                  "object-storage",
+                  "railway-hosting",
+                  "cloudflare-workers"
+                ]
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "const": "postgres"
+              },
+              "configuration": {
+                "type": "object",
+                "properties": {
+                  "region": {
+                    "type": "string",
+                    "enum": [
+                      "apac",
+                      "aws-us-east-1",
+                      "aws-us-east-2",
+                      "aws-us-west-2",
+                      "aws-eu-central-1",
+                      "aws-eu-west-2",
+                      "aws-ap-southeast-1",
+                      "aws-ap-southeast-2",
+                      "aws-sa-east-1"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "const": "inbox"
+              },
+              "configuration": {
+                "type": "object",
+                "properties": {
+                  "webhook_url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "const": "realtime"
+              },
+              "configuration": {
+                "type": "object",
+                "properties": {
+                  "write_region": {
+                    "type": "string",
+                    "enum": [
+                      "wnam",
+                      "enam",
+                      "weur",
+                      "eeur",
+                      "apac",
+                      "oc"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "configuration",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "const": "social-login"
+              },
+              "configuration": {
+                "type": "object",
+                "required": [
+                  "callback_urls"
+                ],
+                "properties": {
+                  "callback_urls": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resource",
+              "configuration",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resource": {
+                "type": "string",
+                "const": "vector-database"
+              },
+              "configuration": {
+                "type": "object",
+                "required": [
+                  "dimensions"
+                ],
+                "properties": {
+                  "dimensions": {
+                    "type": "integer",
+                    "enum": [
+                      384,
+                      768,
+                      1024,
+                      1536,
+                      3072
+                    ]
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "cosine",
+                      "euclidean",
+                      "dotproduct"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "tenant_id",
+              "resources",
+              "confirmed",
+              "coh_management_key"
+            ],
+            "properties": {
+              "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+              },
+              "resources": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "openweather-api",
+                    "google-geocoding-api",
+                    "openai-api",
+                    "ai-gateway",
+                    "deepgram-api",
+                    "exa-api",
+                    "steel-browser",
+                    "inbox",
+                    "postgres",
+                    "redis",
+                    "object-storage",
+                    "vector-database",
+                    "railway-hosting",
+                    "cloudflare-workers",
+                    "social-login",
+                    "realtime"
+                  ]
+                }
+              },
+              "configurations": {
+                "type": "object",
+                "properties": {
+                  "postgres": {
+                    "type": "object",
+                    "properties": {
+                      "region": {
+                        "type": "string",
+                        "enum": [
+                          "apac",
+                          "aws-us-east-1",
+                          "aws-us-east-2",
+                          "aws-us-west-2",
+                          "aws-eu-central-1",
+                          "aws-eu-west-2",
+                          "aws-ap-southeast-1",
+                          "aws-ap-southeast-2",
+                          "aws-sa-east-1"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "inbox": {
+                    "type": "object",
+                    "properties": {
+                      "webhook_url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "realtime": {
+                    "type": "object",
+                    "properties": {
+                      "write_region": {
+                        "type": "string",
+                        "enum": [
+                          "wnam",
+                          "enam",
+                          "weur",
+                          "eeur",
+                          "apac",
+                          "oc"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "social-login": {
+                    "type": "object",
+                    "required": [
+                      "callback_urls"
+                    ],
+                    "properties": {
+                      "callback_urls": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "vector-database": {
+                    "type": "object",
+                    "required": [
+                      "dimensions"
+                    ],
+                    "properties": {
+                      "dimensions": {
+                        "type": "integer",
+                        "enum": [
+                          384,
+                          768,
+                          1024,
+                          1536,
+                          3072
+                        ]
+                      },
+                      "metric": {
+                        "type": "string",
+                        "enum": [
+                          "cosine",
+                          "euclidean",
+                          "dotproduct"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "confirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+              },
+              "coh_management_key": {
+                "type": "string",
+                "minLength": 9,
+                "maxLength": 256,
+                "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+                "writeOnly": true,
+                "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "endpointMapping": {
+        "method": "provision_resource",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "cohesivity_tenant_status",
+      "description": "Read current lifecycle, limits, resources, runtime state, and notifications for a tenant you can manage.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "coh_management_key"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+            "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+          },
+          "coh_management_key": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 256,
+            "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+            "writeOnly": true,
+            "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "tenant_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cohesivity_claim_tenant",
+      "description": "Start the claim handoff for an ephemeral tenant you can manage. Claiming is a consent gate; call only after explicit user approval.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "confirmed",
+          "coh_management_key"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+            "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Set to true only when the current user request explicitly authorized this exact mutation."
+          },
+          "coh_management_key": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 256,
+            "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+            "writeOnly": true,
+            "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "claim_tenant",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "cohesivity_give_feedback",
+      "description": "Submit feedback on Cohesivity and its services anytime; no user confirmation is needed. Exclude personal information and secrets.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "feedback",
+          "coh_management_key"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+            "description": "Required explicit tenant id. Use the tenant_id that create_tenant returned, or the one in the project .cohesivity file. Account connections are not bound to a tenant; access is checked for every call."
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S",
+            "description": "The feedback text, sent to Cohesivity. Leave out personal information and secrets."
+          },
+          "coh_management_key": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 256,
+            "pattern": "^coh_man_[A-Za-z0-9_-]+$",
+            "writeOnly": true,
+            "description": "Secret management key from the tenant .cohesivity file. Authorizes this tenant only. Never print it in chat or logs or commit it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "give_feedback",
+        "path": "/mcp"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    }
+  ]
+}
