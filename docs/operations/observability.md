@@ -193,3 +193,6 @@ When a customer reports a problem, the **first** thing to ask is "what's the `X-
 - No PII in error reports: the organization id is the only identifier, and no IP address is sent.
 
 If a self-hoster wants any of these enabled, every knob is a documented env var. If we add one that isn't, that's a bug — file it.
+
+
+The OpenTelemetry `service.version` attribute now comes from `APP_VERSION` (resolved from `package.json`), with `APP_COMMIT` and `APP_BUILD_DATE` available as build-time env vars.

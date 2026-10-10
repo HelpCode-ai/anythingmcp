@@ -431,3 +431,15 @@ With both of these in place, AnythingMCP makes no outbound connections to `anyth
 ---
 
 [Back to README](../README.md) | [API Reference](api-reference.md) | [Integration Guides](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini)
+
+
+## Build provenance
+
+When building the image yourself, pass the commit and build date so the UI and startup log show real values instead of `dev`:
+
+```bash
+docker build \
+  --build-arg APP_COMMIT=$(git rev-parse --short HEAD) \
+  --build-arg APP_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t anythingmcp:local .
+```
