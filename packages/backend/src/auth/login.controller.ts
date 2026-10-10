@@ -28,8 +28,6 @@ import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import { LicenseGuardService } from '../license/license-guard.service';
-import { TrustStatsService } from '../public-stats/trust-stats.service';
-import { formatStars } from '../public-stats/trust-stats.format';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
   claudeMark,
@@ -96,18 +94,11 @@ export class LoginController {
     private readonly grants: McpConnectionGrantService,
     @Optional() private readonly productEvents?: ProductEventService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
-    @Optional() private readonly trustStats?: TrustStatsService,
   ) {}
 
-  /** The trust row under every page of the flow. Never waits on GitHub. */
+  /** The trust row under every page of the flow. */
   private trust(): TrustRowOptions {
-    let stars: string | null = null;
-    try {
-      stars = formatStars(this.trustStats?.peek().githubStars);
-    } catch {
-      stars = null;
-    }
-    return { cloud: this.deployment.isCloud(), stars };
+    return { cloud: this.deployment.isCloud() };
   }
 
   /**

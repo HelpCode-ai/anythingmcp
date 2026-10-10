@@ -19,7 +19,6 @@ export const EMAIL_COLORS = {
   muted: '#6b665c',
   blue: '#2159e0',
   tint: '#eef2fd',
-  star: '#e3a008',
 } as const;
 
 const C = EMAIL_COLORS;
@@ -193,13 +192,11 @@ const CLIENTS: Array<{ file: string; alt: string; label: string }> = [
 function trustBand(ctx: EmailBrandContext, assetBase: string): string {
   const { stats, cloud } = ctx;
   const tiles: Array<{ big: string; small: string }> = [];
-  if (stats.stars) {
-    tiles.push({ big: `<span style="color:${C.star};">&#9733;</span> ${esc(stats.stars)}`, small: 'stars on GitHub' });
-  }
   if (stats.downloads) tiles.push({ big: esc(stats.downloads), small: 'downloads' });
   // The tool-call count is AnythingMCP Cloud's. A self-hosted instance only
   // knows its own, which would read as if it were everyone's.
   if (cloud && stats.toolCalls) tiles.push({ big: esc(stats.toolCalls), small: 'AI tool calls last month' });
+  if (cloud && stats.workspaces) tiles.push({ big: esc(stats.workspaces), small: 'workspaces on AnythingMCP Cloud' });
   const width = tiles.length ? Math.floor(100 / tiles.length) : 100;
   const statRow = tiles.length
     ? `<tr><td style="padding:0 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -212,10 +209,6 @@ ${tiles
   .join('\n')}
 </tr></table></td></tr>`
     : '';
-  const workspaces =
-    cloud && stats.workspaces
-      ? `<tr><td style="padding:0 16px 6px 16px;text-align:center;font-family:${SANS};font-size:12px;color:${C.muted};"><span style="color:${C.ink};font-weight:600;">${esc(stats.workspaces)}</span> workspaces on AnythingMCP Cloud</td></tr>`
-      : '';
   const directory = cloud
     ? `<a href="${CLAUDE_DIRECTORY_URL}" style="text-decoration:none;color:${C.ink};">${pill(
         `<img src="${esc(assetBase)}/claude.png" width="12" height="12" alt="" style="vertical-align:-2px;border:0;"> Listed in the Claude Directory`,
@@ -235,7 +228,6 @@ ${tiles
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid ${C.border};border-radius:14px;">
 <tr><td style="padding:20px 24px 4px 24px;font-family:${SANS};font-size:13px;font-weight:600;color:${C.muted};text-align:center;">Why teams build on AnythingMCP</td></tr>
 ${statRow}
-${workspaces}
 <tr><td style="padding:4px 16px 12px 16px;text-align:center;line-height:2.4;">
 ${badges}
 </td></tr>
@@ -301,7 +293,6 @@ export function renderEmailText(input: {
 }): string {
   const { stats, cloud } = input.ctx;
   const numbers = [
-    stats.stars ? `${stats.stars} stars on GitHub` : null,
     stats.downloads ? `${stats.downloads} downloads` : null,
     cloud && stats.toolCalls ? `${stats.toolCalls} AI tool calls last month` : null,
     cloud && stats.workspaces ? `${stats.workspaces} workspaces on AnythingMCP Cloud` : null,

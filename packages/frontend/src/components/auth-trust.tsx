@@ -35,11 +35,10 @@ export function TrustPanel({
   directoryBadge?: boolean;
 }) {
   const tiles = [
-    stats?.stars ? { n: stats.stars, l: 'stars on GitHub', star: true } : null,
     stats?.downloads ? { n: stats.downloads, l: 'downloads' } : null,
     stats?.toolCalls ? { n: stats.toolCalls, l: 'AI tool calls last month' } : null,
     stats?.workspaces ? { n: stats.workspaces, l: 'workspaces on AnythingMCP Cloud' } : null,
-  ].filter(Boolean) as Array<{ n: string; l: string; star?: boolean }>;
+  ].filter(Boolean) as Array<{ n: string; l: string }>;
 
   return (
     <aside
@@ -60,15 +59,13 @@ export function TrustPanel({
         </p>
 
         {tiles.length > 0 && (
-          <div className="mb-6 grid grid-cols-2 gap-2 sm:gap-3" data-testid="trust-stats">
+          <div
+            className={`mb-6 grid ${tiles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:gap-3`}
+            data-testid="trust-stats"
+          >
             {tiles.map((t) => (
               <div key={t.l} className="rounded-[12px] border border-white/[.09] bg-white/[.05] p-2.5 sm:p-3.5">
                 <div className="text-[17px] font-semibold tracking-[-0.01em] sm:text-[22px]">
-                  {t.star && (
-                    <span aria-hidden className="text-[#f5b301]">
-                      &#9733;{' '}
-                    </span>
-                  )}
                   {t.n}
                 </div>
                 <div className="mt-1 text-[11px] leading-snug text-[#97a1b5] sm:text-xs">{t.l}</div>
@@ -136,7 +133,7 @@ export function TrustPanel({
 }
 
 /** One quiet line under a sign-in card. */
-export function TrustLine({ cloud, stats }: { cloud: boolean; stats: TrustStatsDisplay | null }) {
+export function TrustLine({ cloud }: { cloud: boolean }) {
   const items = [
     'AES-256-GCM encryption',
     ...(cloud ? ['Hosted in Frankfurt', 'GDPR · DPA'] : []),
@@ -153,16 +150,7 @@ export function TrustLine({ cloud, stats }: { cloud: boolean; stats: TrustStatsD
         rel="noopener noreferrer"
         className="font-medium text-[var(--text-2)] hover:text-[var(--text)]"
       >
-        {stats?.stars ? (
-          <>
-            <span aria-hidden className="text-[#e3a008]">
-              &#9733;
-            </span>{' '}
-            {stats.stars} on GitHub · open source
-          </>
-        ) : (
-          'Open source on GitHub'
-        )}
+        Open source on GitHub
       </a>
     </div>
   );

@@ -5,12 +5,12 @@ import { publicStats, type PublicStats } from './api';
 
 /**
  * The public trust numbers (GET /api/public/stats) and how they are shown.
- * Same rules as the backend's trust-stats.format.ts: stars, downloads and tool
- * calls never below TRUST_FLOORS, live numbers above them rounded DOWN;
- * workspaces live only, left out below their rounding unit or when unknown.
+ * Same rules as the backend's trust-stats.format.ts: downloads and tool calls
+ * never below TRUST_FLOORS, live numbers above them rounded DOWN; workspaces
+ * live only, left out below their rounding unit or when unknown. GitHub stars
+ * are not shown (10 Oct 2026).
  */
 export interface TrustStatsDisplay {
-  stars: string | null;
   downloads: string | null;
   workspaces: string | null;
   toolCalls: string | null;
@@ -25,7 +25,7 @@ function floorPlus(n: unknown, unit: number): string | null {
 }
 
 /** Mirrors TRUST_FLOORS in the backend's trust-stats.format.ts. */
-export const TRUST_FLOORS = { githubStars: 1_000, dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
+export const TRUST_FLOORS = { dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
 
 const atLeast = (n: unknown, floor: number) => (usable(n) && n > floor ? n : floor);
 
@@ -35,15 +35,8 @@ function formatToolCalls(n: unknown): string | null {
   return floorPlus(n, 10_000);
 }
 
-export function formatStars(n: unknown): string | null {
-  if (!usable(n)) return null;
-  const whole = Math.floor(n);
-  return whole < 1000 ? thousands(whole) : floorPlus(whole, 100);
-}
-
 export function formatTrustStats(s: Partial<PublicStats> | null | undefined): TrustStatsDisplay {
   return {
-    stars: formatStars(atLeast(s?.githubStars, TRUST_FLOORS.githubStars)),
     downloads: floorPlus(atLeast(s?.dockerPulls, TRUST_FLOORS.dockerPulls), 1000),
     workspaces: floorPlus(s?.workspaces, 100),
     toolCalls: formatToolCalls(atLeast(s?.toolCalls30d, TRUST_FLOORS.toolCalls30d)),

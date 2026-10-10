@@ -34,10 +34,10 @@ test('cloud sign-up shows the numbers, never below their floors', async ({ page 
   await page.goto('/login?mode=register');
   await expect(page.getByRole('heading', { name: 'Create your free account' })).toBeVisible();
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
-  await expect(panel.getByText('1,000+')).toBeVisible();
   await expect(panel.getByText('200,000+')).toBeVisible();
   await expect(panel.getByText('1M+')).toBeVisible();
   await expect(panel.getByText('3,800+')).toBeVisible();
+  await expect(panel.getByText(/stars on GitHub/)).toHaveCount(0);
   await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
   await expect(panel.getByText('Your 7-day trial includes')).toBeVisible();
 });
@@ -58,7 +58,7 @@ test('self-hosted sign-up makes no Cloud claims', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.getByText(/Frankfurt|7-day|DPA/)).toHaveCount(0);
-  await expect(page.getByText('1,000+ on GitHub · open source')).toBeVisible();
+  await expect(page.getByText('Open source on GitHub')).toBeVisible();
 });
 
 test('the Claude Directory badge is hidden for ChatGPT and Muse only', async ({ page }) => {

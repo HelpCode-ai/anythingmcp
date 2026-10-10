@@ -746,7 +746,7 @@ describe('LoginController', () => {
       cloud: { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false },
       selfHosted: { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true },
     };
-    const make = (deployment: object, p: object = prisma, trustStats?: object) =>
+    const make = (deployment: object, p: object = prisma) =>
       new LoginController(
         authService as unknown as AuthService,
         p as unknown as PrismaService,
@@ -755,9 +755,6 @@ describe('LoginController', () => {
         sso as unknown as SsoService,
         deployment as any,
         grants as any,
-        undefined,
-        undefined,
-        trustStats as any,
       );
     const session = (redirectUri: string, clientName: string) => {
       store.getOAuthSession.mockResolvedValue({
@@ -846,14 +843,14 @@ describe('LoginController', () => {
       expect(html.indexOf('value="approve"')).toBeLessThan(html.indexOf('value="deny"'));
     });
 
-    it('makes Frankfurt and DPA claims on Cloud only, with the live star count', async () => {
+    it('makes Frankfurt and DPA claims on Cloud only, and shows no star count', async () => {
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
-      const stats = { peek: () => ({ githubStars: 1234 }) };
-      const cloudHtml = await page(make(DEPLOY.cloud, prisma, stats));
+      const cloudHtml = await page(make(DEPLOY.cloud, prisma));
       expect(cloudHtml).toContain('Hosted in Frankfurt');
       expect(cloudHtml).toContain('GDPR &middot; DPA');
-      expect(cloudHtml).toContain('1,200+ on GitHub');
-      const selfHtml = await page(make(DEPLOY.selfHosted, prisma, stats));
+      expect(cloudHtml).toContain('Open source on GitHub');
+      expect(cloudHtml).not.toContain('&#9733;');
+      const selfHtml = await page(make(DEPLOY.selfHosted, prisma));
       expect(selfHtml).not.toMatch(/Frankfurt|DPA/);
       expect(selfHtml).toContain('AES-256-GCM');
     });
