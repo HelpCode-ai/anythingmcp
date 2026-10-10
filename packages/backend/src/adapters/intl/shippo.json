@@ -1,0 +1,1234 @@
+{
+  "slug": "shippo",
+  "name": "Shippo",
+  "description": "Let your AI handle shipping through Shippo: validate addresses, compare live rates from your carriers, buy and refund labels, track parcels, prepare customs paperwork and create scan forms. Test mode is free.",
+  "unlisted": true,
+  "instructions": "## Shippo\nThis connector works with one Shippo account through the **Shippo API** (`https://api.goshippo.com`): addresses and validation, parcels, shipments with live rates from your carriers, buying labels, tracking, carrier accounts, customs declarations, label refunds and manifests (scan forms).\n\n**Setup (about 3 minutes)**\n1. Sign up at https://apps.goshippo.com/join (free) and open the API portal: https://portal.goshippo.com/api-config/api → **API Configuration → Developer keys**.\n2. Click **Create new test key** (or **Create new live key**) and copy it at once; it is shown only once. Test keys start with `shippo_test_`, live keys with `shippo_live_`.\n3. Paste it into `SHIPPO_API_TOKEN` and install. `shippo_list_carrier_accounts` should list Shippo's own carrier accounts (for example USPS), which are ready to use in the US.\n\n**Test or live**: the key decides. With a test key labels are free, watermarked \"SAMPLE - DO NOT MAIL\", tracking numbers never update, refunds always succeed, and manifests and batches are not available. A test key sees only test data and a live key only live data. Carrier accounts you connect with your own carrier credentials work only in the mode in which they were added.\n\n**Buying a label costs money: confirm first.** With a live key `shippo_buy_label` charges the label price (plus any insurance) to the Shippo account at once. Before calling it, state carrier, service, price and both addresses and wait for the user's yes. `shippo_request_refund` voids a label (it can no longer be used) and asks the carrier for the money back; only unused labels up to 90 days old qualify, and the refund itself takes days to weeks.\n\n**Typical flow**\n1. `shippo_create_shipment` with `address_from`, `address_to` and `parcels` (objects or saved object_ids) returns `rates[]`: each with `object_id`, `amount`, `currency`, `provider`, `servicelevel.name`, `estimated_days`.\n2. Pick a rate with the user, then `shippo_buy_label` with its `object_id`. The answer has `tracking_number`, `tracking_url_provider` and `label_url` (a signed link to the PDF that expires; read the label again with `shippo_get_label` for a fresh one).\n3. Follow the parcel with `shippo_get_tracking` (the carrier token as Shippo names it, such as `usps`, `ups`, `fedex` or `dhl_express`; `shippo_list_carrier_accounts` shows the tokens, plus the tracking number). In test mode use carrier `shippo` with tracking number `SHIPPO_TRANSIT`, `SHIPPO_DELIVERED`, `SHIPPO_RETURNED` or `SHIPPO_FAILURE`.\n\n**International shipments** need a customs declaration: create items with `shippo_create_customs_item` (description, quantity, net weight, value, origin country, tariff number), then `shippo_create_customs_declaration` with those items, `contents_type`, `non_delivery_option`, `certify: true` and `certify_signer`, and pass its object_id as `customs_declaration` to `shippo_create_shipment`.\n\n**Units and formats**: dimensions and weights are strings with their units (`\"length\": \"30\", \"distance_unit\": \"cm\"`, `\"weight\": \"1.2\", \"mass_unit\": \"kg\"`). Countries are ISO 2 codes (`DE`, `US`). Dates are ISO 8601 (`2026-10-12T09:00:00Z`).\n\n**Waiting for results**: the shipment, label, refund and manifest tools wait for the result by default (`async: false`). If Shippo answers with `status` QUEUED or WAITING, read the object again a few seconds later. A label with `status` ERROR explains why in `messages[]`.\n\n**Address validation**: `shippo_create_address` with `validate: true` (or `shippo_validate_address` on a saved address) returns `validation_results.is_valid` and messages. With a test key, addresses outside the US are echoed back without being checked; with a live key, validating them is charged.\n\n**API version**: no `SHIPPO-API-VERSION` header is sent, so the account's default version applies. Sending one would also change the version for later calls of the whole account.\n\n**Rate limits** per minute: 500 creates and 4,000 reads of single objects, but only 50 list calls (10 with a test key); prefer reading single objects by id over paging through lists.\n\n**Common errors**\n- 401 `Token does not exist`: wrong or deleted key; create a new one in the API portal.\n- 400: a field is missing or invalid; the body names it (for example an address that the carrier rejects).\n- 422 / `status: ERROR` with `messages[]`: the carrier refused, for example an unsupported service for that route or missing customs data.\n- 429: over the rate limit; wait a minute.\n\n**Out of scope here**: batches, orders, pickups, webhooks other than tracking registration, connecting carrier accounts and the v2 address API.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "shippo",
+  "docsUrl": "https://docs.goshippo.com/shippoapi/public-api/",
+  "requiredEnvVars": [
+    "SHIPPO_API_TOKEN"
+  ],
+  "appRegistrationUrl": "https://portal.goshippo.com/api-config/api",
+  "envVarMeta": {
+    "SHIPPO_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shippo API portal → API Configuration → Developer keys → Create new test key (free) or live key. Shown only once.",
+      "link": "https://portal.goshippo.com/api-config/api",
+      "pattern": "^shippo_(test|live)_\\S+$",
+      "patternMessage": "Paste the key as shown, starting with shippo_test_ or shippo_live_, without the word ShippoToken."
+    }
+  },
+  "verifyHints": {
+    "401": "Shippo refused the token. Create a new key in the API portal (API Configuration → Developer keys) and paste it without the word ShippoToken.",
+    "rate_limited": "Shippo is rate limiting this account (list calls are limited to 50 per minute, 10 with a test key). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "shippo_list_carrier_accounts",
+    "params": {
+      "results": 1
+    }
+  },
+  "prerequisites": "A Shippo account (free) and an API key from the Shippo API portal. A test key costs nothing; a live key buys real labels. About 3 minutes.",
+  "connector": {
+    "name": "Shippo API",
+    "type": "REST",
+    "baseUrl": "https://api.goshippo.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "ShippoToken {{SHIPPO_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/carrier_accounts?results=1"
+  },
+  "tools": [
+    {
+      "name": "shippo_create_address",
+      "description": "Save an address, optionally validated. Returns the address with object_id (usable in shipments instead of the full address), is_complete and, with validate true, validation_results.is_valid and messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the person."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "street1": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "street2": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "street_no": {
+            "type": "string",
+            "description": "House number, if the carrier wants it separate (some EU carriers)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province code (required for US, CA and some other countries)."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166 two-letter country code, e.g. \"DE\" or \"US\"."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (many carriers require it for the recipient)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "is_residential": {
+            "type": "boolean",
+            "description": "true for a private home, false for a business."
+          },
+          "validate": {
+            "type": "boolean",
+            "description": "true to validate the address while saving it; the answer then has validation_results."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note, up to 100 characters."
+          }
+        },
+        "required": [
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addresses",
+        "bodyMapping": {
+          "name": "$name",
+          "company": "$company",
+          "street1": "$street1",
+          "street2": "$street2",
+          "street_no": "$street_no",
+          "city": "$city",
+          "state": "$state",
+          "zip": "$zip",
+          "country": "$country",
+          "phone": "$phone",
+          "email": "$email",
+          "is_residential": "$is_residential",
+          "validate": "$validate",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_address",
+      "description": "Read a saved address by object_id, with its fields, completeness and any validation results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "description": "The address object_id."
+          }
+        },
+        "required": [
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/{address_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_validate_address",
+      "description": "Validate a saved address and return it with validation_results (is_valid, messages with suggested corrections). With a test key, non-US addresses are not checked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "description": "The address object_id."
+          }
+        },
+        "required": [
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/{address_id}/validate",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_list_addresses",
+      "description": "List saved addresses, newest first, with next and previous page links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses",
+        "queryParams": {
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_create_parcel",
+      "description": "Save a parcel (dimensions and weight, or a carrier parcel template plus weight). Returns object_id, usable in shipments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "string",
+            "description": "Length, e.g. \"30\"."
+          },
+          "width": {
+            "type": "string",
+            "description": "Width."
+          },
+          "height": {
+            "type": "string",
+            "description": "Height."
+          },
+          "distance_unit": {
+            "type": "string",
+            "description": "cm, in, ft, m, mm or yd.",
+            "enum": [
+              "cm",
+              "in",
+              "ft",
+              "m",
+              "mm",
+              "yd"
+            ]
+          },
+          "weight": {
+            "type": "string",
+            "description": "Weight, e.g. \"1.2\"."
+          },
+          "mass_unit": {
+            "type": "string",
+            "description": "g, kg, lb or oz.",
+            "enum": [
+              "g",
+              "kg",
+              "lb",
+              "oz"
+            ]
+          },
+          "template": {
+            "type": "string",
+            "description": "A carrier parcel template token instead of dimensions, e.g. \"USPS_FlatRateEnvelope\" (see shippo_list_parcel_templates)."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note, up to 100 characters."
+          }
+        },
+        "required": [
+          "weight",
+          "mass_unit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parcels",
+        "bodyMapping": {
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "distance_unit": "$distance_unit",
+          "weight": "$weight",
+          "mass_unit": "$mass_unit",
+          "template": "$template",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_parcel",
+      "description": "Read a saved parcel by object_id: dimensions, weight, units and template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "string",
+            "description": "The parcel object_id."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels/{parcel_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_list_parcel_templates",
+      "description": "List carrier parcel templates (flat rate boxes and envelopes): token, name, carrier and dimensions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Only templates of this carrier, e.g. \"usps\", \"fedex\", \"ups\"."
+          },
+          "include": {
+            "type": "string",
+            "description": "all, user or enabled.",
+            "enum": [
+              "all",
+              "user",
+              "enabled"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcel-templates",
+        "queryParams": {
+          "carrier": "$carrier",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "shippo_create_shipment",
+      "description": "Create a shipment and get live rates from the account's carriers. Nothing is bought. Returns object_id, status and rates[] (object_id, amount, currency, provider, servicelevel, estimated_days, attributes such as CHEAPEST and FASTEST).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_from": {
+            "description": "An address object {\"name\", \"company\", \"street1\", \"street2\", \"city\", \"state\", \"zip\", \"country\" (ISO 2), \"phone\", \"email\"} or the object_id of a saved address.",
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "address_to": {
+            "description": "An address object {\"name\", \"company\", \"street1\", \"street2\", \"city\", \"state\", \"zip\", \"country\" (ISO 2), \"phone\", \"email\"} or the object_id of a saved address.",
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "parcels": {
+            "type": "array",
+            "description": "Parcels: objects {\"length\", \"width\", \"height\", \"distance_unit\", \"weight\", \"mass_unit\"} or parcel object_ids.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "address_return": {
+            "description": "Optional return address (object or object_id).",
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "customs_declaration": {
+            "type": "string",
+            "description": "object_id of a customs declaration, required for international shipments."
+          },
+          "extra": {
+            "type": "object",
+            "description": "Optional services, e.g. {\"signature_confirmation\": \"STANDARD\", \"insurance\": {\"amount\": \"200\", \"currency\": \"EUR\", \"content\": \"Books\"}, \"reference_1\": \"Order 1042\", \"is_return\": false}."
+          },
+          "shipment_date": {
+            "type": "string",
+            "description": "Planned ship date, ISO 8601 (default now)."
+          },
+          "carrier_accounts": {
+            "type": "array",
+            "description": "Only rates from these carrier account object_ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note, up to 100 characters."
+          },
+          "async": {
+            "type": "boolean",
+            "description": "false (default here) waits for the result; true returns at once with status QUEUED, then read the object again.",
+            "default": false
+          }
+        },
+        "required": [
+          "address_from",
+          "address_to",
+          "parcels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "address_from": "$address_from",
+          "address_to": "$address_to",
+          "parcels": "$parcels",
+          "address_return": "$address_return",
+          "customs_declaration": "$customs_declaration",
+          "extra": "$extra",
+          "shipment_date": "$shipment_date",
+          "carrier_accounts": "$carrier_accounts",
+          "metadata": "$metadata",
+          "async": "$async"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_shipment",
+      "description": "Read a shipment with its addresses, parcels, rates and messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment object_id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_list_shipments",
+      "description": "List shipments, newest first, with status and addresses (Shippo keeps the last 390 days).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "object_created_gte": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 UTC, e.g. \"2026-10-01T00:00:00\"."
+          },
+          "object_created_lte": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 UTC."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "page": "$page",
+          "results": "$results",
+          "object_created_gte": "$object_created_gte",
+          "object_created_lte": "$object_created_lte"
+        }
+      }
+    },
+    {
+      "name": "shippo_list_shipment_rates",
+      "description": "List the rates of a shipment again (the same rates[] shippo_create_shipment returned), with paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment object_id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/rates",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_rate",
+      "description": "Read one rate: amount, currency, provider, service level, estimated days, duration terms and zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate_id": {
+            "type": "string",
+            "description": "The rate object_id."
+          }
+        },
+        "required": [
+          "rate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rates/{rate_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_buy_label",
+      "description": "Buy a shipping label for a rate. With a live key this charges the label price to the Shippo account immediately: confirm carrier, service, price and addresses with the user first. Returns the transaction with status, tracking_number, tracking_url_provider and label_url (expiring link to the label file).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate": {
+            "type": "string",
+            "description": "The object_id of the chosen rate."
+          },
+          "label_file_type": {
+            "type": "string",
+            "description": "PDF, PDF_4x6, PDF_4x8, PDF_A4, PDF_A5, PDF_A6, PDF_2.3x7.5, PNG, PNG_2.3x7.5 or ZPLII; the account default when omitted.",
+            "enum": [
+              "PDF",
+              "PDF_4x6",
+              "PDF_4x8",
+              "PDF_A4",
+              "PDF_A5",
+              "PDF_A6",
+              "PDF_2.3x7.5",
+              "PNG",
+              "PNG_2.3x7.5",
+              "ZPLII"
+            ]
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note, e.g. an order number, up to 100 characters."
+          },
+          "async": {
+            "type": "boolean",
+            "description": "false (default here) waits for the result; true returns at once with status QUEUED, then read the object again.",
+            "default": false
+          }
+        },
+        "required": [
+          "rate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions",
+        "bodyMapping": {
+          "rate": "$rate",
+          "label_file_type": "$label_file_type",
+          "metadata": "$metadata",
+          "async": "$async"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "shippo_list_labels",
+      "description": "List purchased labels (transactions), newest first, with status, tracking number and tracking status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_status": {
+            "type": "string",
+            "description": "SUCCESS, ERROR, QUEUED, WAITING, REFUNDED, REFUNDPENDING or REFUNDREJECTED."
+          },
+          "tracking_status": {
+            "type": "string",
+            "description": "UNKNOWN, PRE_TRANSIT, TRANSIT, DELIVERED, RETURNED or FAILURE."
+          },
+          "rate": {
+            "type": "string",
+            "description": "Only the label bought for this rate object_id."
+          },
+          "object_created_gte": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 UTC."
+          },
+          "object_created_lte": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 UTC."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "object_status": "$object_status",
+          "tracking_status": "$tracking_status",
+          "rate": "$rate",
+          "object_created_gte": "$object_created_gte",
+          "object_created_lte": "$object_created_lte",
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_label",
+      "description": "Read one purchased label (transaction): status, tracking number and status, ETA, a fresh label_url and commercial invoice URL, and messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "The transaction object_id."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_get_tracking",
+      "description": "Read the tracking status and history of a parcel by carrier and tracking number, for labels bought anywhere. Returns tracking_status (status, details, time, location), tracking_history[] and eta.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Carrier token as Shippo names it, e.g. \"usps\", \"ups\", \"fedex\", \"dhl_express\" (see the carrier field of shippo_list_carrier_accounts); \"shippo\" for test tracking numbers."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The tracking number; with carrier \"shippo\": SHIPPO_PRE_TRANSIT, SHIPPO_TRANSIT, SHIPPO_DELIVERED, SHIPPO_RETURNED, SHIPPO_FAILURE or SHIPPO_UNKNOWN."
+          }
+        },
+        "required": [
+          "carrier",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracks/{carrier}/{tracking_number}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_register_tracking",
+      "description": "Register a tracking number for status updates, which Shippo then sends to the account's \"track updated\" webhook (set up in the Shippo dashboard). Returns the current tracking status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Carrier token, e.g. \"usps\", \"dhl_express\"."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The tracking number."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note, up to 100 characters, sent back with each update."
+          }
+        },
+        "required": [
+          "carrier",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracks",
+        "bodyMapping": {
+          "carrier": "$carrier",
+          "tracking_number": "$tracking_number",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "shippo_list_carrier_accounts",
+      "description": "List the carrier accounts usable for rates and labels: object_id, carrier, account_id, active, whether it is a Shippo-provided account, and optionally their service levels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Only this carrier, e.g. \"usps\", \"ups\", \"dhl_express\"."
+          },
+          "service_levels": {
+            "type": "boolean",
+            "description": "true to include each account's service levels."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carrier_accounts",
+        "queryParams": {
+          "carrier": "$carrier",
+          "service_levels": "$service_levels",
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_carrier_account",
+      "description": "Read one carrier account by object_id: carrier, account number, active flag and parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_account_id": {
+            "type": "string",
+            "description": "The carrier account object_id."
+          }
+        },
+        "required": [
+          "carrier_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carrier_accounts/{carrier_account_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_create_customs_item",
+      "description": "Create a customs item (one line of a customs declaration). Returns object_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What it is, e.g. \"Cotton T-shirt\"."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Number of pieces.",
+            "minimum": 1
+          },
+          "net_weight": {
+            "type": "string",
+            "description": "Total net weight of these pieces, e.g. \"0.4\"."
+          },
+          "mass_unit": {
+            "type": "string",
+            "description": "g, kg, lb or oz.",
+            "enum": [
+              "g",
+              "kg",
+              "lb",
+              "oz"
+            ]
+          },
+          "value_amount": {
+            "type": "string",
+            "description": "Total value of these pieces, e.g. \"25.00\"."
+          },
+          "value_currency": {
+            "type": "string",
+            "description": "Currency, e.g. \"EUR\"."
+          },
+          "origin_country": {
+            "type": "string",
+            "description": "Country of manufacture, ISO 2."
+          },
+          "tariff_number": {
+            "type": "string",
+            "description": "HS tariff number, e.g. \"610910\"."
+          },
+          "sku_code": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "eccn_ear99": {
+            "type": "string",
+            "description": "Export control classification (US exports)."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note."
+          }
+        },
+        "required": [
+          "description",
+          "quantity",
+          "net_weight",
+          "mass_unit",
+          "value_amount",
+          "value_currency",
+          "origin_country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customs/items",
+        "bodyMapping": {
+          "description": "$description",
+          "quantity": "$quantity",
+          "net_weight": "$net_weight",
+          "mass_unit": "$mass_unit",
+          "value_amount": "$value_amount",
+          "value_currency": "$value_currency",
+          "origin_country": "$origin_country",
+          "tariff_number": "$tariff_number",
+          "sku_code": "$sku_code",
+          "eccn_ear99": "$eccn_ear99",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_customs_item",
+      "description": "Read a customs item by object_id: description, quantity, weight, value, origin and tariff number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customs_item_id": {
+            "type": "string",
+            "description": "The customs item object_id."
+          }
+        },
+        "required": [
+          "customs_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customs/items/{customs_item_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_create_customs_declaration",
+      "description": "Create a customs declaration for an international shipment from customs items. Pass its object_id as customs_declaration to shippo_create_shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contents_type": {
+            "type": "string",
+            "description": "DOCUMENTS, GIFT, SAMPLE, MERCHANDISE, HUMANITARIAN_DONATION, RETURN_MERCHANDISE or OTHER.",
+            "enum": [
+              "DOCUMENTS",
+              "GIFT",
+              "SAMPLE",
+              "MERCHANDISE",
+              "HUMANITARIAN_DONATION",
+              "RETURN_MERCHANDISE",
+              "OTHER"
+            ]
+          },
+          "contents_explanation": {
+            "type": "string",
+            "description": "Required when contents_type is OTHER."
+          },
+          "non_delivery_option": {
+            "type": "string",
+            "description": "ABANDON or RETURN.",
+            "enum": [
+              "ABANDON",
+              "RETURN"
+            ]
+          },
+          "certify": {
+            "type": "boolean",
+            "description": "true: the signer certifies the information is correct (required)."
+          },
+          "certify_signer": {
+            "type": "string",
+            "description": "Name of the person certifying."
+          },
+          "items": {
+            "type": "array",
+            "description": "Customs item object_ids (or item objects).",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "incoterm": {
+            "type": "string",
+            "description": "DDP, DDU, FCA, DAP or eDAP.",
+            "enum": [
+              "DDP",
+              "DDU",
+              "FCA",
+              "DAP",
+              "eDAP"
+            ]
+          },
+          "eel_pfc": {
+            "type": "string",
+            "description": "US export exemption, e.g. NOEEI_30_37_a."
+          },
+          "invoice": {
+            "type": "string",
+            "description": "Commercial invoice number."
+          },
+          "exporter_identification": {
+            "type": "object",
+            "description": "e.g. {\"eori_number\": \"DE123456789012345\"}."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Your own note."
+          }
+        },
+        "required": [
+          "contents_type",
+          "non_delivery_option",
+          "certify",
+          "certify_signer",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customs/declarations",
+        "bodyMapping": {
+          "contents_type": "$contents_type",
+          "contents_explanation": "$contents_explanation",
+          "non_delivery_option": "$non_delivery_option",
+          "certify": "$certify",
+          "certify_signer": "$certify_signer",
+          "items": "$items",
+          "incoterm": "$incoterm",
+          "eel_pfc": "$eel_pfc",
+          "invoice": "$invoice",
+          "exporter_identification": "$exporter_identification",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_customs_declaration",
+      "description": "Read a customs declaration by object_id, with its items, contents type, incoterm and signer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customs_declaration_id": {
+            "type": "string",
+            "description": "The customs declaration object_id."
+          }
+        },
+        "required": [
+          "customs_declaration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customs/declarations/{customs_declaration_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_list_customs_declarations",
+      "description": "List customs declarations, newest first, with contents type, items and certification details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customs/declarations",
+        "queryParams": {
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_request_refund",
+      "description": "Void a purchased label and ask for its price back. The label can no longer be used. Only unused labels up to 90 days old; the money comes back after the carrier confirms (days to weeks). Confirm with the user first. Returns the refund with status QUEUED, PENDING, SUCCESS or ERROR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction": {
+            "type": "string",
+            "description": "The transaction (label) object_id."
+          },
+          "async": {
+            "type": "boolean",
+            "description": "false (default here) waits for the result; true returns at once with status QUEUED, then read the object again.",
+            "default": false
+          }
+        },
+        "required": [
+          "transaction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refunds",
+        "bodyMapping": {
+          "transaction": "$transaction",
+          "async": "$async"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "shippo_list_refunds",
+      "description": "List label refunds with their status (QUEUED, PENDING, SUCCESS, ERROR) and the label they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/refunds/"
+      }
+    },
+    {
+      "name": "shippo_get_refund",
+      "description": "Read one label refund by object_id: status, label (transaction) and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "description": "The refund object_id."
+          }
+        },
+        "required": [
+          "refund_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/refunds/{refund_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "shippo_create_manifest",
+      "description": "Create a manifest (scan form) for a carrier pickup: one document listing the labels of one carrier account, ship date and origin address. Not available with a test key. Returns status and documents[] (URLs).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_account": {
+            "type": "string",
+            "description": "Carrier account object_id."
+          },
+          "shipment_date": {
+            "type": "string",
+            "description": "Ship date, ISO 8601, e.g. \"2026-10-12T09:00:00Z\"."
+          },
+          "address_from": {
+            "type": "string",
+            "description": "Origin address object_id (the same as on the labels)."
+          },
+          "transactions": {
+            "type": "array",
+            "description": "Label (transaction) object_ids; all eligible labels of that day when omitted.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "async": {
+            "type": "boolean",
+            "description": "false (default here) waits for the result; true returns at once with status QUEUED, then read the object again.",
+            "default": false
+          }
+        },
+        "required": [
+          "carrier_account",
+          "shipment_date",
+          "address_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/manifests",
+        "bodyMapping": {
+          "carrier_account": "$carrier_account",
+          "shipment_date": "$shipment_date",
+          "address_from": "$address_from",
+          "transactions": "$transactions",
+          "async": "$async"
+        }
+      }
+    },
+    {
+      "name": "shippo_list_manifests",
+      "description": "List manifests (scan forms), newest first, with carrier account, ship date, status and documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "results": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manifests",
+        "queryParams": {
+          "page": "$page",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "shippo_get_manifest",
+      "description": "Read one manifest (scan form) with its status, the labels on it, document URLs and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "manifest_id": {
+            "type": "string",
+            "description": "The manifest object_id."
+          }
+        },
+        "required": [
+          "manifest_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manifests/{manifest_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

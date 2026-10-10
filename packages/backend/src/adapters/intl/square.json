@@ -1,0 +1,1452 @@
+{
+  "slug": "square",
+  "name": "Square",
+  "description": "Let your AI work with your Square business: look up payments, refunds and orders, manage customers, search and edit the item catalog, check inventory, create and send invoices, and see locations and team members. Sandbox or production, with your own access token.",
+  "unlisted": true,
+  "instructions": "## Square\nThis connector works with one Square seller account through the **Square API** (`https://connect.squareup.com`, or `https://connect.squareupsandbox.com` for the sandbox), version `2026-09-16`: business and locations, payments and refunds, orders, customers, the item catalog, inventory counts, invoices and team members.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.squareup.com/apps with the Square account and click **Create an application** (any name).\n2. Open the application → **Credentials**. The toggle at the top switches between **Sandbox** and **Production**.\n3. Copy the **access token** of that environment into `SQUARE_ACCESS_TOKEN`. It is a personal access token with full access to your own account, which is what this connector needs; it does not expire, but anyone holding it can act for the business, so keep it secret and replace it on the same page if it leaks.\n4. Set `SQUARE_API_URL` to `https://connect.squareupsandbox.com` for the sandbox token or `https://connect.squareup.com` for the production token. A token only works against its own environment (401 otherwise).\n5. Install and run `square_get_merchant` to check the business name.\n\n**Sandbox**: the sandbox token belongs to a default test seller. To look at the results as a seller, open the developer console → **Sandbox test accounts** → the account → **Square Dashboard**. The sandbox never emails invoices; use the invoice's `public_url`.\n\n**Money and customer emails: confirm first.** `square_refund_payment` sends money back, `square_publish_invoice` sends the invoice to the customer (email) and makes it payable, and `square_cancel_invoice` and `square_upsert_catalog_object` change data customers see. Before calling them, state what will happen (amount, customer, ids) and wait for the user's yes. `square_delete_customer`, `square_delete_catalog_object` and `square_delete_invoice` are installed switched off.\n\n**Idempotency keys**: every create, refund, publish and upsert takes an `idempotency_key`. Use a fresh UUID per action, and reuse the same key only when retrying the same action after a timeout.\n\n**Money**: amounts are integers in the smallest unit of the currency (`{\"amount\": 1999, \"currency\": \"EUR\"}` is 19.99 EUR); the currency must be the seller's (see `square_get_merchant`). Times are RFC 3339 (`2026-10-01T00:00:00Z`).\n\n**Locations**: most data belongs to a location. `square_list_locations` gives their ids; `\"main\"` works as the id of the main location in `square_get_location`. `square_list_payments` without `location_id` covers only the main location; `square_search_orders` needs 1 to 10 `location_ids`; `square_list_invoices` needs one `location_id`.\n\n**Orders**: `square_search_orders` filters by state (OPEN, COMPLETED, CANCELED), dates and customers. When you filter by a date field, sort by the same field (`\"sort\": {\"sort_field\": \"CLOSED_AT\"}` with a `closed_at` filter). Orders taken offline can take up to 72 hours to appear.\n\n**Invoices**: an invoice is built on an OPEN order. Steps: `square_create_order` (location, line items, customer) → `square_create_invoice` with that `order_id`, the `customer_id`, one `payment_requests` entry (`{\"request_type\": \"BALANCE\", \"due_date\": \"2026-11-01\"}`) and `accepted_payment_methods` (`{\"card\": true}`) → it is a DRAFT until `square_publish_invoice`. Publishing and cancelling need the invoice's current `version` (from `square_get_invoice`). For EMAIL delivery the customer needs an email address. Deleting a draft also cancels its order.\n\n**Customers**: `square_search_customers` filters by email, phone (E.164, `+4976112345`), reference id or dates; a new or changed customer can take a few seconds to become searchable. `square_update_customer` changes only the fields you send; pass `version` to avoid overwriting a newer change.\n\n**Catalog**: `square_list_catalog` takes `types` (ITEM, ITEM_VARIATION, CATEGORY, TAX, DISCOUNT, MODIFIER_LIST, ...). `square_search_catalog_items` searches item names, SKUs and descriptions. `square_upsert_catalog_object` creates or REPLACES a whole object: to change an item, read it with `square_get_catalog_object`, change the copy and send it back with its `version`, or fields you leave out (variations included) are removed. New objects use temporary ids starting with `#`.\n\n**Inventory**: counts are per item variation (not per item) and location: `square_get_inventory_counts` with variation ids, or `square_get_inventory_count` for one.\n\n**Paging**: list and search answers carry `cursor` while more pages exist; pass it back to continue.\n\n**Common errors** (`errors[].code` and `detail`)\n- 401 `UNAUTHORIZED`: wrong token, or a sandbox token against the production URL (or the other way round).\n- 400 `INVALID_REQUEST_ERROR` / `VERSION_MISMATCH`: a field or an outdated `version`; read the object again.\n- 404 `NOT_FOUND`: wrong id, or an object from another location or environment.\n- 429 `RATE_LIMITED`: wait a moment and retry.\n\n**Out of scope here**: taking card payments, gift cards, loyalty, bookings, subscriptions, payouts and webhooks.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "square",
+  "docsUrl": "https://developer.squareup.com/reference/square",
+  "requiredEnvVars": [
+    "SQUARE_ACCESS_TOKEN",
+    "SQUARE_API_URL"
+  ],
+  "appRegistrationUrl": "https://developer.squareup.com/apps",
+  "envVarMeta": {
+    "SQUARE_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "developer.squareup.com/apps → your application → Credentials → Sandbox or Production → Access token (Show, then copy).",
+      "link": "https://developer.squareup.com/apps",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the token, without the word Bearer and without spaces."
+    },
+    "SQUARE_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "https://connect.squareupsandbox.com for a sandbox token, https://connect.squareup.com for a production token.",
+      "example": "https://connect.squareupsandbox.com",
+      "link": "https://developer.squareup.com/docs/devtools/sandbox/overview",
+      "pattern": "^https://connect\\.(squareup|squareupsandbox)\\.com$",
+      "patternMessage": "Use https://connect.squareup.com or https://connect.squareupsandbox.com, without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Square refused the access token. Check that it is the token of the same environment as SQUARE_API_URL (sandbox token with the sandbox URL) and that it was not replaced in the developer console.",
+    "403": "The token lacks a permission for this call. A personal access token from the Credentials page has full access; an OAuth token needs the scope named in the error.",
+    "rate_limited": "Square is rate limiting this account. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "square_get_merchant"
+  },
+  "prerequisites": "A Square account and a free application on developer.squareup.com, whose Credentials page gives a sandbox and a production access token. About 5 minutes.",
+  "connector": {
+    "name": "Square API",
+    "type": "REST",
+    "baseUrl": "{{SQUARE_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SQUARE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Square-Version": "2026-09-16",
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v2/merchants/me"
+  },
+  "tools": [
+    {
+      "name": "square_get_merchant",
+      "description": "Read the seller account behind the token: business name, country, currency, language, status and main_location_id. Call it first to confirm which business the connector reaches.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/merchants/me"
+      }
+    },
+    {
+      "name": "square_list_locations",
+      "description": "List the business locations: id, name, address, timezone, currency, status and capabilities. Most other tools need a location id from here.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/locations"
+      }
+    },
+    {
+      "name": "square_get_location",
+      "description": "Read one location by id, or the main location with \"main\": address, hours, currency, capabilities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "Location id, or \"main\"."
+          }
+        },
+        "required": [
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/locations/{location_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_list_payments",
+      "description": "List payments (newest first by default) with amount, status, card details, order and customer ids, refunds and receipt URL. Without location_id only the main location is listed; without dates the last year.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_time": {
+            "type": "string",
+            "description": "From, RFC 3339 (default one year ago)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Until, RFC 3339 (default now)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "DESC (default, newest first) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location id (default: the main location)."
+          },
+          "total": {
+            "type": "integer",
+            "description": "Only payments with exactly this total, in the smallest currency unit."
+          },
+          "last_4": {
+            "type": "string",
+            "description": "Last 4 digits of the card."
+          },
+          "card_brand": {
+            "type": "string",
+            "description": "Card brand, e.g. VISA, MASTERCARD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Payments per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/payments",
+        "queryParams": {
+          "begin_time": "$begin_time",
+          "end_time": "$end_time",
+          "sort_order": "$sort_order",
+          "location_id": "$location_id",
+          "total": "$total",
+          "last_4": "$last_4",
+          "card_brand": "$card_brand",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_get_payment",
+      "description": "Read one payment: amounts (total, tip, app fee, refunded), status (APPROVED, PENDING, COMPLETED, CANCELED, FAILED), source and card details, order, customer and receipt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "The payment id."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/payments/{payment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_list_refunds",
+      "description": "List refunds (newest first by default) across all locations unless one is given: amount, status, reason, payment id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_time": {
+            "type": "string",
+            "description": "From, RFC 3339 (default one year ago)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Until, RFC 3339."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "DESC (default) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Only this location."
+          },
+          "status": {
+            "type": "string",
+            "description": "PENDING, COMPLETED, REJECTED or FAILED.",
+            "enum": [
+              "PENDING",
+              "COMPLETED",
+              "REJECTED",
+              "FAILED"
+            ]
+          },
+          "source_type": {
+            "type": "string",
+            "description": "CARD, BANK_ACCOUNT, WALLET, CASH or EXTERNAL."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Refunds per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/refunds",
+        "queryParams": {
+          "begin_time": "$begin_time",
+          "end_time": "$end_time",
+          "sort_order": "$sort_order",
+          "location_id": "$location_id",
+          "status": "$status",
+          "source_type": "$source_type",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_get_refund",
+      "description": "Read one refund: amount, status, reason, payment and order ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "description": "The refund id."
+          }
+        },
+        "required": [
+          "refund_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/refunds/{refund_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_refund_payment",
+      "description": "Refund a payment in full or in part. This sends money back to the customer and cannot be undone: confirm the payment, amount and reason with the user first. Returns the refund with status PENDING or COMPLETED.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "The payment to refund."
+          },
+          "amount_money": {
+            "type": "object",
+            "description": "Money in the smallest currency unit, e.g. {\"amount\": 1999, \"currency\": \"EUR\"} for 19.99 EUR. At most what is left of the payment."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason, up to 192 characters."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key for this request, e.g. a fresh UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "payment_id",
+          "amount_money",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/refunds",
+        "bodyMapping": {
+          "idempotency_key": "$idempotency_key",
+          "payment_id": "$payment_id",
+          "amount_money": "$amount_money",
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "square_search_orders",
+      "description": "Search orders of 1 to 10 locations by state, dates, customers or source, with line items, totals, tenders and fulfillments. Read-only, although it is a POST. Returns orders (or light order_entries) and a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_ids": {
+            "type": "array",
+            "description": "1 to 10 location ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "query": {
+            "type": "object",
+            "description": "Optional filter and sort, e.g. {\"filter\": {\"state_filter\": {\"states\": [\"COMPLETED\"]}, \"date_time_filter\": {\"closed_at\": {\"start_at\": \"2026-10-01T00:00:00Z\", \"end_at\": \"2026-10-10T00:00:00Z\"}}, \"customer_filter\": {\"customer_ids\": [\"...\"]}}, \"sort\": {\"sort_field\": \"CLOSED_AT\", \"sort_order\": \"DESC\"}}. Sort by the same field you filter dates on."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 1000 (default 500).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "return_entries": {
+            "type": "boolean",
+            "description": "true to return only order ids, versions and locations (order_entries)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        },
+        "required": [
+          "location_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/search",
+        "bodyMapping": {
+          "location_ids": "$location_ids",
+          "query": "$query",
+          "limit": "$limit",
+          "return_entries": "$return_entries",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_order",
+      "description": "Read one order: state, line items with modifiers, taxes and discounts, totals, tenders (payments), refunds and fulfillments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/{order_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_create_order",
+      "description": "Create an OPEN order, for example as the basis of an invoice. Nothing is charged. Returns the order with its id, version and computed totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "The location id."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Line items: ad hoc {\"name\": \"Repair\", \"quantity\": \"1\", \"base_price_money\": {\"amount\": 4500, \"currency\": \"EUR\"}} or from the catalog {\"catalog_object_id\": \"<variation id>\", \"quantity\": \"2\"}. quantity is a string.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Optional customer id."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Optional own reference, e.g. a job number."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key for this request, e.g. a fresh UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "location_id",
+          "line_items",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders",
+        "bodyMapping": {
+          "order": {
+            "location_id": "$location_id",
+            "line_items": "$line_items",
+            "customer_id": "$customer_id",
+            "reference_id": "$reference_id"
+          },
+          "idempotency_key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "square_list_customers",
+      "description": "List customer profiles: id, names, company, email, phone, address, reference id, version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "DEFAULT (by name) or CREATED_AT.",
+            "enum": [
+              "DEFAULT",
+              "CREATED_AT"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC (default) or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to also return the total count."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/customers",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order",
+          "count": "$count",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_search_customers",
+      "description": "Search customer profiles by email, phone, reference id, creation or update time, or group. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "Filter and sort, e.g. {\"filter\": {\"email_address\": {\"fuzzy\": \"acme\"}}} or {\"filter\": {\"phone_number\": {\"exact\": \"+4976112345\"}}} or {\"filter\": {\"created_at\": {\"start_at\": \"2026-09-01T00:00:00Z\"}}, \"sort\": {\"field\": \"CREATED_AT\", \"order\": \"DESC\"}}. email_address, phone_number and reference_id take exact or fuzzy, not both."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to also return the number of matches."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/customers/search",
+        "bodyMapping": {
+          "query": "$query",
+          "limit": "$limit",
+          "count": "$count",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_customer",
+      "description": "Read one customer profile with its current version, groups and preferences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/customers/{customer_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_create_customer",
+      "description": "Create a customer profile. At least one of given_name, family_name, company_name, email_address or phone_number is required. Returns the customer with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "given_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number, e.g. \"+4976112345\"."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address, e.g. {\"address_line_1\": \"Hauptstr. 1\", \"locality\": \"Freiburg\", \"postal_code\": \"79098\", \"country\": \"DE\"}."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Your own id for this customer."
+          },
+          "note": {
+            "type": "string",
+            "description": "A note about the customer."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key, e.g. a UUID, so a retry does not create a duplicate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/customers",
+        "bodyMapping": {
+          "given_name": "$given_name",
+          "family_name": "$family_name",
+          "company_name": "$company_name",
+          "email_address": "$email_address",
+          "phone_number": "$phone_number",
+          "address": "$address",
+          "reference_id": "$reference_id",
+          "note": "$note",
+          "idempotency_key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "square_update_customer",
+      "description": "Update a customer profile. Only the fields you send change; send null to clear one. Pass the version from square_get_customer to refuse overwriting a newer change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer id."
+          },
+          "given_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address object."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Your own id."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The current version of the profile."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/customers/{customer_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "given_name": "$given_name",
+          "family_name": "$family_name",
+          "company_name": "$company_name",
+          "email_address": "$email_address",
+          "phone_number": "$phone_number",
+          "address": "$address",
+          "reference_id": "$reference_id",
+          "note": "$note",
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "square_delete_customer",
+      "description": "Delete a customer profile for good. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Optional current version; the delete fails if the profile changed since."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/customers/{customer_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "square_list_catalog",
+      "description": "List catalog objects of the given types (100 per page): items with variations and prices, categories, taxes, discounts, modifier lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "string",
+            "description": "Comma-separated types, e.g. \"ITEM\" or \"ITEM,CATEGORY,TAX\". Others: ITEM_VARIATION, DISCOUNT, MODIFIER_LIST, IMAGE.",
+            "default": "ITEM"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/catalog/list",
+        "queryParams": {
+          "types": "$types",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_search_catalog_items",
+      "description": "Search items by text (name, description, SKU, UPC), category, location, stock level or product type. Read-only, although it is a POST. Returns items and matched_variation_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text_filter": {
+            "type": "string",
+            "description": "Text to look for, e.g. \"espresso\"."
+          },
+          "category_ids": {
+            "type": "array",
+            "description": "Only these category ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled_location_ids": {
+            "type": "array",
+            "description": "Only items enabled at these locations.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stock_levels": {
+            "type": "array",
+            "description": "OUT or LOW.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product_types": {
+            "type": "array",
+            "description": "e.g. [\"REGULAR\", \"APPOINTMENTS_SERVICE\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "archived_state": {
+            "type": "string",
+            "description": "ARCHIVED_STATE_NOT_ARCHIVED (default), ARCHIVED_STATE_ARCHIVED or ARCHIVED_STATE_ALL."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC or DESC by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/catalog/search-catalog-items",
+        "bodyMapping": {
+          "text_filter": "$text_filter",
+          "category_ids": "$category_ids",
+          "enabled_location_ids": "$enabled_location_ids",
+          "stock_levels": "$stock_levels",
+          "product_types": "$product_types",
+          "archived_state": "$archived_state",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_search_catalog_objects",
+      "description": "Search any catalog objects (items, variations, categories, taxes, discounts...) by keywords, exact or prefix attribute values, or change time. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_types": {
+            "type": "array",
+            "description": "Types to search, e.g. [\"ITEM_VARIATION\"]. All top-level types when omitted.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "query": {
+            "type": "object",
+            "description": "e.g. {\"text_query\": {\"keywords\": [\"latte\"]}} (1 to 3 keywords of 3+ characters, all must match), {\"exact_query\": {\"attribute_name\": \"sku\", \"attribute_value\": \"LAT-12\"}} or {\"prefix_query\": {\"attribute_name\": \"name\", \"attribute_prefix\": \"Lat\"}}."
+          },
+          "include_related_objects": {
+            "type": "boolean",
+            "description": "true to also return referenced objects (categories, taxes, images)."
+          },
+          "include_deleted_objects": {
+            "type": "boolean",
+            "description": "true to include deleted objects."
+          },
+          "begin_time": {
+            "type": "string",
+            "description": "Only objects changed after this RFC 3339 time."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/catalog/search",
+        "bodyMapping": {
+          "object_types": "$object_types",
+          "query": "$query",
+          "include_related_objects": "$include_related_objects",
+          "include_deleted_objects": "$include_deleted_objects",
+          "begin_time": "$begin_time",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_catalog_object",
+      "description": "Read one catalog object by id with its version (needed to update it), optionally with the objects it references.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "The catalog object id."
+          },
+          "include_related_objects": {
+            "type": "boolean",
+            "description": "true to also return categories, taxes, modifiers and images it references."
+          }
+        },
+        "required": [
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/catalog/object/{object_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "include_related_objects": "$include_related_objects"
+        }
+      }
+    },
+    {
+      "name": "square_upsert_catalog_object",
+      "description": "Create a catalog object, or REPLACE an existing one as a whole: fields left out (variations included) are removed, so for an update send the full object from square_get_catalog_object with its version. Confirm changes to existing items with the user first. Returns catalog_object and id_mappings (temporary #ids to real ids).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "object",
+            "description": "The object. New item: {\"type\": \"ITEM\", \"id\": \"#coffee\", \"item_data\": {\"name\": \"Coffee\", \"variations\": [{\"type\": \"ITEM_VARIATION\", \"id\": \"#coffee-regular\", \"item_variation_data\": {\"item_id\": \"#coffee\", \"name\": \"Regular\", \"pricing_type\": \"FIXED_PRICING\", \"price_money\": {\"amount\": 250, \"currency\": \"EUR\"}}}]}}. Existing objects keep their id and must carry their current version."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key for this request, e.g. a fresh UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "object",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/catalog/object",
+        "bodyMapping": {
+          "idempotency_key": "$idempotency_key",
+          "object": "$object"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "square_delete_catalog_object",
+      "description": "Delete a catalog object for good; deleting an item also deletes its variations. Confirm with the user first. Returns deleted_object_ids.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "The catalog object id."
+          }
+        },
+        "required": [
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/catalog/object/{object_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_get_inventory_counts",
+      "description": "Read inventory counts for many item variations and locations at once: quantity (a string) per state such as IN_STOCK, newest first. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_object_ids": {
+            "type": "array",
+            "description": "Item variation ids (not item ids).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Location ids; all when omitted.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only counts changed after this RFC 3339 time."
+          },
+          "states": {
+            "type": "array",
+            "description": "States, e.g. [\"IN_STOCK\"]; default IN_STOCK.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Counts per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/inventory/counts/batch-retrieve",
+        "bodyMapping": {
+          "catalog_object_ids": "$catalog_object_ids",
+          "location_ids": "$location_ids",
+          "updated_after": "$updated_after",
+          "states": "$states",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_inventory_count",
+      "description": "Read the inventory count of one item variation, per location and state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_object_id": {
+            "type": "string",
+            "description": "The item variation id."
+          },
+          "location_ids": {
+            "type": "string",
+            "description": "Comma-separated location ids; all when omitted."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        },
+        "required": [
+          "catalog_object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/inventory/{catalog_object_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "location_ids": "$location_ids",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_list_invoices",
+      "description": "List the invoices of one location: id, number, status (DRAFT, UNPAID, SCHEDULED, PARTIALLY_PAID, PAID, CANCELED, ...), recipient, payment requests with due dates and amounts, public_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "The location id (required)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Invoices per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        },
+        "required": [
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/invoices",
+        "queryParams": {
+          "location_id": "$location_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "square_search_invoices",
+      "description": "Search the invoices of one location, optionally of one customer, sorted by invoice date. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "The location id."
+          },
+          "customer_ids": {
+            "type": "array",
+            "description": "Only invoices of this customer: a list with at most one customer id.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "DESC (newest first) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Invoices per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        },
+        "required": [
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoices/search",
+        "bodyMapping": {
+          "query": {
+            "filter": {
+              "location_ids": [
+                "$location_id"
+              ],
+              "customer_ids": "$customer_ids"
+            },
+            "sort": {
+              "field": "INVOICE_SORT_DATE",
+              "order": "$sort_order"
+            }
+          },
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_invoice",
+      "description": "Read one invoice: status, version (needed to publish or cancel), order, recipient, payment requests with computed amounts, public_url and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/invoices/{invoice_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "square_create_invoice",
+      "description": "Create a DRAFT invoice for an OPEN order (make one with square_create_order). Nothing is sent until square_publish_invoice. Returns the invoice with id and version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "The order's location id."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "An OPEN order at that location."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "The customer to bill (needs an email for EMAIL delivery)."
+          },
+          "payment_requests": {
+            "type": "array",
+            "description": "1 to 13 payment requests, usually [{\"request_type\": \"BALANCE\", \"due_date\": \"2026-11-01\"}]; with reminders: \"reminders\": [{\"relative_scheduled_days\": -1, \"message\": \"Due tomorrow\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "accepted_payment_methods": {
+            "type": "object",
+            "description": "At least one true, e.g. {\"card\": true, \"bank_account\": false, \"square_gift_card\": false}.",
+            "default": {
+              "card": true
+            }
+          },
+          "delivery_method": {
+            "type": "string",
+            "description": "EMAIL (Square emails the invoice) or SHARE_MANUALLY (you share public_url).",
+            "enum": [
+              "EMAIL",
+              "SHARE_MANUALLY"
+            ],
+            "default": "EMAIL"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title shown on the invoice."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description or terms."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Own invoice number; generated when omitted."
+          },
+          "sale_or_service_date": {
+            "type": "string",
+            "description": "Date of the sale or service, YYYY-MM-DD."
+          },
+          "scheduled_at": {
+            "type": "string",
+            "description": "Optional RFC 3339 time to send it later."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key for this request, e.g. a fresh UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "location_id",
+          "order_id",
+          "customer_id",
+          "payment_requests",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoices",
+        "bodyMapping": {
+          "invoice": {
+            "location_id": "$location_id",
+            "order_id": "$order_id",
+            "primary_recipient": {
+              "customer_id": "$customer_id"
+            },
+            "payment_requests": "$payment_requests",
+            "accepted_payment_methods": "$accepted_payment_methods",
+            "delivery_method": "$delivery_method",
+            "title": "$title",
+            "description": "$description",
+            "invoice_number": "$invoice_number",
+            "sale_or_service_date": "$sale_or_service_date",
+            "scheduled_at": "$scheduled_at"
+          },
+          "idempotency_key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "square_publish_invoice",
+      "description": "Publish a draft invoice: Square sends it to the customer (EMAIL delivery) or makes it payable at public_url, and it can no longer be edited freely. Confirm with the user first. Needs the invoice's current version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The draft invoice id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The invoice's current version (from square_get_invoice)."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique key for this request, e.g. a fresh UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoices/{invoice_id}/publish",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "version": "$version",
+          "idempotency_key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "square_cancel_invoice",
+      "description": "Cancel a published invoice so it can no longer be paid; the customer is notified. Not possible for drafts (delete those) or paid invoices. Cannot be undone: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The invoice's current version."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoices/{invoice_id}/cancel",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "version": "$version"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "square_delete_invoice",
+      "description": "Delete a DRAFT invoice; its order is canceled too. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The draft invoice id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Optional current version."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/invoices/{invoice_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "square_search_team_members",
+      "description": "Search team members by location, status or owner flag: id, names, email, phone, status, is_owner and assigned locations. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_ids": {
+            "type": "array",
+            "description": "Members assigned to any of these locations.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "ACTIVE or INACTIVE.",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ]
+          },
+          "is_owner": {
+            "type": "boolean",
+            "description": "true for the account owner only."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Members per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous response, to fetch the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/team-members/search",
+        "bodyMapping": {
+          "query": {
+            "filter": {
+              "location_ids": "$location_ids",
+              "status": "$status",
+              "is_owner": "$is_owner"
+            }
+          },
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "square_get_team_member",
+      "description": "Read one team member: names, email, phone, status, owner flag and location assignments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_member_id": {
+            "type": "string",
+            "description": "The team member id."
+          }
+        },
+        "required": [
+          "team_member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/team-members/{team_member_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

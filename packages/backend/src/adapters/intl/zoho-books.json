@@ -1,0 +1,2162 @@
+{
+  "slug": "zoho-books",
+  "name": "Zoho Books",
+  "description": "Let your AI work in Zoho Books: look up and manage customers, vendors and items, create, email, mark as sent and void invoices, create estimates, record customer payments, bills and expenses, and read the chart of accounts, account ledgers and bank transactions. Any Zoho data center, Zoho OAuth sign-in.",
+  "unlisted": true,
+  "instructions": "## Zoho Books\nThis connector works with one Zoho Books organization through the **Zoho Books API v3** (`https://www.zohoapis.<region>/books/v3`): organizations, contacts (customers and vendors), items, invoices, estimates, customer payments, bills, expenses, the chart of accounts with account transactions, bank accounts and bank transactions, and taxes. It runs as the Zoho user who authorized it, within that user's role.\n\n**Data center first.** Zoho keeps each account in one data center, and the sign-in server and API host must be that data center's:\n\n| Region (your Zoho URL) | `ZOHO_BOOKS_ACCOUNTS_URL` | `ZOHO_BOOKS_API_URL` |\n|---|---|---|\n| EU (books.zoho.eu) | https://accounts.zoho.eu | https://www.zohoapis.eu |\n| US (books.zoho.com) | https://accounts.zoho.com | https://www.zohoapis.com |\n| India (zoho.in) | https://accounts.zoho.in | https://www.zohoapis.in |\n| Australia (zoho.com.au) | https://accounts.zoho.com.au | https://www.zohoapis.com.au |\n| Japan (zoho.jp) | https://accounts.zoho.jp | https://www.zohoapis.jp |\n| Canada (zohocloud.ca) | https://accounts.zohocloud.ca | https://www.zohoapis.ca |\n| Saudi Arabia (zoho.sa) | https://accounts.zoho.sa | https://www.zohoapis.sa |\n| UAE (zoho.ae) | https://accounts.zoho.ae | https://www.zohoapis.ae |\n| China (zoho.com.cn) | https://accounts.zoho.com.cn | https://www.zohoapis.com.cn |\n\nThe address bar when you use Zoho Books tells you the region. Signing in at the wrong one fails with `invalid_client` or an empty organization list.\n\n**Setup (about 10 minutes)**\n1. Open the Zoho API Console at https://api-console.zoho.com, signed in with your Zoho account → **Add Client** → **Server-based Applications**.\n2. Name it (for example \"AnythingMCP\"), homepage URL your company site, and **Authorized Redirect URI** `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Create it and copy the **Client ID** and **Client Secret** into `ZOHO_BOOKS_CLIENT_ID` and `ZOHO_BOOKS_CLIENT_SECRET`. If your Books organization lives in another data center than the one the console opened in, enable that data center on the client's **Settings** tab (Multi-DC) and use the client secret shown there for it.\n3. Set `ZOHO_BOOKS_ACCOUNTS_URL` and `ZOHO_BOOKS_API_URL` from the table.\n4. Find the **organization ID**: in Zoho Books click the organization name (top right) → **Manage Organizations**; the ID is shown next to each organization. Paste it into `ZOHO_BOOKS_ORGANIZATION_ID`.\n5. Install, then click **Authorize with Provider** on the connector page and approve the requested access. Run `zoho_books_list_organizations` and check that the organization ID is listed.\n\n**Scopes**: `ZohoBooks.settings.ALL,ZohoBooks.contacts.ALL,ZohoBooks.invoices.ALL,ZohoBooks.estimates.ALL,ZohoBooks.customerpayments.ALL,ZohoBooks.bills.ALL,ZohoBooks.expenses.ALL,ZohoBooks.accountants.READ,ZohoBooks.banking.READ`. Items, taxes and organization settings fall under `ZohoBooks.settings`, the chart of accounts under `ZohoBooks.accountants`. For a read-only setup, change every `.ALL` to `.READ` in the connector's OAuth settings, authorize again and switch off the create, update, email, status and delete tools.\n\n**Tokens**: access tokens last one hour and are renewed automatically with the stored refresh token, which does not expire unless revoked. Zoho keeps at most 20 refresh tokens per user and client: authorizing the same client a 21st time (in AnythingMCP or elsewhere) silently revokes the oldest one.\n\n**Writes are real: confirm first.** `zoho_books_email_invoice` emails the customer from your organization, `zoho_books_mark_invoice_sent` and `zoho_books_void_invoice` change the books (void keeps the invoice but zeroes it), and `zoho_books_create_customer_payment`, `zoho_books_create_bill` and `zoho_books_create_expense` post to the ledger. Say what will be booked or sent and wait for the user's yes. The delete tools (contacts, invoices, estimates, customer payments, bills, expenses) are installed switched off.\n\n**Ids and lists**: every record has a numeric string id (`contact_id`, `invoice_id`, ...). List tools return up to 200 records per page and `page_context.has_more_page`; filter with `search_text`, `status`, `filter_by` and dates (`YYYY-MM-DD`). Look up `customer_id` with `zoho_books_list_contacts` (`contact_type: customer`), `item_id` with `zoho_books_list_items`, `account_id` (expense, income, bank and cash accounts) with `zoho_books_list_chart_of_accounts`, and `tax_id` with `zoho_books_list_taxes`.\n\n**Invoices**: `zoho_books_create_invoice` creates a draft numbered by the organization's auto-numbering; `send: true` emails it at once. Then `zoho_books_mark_invoice_sent` (no email) or `zoho_books_email_invoice`. A customer payment is recorded with `zoho_books_create_customer_payment` and applied to invoices via `invoices: [{\"invoice_id\", \"amount_applied\"}]`.\n\n**Reports**: Zoho does not document a reports API for Books. For totals, use `zoho_books_list_chart_of_accounts` with `showbalance: true`, `zoho_books_list_account_transactions` for one account, or the list tools with date filters.\n\n**Limits**: 100 requests per minute per organization, and per day 1,000 (Free), 2,000 (Standard), 5,000 (Professional) or 10,000 (Premium and above); over the limit Zoho answers 429.\n\n**Common errors** (`code` and `message` in the body)\n- 401 code 57 \"You are not authorized to perform this operation\" or `invalid_oauthtoken`: the sign-in is missing a scope or was revoked, or the API host is not your data center; authorize again.\n- 400 or 404 naming the organization: `ZOHO_BOOKS_ORGANIZATION_ID` is wrong or not visible to this user; compare with `zoho_books_list_organizations`.\n- 400 with a field message (a duplicate name, an invalid value, a missing required field): the message names the field.\n- 429 code 44 (per minute) or 45 (per day): limit reached.\n\n**Out of scope here**: sales orders, purchase orders, credit notes, vendor payments, journals, projects, recurring invoices, attachments and PDFs.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "zoho-books",
+  "docsUrl": "https://www.zoho.com/books/api/v3/introduction/",
+  "requiredEnvVars": [
+    "ZOHO_BOOKS_CLIENT_ID",
+    "ZOHO_BOOKS_CLIENT_SECRET",
+    "ZOHO_BOOKS_ORGANIZATION_ID",
+    "ZOHO_BOOKS_ACCOUNTS_URL",
+    "ZOHO_BOOKS_API_URL"
+  ],
+  "appRegistrationUrl": "https://api-console.zoho.com",
+  "envVarMeta": {
+    "ZOHO_BOOKS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "api-console.zoho.com → your Server-based Application → Client Secret tab → Client ID.",
+      "link": "https://api-console.zoho.com",
+      "pattern": "^1000\\.\\S+$",
+      "patternMessage": "Zoho client IDs start with 1000. and contain no spaces."
+    },
+    "ZOHO_BOOKS_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same tab: Client Secret.",
+      "link": "https://api-console.zoho.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    },
+    "ZOHO_BOOKS_ORGANIZATION_ID": {
+      "label": "Organization ID",
+      "kind": "setting",
+      "help": "Zoho Books → organization name (top right) → Manage Organizations → the ID next to the organization. zoho_books_list_organizations lists it too.",
+      "example": "20012345678",
+      "pattern": "^\\d{5,20}$",
+      "patternMessage": "The organization ID is a number, digits only."
+    },
+    "ZOHO_BOOKS_ACCOUNTS_URL": {
+      "label": "Zoho sign-in server (data center)",
+      "kind": "address",
+      "help": "https://accounts.zoho.eu for EU accounts, https://accounts.zoho.com for US, .in, .com.au, .jp, .sa, .ae, .com.cn, or https://accounts.zohocloud.ca for Canada. Must be your account's data center.",
+      "example": "https://accounts.zoho.eu",
+      "pattern": "^https://accounts\\.(zoho\\.(com|eu|in|com\\.au|jp|sa|ae|com\\.cn|uk)|zohocloud\\.ca)$",
+      "patternMessage": "Use the accounts server of your data center, e.g. https://accounts.zoho.eu, without a trailing slash."
+    },
+    "ZOHO_BOOKS_API_URL": {
+      "label": "Zoho API host (data center)",
+      "kind": "address",
+      "help": "https://www.zohoapis.eu for EU accounts, https://www.zohoapis.com for US, or .in, .com.au, .jp, .ca, .sa, .ae, .com.cn. Same data center as the sign-in server.",
+      "example": "https://www.zohoapis.eu",
+      "pattern": "^https://www\\.zohoapis\\.(com|eu|in|com\\.au|jp|ca|sa|ae|com\\.cn|uk)$",
+      "patternMessage": "Use the API host of your data center, e.g. https://www.zohoapis.eu, without /books and without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Zoho refused the sign-in. Check that ZOHO_BOOKS_ACCOUNTS_URL and ZOHO_BOOKS_API_URL are both your data center (e.g. .eu), then click Authorize with Provider again.",
+    "400": "Zoho Books did not accept the organization. Run zoho_books_list_organizations and copy the right organization_id into ZOHO_BOOKS_ORGANIZATION_ID.",
+    "rate_limited": "Zoho Books allows 100 requests per minute per organization and a daily quota by plan. Wait a minute, or until tomorrow if the daily quota is used up."
+  },
+  "probe": {
+    "tool": "zoho_books_get_organization"
+  },
+  "prerequisites": "A Zoho Books organization (the free plan or a trial works) and a Server-based Application in the Zoho API Console of your data center, with the redirect URI below. About 10 minutes.",
+  "connector": {
+    "name": "Zoho Books API",
+    "type": "REST",
+    "baseUrl": "{{ZOHO_BOOKS_API_URL}}/books/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{ZOHO_BOOKS_CLIENT_ID}}",
+      "clientSecret": "{{ZOHO_BOOKS_CLIENT_SECRET}}",
+      "authorizationUrl": "{{ZOHO_BOOKS_ACCOUNTS_URL}}/oauth/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "{{ZOHO_BOOKS_ACCOUNTS_URL}}/oauth/v2/token",
+      "scopes": "ZohoBooks.settings.ALL,ZohoBooks.contacts.ALL,ZohoBooks.invoices.ALL,ZohoBooks.estimates.ALL,ZohoBooks.customerpayments.ALL,ZohoBooks.bills.ALL,ZohoBooks.expenses.ALL,ZohoBooks.accountants.READ,ZohoBooks.banking.READ",
+      "tokenPrefix": "Zoho-oauthtoken"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/organizations",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "zoho_books_list_organizations",
+      "description": "List the Zoho Books organizations this sign-in can reach: organization_id, name, country, currency, time zone and whether it is the default. Use it to check ZOHO_BOOKS_ORGANIZATION_ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations"
+      }
+    },
+    {
+      "name": "zoho_books_get_organization",
+      "description": "Read the connected organization: name, address, base currency, fiscal year start, time zone, tax settings and contact details.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{ZOHO_BOOKS_ORGANIZATION_ID}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_contacts",
+      "description": "List contacts (customers and vendors) with contact_id, name, company, email, status and outstanding receivables or payables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_type": {
+            "type": "string",
+            "description": "customer or vendor.",
+            "enum": [
+              "customer",
+              "vendor"
+            ]
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in name, company, email or phone."
+          },
+          "contact_name_contains": {
+            "type": "string",
+            "description": "Part of the contact name."
+          },
+          "email_contains": {
+            "type": "string",
+            "description": "Part of the email address."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "Status.All, Status.Active, Status.Inactive, Status.Duplicate, Invoice.OverDue, Invoice.Unpaid, Status.CreditLimitExceed."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "contact_name, email, outstanding_receivable_amount, created_time or last_modified_time."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "contact_type": "$contact_type",
+          "search_text": "$search_text",
+          "contact_name_contains": "$contact_name_contains",
+          "email_contains": "$email_contains",
+          "filter_by": "$filter_by",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_contact",
+      "description": "Read one contact with addresses, contact persons, payment terms, currency, balances and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact_id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_contact",
+      "description": "Create a customer or vendor. Returns the contact with its contact_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_name": {
+            "type": "string",
+            "description": "Display name of the contact (required, unique)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "contact_type": {
+            "type": "string",
+            "description": "customer or vendor.",
+            "enum": [
+              "customer",
+              "vendor"
+            ]
+          },
+          "customer_sub_type": {
+            "type": "string",
+            "description": "business or individual (customers).",
+            "enum": [
+              "business",
+              "individual"
+            ]
+          },
+          "contact_persons": {
+            "type": "array",
+            "description": "People, e.g. [{\"first_name\": \"Ana\", \"last_name\": \"Diaz\", \"email\": \"ana@example.com\", \"phone\": \"+49 761 1234567\", \"is_primary_contact\": true}]. The primary person's email is where invoices are emailed.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "billing_address": {
+            "type": "object",
+            "description": "e.g. {\"attention\": \"Accounts\", \"address\": \"Hauptstr. 1\", \"city\": \"Freiburg\", \"zip\": \"79098\", \"country\": \"Germany\"}."
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "Same shape as billing_address."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency id (default: base currency)."
+          },
+          "payment_terms": {
+            "type": "integer",
+            "description": "Payment terms in days, e.g. 30."
+          },
+          "payment_terms_label": {
+            "type": "string",
+            "description": "Label for the terms, e.g. \"Net 30\"."
+          },
+          "vat_reg_no": {
+            "type": "string",
+            "description": "VAT registration number (EU organizations)."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": [
+          "contact_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "contact_name": "$contact_name",
+          "company_name": "$company_name",
+          "contact_type": "$contact_type",
+          "customer_sub_type": "$customer_sub_type",
+          "contact_persons": "$contact_persons",
+          "billing_address": "$billing_address",
+          "shipping_address": "$shipping_address",
+          "currency_id": "$currency_id",
+          "payment_terms": "$payment_terms",
+          "payment_terms_label": "$payment_terms_label",
+          "vat_reg_no": "$vat_reg_no",
+          "website": "$website",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_update_contact",
+      "description": "Update a contact. Zoho requires contact_name and contact_type on every update (send the current values if they do not change); other fields are only changed when given. contact_persons replaces the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact_id."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Display name of the contact (required, unique)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "contact_type": {
+            "type": "string",
+            "description": "customer or vendor.",
+            "enum": [
+              "customer",
+              "vendor"
+            ]
+          },
+          "customer_sub_type": {
+            "type": "string",
+            "description": "business or individual (customers).",
+            "enum": [
+              "business",
+              "individual"
+            ]
+          },
+          "contact_persons": {
+            "type": "array",
+            "description": "People, e.g. [{\"first_name\": \"Ana\", \"last_name\": \"Diaz\", \"email\": \"ana@example.com\", \"phone\": \"+49 761 1234567\", \"is_primary_contact\": true}]. The primary person's email is where invoices are emailed.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "billing_address": {
+            "type": "object",
+            "description": "e.g. {\"attention\": \"Accounts\", \"address\": \"Hauptstr. 1\", \"city\": \"Freiburg\", \"zip\": \"79098\", \"country\": \"Germany\"}."
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "Same shape as billing_address."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency id (default: base currency)."
+          },
+          "payment_terms": {
+            "type": "integer",
+            "description": "Payment terms in days, e.g. 30."
+          },
+          "payment_terms_label": {
+            "type": "string",
+            "description": "Label for the terms, e.g. \"Net 30\"."
+          },
+          "vat_reg_no": {
+            "type": "string",
+            "description": "VAT registration number (EU organizations)."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": [
+          "contact_id",
+          "contact_name",
+          "contact_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "contact_name": "$contact_name",
+          "company_name": "$company_name",
+          "contact_type": "$contact_type",
+          "customer_sub_type": "$customer_sub_type",
+          "contact_persons": "$contact_persons",
+          "billing_address": "$billing_address",
+          "shipping_address": "$shipping_address",
+          "currency_id": "$currency_id",
+          "payment_terms": "$payment_terms",
+          "payment_terms_label": "$payment_terms_label",
+          "vat_reg_no": "$vat_reg_no",
+          "website": "$website",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_mark_contact_inactive",
+      "description": "Mark a contact inactive: it stays in the books but is hidden from lists and cannot be used on new transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact_id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/inactive",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_delete_contact",
+      "description": "Delete a contact for good. Not possible while transactions refer to it (mark it inactive instead). Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact_id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_items",
+      "description": "List items (products and services) with item_id, name, SKU, rate, unit, tax and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text in name, SKU or description."
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Part of the item name."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "Status.All, Status.Active or Status.Inactive."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "name, rate or tax_name."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "search_text": "$search_text",
+          "name_contains": "$name_contains",
+          "filter_by": "$filter_by",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_item",
+      "description": "Read one item with selling and purchase prices, accounts, tax, unit and stock details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The item_id."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_item",
+      "description": "Create an item (product or service). Returns the item with its item_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Item name (unique)."
+          },
+          "rate": {
+            "type": "number",
+            "description": "Selling price per unit."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description printed on documents."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit, e.g. \"pcs\" or \"hrs\"."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "goods, service or digital_service.",
+            "enum": [
+              "goods",
+              "service",
+              "digital_service"
+            ]
+          },
+          "item_type": {
+            "type": "string",
+            "description": "sales (default), purchases, sales_and_purchases or inventory.",
+            "enum": [
+              "sales",
+              "purchases",
+              "sales_and_purchases",
+              "inventory"
+            ]
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Default tax id."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Income account id."
+          },
+          "purchase_rate": {
+            "type": "number",
+            "description": "Purchase price per unit."
+          },
+          "purchase_account_id": {
+            "type": "string",
+            "description": "Expense account id for purchases."
+          }
+        },
+        "required": [
+          "name",
+          "rate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "rate": "$rate",
+          "description": "$description",
+          "sku": "$sku",
+          "unit": "$unit",
+          "product_type": "$product_type",
+          "item_type": "$item_type",
+          "tax_id": "$tax_id",
+          "account_id": "$account_id",
+          "purchase_rate": "$purchase_rate",
+          "purchase_account_id": "$purchase_account_id"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_update_item",
+      "description": "Update an item. Zoho requires name and rate on every update (send the current values if they do not change).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The item_id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name (unique)."
+          },
+          "rate": {
+            "type": "number",
+            "description": "Selling price per unit."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description printed on documents."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit, e.g. \"pcs\" or \"hrs\"."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "goods, service or digital_service.",
+            "enum": [
+              "goods",
+              "service",
+              "digital_service"
+            ]
+          },
+          "item_type": {
+            "type": "string",
+            "description": "sales (default), purchases, sales_and_purchases or inventory.",
+            "enum": [
+              "sales",
+              "purchases",
+              "sales_and_purchases",
+              "inventory"
+            ]
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Default tax id."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Income account id."
+          },
+          "purchase_rate": {
+            "type": "number",
+            "description": "Purchase price per unit."
+          },
+          "purchase_account_id": {
+            "type": "string",
+            "description": "Expense account id for purchases."
+          }
+        },
+        "required": [
+          "item_id",
+          "name",
+          "rate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "rate": "$rate",
+          "description": "$description",
+          "sku": "$sku",
+          "unit": "$unit",
+          "product_type": "$product_type",
+          "item_type": "$item_type",
+          "tax_id": "$tax_id",
+          "account_id": "$account_id",
+          "purchase_rate": "$purchase_rate",
+          "purchase_account_id": "$purchase_account_id"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_mark_item_inactive",
+      "description": "Mark an item inactive so it can no longer be added to new documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The item_id."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items/{item_id}/inactive",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_invoices",
+      "description": "List invoices with invoice_id, number, customer, status, date, due date, total and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "sent, draft, overdue, paid, void, unpaid, partially_paid or viewed.",
+            "enum": [
+              "sent",
+              "draft",
+              "overdue",
+              "paid",
+              "void",
+              "unpaid",
+              "partially_paid",
+              "viewed"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only this customer."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in number, reference or customer name."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Exact invoice number."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference number."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Invoice date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Invoice date until, YYYY-MM-DD."
+          },
+          "due_date_start": {
+            "type": "string",
+            "description": "Due date from, YYYY-MM-DD."
+          },
+          "due_date_end": {
+            "type": "string",
+            "description": "Due date until, YYYY-MM-DD."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "customer_name, invoice_number, date, due_date, total, balance or created_time."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "status": "$status",
+          "customer_id": "$customer_id",
+          "search_text": "$search_text",
+          "invoice_number": "$invoice_number",
+          "reference_number": "$reference_number",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "due_date_start": "$due_date_start",
+          "due_date_end": "$due_date_end",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_invoice",
+      "description": "Read one invoice with line items, taxes, totals, balance, payments, customer and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice_id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_invoice",
+      "description": "Create an invoice (a draft, unless send is true, which also emails it to the customer: confirm that with the user first). Returns the invoice with invoice_id and invoice_number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer contact_id."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Line items, e.g. [{\"item_id\": \"460000000017088\", \"quantity\": 2, \"rate\": 120}] or with a free description [{\"name\": \"Consulting\", \"description\": \"October\", \"quantity\": 1, \"rate\": 500, \"tax_id\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "date": {
+            "type": "string",
+            "description": "Invoice date, YYYY-MM-DD (default today)."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "payment_terms": {
+            "type": "integer",
+            "description": "Payment terms in days."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference, e.g. an order number."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Own number; only together with ignore_auto_number_generation true."
+          },
+          "ignore_auto_number_generation": {
+            "type": "boolean",
+            "description": "true to use invoice_number instead of the next automatic number."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency id (default: the customer's)."
+          },
+          "discount": {
+            "type": "number",
+            "description": "Discount, an amount or percentage depending on discount_type."
+          },
+          "is_inclusive_tax": {
+            "type": "boolean",
+            "description": "true when rates include tax."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes printed on the invoice."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Terms and conditions printed on the invoice."
+          },
+          "custom_fields": {
+            "type": "array",
+            "description": "Custom field values, e.g. [{\"customfield_id\": \"...\", \"value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "send": {
+            "type": "boolean",
+            "description": "true to email the invoice to the customer right away (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "customer_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "send": "$send",
+          "ignore_auto_number_generation": "$ignore_auto_number_generation"
+        },
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "line_items": "$line_items",
+          "date": "$date",
+          "due_date": "$due_date",
+          "payment_terms": "$payment_terms",
+          "reference_number": "$reference_number",
+          "invoice_number": "$invoice_number",
+          "currency_id": "$currency_id",
+          "discount": "$discount",
+          "is_inclusive_tax": "$is_inclusive_tax",
+          "notes": "$notes",
+          "terms": "$terms",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_email_invoice",
+      "description": "Email an invoice to the customer from the organization, with the invoice attached. This reaches the customer: confirm recipients and text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice_id."
+          },
+          "to_mail_ids": {
+            "type": "array",
+            "description": "Recipient email addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc_mail_ids": {
+            "type": "array",
+            "description": "CC email addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject; the template's when omitted."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (HTML allowed); the template's when omitted."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "to_mail_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/email",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "to_mail_ids": "$to_mail_ids",
+          "cc_mail_ids": "$cc_mail_ids",
+          "subject": "$subject",
+          "body": "$body"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_mark_invoice_sent",
+      "description": "Mark a draft invoice as sent without emailing it (for invoices delivered another way). It then counts as receivable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice_id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/status/sent",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_void_invoice",
+      "description": "Void an invoice: it stays on record with status void but no longer counts as receivable or revenue. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice_id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/status/void",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zoho_books_delete_invoice",
+      "description": "Delete an invoice for good (only without recorded payments). Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice_id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoices/{invoice_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_estimates",
+      "description": "List estimates (quotes) with estimate_id, number, customer, status, date, expiry date and total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "draft, sent, invoiced, accepted, declined or expired.",
+            "enum": [
+              "draft",
+              "sent",
+              "invoiced",
+              "accepted",
+              "declined",
+              "expired"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only this customer."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in number, reference or customer name."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Date until, YYYY-MM-DD."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "customer_name, estimate_number, date, total or created_time."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "status": "$status",
+          "customer_id": "$customer_id",
+          "search_text": "$search_text",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_estimate",
+      "description": "Read one estimate with line items, taxes, totals and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimate_id": {
+            "type": "string",
+            "description": "The estimate_id."
+          }
+        },
+        "required": [
+          "estimate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates/{estimate_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_estimate",
+      "description": "Create an estimate (quote) as a draft. Returns the estimate with estimate_id and number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer contact_id."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Line items, e.g. [{\"item_id\": \"460000000017088\", \"quantity\": 2, \"rate\": 120}] or with a free description [{\"name\": \"Consulting\", \"description\": \"October\", \"quantity\": 1, \"rate\": 500, \"tax_id\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "date": {
+            "type": "string",
+            "description": "Estimate date, YYYY-MM-DD."
+          },
+          "expiry_date": {
+            "type": "string",
+            "description": "Valid until, YYYY-MM-DD."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes printed on the estimate."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Terms printed on the estimate."
+          }
+        },
+        "required": [
+          "customer_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimates",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "line_items": "$line_items",
+          "date": "$date",
+          "expiry_date": "$expiry_date",
+          "reference_number": "$reference_number",
+          "notes": "$notes",
+          "terms": "$terms"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_delete_estimate",
+      "description": "Delete an estimate (quote) for good; it cannot be restored. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimate_id": {
+            "type": "string",
+            "description": "The estimate_id."
+          }
+        },
+        "required": [
+          "estimate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/estimates/{estimate_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_customer_payments",
+      "description": "List payments received from customers with payment_id, customer, date, amount, payment mode and the invoices they paid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Only this customer."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in reference, customer name or payment number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Payment date, YYYY-MM-DD."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "PaymentMode.All, PaymentMode.Check, PaymentMode.Cash, PaymentMode.BankTransfer, PaymentMode.CreditCard, ..."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "customer_name, payment_number, date, amount or created_time."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerpayments",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "customer_id": "$customer_id",
+          "search_text": "$search_text",
+          "date": "$date",
+          "filter_by": "$filter_by",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_customer_payment",
+      "description": "Read one customer payment with the invoices it was applied to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "The payment_id."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerpayments/{payment_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_customer_payment",
+      "description": "Record a payment received from a customer and apply it to invoices (bookkeeping only; no money is collected). Confirm amount and invoices with the user first. Returns the payment with payment_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "The customer contact_id."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount received."
+          },
+          "date": {
+            "type": "string",
+            "description": "Payment date, YYYY-MM-DD."
+          },
+          "payment_mode": {
+            "type": "string",
+            "description": "check, cash, creditcard, banktransfer, bankremittance, autotransaction or others."
+          },
+          "invoices": {
+            "type": "array",
+            "description": "Invoices paid, e.g. [{\"invoice_id\": \"...\", \"amount_applied\": 119.0}]. Amounts not applied stay as customer credit.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Deposit-to account id (bank or cash account)."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference, e.g. the bank transfer id."
+          },
+          "description": {
+            "type": "string",
+            "description": "Note."
+          },
+          "bank_charges": {
+            "type": "number",
+            "description": "Bank charges deducted."
+          }
+        },
+        "required": [
+          "customer_id",
+          "amount",
+          "date",
+          "payment_mode",
+          "invoices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customerpayments",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "amount": "$amount",
+          "date": "$date",
+          "payment_mode": "$payment_mode",
+          "invoices": "$invoices",
+          "account_id": "$account_id",
+          "reference_number": "$reference_number",
+          "description": "$description",
+          "bank_charges": "$bank_charges"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_delete_customer_payment",
+      "description": "Delete a recorded customer payment; the invoices become unpaid again. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "The payment_id."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customerpayments/{payment_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_bills",
+      "description": "List bills (vendor invoices) with bill_id, number, vendor, status, date, due date, total and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "paid, open, overdue, void, partially_paid, unpaid or draft."
+          },
+          "vendor_id": {
+            "type": "string",
+            "description": "Only this vendor."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in number, reference or vendor name."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Bill date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Bill date until, YYYY-MM-DD."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "vendor_name, bill_number, date, due_date, total or balance."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bills",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "status": "$status",
+          "vendor_id": "$vendor_id",
+          "search_text": "$search_text",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_bill",
+      "description": "Read one bill with line items, accounts, taxes, totals, balance and payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bill_id": {
+            "type": "string",
+            "description": "The bill_id."
+          }
+        },
+        "required": [
+          "bill_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bills/{bill_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_bill",
+      "description": "Record a bill received from a vendor (it posts to the ledger as payable). Confirm with the user first. Returns the bill with bill_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "description": "The vendor contact_id."
+          },
+          "bill_number": {
+            "type": "string",
+            "description": "The vendor's invoice number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Bill date, YYYY-MM-DD."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines, e.g. [{\"account_id\": \"<expense account>\", \"description\": \"Office chairs\", \"quantity\": 2, \"rate\": 150, \"tax_id\": \"...\"}] or with item_id.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference, e.g. your purchase order."
+          },
+          "is_inclusive_tax": {
+            "type": "boolean",
+            "description": "true when rates include tax."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          }
+        },
+        "required": [
+          "vendor_id",
+          "bill_number",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bills",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "vendor_id": "$vendor_id",
+          "bill_number": "$bill_number",
+          "date": "$date",
+          "due_date": "$due_date",
+          "line_items": "$line_items",
+          "reference_number": "$reference_number",
+          "is_inclusive_tax": "$is_inclusive_tax",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_delete_bill",
+      "description": "Delete a bill for good (only without recorded payments). Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bill_id": {
+            "type": "string",
+            "description": "The bill_id."
+          }
+        },
+        "required": [
+          "bill_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/bills/{bill_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_expenses",
+      "description": "List expenses with expense_id, date, account, amount, vendor, customer and status (billable, invoiced, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "unbilled, invoiced, reimbursed, non-billable or billable."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in description, reference or account name."
+          },
+          "vendor_id": {
+            "type": "string",
+            "description": "Only this vendor."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only this customer."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Date until, YYYY-MM-DD."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "date, account_name, total, reference_number, customer_name or created_time."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "status": "$status",
+          "search_text": "$search_text",
+          "vendor_id": "$vendor_id",
+          "customer_id": "$customer_id",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_expense",
+      "description": "Read one expense with account, paid-through account, tax, vendor, customer and receipts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "The expense_id."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses/{expense_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_create_expense",
+      "description": "Record an expense paid from a bank, cash or credit card account (it posts to the ledger). Confirm with the user first. Returns the expense with expense_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Expense account id (chart of accounts, type expense)."
+          },
+          "paid_through_account_id": {
+            "type": "string",
+            "description": "Account it was paid from (bank, cash or credit card account id)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date, YYYY-MM-DD."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Reference, e.g. receipt number."
+          },
+          "vendor_id": {
+            "type": "string",
+            "description": "Vendor contact_id."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer to bill it to."
+          },
+          "is_billable": {
+            "type": "boolean",
+            "description": "true if it should be billed to the customer."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id."
+          },
+          "is_inclusive_tax": {
+            "type": "boolean",
+            "description": "true when the amount includes tax."
+          }
+        },
+        "required": [
+          "account_id",
+          "paid_through_account_id",
+          "date",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/expenses",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        },
+        "bodyMapping": {
+          "account_id": "$account_id",
+          "paid_through_account_id": "$paid_through_account_id",
+          "date": "$date",
+          "amount": "$amount",
+          "description": "$description",
+          "reference_number": "$reference_number",
+          "vendor_id": "$vendor_id",
+          "customer_id": "$customer_id",
+          "is_billable": "$is_billable",
+          "tax_id": "$tax_id",
+          "is_inclusive_tax": "$is_inclusive_tax"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_delete_expense",
+      "description": "Delete an expense for good; its ledger postings are removed. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "The expense_id."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/expenses/{expense_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_chart_of_accounts",
+      "description": "List the chart of accounts: account_id, name, code, type (asset, liability, equity, income, expense, bank, cash, ...), active flag and, with showbalance, the current balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_by": {
+            "type": "string",
+            "description": "AccountType.All, AccountType.Active, AccountType.Inactive, AccountType.Asset, AccountType.Liability, AccountType.Equity, AccountType.Income or AccountType.Expense."
+          },
+          "showbalance": {
+            "type": "boolean",
+            "description": "true to include each account's current balance."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in account name or code."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "account_name, account_type or account_code."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chartofaccounts",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "filter_by": "$filter_by",
+          "showbalance": "$showbalance",
+          "search_text": "$search_text",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_account",
+      "description": "Read one account of the chart of accounts: name, code, type, currency, description and balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "The account_id."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chartofaccounts/{account_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_account_transactions",
+      "description": "List the transactions booked on one account (invoices, payments, bills, expenses, journals) with date, debit, credit and reference: a ledger view of the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "The account_id (required)."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Date until, YYYY-MM-DD."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Only one type, e.g. invoice, customer_payment, bills, expense, journal."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "transaction_date, debit_amount or credit_amount."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "A (ascending) or D (descending).",
+            "enum": [
+              "A",
+              "D"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chartofaccounts/accounttransactions",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "account_id": "$account_id",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "transaction_type": "$transaction_type",
+          "sort_column": "$sort_column",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_bank_accounts",
+      "description": "List bank, cash and credit card accounts with account_id, name, type, currency, balance and bank name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_by": {
+            "type": "string",
+            "description": "Status.All, Status.Active or Status.Inactive."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "account_name, account_type or account_code."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bankaccounts",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "filter_by": "$filter_by",
+          "sort_column": "$sort_column"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_bank_account",
+      "description": "Read one bank or credit card account with balance and bank details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "The bank account_id."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bankaccounts/{account_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_bank_transactions",
+      "description": "List bank transactions (deposits, withdrawals, transfers and feed lines) with date, amount, type, status (categorized, uncategorized, matched, excluded) and reference.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Only this bank account."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "Status.All, Status.Uncategorized, Status.Categorized, Status.ManuallyAdded, Status.Excluded or Status.Matched."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "e.g. deposit, expense, transfer_fund, card_payment."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Date from, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Date until, YYYY-MM-DD."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text in reference, payee or description."
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "date."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page, up to 200 (default 200).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/banktransactions",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}",
+          "account_id": "$account_id",
+          "filter_by": "$filter_by",
+          "transaction_type": "$transaction_type",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "search_text": "$search_text",
+          "sort_column": "$sort_column",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_get_bank_transaction",
+      "description": "Read one bank transaction with its accounts, amounts and the documents it is matched to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_transaction_id": {
+            "type": "string",
+            "description": "The bank_transaction_id."
+          }
+        },
+        "required": [
+          "bank_transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/banktransactions/{bank_transaction_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "zoho_books_list_taxes",
+      "description": "List the organization's taxes and tax groups with tax_id, name, percentage and type, for line items and expenses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/taxes",
+        "queryParams": {
+          "organization_id": "{{ZOHO_BOOKS_ORGANIZATION_ID}}"
+        }
+      }
+    }
+  ]
+}

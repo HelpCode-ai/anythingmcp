@@ -121,6 +121,7 @@ import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
 import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
+import * as docusign from './intl/docusign.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
@@ -241,6 +242,7 @@ import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
+import * as paypal from './intl/paypal.json';
 import * as pexels from './intl/pexels.json';
 import * as phorest from './intl/phorest.json';
 import * as pinterest from './intl/pinterest.json';
@@ -279,6 +281,7 @@ import * as seamlessAi from './intl/seamless-ai.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
 import * as serply from './intl/serply.json';
+import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopify from './intl/shopify.json';
 import * as signwell from './intl/signwell.json';
@@ -288,6 +291,7 @@ import * as snov from './intl/snov.json';
 import * as snowflake from './intl/snowflake.json';
 import * as sorare from './intl/sorare.json';
 import * as splunk from './intl/splunk.json';
+import * as square from './intl/square.json';
 import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
@@ -331,6 +335,7 @@ import * as youtubeData from './intl/youtube-data.json';
 import * as zabbix from './intl/zabbix.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
+import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
@@ -683,6 +688,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   deel as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
+  docusign as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
   dropboxSign as unknown as AdapterDefinition,
@@ -803,6 +809,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   orderful as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
+  paypal as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
   phorest as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
@@ -841,6 +848,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
   serply as unknown as AdapterDefinition,
+  shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopify as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
@@ -850,6 +858,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   snowflake as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
+  square as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
@@ -893,6 +902,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zabbix as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   zenhub as unknown as AdapterDefinition,
+  zohoBooks as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
