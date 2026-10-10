@@ -85,6 +85,15 @@ export class EmailVerifiedGuard implements CanActivate {
     if (!dbUser.emailVerified) {
       if (path.startsWith('/mcp')) {
         this.logger.warn(`Refused ${path}: user ${userId} has not verified their email`);
+        // An AI client shows this text to the person, who otherwise only sees
+        // the connection fail: on 9-10 Oct 2026 seven people who had connected
+        // Claude retried up to 122 times without knowing what was missing.
+        const dashboard = (this.configService.get<string>('FRONTEND_URL') || 'https://cloud.anythingmcp.com').replace(/\/+$/, '');
+        throw new ForbiddenException(
+          'Email verification required: confirm the email address of your AnythingMCP account ' +
+            `with the link we sent when you signed up, or sign in at ${dashboard} to get a new ` +
+            'link. Then try again; nothing else needs to change.',
+        );
       }
       throw new ForbiddenException('Email verification required');
     }

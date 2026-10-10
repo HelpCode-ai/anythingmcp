@@ -7,6 +7,31 @@ describe('deriveErrorHint', () => {
     ).toBeUndefined();
   });
 
+  it('tells the model to have the connector re-authorized when a scope is missing', () => {
+    const hint = deriveErrorHint({
+      host: 'openapi.etsy.com',
+      status: 403,
+      body: { error: 'Access token lacks scope for this request (requires scope: listings_w).' },
+    });
+    expect(hint).toMatch(/Authorize with Provider/);
+    expect(deriveErrorHint({ status: 403, body: { error: 'insufficient_scope' } })).toMatch(/Authorize/);
+  });
+
+  it('sends the model to the field list on an unknown Odoo field or model', () => {
+    const field = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'expense_policy' on 'product.product'" },
+    });
+    expect(field).toMatch(/fields_get/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Invalid field sale.order.commercial_partner_id in leaf ('x')" }),
+    ).toMatch(/fields_get/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Object stock.production.lot doesn't exist" }),
+    ).toMatch(/stock\.lot/);
+  });
+
   describe('weclapp', () => {
     it('explains unknown properties instead of letting the model guess spellings', () => {
       const hint = deriveErrorHint({

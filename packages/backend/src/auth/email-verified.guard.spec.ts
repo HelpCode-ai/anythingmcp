@@ -17,7 +17,7 @@ describe('EmailVerifiedGuard', () => {
       }),
     };
     const guard = new EmailVerifiedGuard(
-      { get: () => (opts.cloud === false ? 'self-hosted' : 'cloud') } as any,
+      { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? (opts.cloud === false ? 'self-hosted' : 'cloud') : undefined) } as any,
       prisma as any,
       auth as any,
     );
@@ -30,6 +30,13 @@ describe('EmailVerifiedGuard', () => {
     await expect(
       guard.canActivate(ctx({ path: '/api/mcp-servers', headers: { authorization: 'Bearer good' } })),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('tells an AI client on /mcp what the person has to do', async () => {
+    const { guard } = makeGuard({ verified: false });
+    const refusal = guard.canActivate(ctx({ path: '/mcp/srv1', headers: { authorization: 'Bearer good' } }));
+    await expect(refusal).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(refusal).rejects.toThrow(/confirm the email address.*sign in at https:\/\//);
   });
 
   it('lets a verified user through', async () => {

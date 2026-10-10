@@ -31,6 +31,29 @@ describe('resolveRestAuthorizeSettings', () => {
     });
   });
 
+  it('asks for the scopes the catalog added since a connector was installed', () => {
+    const previous = getAdapter('etsy')!.previousOAuthScopes;
+    const row = {
+      clientId: 'cid',
+      clientSecret: 'sec',
+      authorizationUrl: etsyCatalog.authorizationUrl,
+      tokenUrl: etsyCatalog.tokenUrl,
+      scopes: 'listings_r shops_r transactions_r email_r',
+    };
+    const settings = resolveRestAuthorizeSettings(row, null, etsyCatalog, previous);
+    expect(settings.scope).toBe(etsyCatalog.scopes);
+    // Written back once the authorization succeeds, like every adopted value.
+    expect(settings.adopted).toEqual({ scopes: etsyCatalog.scopes });
+
+    // A hand-picked subset is not one of the adapter's earlier sets: kept.
+    const narrowed = resolveRestAuthorizeSettings({ ...row, scopes: 'listings_r' }, null, etsyCatalog, previous);
+    expect(narrowed.scope).toBe('listings_r');
+    expect(narrowed.adopted).toEqual({});
+
+    // Without a history on the adapter nothing is widened.
+    expect(resolveRestAuthorizeSettings(row, null, etsyCatalog).adopted).toEqual({});
+  });
+
   it('resolves placeholders from the env vars', () => {
     const settings = resolveRestAuthorizeSettings(
       {

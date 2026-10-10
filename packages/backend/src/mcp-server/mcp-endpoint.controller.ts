@@ -184,6 +184,16 @@ const SKILL_INSTRUCTION_MAX = 1800;
 @UseGuards(McpCombinedAuthGuard, McpPrincipalRateLimitGuard)
 export class McpEndpointController {
   private readonly logger = new Logger(McpEndpointController.name);
+  /** Last time a duplicate tool name was logged, per `server:name`. */
+  private readonly duplicateWarnedAt = new Map<string, number>();
+
+  private shouldWarnDuplicate(key: string, now = Date.now()): boolean {
+    const last = this.duplicateWarnedAt.get(key);
+    if (last !== undefined && now - last < 60 * 60 * 1000) return false;
+    if (this.duplicateWarnedAt.size > 5000) this.duplicateWarnedAt.clear();
+    this.duplicateWarnedAt.set(key, now);
+    return true;
+  }
 
   constructor(
     private readonly mcpServersService: McpServersService,
@@ -1440,9 +1450,13 @@ export class McpEndpointController {
       // connector assigned twice, or two configs of one provider); the SDK
       // throws on the second registration, which would 500 the whole request.
       if (registeredNames.has(tool.name)) {
-        this.logger.warn(
-          `Duplicate tool name "${tool.name}" on server ${invocationContext.mcpServerId} — skipping the extra copy (check for duplicate connector assignments).`,
-        );
+        // Once an hour per server and name: the tool set is planned on every
+        // request, and one polling client turned this into 1,880 lines in 16 h.
+        if (this.shouldWarnDuplicate(`${invocationContext.mcpServerId}:${tool.name}`)) {
+          this.logger.warn(
+            `Duplicate tool name "${tool.name}" on server ${invocationContext.mcpServerId} — skipping the extra copy (check for duplicate connector assignments).`,
+          );
+        }
         continue;
       }
       registeredNames.add(tool.name);

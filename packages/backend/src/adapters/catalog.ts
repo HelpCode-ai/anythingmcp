@@ -429,6 +429,11 @@ export interface AdapterMeta {
    *  through the user's own app. A chat setup links it next to the callback
    *  URL to register. */
   appRegistrationUrl?: string;
+  /** OAuth scope sets this adapter asked for in earlier versions. A connector
+   *  still holding one of them asks for the current `authConfig.scopes` the
+   *  next time it is authorized (oauth-authorize-settings.ts), so tools added
+   *  later get the permissions they need. */
+  previousOAuthScopes?: string[];
   /** What to tell the user when the check fails, keyed by HTTP status ("404")
    *  or failure kind ("auth_failed"); replaces the generic hint. `suggest`
    *  names another adapter to offer instead (e.g. the JSON-RPC Odoo for an

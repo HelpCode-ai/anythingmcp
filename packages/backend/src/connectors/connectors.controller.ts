@@ -1316,13 +1316,13 @@ export class ConnectorsController {
         // endpoints where the row has none.
         const adapterSlug = (connector.config as { adapterSlug?: string } | null)
           ?.adapterSlug;
-        const catalogAuth = adapterSlug
-          ? getAdapter(adapterSlug)?.connector.authConfig
-          : undefined;
+        const catalogAdapter = adapterSlug ? getAdapter(adapterSlug) : undefined;
+        const catalogAuth = catalogAdapter?.connector.authConfig;
         const settings = resolveRestAuthorizeSettings(
           authConfig,
           connector.envVars as Record<string, string> | null,
           catalogAuth,
+          catalogAdapter?.previousOAuthScopes,
         );
         if (settings.missingVars.length > 0) {
           return {

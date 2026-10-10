@@ -62,6 +62,8 @@ export function resolveRestAuthorizeSettings(
   storedAuthConfig: Record<string, unknown>,
   envVars: Record<string, string> | null | undefined,
   catalogAuthConfig?: Record<string, unknown> | null,
+  /** The adapter's `previousOAuthScopes`: scope sets it asked for before. */
+  previousScopes?: readonly string[],
 ): RestAuthorizeSettings {
   const cfg = interpolateDeep(storedAuthConfig, envVars ?? {});
 
@@ -83,6 +85,21 @@ export function resolveRestAuthorizeSettings(
       }
     }
   }
+
+  // 3. Scopes the catalog added later. A catalog connector keeps the scopes it
+  //    was installed with, and the re-sync never touches authConfig, so when
+  //    an adapter gains write tools (Etsy's listings_w, Oct 2026) the
+  //    connector's token can never be granted them: re-authorizing asks for
+  //    the old list again. An adapter that widens its scopes lists the sets it
+  //    used to ask for (`previousOAuthScopes`); a row holding exactly one of
+  //    them was never narrowed by hand, so it asks for the current set. Any
+  //    other row, a hand-picked subset included, is left as it is.
+  const widened = widenedScopes(
+    str(cfg.scopes),
+    catalogAuthConfig ? str(catalogAuthConfig.scopes) : undefined,
+    previousScopes,
+  );
+  if (widened && !adopted.scopes) adopted.scopes = widened;
 
   const merged = { ...cfg, ...adopted };
   const clientId = str(merged.clientId) ?? '';
@@ -112,4 +129,20 @@ export function resolveRestAuthorizeSettings(
         : [clientId, clientSecret ?? ''],
     ),
   };
+}
+
+/**
+ * The catalog's current scopes when the row holds exactly one of the sets the
+ * adapter used to ask for (order and separators aside), otherwise undefined.
+ */
+function widenedScopes(
+  row: string | undefined,
+  catalog: string | undefined,
+  previous: readonly string[] | undefined,
+): string | undefined {
+  if (!row || !catalog || !previous?.length) return undefined;
+  if (findUnresolvedPlaceholders(catalog).length > 0) return undefined;
+  const key = (v: string) => v.split(/[\s,]+/).filter(Boolean).sort().join(' ');
+  if (key(row) === key(catalog)) return undefined;
+  return previous.some((p) => key(p) === key(row)) ? catalog : undefined;
 }
