@@ -1013,6 +1013,11 @@ export const siteSettings = {
     request<Array<{ label: string; url: string }>>('/api/site-settings/footer-links'),
 };
 
+export const versionApi = {
+  get: () =>
+    request<{ version: string; commit: string; buildDate: string | null; deploymentMode: string }>('/api/version'),
+};
+
 // Admin Settings
 export const adminSettings = {
   getSmtp: (token: string) =>

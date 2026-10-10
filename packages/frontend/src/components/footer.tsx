@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/theme-context';
-import { siteSettings } from '@/lib/api';
+import { siteSettings, versionApi } from '@/lib/api';
 
 function SunIcon({ size = 16 }: { size?: number }) {
   return (
@@ -40,9 +40,14 @@ interface FooterLink {
 export function Footer() {
   const { theme, setTheme } = useTheme();
   const [links, setLinks] = useState<FooterLink[]>([]);
+  const [version, setVersion] = useState<{ version: string; commit: string } | null>(null);
 
   useEffect(() => {
     siteSettings.footerLinks().then(setLinks).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    versionApi.get().then((v) => setVersion({ version: v.version, commit: v.commit })).catch(() => {});
   }, []);
 
   const themeOptions = [
@@ -60,6 +65,14 @@ export function Footer() {
             <span>&copy; {new Date().getFullYear()} Anything<span className="text-[var(--brand)]">MCP</span></span>
             <span className="hidden sm:inline">·</span>
             <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text)] hover:underline">Powered by helpcode.ai</a>
+            {version && (
+              <>
+                <span className="hidden sm:inline">·</span>
+                <span className="text-[var(--text-3)]" title={`Version ${version.version} (commit ${version.commit})`}>
+                  v{version.version}
+                </span>
+              </>
+            )}
             {links.length > 0 && (
               <>
                 <span className="hidden sm:inline">·</span>

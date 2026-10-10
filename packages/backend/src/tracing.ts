@@ -13,6 +13,7 @@
  * (Sentry for error correlation, OTLP for an in-house collector).
  */
 import { NodeSDK } from '@opentelemetry/sdk-node';
+import { APP_VERSION } from './common/app-version';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
@@ -32,8 +33,7 @@ export function startTracing(): void {
       [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'anythingmcp-backend',
       [ATTR_SERVICE_VERSION]:
         process.env.OTEL_SERVICE_VERSION ||
-        process.env.npm_package_version ||
-        '0.0.0',
+        APP_VERSION,
       [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]:
         process.env.OTEL_DEPLOYMENT_ENVIRONMENT ||
         process.env.NODE_ENV ||

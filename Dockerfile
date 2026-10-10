@@ -120,6 +120,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Release reported by backend and frontend when an operator sets SENTRY_DSN.
 ARG SENTRY_RELEASE=
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
+# Build provenance: commit and build date, shown in the UI and startup log.
+ARG APP_COMMIT=
+ENV APP_COMMIT=$APP_COMMIT
+ARG APP_BUILD_DATE=
+ENV APP_BUILD_DATE=$APP_BUILD_DATE
 
 RUN addgroup --system --gid 1001 appuser && \
     adduser --system --uid 1001 appuser
@@ -153,7 +158,9 @@ RUN chmod +x ./start.sh
 RUN mkdir -p /app/diagnostics && chown appuser:appuser /app/diagnostics
 ENV HEAP_SNAPSHOT_DIR=/app/diagnostics
 
-LABEL org.opencontainers.image.title="AnythingMCP" \
+LABEL org.opencontainers.image.revision="${APP_COMMIT}" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.title="AnythingMCP" \
       org.opencontainers.image.description="Convert any API into an MCP server — REST, SOAP, GraphQL, Database, MCP Bridge. Self-hosted MCP middleware." \
       org.opencontainers.image.url="https://github.com/HelpCode-ai/anythingmcp" \
       org.opencontainers.image.source="https://github.com/HelpCode-ai/anythingmcp" \

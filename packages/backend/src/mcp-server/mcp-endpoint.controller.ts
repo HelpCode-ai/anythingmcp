@@ -1,4 +1,6 @@
 import {
+
+import { APP_VERSION } from '../common/app-version';
   Controller,
   Post,
   Get,
@@ -77,40 +79,7 @@ import {
   planServerResources,
 } from './mcp-resources';
 import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 
-/**
- * Backend version, reported as the demo server's version (was a hardcoded 1.0.0).
- *
- * Resolved by walking up from this file rather than with a fixed relative path:
- * tsc emits to `dist/src/...`, so the package.json sits one level further up in
- * the build than in the source tree, and the runtime image moves it again
- * (`/app/backend/package.json` against `/app/backend/dist/src/mcp-server/`).
- * A hardcoded `../../package.json` is correct in exactly one of those three
- * layouts, and being wrong throws MODULE_NOT_FOUND at import time — which takes
- * the whole backend down for a string that appears in one handshake field.
- * Hence also the try/catch: this can degrade, it cannot fail to boot.
- */
-function readAppVersion(): string {
-  let dir = __dirname;
-  for (let i = 0; i < 6; i++) {
-    try {
-      const pkg = JSON.parse(
-        readFileSync(join(dir, 'package.json'), 'utf8'),
-      ) as { name?: string; version?: string };
-      if (pkg.name && pkg.version) return pkg.version;
-    } catch {
-      /* keep walking */
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return '0.0.0';
-}
-
-const APP_VERSION: string = readAppVersion();
 
 function trimSlash(url: string | undefined): string {
   return (url || '').trim().replace(/\/+$/, '');
