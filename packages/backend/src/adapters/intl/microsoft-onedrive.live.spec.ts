@@ -103,8 +103,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('microsoft-onedrive adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live, and says up front that it needs an Entra app', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 10 Oct 2026), and says up front that it needs an Entra app', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.prerequisites).toMatch(/Entra/);
     expect(a.prerequisites).toMatch(/Outlook connector can be reused/);
     expect(a.appRegistrationUrl).toMatch(/^https:\/\/entra\.microsoft\.com\//);

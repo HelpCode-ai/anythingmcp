@@ -48,8 +48,8 @@ const engine = () => new RestEngine({} as OAuth2TokenService, {} as LoginTokenSe
 const WRITES = ['kommo_add_note', 'kommo_create_contact', 'kommo_create_lead', 'kommo_create_task', 'kommo_update_lead'];
 
 describe('kommo adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 10 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls API v4 on the account subdomain with the long-lived token as Bearer', () => {

@@ -109,8 +109,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('microsoft-sharepoint adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live, and needs a work account and an Entra app', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 10 Oct 2026), and needs a work account and an Entra app', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.prerequisites).toMatch(/work or school account/);
     expect(a.prerequisites).toMatch(/Outlook connector can be reused/);
   });

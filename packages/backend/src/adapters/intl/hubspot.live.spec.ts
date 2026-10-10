@@ -55,8 +55,8 @@ const WRITES = [
 ];
 
 describe('hubspot adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 10 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the service key as a Bearer token to api.hubapi.com', () => {

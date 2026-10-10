@@ -7,7 +7,6 @@
   "category": "storage",
   "icon": "microsoft-onedrive",
   "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/onedrive",
-  "unlisted": true,
   "requiredEnvVars": [
     "MICROSOFT_CLIENT_ID",
     "MICROSOFT_CLIENT_SECRET",

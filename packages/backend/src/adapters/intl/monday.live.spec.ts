@@ -51,8 +51,8 @@ const operation = (t: Tool) =>
 const engine = () => new GraphqlEngine({} as OAuth2TokenService, {} as LoginTokenService, {} as GraphqlSchemaService);
 
 describe('monday adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 10 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls the v2 GraphQL endpoint with the raw token in Authorization and a pinned API version', () => {
