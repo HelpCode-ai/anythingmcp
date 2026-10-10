@@ -372,7 +372,9 @@ live('quickbooks-online adapter: live Accounting API', () => {
   (process.env.QBO_LIVE_WRITE === '1' && process.env.QBO_SANDBOX === '1' ? it : it.skip)(
     'creates a test customer and invoice, reads them back, deletes the invoice and deactivates the customer',
     async () => {
-      const stamp = new Date().toISOString();
+      // QuickBooks names may not contain a colon (it separates sub-customers),
+      // so the timestamp goes in without one: 2026-10-10T11-22-26.
+      const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
       const created = await run('qbo_create_customer', {
         display_name: `AnythingMCP test ${stamp}`,
         primary_email_addr: { Address: 'anythingmcp-test@example.com' },
@@ -383,23 +385,29 @@ live('quickbooks-online adapter: live Accounting API', () => {
       try {
         const items = await run('qbo_query', { query: "select * from Item where Type = 'Service' maxresults 1" });
         const item = items.QueryResponse.Item?.[0];
-        if (item) {
-          const res = await run('qbo_create_invoice', {
-            customer_id: customer.Id,
-            lines: [{ DetailType: 'SalesItemLineDetail', Amount: 20, Description: 'AnythingMCP test line', SalesItemLineDetail: { ItemRef: { value: item.Id }, Qty: 2, UnitPrice: 10 } }],
-            private_note: 'AnythingMCP live spec',
-          });
-          invoice = res.Invoice;
-          const read = await run('qbo_get_invoice', { id: invoice!.Id });
-          expect(read.Invoice.CustomerRef.value).toBe(customer.Id);
-          expect(read.Invoice.TotalAmt).toBeGreaterThanOrEqual(20);
-          invoice = read.Invoice;
-        }
+        expect(item).toBeDefined();
+        const res = await run('qbo_create_invoice', {
+          customer_id: customer.Id,
+          lines: [{ DetailType: 'SalesItemLineDetail', Amount: 20, Description: 'AnythingMCP test line', SalesItemLineDetail: { ItemRef: { value: item.Id }, Qty: 2, UnitPrice: 10 } }],
+          private_note: 'AnythingMCP live spec',
+        });
+        invoice = res.Invoice;
+        const read = await run('qbo_get_invoice', { id: invoice!.Id });
+        expect(read.Invoice.CustomerRef.value).toBe(customer.Id);
+        expect(read.Invoice.TotalAmt).toBeGreaterThanOrEqual(20);
+        invoice = read.Invoice;
       } finally {
-        if (invoice) await run('qbo_delete_invoice', { id: invoice.Id, sync_token: invoice.SyncToken });
-        const fresh = await run('qbo_get_customer', { id: customer.Id });
-        const done = await run('qbo_update_customer', { id: customer.Id, sync_token: fresh.Customer.SyncToken, active: false });
-        expect(done.Customer.Active).toBe(false);
+        try {
+          if (invoice) {
+            const deleted = await run('qbo_delete_invoice', { id: invoice.Id, sync_token: invoice.SyncToken });
+            expect(deleted.Invoice.status).toBe('Deleted');
+          }
+        } finally {
+          // Customers cannot be deleted: make the test customer inactive.
+          const fresh = await run('qbo_get_customer', { id: customer.Id });
+          const done = await run('qbo_update_customer', { id: customer.Id, sync_token: fresh.Customer.SyncToken, active: false });
+          expect(done.Customer.Active).toBe(false);
+        }
       }
     },
     120_000,
