@@ -207,7 +207,10 @@ import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
+import * as microsoftExcel from './intl/microsoft-excel.json';
+import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
 import * as microsoftOutlook from './intl/microsoft-outlook.json';
+import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
@@ -249,6 +252,7 @@ import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
+import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
@@ -755,7 +759,10 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
+  microsoftExcel as unknown as AdapterDefinition,
+  microsoftOnedrive as unknown as AdapterDefinition,
   microsoftOutlook as unknown as AdapterDefinition,
+  microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
@@ -797,6 +804,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   procore as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
+  quickbooksOnline as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,
