@@ -104,6 +104,78 @@ journalctl -u anythingmcp-stuck-report -n 50
 
 `bash deploy/cloud/stuck-users-report.test.sh` runs the report against a throwaway database with every migration applied and a throwaway SMTP server; CI runs it on each PR.
 
+## 5. Connector-failure alerts (webhook, opt-in per organization)
+
+The three pipelines above tell *you* something is wrong once you go looking. This one pushes a notification the moment a connector starts failing, so you find out without watching the logs.
+
+An admin configures one webhook per organization at `PUT /api/admin/settings/alert-webhook` (`GET`/`DELETE` and `POST .../test` alongside it; ADMIN role required). Nothing fires until it's configured: self-hosted installs that never set one up get no outbound traffic from this feature.
+
+```json
+{
+  "url": "https://example.com/hooks/anythingmcp",
+  "type": "json",
+  "enabled": true,
+  "threshold": 5,
+  "windowMinutes": 10,
+  "cooldownMinutes": 30
+}
+```
+
+`type: "slack"` posts a ready-to-render Slack message (`{ "text": "..." }`) instead of the JSON event below; point it at an Incoming Webhook URL. The signing secret is generated server-side on first save (or when `rotateSecret: true` is sent) and returned exactly once in the response; `GET` never returns it.
+
+### When it fires
+
+Every tool call against a connector that ends in `ERROR` or `TIMEOUT` counts toward a window of `windowMinutes` (default 10) that starts at the connector's first failure. Once the count for that connector reaches `threshold` (default 5) within the window, exactly one alert is dispatched; a `cooldownMinutes` (default 30) cooldown then suppresses further alerts for that connector even if it keeps failing, so a sustained outage sends one notification, not one per call.
+
+### Payload (`type: "json"`)
+
+```json
+{
+  "event": "connector.failing",
+  "organizationId": "org_123",
+  "connector": { "id": "conn_abc", "name": "SAP OData" },
+  "failures": 5,
+  "windowMinutes": 10,
+  "lastError": { "tool": "sap_get_orders", "message": "503 Service Unavailable" },
+  "firstFailureAt": "2026-10-09T10:00:00.000Z",
+  "lastFailureAt": "2026-10-09T10:04:12.000Z",
+  "logsUrl": "https://<your-instance>/logs?connectorId=conn_abc"
+}
+```
+
+`lastError.message` is truncated to 300 characters and never includes tool input or output, the same boundary the audit log itself keeps.
+
+### Headers and signature
+
+```
+Content-Type: application/json
+X-AnythingMCP-Event: connector.failing
+X-AnythingMCP-Timestamp: 1760000000
+X-AnythingMCP-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>
+```
+
+Verify it (Node):
+
+```js
+const crypto = require('crypto');
+
+function verify(secret, timestamp, rawBody, signatureHeader) {
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false; // reject replays
+  if (signatureHeader.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
+}
+```
+
+Use the *raw* request body, not a re-serialized JSON object, since re-serializing can change key order or whitespace and break the comparison.
+
+### SSRF
+
+The webhook URL is validated with the same guard (`SSRF_GUARD`, private/loopback/metadata-address blocking) used for every other outbound call this app makes on a user's behalf, both when it's saved and again on every dispatch, and redirects are not followed. On AnythingMCP Cloud the URL must use `https`, and it ignores both the env (`SSRF_ALLOWED_HOSTS`) and the admin-editable SSRF allowlist, which name hosts only the platform may reach. On a self-hosted instance the operator's allowlist applies, so an internal Mattermost or Slack proxy can receive alerts.
+
 ## Correlating across pipelines
 
 The same `req.id` UUID appears in:
