@@ -313,6 +313,9 @@ export function validateAdapter(adapter, file, region) {
   if (adapter.appRegistrationUrl !== undefined && !/^https:\/\/\S+$/.test(String(adapter.appRegistrationUrl))) {
     errors.push(error('app-registration-url', 'appRegistrationUrl', 'appRegistrationUrl must be an https URL', 'Link the provider page where the user creates the app, or remove the field.', 'adapter-fields'));
   }
+  if (adapter.previousOAuthScopes !== undefined && (!Array.isArray(adapter.previousOAuthScopes) || adapter.previousOAuthScopes.some((v) => typeof v !== 'string' || !v.trim()))) {
+    errors.push(error('previous-oauth-scopes', 'previousOAuthScopes', 'previousOAuthScopes must be an array of scope strings', 'List the scope strings earlier versions of this adapter asked for.', 'adapter-fields'));
+  }
   if (adapter.verifyHints !== undefined) {
     const hints = adapter.verifyHints;
     if (!hints || typeof hints !== 'object' || Array.isArray(hints)) {
