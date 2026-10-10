@@ -149,7 +149,7 @@ jobs:
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --assignee keysersoft
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --assignee helpcodeai
           fi
 
       - name: Keep the repository's About in step with the catalog

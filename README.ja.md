@@ -154,7 +154,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際のテナントではまだ検証していません。これらのシステムをお使いの方からの報告や修正を歓迎します。
 
-**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 </details>
 
@@ -182,7 +182,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際の販売者アカウントではまだ検証していません。
 
-**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
+**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 </details>
 
@@ -288,27 +288,8 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 
 ## 貢献する
 
-PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING.md)をお読みください。いちばん手軽で役に立つ貢献はアダプターです。JSON ファイル 1 つで済み、[手順を説明した issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) もあります。
+PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING.md)をお読みください。いちばん手軽で役に立つ貢献はアダプターです。JSON ファイル 1 つで済み、[手順を説明した issue](https://github.com/HelpCode-ai/anythingmcp/issues/982) もあります。
 
 ## License
 
 [GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）のもとで**オープンソース**です。自社内での商用利用は当初から認められています。コピーレフトの義務が生じるのは、AnythingMCP を改変し、その改変版をネットワーク経由で他者に提供する場合だけです。`ee/` 配下のクラウド運用者向けコードは別ライセンスで、セルフホストには不要です。[ライセンス FAQ](docs/license-faq.md) を参照してください。
-
----
-
-<p align="center">
-  <strong>⭐ MCP サーバーを書く 1 週間を節約できたなら、Star をお願いします。</strong><br/>
-  <em>Star は次の人がこのプロジェクトを見つける手がかりになり、次にどのアダプターを作るかを決める材料にもなります。</em>
-</p>
-
-<p align="center">
-  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
-  </a>
-</p>

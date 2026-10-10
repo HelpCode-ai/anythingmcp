@@ -19,8 +19,8 @@
     "kochfreiburg": {
       "maintainedBy": "Maintained by [KOCH Freiburg GmbH](https://www.kochfreiburg.de/), which runs AnythingMCP in production. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai."
     },
-    "keysersoft": {
-      "maintainedBy": "Maintained by [@keysersoft](https://github.com/keysersoft), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai."
+    "helpcodeai": {
+      "maintainedBy": "Maintained by [@helpcodeai](https://github.com/helpcodeai), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai."
     }
   },
   "satellites": [
@@ -895,7 +895,7 @@
     },
     {
       "repo": "odoo-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Odoo",
       "adapters": [
@@ -933,7 +933,7 @@
     },
     {
       "repo": "exact-online-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Exact Online",
       "adapters": [
@@ -963,7 +963,7 @@
     },
     {
       "repo": "afas-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "AFAS Profit",
       "adapters": [
@@ -993,7 +993,7 @@
     },
     {
       "repo": "zucchetti-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Zucchetti",
       "adapters": [
@@ -1023,7 +1023,7 @@
     },
     {
       "repo": "teamsystem-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "TeamSystem",
       "adapters": [
@@ -1053,7 +1053,7 @@
     },
     {
       "repo": "dolibarr-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Dolibarr",
       "adapters": [
@@ -1082,7 +1082,7 @@
     },
     {
       "repo": "erpnext-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "ERPNext",
       "adapters": [
@@ -1111,7 +1111,7 @@
     },
     {
       "repo": "woocommerce-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "WooCommerce",
       "adapters": [
@@ -1146,7 +1146,7 @@
     },
     {
       "repo": "magento-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Magento",
       "adapters": [
@@ -1182,7 +1182,7 @@
     },
     {
       "repo": "amazon-seller-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Amazon Seller Central",
       "adapters": [
@@ -1217,7 +1217,7 @@
     },
     {
       "repo": "ebay-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "eBay",
       "adapters": [
@@ -1246,7 +1246,7 @@
     },
     {
       "repo": "bigcommerce-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "BigCommerce",
       "adapters": [
@@ -1274,7 +1274,7 @@
     },
     {
       "repo": "etsy-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Etsy",
       "adapters": [
@@ -1303,7 +1303,7 @@
     },
     {
       "repo": "ecwid-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Ecwid",
       "adapters": [
@@ -1330,7 +1330,7 @@
     },
     {
       "repo": "mercado-libre-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Mercado Libre",
       "adapters": [
@@ -1359,7 +1359,7 @@
     },
     {
       "repo": "jev-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Jev",
       "adapters": [
@@ -1395,7 +1395,7 @@
     },
     {
       "repo": "splunk-mcp-gateway",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Splunk",
       "title": "Splunk MCP Gateway",
@@ -1432,7 +1432,7 @@
     },
     {
       "repo": "google-ads-mcp-server",
-      "owner": "keysersoft",
+      "owner": "helpcodeai",
       "type": "connector",
       "system": "Google Ads",
       "adapters": [

@@ -1,26 +1,26 @@
 # CODEOWNERS — review routing for AnythingMCP
 #
 # Defaults: any change requires review from a core maintainer.
-*                       @keysersoft
+*                       @helpcodeai
 
 # Adapter catalog — community PRs welcome, but a maintainer must validate
 # the JSON schema and the catalog test before merge.
-/packages/backend/src/adapters/   @keysersoft @D3nisty
-/packages/backend/src/catalog.ts  @keysersoft @D3nisty
+/packages/backend/src/adapters/   @helpcodeai @D3nisty
+/packages/backend/src/catalog.ts  @helpcodeai @D3nisty
 
 # Frontend
-/packages/frontend/     @keysersoft @mirkopoloni
+/packages/frontend/     @helpcodeai @mirkopoloni
 
 # Infra & deployment
-/Dockerfile             @keysersoft
-/docker-compose*.yml    @keysersoft
-/deploy/                @keysersoft
-/railway.*              @keysersoft
-/setup.sh               @keysersoft
+/Dockerfile             @helpcodeai
+/docker-compose*.yml    @helpcodeai
+/deploy/                @helpcodeai
+/railway.*              @helpcodeai
+/setup.sh               @helpcodeai
 
 # Documentation
-/docs/                  @keysersoft
-/README.md              @keysersoft
-/.github/CONTRIBUTING.md        @keysersoft
-/.github/SECURITY.md            @keysersoft
-/docs/ROADMAP.md             @keysersoft
+/docs/                  @helpcodeai
+/README.md              @helpcodeai
+/.github/CONTRIBUTING.md        @helpcodeai
+/.github/SECURITY.md            @helpcodeai
+/docs/ROADMAP.md             @helpcodeai

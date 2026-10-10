@@ -1,7 +1,7 @@
 {
   "$comment": "Read by scripts/install.sh, scripts/smoke.mjs and the sync workflow. Generated; edit satellites.config.json in HelpCode-ai/anythingmcp instead.",
   "repo": "odoo-mcp-server",
-  "owner": "keysersoft",
+  "owner": "helpcodeai",
   "mainRepo": "HelpCode-ai/anythingmcp",
   "adapters": [
     {

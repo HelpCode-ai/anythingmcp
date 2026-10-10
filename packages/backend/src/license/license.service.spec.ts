@@ -79,7 +79,7 @@ describe('LicenseService — tenant scoping', () => {
     });
 
     it('returns null for an org that has no license, even if the global pointer is set', async () => {
-      // This is the exact scenario from the keysersoft@gmail.com bug report:
+      // The scenario from a user bug report:
       // org B has no license of its own but site_settings.license_key still
       // points at org A's key. Pre-fix the lookup would resolve to A's key.
       const orgALicense = mkLicense({ licenseKey: 'AMCP-A', organizationId: 'org-a', plan: 'starter' });
