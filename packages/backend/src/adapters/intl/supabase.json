@@ -1,0 +1,747 @@
+{
+  "slug": "supabase",
+  "name": "Supabase",
+  "unlisted": true,
+  "description": "Let your AI look after your Supabase projects: list projects and check their health, explore schemas and tables, run read-only SQL, read logs, security and performance advisors, Edge Functions, migrations, branches and storage buckets. Through the Management API with a personal access token.",
+  "instructions": "## Supabase\nThis connector works with your Supabase projects through the **Management API** (`https://api.supabase.com`, v1): projects and their health, the database (read-only SQL, schemas, tables with columns, constraints, indexes and policies, extensions, migrations, backups, TypeScript types), logs, security and performance advisors, Edge Functions, API keys (without secrets), preview branches and Storage buckets. It is the view of a project owner, not of an app user: it does not go through your project's REST API or row level security.\n\n**Setup (about 2 minutes)**\n1. Open https://supabase.com/dashboard/account/tokens (account menu → **Account preferences** → **Access Tokens**) and click **Generate new token**.\n2. Prefer a **scoped token**: pick the organization and projects the AI may see and give each capability Read (or Read-write where it should change something). For the tools here: Projects, Project Settings, Database, Migrations, Backups, Edge Functions, API Keys (not API Key Secrets), Logs, Usage Analytics, Advisors, Storage, Development Branches and Organizations. A legacy token has your full access to every organization instead.\n3. Set an expiry (at most one year), copy the token (it starts with `sbp_`; Supabase shows it only once) and paste it into `SUPABASE_ACCESS_TOKEN`.\n4. A token's access cannot be changed later: to widen or narrow it, create a new one and delete the old.\n\n**Read-only setup**: give a scoped token Read on every capability. `supabase_execute_sql` is installed switched off; with Database Read only, even that tool runs its SQL read-only. Nothing else here changes data.\n\n**Projects**: every tool takes `project_ref`, the 20 lowercase letters in `https://<ref>.supabase.co` and in `supabase_list_projects`. Free projects pause after a week without activity and then show status `INACTIVE`: database tools fail until the project is restored in the dashboard. Check `supabase_get_project_health` when an app reports errors.\n\n**SQL**\n- `supabase_run_read_only_sql` runs one statement as a read-only database user. Qualify every table with its schema (`public.orders`, not `orders`), pass values as `$1`, `$2` with `parameters`, and add a `LIMIT`: results over 200 KB are cut and marked `_truncated`.\n- Start with `supabase_list_schemas`, `supabase_list_tables` (row level security on or off, estimated rows, size) and `supabase_describe_table` (columns, keys, indexes, policies).\n- `supabase_execute_sql` (switched off at install) runs as `postgres` with full rights: DDL, writes and grants apply immediately and cannot be undone. Turn it on only for a user who wants the AI to change the database, and have every statement confirmed. For schema changes that should live in version control, the user's own migration workflow is the better place.\n- The database query endpoints are marked beta by Supabase. A failing statement comes back with Postgres' message, e.g. \"Failed to run sql query: relation \\\"orders\\\" does not exist\".\n\n**Logs**: `supabase_query_logs` takes SQL in the ClickHouse dialect over one `logs` table. Filter on `source` (`edge_logs` for API requests, `postgres_logs`, `auth_logs`, `function_logs` and `function_edge_logs` for Edge Functions, `storage_logs`, `realtime_logs`) and read nested fields with `log_attributes['request.path']` or `log_attributes['response.status_code']`. Without `iso_timestamp_start` and `iso_timestamp_end` only the last minute is searched; a range may span at most 24 hours and must lie within the plan's retention (1 day on Free, 7 on Pro, 28 on Team). Example: `select timestamp, event_message from logs where source = 'postgres_logs' order by timestamp desc limit 50`.\n\n**Advisors**: `supabase_get_security_advisors` and `supabase_get_performance_advisors` run Supabase's database linter, the same checks as the dashboard's Advisors page. Each finding has a level (ERROR, WARN, INFO), the affected object and a remediation link; fix ERROR ones first, especially tables exposed without row level security.\n\n**API keys**: `supabase_list_api_keys` names every key but returns the value only of public ones (publishable keys and the legacy anon key). Secret keys and the legacy service_role key are listed without their value on purpose: they bypass row level security and must never travel through a chat. There is no tool to reveal them.\n\n**Edge Functions**: `supabase_list_edge_functions` and `supabase_get_edge_function` give status, version and settings. Function code is not downloaded; read it from the user's repository. For errors, query `function_logs` with `supabase_query_logs`.\n\n**Branches**: preview branches need a paid plan. `supabase_list_branches` lists them; each branch has its own `project_ref`, which the other tools accept.\n\n**Rate limits**: 120 requests per minute per user and endpoint (all of a user's tokens share it), 30 per minute for logs and usage. Over it Supabase answers 429 for the rest of the minute.\n\n**Errors**: 401 \"Invalid access token\" means the token is wrong, expired or deleted. 403 means the token may not do this: scoped tokens list what is missing in `missing_permissions`. 404 is an unknown project ref, or a project outside the token's organizations. 402 on logs means the organization's usage quota is exhausted. 410 Gone would mean an endpoint Supabase has retired.\n\n**Out of scope here**: creating, pausing, restoring or deleting projects, deploying Edge Functions, secrets and auth configuration, custom domains, network restrictions, billing, and data in your app's tables through PostgREST.",
+  "region": "intl",
+  "category": "database",
+  "icon": "supabase",
+  "docsUrl": "https://supabase.com/docs/reference/api/introduction",
+  "requiredEnvVars": [
+    "SUPABASE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "SUPABASE_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Supabase dashboard → account menu → Account preferences → Access Tokens → Generate new token. A scoped token can be limited to some projects and to read access.",
+      "link": "https://supabase.com/dashboard/account/tokens",
+      "pattern": "^sbp_\\S+$",
+      "patternMessage": "Paste the token as Supabase shows it, starting with sbp_, without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Supabase refused the token: it is wrong, expired or was deleted. Create a new one under Account preferences → Access Tokens.",
+    "403": "The token may not do this. A scoped token lists what it lacks in missing_permissions; create a new token that includes it (access cannot be changed afterwards).",
+    "rate_limited": "Supabase allows 120 Management API requests per minute per user (30 for logs). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "supabase_list_projects"
+  },
+  "prerequisites": "A Supabase account with at least one project (the Free plan works) and a personal access token created under Account preferences → Access Tokens. About 2 minutes.",
+  "connector": {
+    "name": "Supabase Management API",
+    "type": "REST",
+    "baseUrl": "https://api.supabase.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SUPABASE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/projects"
+  },
+  "tools": [
+    {
+      "name": "supabase_list_projects",
+      "description": "List every project the token can reach: ref, name, organization_slug, region, status (ACTIVE_HEALTHY, INACTIVE when paused, COMING_UP, RESTORING...), created_at and the Postgres host and version. The ref is what every other tool takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects"
+      }
+    },
+    {
+      "name": "supabase_list_organizations",
+      "description": "List the organizations the token can reach, with their slug and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations"
+      }
+    },
+    {
+      "name": "supabase_get_organization",
+      "description": "Get one organization by slug, including its plan (free, pro, team, enterprise).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_slug": {
+            "type": "string",
+            "description": "Organization slug, from supabase_list_organizations or supabase_list_projects."
+          }
+        },
+        "required": [
+          "organization_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_slug}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_get_project",
+      "description": "Get one project: name, ref, organization, region, status, created_at and database host and Postgres version. A paused free project shows status INACTIVE; restore it in the dashboard before querying it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_get_project_health",
+      "description": "Check the health of a project's services: for each one name, status (ACTIVE_HEALTHY, COMING_UP, UNHEALTHY) and error or info. Use it when an app reports errors or right after a restore.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "auth",
+                "db",
+                "db_postgres_user",
+                "pooler",
+                "realtime",
+                "rest",
+                "storage",
+                "pg_bouncer"
+              ]
+            },
+            "default": [
+              "db",
+              "auth",
+              "rest",
+              "realtime",
+              "storage"
+            ],
+            "description": "Services to check."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "How long to wait for each check, 0 to 10000 milliseconds."
+          }
+        },
+        "required": [
+          "project_ref",
+          "services"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/health",
+        "encodePathParams": true,
+        "queryParams": {
+          "services": "$services",
+          "timeout_ms": "$timeout_ms"
+        }
+      }
+    },
+    {
+      "name": "supabase_run_read_only_sql",
+      "description": "Run one SQL statement as the read-only database user and return the rows as JSON objects. Writes are refused. Qualify every table with its schema (public.orders, not orders). Use $1, $2 placeholders with parameters for values instead of pasting them into the text. Add a LIMIT: large results are cut at 200 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "One SQL statement, e.g. select id, status from public.orders where created_at > $1 order by created_at desc limit 50."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values for $1, $2 ... in order."
+          }
+        },
+        "required": [
+          "project_ref",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query/read-only",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "parameters": "$parameters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "supabase_execute_sql",
+      "enabled": false,
+      "description": "Run SQL with full rights (as postgres): DDL, inserts, updates, deletes, grants. Changes take effect at once and cannot be undone. Show the user the exact statement and wait for explicit confirmation; for schema changes prefer a migration in the user's own workflow. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "SQL to run; several statements separated by semicolons are run together."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values for $1, $2 ... in order."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "true to run it read-only after all."
+          }
+        },
+        "required": [
+          "project_ref",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "parameters": "$parameters",
+          "read_only": "$read_only"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "supabase_list_schemas",
+      "description": "List the database's schemas with their owner and number of tables, leaving out Postgres' own (pg_*, information_schema). Supabase keeps app data in public and its own services in auth, storage, realtime, graphql, extensions and vault.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query/read-only",
+        "bodyMapping": {
+          "query": "select n.nspname as schema, pg_catalog.pg_get_userbyid(n.nspowner) as owner, (select count(*) from pg_catalog.pg_class c where c.relnamespace = n.oid and c.relkind in ('r', 'p')) as tables from pg_catalog.pg_namespace n where n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema' order by n.nspname"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "supabase_list_tables",
+      "description": "List the tables, views and materialized views of one or more schemas: schema, name, kind, whether row level security is on, estimated row count, total size and comment. Tables in public without RLS are readable by anyone with the anon key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "schemas": {
+            "type": "string",
+            "default": "public",
+            "description": "Comma-separated schemas, e.g. public or public,auth (default public)."
+          }
+        },
+        "required": [
+          "project_ref",
+          "schemas"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query/read-only",
+        "bodyMapping": {
+          "query": "select n.nspname as schema, c.relname as name, case c.relkind when 'r' then 'table' when 'p' then 'partitioned table' when 'v' then 'view' when 'm' then 'materialized view' when 'f' then 'foreign table' end as kind, c.relrowsecurity as rls_enabled, greatest(c.reltuples, 0)::bigint as estimated_rows, pg_catalog.pg_size_pretty(pg_catalog.pg_total_relation_size(c.oid)) as total_size, pg_catalog.obj_description(c.oid, 'pg_class') as comment from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where c.relkind in ('r', 'p', 'v', 'm', 'f') and n.nspname = any(pg_catalog.string_to_array($1, ',')) order by n.nspname, c.relname",
+          "parameters": [
+            "$schemas"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "supabase_describe_table",
+      "description": "Describe one table or view: columns (name, type, nullable, default, comment), constraints (primary key, foreign keys, unique, check, with their definition), indexes and row level security policies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "schema": {
+            "type": "string",
+            "default": "public",
+            "description": "Schema of the table (default public)."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table or view name, exactly as stored (case-sensitive)."
+          }
+        },
+        "required": [
+          "project_ref",
+          "schema",
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query/read-only",
+        "bodyMapping": {
+          "query": "select (select coalesce(json_agg(json_build_object('name', a.attname, 'type', pg_catalog.format_type(a.atttypid, a.atttypmod), 'nullable', not a.attnotnull, 'default', pg_catalog.pg_get_expr(d.adbin, d.adrelid), 'comment', pg_catalog.col_description(a.attrelid, a.attnum)) order by a.attnum), '[]') from pg_catalog.pg_attribute a left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = (select c.oid from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = $1 and c.relname = $2) and a.attnum > 0 and not a.attisdropped) as columns, (select coalesce(json_agg(json_build_object('name', con.conname, 'type', case con.contype when 'p' then 'primary key' when 'f' then 'foreign key' when 'u' then 'unique' when 'c' then 'check' when 'x' then 'exclusion' else con.contype::text end, 'definition', pg_catalog.pg_get_constraintdef(con.oid))), '[]') from pg_catalog.pg_constraint con where con.conrelid = (select c.oid from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = $1 and c.relname = $2)) as constraints, (select coalesce(json_agg(json_build_object('name', i.indexname, 'definition', i.indexdef)), '[]') from pg_catalog.pg_indexes i where i.schemaname = $1 and i.tablename = $2) as indexes, (select coalesce(json_agg(json_build_object('name', p.policyname, 'command', p.cmd, 'roles', p.roles, 'permissive', p.permissive, 'using', p.qual, 'with_check', p.with_check)), '[]') from pg_catalog.pg_policies p where p.schemaname = $1 and p.tablename = $2) as policies",
+          "parameters": [
+            "$schema",
+            "$table"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "supabase_list_extensions",
+      "description": "List the Postgres extensions installed in the database: name, version and schema (on Supabase usually extensions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_ref}/database/query/read-only",
+        "bodyMapping": {
+          "query": "select e.extname as name, e.extversion as version, n.nspname as schema from pg_catalog.pg_extension e join pg_catalog.pg_namespace n on n.oid = e.extnamespace order by e.extname"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "supabase_list_migrations",
+      "description": "List the migrations recorded for the database (by the Supabase CLI or the dashboard): version (timestamp) and name, oldest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/database/migrations",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_list_backups",
+      "description": "List the project's database backups: whether point-in-time recovery is on, and each backup's status and time. Free projects have no downloadable backups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/database/backups",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_generate_typescript_types",
+      "description": "Generate TypeScript types for the database schema, as the Supabase CLI does: one string with a Database type covering tables, views, functions and enums. Large schemas are cut at 200 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "included_schemas": {
+            "type": "string",
+            "default": "public",
+            "description": "Comma-separated schemas to include (default public)."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/types/typescript",
+        "encodePathParams": true,
+        "queryParams": {
+          "included_schemas": "$included_schemas"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "supabase_list_edge_functions",
+      "description": "List the project's Edge Functions: slug, name, status, version, verify_jwt, entrypoint path and when they were created and updated (epoch milliseconds).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/functions",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_get_edge_function",
+      "description": "Get one Edge Function by slug: status, version, verify_jwt, entrypoint and import map paths, created and updated times. The function's code is not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "function_slug": {
+            "type": "string",
+            "description": "Function slug, e.g. send-welcome-email."
+          }
+        },
+        "required": [
+          "project_ref",
+          "function_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/functions/{function_slug}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_list_api_keys",
+      "description": "List the project's API keys: id, name, type (publishable, secret or legacy), prefix and description. Only public keys (publishable and the legacy anon key) carry their value; secret and service_role keys are listed without it, on purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/api-keys",
+        "encodePathParams": true,
+        "queryParams": {
+          "reveal": "false"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, name: name, type: type, prefix: prefix, description: description, inserted_at: inserted_at, updated_at: updated_at, api_key: (type == 'publishable' || name == 'anon') && api_key || `null`}",
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "supabase_query_logs",
+      "description": "Query the project's logs with SQL (ClickHouse dialect) over one unified logs table: filter on source (edge_logs, postgres_logs, auth_logs, function_logs, function_edge_logs, storage_logs, realtime_logs), read nested fields with log_attributes['request.path']. Without a time range only the last minute is searched; the range may span at most 24 hours. Returns result rows and, on a bad query, error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "sql": {
+            "type": "string",
+            "description": "SQL over the logs table, e.g. select timestamp, event_message, log_attributes['response.status_code'] as status from logs where source = 'edge_logs' order by timestamp desc limit 50."
+          },
+          "iso_timestamp_start": {
+            "type": "string",
+            "description": "Start of the range, UTC ISO 8601 ending in Z, e.g. 2026-10-10T08:00:00Z."
+          },
+          "iso_timestamp_end": {
+            "type": "string",
+            "description": "End of the range, UTC ISO 8601 ending in Z; at most 24 hours after the start."
+          }
+        },
+        "required": [
+          "project_ref",
+          "sql"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/analytics/endpoints/logs",
+        "encodePathParams": true,
+        "queryParams": {
+          "sql": "$sql",
+          "iso_timestamp_start": "$iso_timestamp_start",
+          "iso_timestamp_end": "$iso_timestamp_end"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "supabase_get_api_usage",
+      "description": "Get request counts per time bucket for the project's REST, Auth, Storage and Realtime APIs over a recent interval.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "15min",
+              "30min",
+              "1hr",
+              "3hr",
+              "1day",
+              "3day",
+              "7day"
+            ],
+            "default": "1day",
+            "description": "Time window, e.g. 1day (default) or 7day."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/analytics/endpoints/usage.api-counts",
+        "encodePathParams": true,
+        "queryParams": {
+          "interval": "$interval"
+        }
+      }
+    },
+    {
+      "name": "supabase_get_security_advisors",
+      "description": "Run the security advisor (database linter) on the project: findings such as tables without row level security, exposed auth.users, mutable function search paths or insecure extensions, each with level (ERROR, WARN, INFO), detail and a remediation link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/advisors/security",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_get_performance_advisors",
+      "description": "Run the performance advisor on the project: findings such as unindexed foreign keys, unused or duplicate indexes, RLS policies that re-evaluate auth functions per row, each with level, detail and a remediation link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/advisors/performance",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_list_branches",
+      "description": "List the project's preview branches (branching, a paid feature): id, name, project_ref of the branch, git_branch, pr_number, is_default, persistent and status. A project without branching answers with an error or an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/branches",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_get_branch",
+      "description": "Get one preview branch of a project by its name: its own project ref, git branch, pull request number, status and whether it is persistent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          },
+          "branch_name": {
+            "type": "string",
+            "description": "Branch name, from supabase_list_branches."
+          }
+        },
+        "required": [
+          "project_ref",
+          "branch_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/branches/{branch_name}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "supabase_list_storage_buckets",
+      "description": "List the project's Storage buckets: id, name, owner, whether public, and created and updated times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ref": {
+            "type": "string",
+            "description": "Project ref, the 20 lowercase letters in the project's URL (https://<ref>.supabase.co) and in supabase_list_projects."
+          }
+        },
+        "required": [
+          "project_ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_ref}/storage/buckets",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

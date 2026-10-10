@@ -1,0 +1,1163 @@
+{
+  "slug": "cloudflare",
+  "name": "Cloudflare",
+  "unlisted": true,
+  "description": "Let your AI manage your Cloudflare zones: review and change DNS records, purge the cache, read zone settings, redirect, transform and cache rules, check traffic analytics, and list Workers and R2 buckets. With an API token limited to what it should touch.",
+  "instructions": "## Cloudflare\nThis connector works with Cloudflare through the **API v4** (`https://api.cloudflare.com/client/v4`) and the **GraphQL Analytics API**: zones and their settings, DNS records (list, export, create, change, delete), cache purges, rulesets (redirects, transform, cache, origin and WAF custom rules), legacy Page Rules, traffic analytics, Workers (scripts, settings, code, routes, custom domains) and R2 buckets. It authenticates with an **API token**, which you limit to the permissions and zones the AI should reach.\n\n**Setup (about 3 minutes)**\n1. Open https://dash.cloudflare.com/profile/api-tokens (**My Profile → API Tokens**) and click **Create Token**, then **Create Custom Token** at the bottom (or start from the **Read all resources** template and add the two write permissions below).\n2. Name it (for example \"AnythingMCP\") and add these permissions:\n   - Zone → **Zone** → Read; Zone → **DNS** → Edit (Read for a read-only setup); Zone → **Cache Purge** → Purge\n   - Zone → **Zone Settings** → Read; Zone → **Page Rules** → Read; Zone → **Analytics** → Read; Zone → **Workers Routes** → Read\n   - For rules: Zone → **Single Redirect**, **Transform Rules**, **Cache Rules**, **Origin Rules**, **Config Rules** and **Zone WAF** → Read (each phase needs its own permission)\n   - Account → **Account Settings** → Read; Account → **Workers Scripts** → Read; Account → **Workers R2 Storage** → Read; Account → **Account Analytics** → Read\n3. Under **Zone Resources** pick **Include → All zones from an account** (or **Specific zone** to limit the AI to some domains); under **Account Resources** include your account. Optionally restrict **Client IP Address Filtering** and set a **TTL**.\n4. **Continue to summary → Create Token**, copy the token (Cloudflare shows it once) and paste it into `CLOUDFLARE_API_TOKEN`. Do not use the Global API Key.\n5. An **account-owned token** (Manage Account → Account API Tokens) works too, except for Page Rules, which it cannot read.\n\n**Read-only setup**: give DNS only Read, leave out Cache Purge, and switch off `cloudflare_create_dns_record`, `cloudflare_update_dns_record` and `cloudflare_purge_cache`. `cloudflare_delete_dns_record` and `cloudflare_purge_everything` are installed switched off.\n\n**Ids**: zone ids and account ids are 32 hex characters; `cloudflare_list_zones` (filter by `name`) and `cloudflare_list_accounts` give them, and every zone carries its `account.id`. DNS record ids come from `cloudflare_list_dns_records`. Answers are wrapped as `{success, errors, messages, result, result_info}`.\n\n**DNS changes**\n- Look before you change: `cloudflare_list_dns_records` with `name` or `type`, and `cloudflare_export_dns_records` for a full BIND copy to keep before larger edits.\n- Names are full names (`www.example.com`); `ttl` 1 means automatic; `proxied` (orange cloud) only applies to A, AAAA and CNAME records; MX and URI records need `priority`; SRV and CAA take `data` instead of `content`.\n- A CNAME cannot share its name with any other record, and an identical record is refused. Changes go live within seconds, so a wrong record can take a website or its email offline at once: confirm each change with the user.\n\n**Cache**: `cloudflare_purge_cache` takes exactly one of `files` (full URLs), `tags`, `hosts` or `prefixes`, up to 100 per call; every plan can use all four. Free plans allow 5 purge requests per minute by tag, host or prefix. `cloudflare_purge_everything` (switched off) empties the zone's whole cache and sends every next request to the origin.\n\n**Rules**: modern rules live in rulesets, one entry point per phase. `cloudflare_get_phase_rules` reads the zone's rules for a phase: `http_request_dynamic_redirect` (single redirects), `http_request_transform` (URL rewrites), `http_request_late_transform` and `http_response_headers_transform` (header changes), `http_request_cache_settings` (cache rules), `http_request_origin` (origin rules), `http_config_settings` (configuration rules), `http_request_firewall_custom` (WAF custom rules), `http_ratelimit`. A 404 means the zone has no rules in that phase. Legacy Page Rules come from `cloudflare_list_page_rules`. Rules are read-only here.\n\n**Analytics**: `cloudflare_get_zone_traffic` gives daily totals for a date range. For anything else, `cloudflare_graphql_analytics` runs a GraphQL query: for example `httpRequestsAdaptiveGroups(limit: 20, filter: {datetime_geq: \"...\", datetime_leq: \"...\"}, orderBy: [count_DESC]) { count dimensions { clientRequestPath } }` under `viewer { zones(filter: {zoneTag: \"<zone id>\"}) }`. How far back a dataset reaches depends on the plan; adaptive datasets keep at least 31 days. GraphQL errors (for example a range the plan does not allow) are reported as failed calls.\n\n**Workers and R2**: `cloudflare_list_workers`, `cloudflare_get_worker_settings` (bindings; secret values are never shown) and `cloudflare_get_worker_content` (the deployed code) read Workers; `cloudflare_list_worker_routes` and `cloudflare_list_worker_domains` show where they run. R2 must be enabled (subscribed, free tier included) under **Storage & databases → R2** before `cloudflare_list_r2_buckets` answers; otherwise it fails with 403 \"NotEntitled\". Nothing here deploys Workers or touches R2 objects.\n\n**Pagination**: page-based lists take `page` and `per_page` and report `result_info.total_count` and `total_pages`; rulesets and R2 buckets page with a `cursor` from `result_info`.\n\n**Rate limits**: 1,200 requests per 5 minutes per token (dashboard use counts too). Over it Cloudflare answers 429 and blocks every call for 5 minutes, so avoid tight loops over many zones. GraphQL has its own limit of about 300 queries per 5 minutes.\n\n**Errors**: 400 with code 6003 usually means the Global API Key was pasted instead of a token. 401 or 403 with code 10000 or 9109 means the token is invalid or lacks the permission for that zone or account: edit the token and add it. 404 is an unknown zone, record or ruleset (or a phase without rules). A create answering 400 \"An identical record already exists\" or \"A CNAME record with that host already exists\" names the conflicting record.\n\n**Out of scope here**: editing rulesets, Page Rules and zone settings, SSL/TLS certificates, deploying or deleting Workers, KV, D1 and R2 objects, Zero Trust, registrar and billing.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "cloudflare",
+  "docsUrl": "https://developers.cloudflare.com/api/",
+  "requiredEnvVars": [
+    "CLOUDFLARE_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "CLOUDFLARE_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Cloudflare dashboard → My Profile → API Tokens → Create Token, with the permissions listed in the setup steps. Not the Global API Key.",
+      "link": "https://dash.cloudflare.com/profile/api-tokens",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{40,}$",
+      "patternMessage": "Paste only the API token (40 or more letters, digits, - and _), not the Global API Key and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "400": "Cloudflare rejected the request headers. Make sure you pasted an API token, not the Global API Key.",
+    "401": "Cloudflare refused the token: it is wrong, expired, disabled or limited to other client IP addresses. Check it under My Profile → API Tokens.",
+    "403": "The token lacks a permission for this call or this zone. Edit the token and add the permission (for example Zone Read or DNS Read) for the zone.",
+    "rate_limited": "Cloudflare allows 1,200 API requests per 5 minutes per token and then blocks for 5 minutes. Wait and try again."
+  },
+  "probe": {
+    "tool": "cloudflare_list_zones",
+    "params": {
+      "per_page": 5
+    }
+  },
+  "prerequisites": "A Cloudflare account (the Free plan works) with at least one zone, and an API token with the permissions listed below (about 3 minutes). R2 must be enabled on the account before its buckets can be listed.",
+  "connector": {
+    "name": "Cloudflare API v4",
+    "type": "REST",
+    "baseUrl": "https://api.cloudflare.com/client/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CLOUDFLARE_API_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/zones?per_page=5",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errors[0].message",
+          "messagePath": "errors[0].message",
+          "messageMatches": "not authori[sz]ed|authentication|permission",
+          "status": 403
+        },
+        {
+          "path": "errors[0].message",
+          "messagePath": "errors[0].message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "cloudflare_list_zones",
+      "description": "List the zones (domains) the token can see: id, name, status (active, pending, initializing, moved), plan, name_servers, paused and account (id, name). The zone id is what the zone tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the zone with this domain name, e.g. example.com. Prefix with contains: or starts_with: to match part of it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending",
+              "initializing",
+              "moved"
+            ],
+            "description": "Only zones with this status."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Only zones of this account."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. result_info.total_pages says how many there are."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 50,
+            "default": 20,
+            "description": "Zones per page, 5 to 50 (default 20)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "name",
+              "status",
+              "account.id",
+              "account.name",
+              "plan.id"
+            ],
+            "description": "Sort by name, status, account.id, account.name or plan.id."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones",
+        "queryParams": {
+          "name": "$name",
+          "status": "$status",
+          "account.id": "$account_id",
+          "page": "$page",
+          "per_page": "$per_page",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_get_zone",
+      "description": "Get one zone: name, status, plan, name servers (the ones Cloudflare assigned and the original ones), account, created and activated dates, paused and development_mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}"
+      }
+    },
+    {
+      "name": "cloudflare_list_accounts",
+      "description": "List the Cloudflare accounts the token has access to: id, name, type and settings. Workers, R2 and other account tools take the id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only accounts whose name matches."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. result_info.total_pages says how many there are."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 50,
+            "description": "Accounts per page, 5 to 50 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "name": "$name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_list_zone_settings",
+      "description": "Read all settings of a zone, each as id, value and editable: SSL mode (ssl), always_use_https, min_tls_version, cache_level, browser_cache_ttl, development_mode, security_level, http3, brotli, rocket_loader and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/settings"
+      }
+    },
+    {
+      "name": "cloudflare_get_zone_setting",
+      "description": "Read one zone setting by its id, e.g. ssl, always_use_https, min_tls_version, security_level, cache_level, development_mode: value, editable and modified_on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "setting_id": {
+            "type": "string",
+            "description": "Setting id, e.g. ssl or always_use_https."
+          }
+        },
+        "required": [
+          "zone_id",
+          "setting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/settings/{setting_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "cloudflare_list_dns_records",
+      "description": "List a zone's DNS records with filters: id, type, name, content, proxied, ttl (1 = automatic), priority, comment, tags and modified_on. Pages with page and per_page; result_info has the total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CERT",
+              "CNAME",
+              "DNSKEY",
+              "DS",
+              "HTTPS",
+              "LOC",
+              "MX",
+              "NAPTR",
+              "NS",
+              "OPENPGPKEY",
+              "PTR",
+              "SMIMEA",
+              "SRV",
+              "SSHFP",
+              "SVCB",
+              "TLSA",
+              "TXT",
+              "URI"
+            ],
+            "description": "Only records of this type."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only records with exactly this full name, e.g. www.example.com."
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Only records whose name contains this text."
+          },
+          "content": {
+            "type": "string",
+            "description": "Only records with exactly this content, e.g. an IP address."
+          },
+          "content_contains": {
+            "type": "string",
+            "description": "Only records whose content contains this text."
+          },
+          "proxied": {
+            "type": "boolean",
+            "description": "true for proxied (orange cloud) records only, false for DNS-only ones."
+          },
+          "comment_contains": {
+            "type": "string",
+            "description": "Only records whose comment contains this text."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only records with this tag, as name:value or just name."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "type",
+              "name",
+              "content",
+              "ttl",
+              "proxied"
+            ],
+            "description": "Sort by type (default), name, content, ttl or proxied."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. result_info.total_pages says how many there are."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page, 1 to 1000 (default 100)."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/dns_records",
+        "queryParams": {
+          "type": "$type",
+          "name.exact": "$name",
+          "name.contains": "$name_contains",
+          "content.exact": "$content",
+          "content.contains": "$content_contains",
+          "proxied": "$proxied",
+          "comment.contains": "$comment_contains",
+          "tag": "$tag",
+          "order": "$order",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_get_dns_record",
+      "description": "Get one DNS record by id: type, name, content, proxied, ttl, priority, data (SRV, CAA ...), comment, tags, created_on and modified_on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "dns_record_id": {
+            "type": "string",
+            "description": "DNS record id, from cloudflare_list_dns_records."
+          }
+        },
+        "required": [
+          "zone_id",
+          "dns_record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/dns_records/{dns_record_id}"
+      }
+    },
+    {
+      "name": "cloudflare_export_dns_records",
+      "description": "Export all DNS records of a zone as a BIND zone file (plain text), handy for a backup before changes or to review everything at once. Cut at 200 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/dns_records/export"
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "cloudflare_create_dns_record",
+      "description": "Create a DNS record in a zone. Returns the new record with its id. Check with cloudflare_list_dns_records first: an identical record, or a CNAME next to an A record of the same name, is refused. Show the user the record and wait for confirmation; DNS changes go live within seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CERT",
+              "CNAME",
+              "DNSKEY",
+              "DS",
+              "HTTPS",
+              "LOC",
+              "MX",
+              "NAPTR",
+              "NS",
+              "OPENPGPKEY",
+              "PTR",
+              "SMIMEA",
+              "SRV",
+              "SSHFP",
+              "SVCB",
+              "TLSA",
+              "TXT",
+              "URI"
+            ],
+            "description": "Record type."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full record name, e.g. www.example.com, or @ for the zone apex."
+          },
+          "content": {
+            "type": "string",
+            "description": "Record value: an IPv4 address for A, IPv6 for AAAA, a host name for CNAME, MX and NS, the text for TXT. SRV and CAA use data instead."
+          },
+          "ttl": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "description": "Time to live in seconds, 60 to 86400, or 1 for automatic (default 1)."
+          },
+          "proxied": {
+            "type": "boolean",
+            "description": "Route traffic through Cloudflare (orange cloud). Only for A, AAAA and CNAME; default false."
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Priority, required for MX and URI records (lower wins)."
+          },
+          "data": {
+            "type": "object",
+            "description": "Structured value for SRV ({\"port\": 5060, \"priority\": 10, \"weight\": 5, \"target\": \"sip.example.com\"}), CAA ({\"flags\": 0, \"tag\": \"issue\", \"value\": \"letsencrypt.org\"}) and similar types."
+          },
+          "comment": {
+            "type": "string",
+            "description": "A note on the record, e.g. who added it and why."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags as name:value, e.g. [\"owner:web-team\"]. Paid plans only."
+          }
+        },
+        "required": [
+          "zone_id",
+          "type",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/zones/{zone_id}/dns_records",
+        "bodyMapping": {
+          "type": "$type",
+          "name": "$name",
+          "content": "$content",
+          "ttl": "$ttl",
+          "proxied": "$proxied",
+          "priority": "$priority",
+          "data": "$data",
+          "comment": "$comment",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_update_dns_record",
+      "description": "Change fields of an existing DNS record (only the fields given), e.g. point it at a new IP, switch proxying on or off, change the TTL or comment. Read the record first, show the user old and new values and wait for confirmation: a wrong value takes a site or its email offline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "dns_record_id": {
+            "type": "string",
+            "description": "DNS record id."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CERT",
+              "CNAME",
+              "DNSKEY",
+              "DS",
+              "HTTPS",
+              "LOC",
+              "MX",
+              "NAPTR",
+              "NS",
+              "OPENPGPKEY",
+              "PTR",
+              "SMIMEA",
+              "SRV",
+              "SSHFP",
+              "SVCB",
+              "TLSA",
+              "TXT",
+              "URI"
+            ],
+            "description": "New record type, rarely needed."
+          },
+          "name": {
+            "type": "string",
+            "description": "New full record name."
+          },
+          "content": {
+            "type": "string",
+            "description": "Record value: an IPv4 address for A, IPv6 for AAAA, a host name for CNAME, MX and NS, the text for TXT. SRV and CAA use data instead."
+          },
+          "ttl": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "description": "Time to live in seconds, 60 to 86400, or 1 for automatic (default 1)."
+          },
+          "proxied": {
+            "type": "boolean",
+            "description": "Route traffic through Cloudflare (orange cloud). Only for A, AAAA and CNAME; default false."
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Priority, required for MX and URI records (lower wins)."
+          },
+          "data": {
+            "type": "object",
+            "description": "Structured value for SRV ({\"port\": 5060, \"priority\": 10, \"weight\": 5, \"target\": \"sip.example.com\"}), CAA ({\"flags\": 0, \"tag\": \"issue\", \"value\": \"letsencrypt.org\"}) and similar types."
+          },
+          "comment": {
+            "type": "string",
+            "description": "A note on the record, e.g. who added it and why."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags as name:value, e.g. [\"owner:web-team\"]. Paid plans only."
+          }
+        },
+        "required": [
+          "zone_id",
+          "dns_record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/zones/{zone_id}/dns_records/{dns_record_id}",
+        "bodyMapping": {
+          "type": "$type",
+          "name": "$name",
+          "content": "$content",
+          "ttl": "$ttl",
+          "proxied": "$proxied",
+          "priority": "$priority",
+          "data": "$data",
+          "comment": "$comment",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_delete_dns_record",
+      "enabled": false,
+      "description": "Delete a DNS record. Whatever relied on it (a website, mail delivery, a domain verification) stops working within seconds. Switched off at install; export the zone first with cloudflare_export_dns_records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "dns_record_id": {
+            "type": "string",
+            "description": "DNS record id."
+          }
+        },
+        "required": [
+          "zone_id",
+          "dns_record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/zones/{zone_id}/dns_records/{dns_record_id}"
+      }
+    },
+    {
+      "name": "cloudflare_purge_cache",
+      "description": "Remove cached content from Cloudflare's edge so the next request fetches it from the origin. Pass exactly one of files (full URLs), tags, hosts or prefixes, at most 100 entries. A success means the purge was accepted; it completes within seconds. Free plans allow 5 purge requests per minute by tag, host or prefix.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Full URLs to purge, e.g. [\"https://www.example.com/css/site.css\"]."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cache-Tag header values to purge."
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Host names whose whole cache to purge, e.g. [\"www.example.com\"]."
+          },
+          "prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "URL prefixes without scheme, e.g. [\"www.example.com/blog/\"]."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/zones/{zone_id}/purge_cache",
+        "bodyMapping": {
+          "files": "$files",
+          "tags": "$tags",
+          "hosts": "$hosts",
+          "prefixes": "$prefixes"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_purge_everything",
+      "enabled": false,
+      "description": "Purge the zone's entire cache. Every visitor's next request goes to the origin, which can overload it on a busy site. Switched off at install; prefer cloudflare_purge_cache with specific URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/zones/{zone_id}/purge_cache",
+        "bodyMapping": {
+          "purge_everything": true
+        }
+      }
+    },
+    {
+      "name": "cloudflare_list_rulesets",
+      "description": "List a zone's rulesets: id, name, kind (zone, managed, custom), phase and last_updated. Each phase (redirects, transform rules, cache rules, WAF custom rules ...) has one zone entry point ruleset holding the zone's own rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "result_info.cursors.after from the previous page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Rulesets per page, 1 to 50."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/rulesets",
+        "queryParams": {
+          "cursor": "$cursor",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_get_ruleset",
+      "description": "Get one ruleset with all its rules: for each rule id, description, expression (the filter, e.g. http.host eq \"example.com\"), action, action_parameters, enabled and position.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "ruleset_id": {
+            "type": "string",
+            "description": "Ruleset id, from cloudflare_list_rulesets."
+          }
+        },
+        "required": [
+          "zone_id",
+          "ruleset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/rulesets/{ruleset_id}"
+      }
+    },
+    {
+      "name": "cloudflare_get_phase_rules",
+      "description": "Get the zone's own rules for one phase (its entry point ruleset): e.g. http_request_dynamic_redirect for single redirects, http_request_transform for URL rewrites, http_response_headers_transform for response headers, http_request_cache_settings for cache rules, http_request_firewall_custom for WAF custom rules. A 404 means the zone has no rules in that phase.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "http_request_dynamic_redirect",
+              "http_request_redirect",
+              "http_request_transform",
+              "http_request_late_transform",
+              "http_response_headers_transform",
+              "http_request_origin",
+              "http_request_cache_settings",
+              "http_response_cache_settings",
+              "http_config_settings",
+              "http_request_firewall_custom",
+              "http_request_firewall_managed",
+              "http_response_firewall_managed",
+              "http_ratelimit",
+              "http_response_compression",
+              "http_custom_errors",
+              "http_log_custom_fields",
+              "http_request_sanitize",
+              "http_request_sbfm",
+              "ddos_l7"
+            ],
+            "description": "Ruleset phase."
+          }
+        },
+        "required": [
+          "zone_id",
+          "phase"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/rulesets/phases/{phase}/entrypoint"
+      }
+    },
+    {
+      "name": "cloudflare_list_page_rules",
+      "description": "List a zone's legacy Page Rules: id, targets (URL patterns), actions (forwarding_url, cache_level, always_use_https ...), priority and status. Cloudflare is replacing Page Rules with rulesets; newer zones may have none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "description": "active or disabled."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "status",
+              "priority"
+            ],
+            "description": "Sort by status or priority (default priority)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/pagerules",
+        "queryParams": {
+          "status": "$status",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_get_zone_traffic",
+      "description": "Daily traffic of a zone between two dates from the GraphQL Analytics API: per day requests, bytes, cached requests and bytes, threats, page views, unique visitors, encrypted requests, and breakdowns by response status and by country. The range a plan may query is limited (Free: recent weeks).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          },
+          "since": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "until": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 366,
+            "default": 31,
+            "description": "Days to return at most (default 31)."
+          }
+        },
+        "required": [
+          "zone_id",
+          "since",
+          "until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "query ZoneTraffic($zoneTag: string, $start: Date, $end: Date, $limit: uint64!) { viewer { zones(filter: {zoneTag: $zoneTag}) { httpRequests1dGroups(limit: $limit, filter: {date_geq: $start, date_leq: $end}, orderBy: [date_ASC]) { dimensions { date } sum { requests bytes cachedRequests cachedBytes threats pageViews encryptedRequests responseStatusMap { edgeResponseStatus requests } countryMap { clientCountryName requests threats } } uniq { uniques } } } } }",
+          "variables": {
+            "zoneTag": "$zone_id",
+            "start": "$since",
+            "end": "$until",
+            "limit": "$limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cloudflare_graphql_analytics",
+      "description": "Run a query against Cloudflare's GraphQL Analytics API (read-only) for anything cloudflare_get_zone_traffic does not cover: e.g. httpRequestsAdaptiveGroups by path, host, status or country, firewallEventsAdaptive, workersInvocationsAdaptive. Start from viewer { zones(filter: {zoneTag: $zoneTag}) { ... } } or viewer { accounts(filter: {accountTag: $accountTag}) { ... } }; adaptive datasets need a datetime filter and a limit. Errors come back in errors with data null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "GraphQL query text."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Variables for the query, e.g. {\"zoneTag\": \"<zone id>\", \"since\": \"2026-10-09T00:00:00Z\"}."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "$query",
+          "variables": "$variables"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cloudflare_list_workers",
+      "description": "List the Workers scripts of an account: id (the script name), created_on, modified_on, usage_model, handlers (fetch, scheduled ...), compatibility_date and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/workers/scripts"
+      }
+    },
+    {
+      "name": "cloudflare_get_worker_settings",
+      "description": "Get a Worker's settings: bindings (KV, R2, D1, Durable Objects, environment variables; secret values are never returned), compatibility date and flags, usage model, logpush and observability.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          },
+          "script_name": {
+            "type": "string",
+            "description": "Worker script name, from cloudflare_list_workers."
+          }
+        },
+        "required": [
+          "account_id",
+          "script_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/workers/scripts/{script_name}/settings",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "cloudflare_get_worker_content",
+      "description": "Download a Worker's deployed code as text, cut at 200 KB. Workers made of several modules come back as one multipart text with each file in its own part.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          },
+          "script_name": {
+            "type": "string",
+            "description": "Worker script name."
+          }
+        },
+        "required": [
+          "account_id",
+          "script_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/workers/scripts/{script_name}/content/v2",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "cloudflare_list_worker_routes",
+      "description": "List a zone's Worker routes: id, pattern (e.g. example.com/api/*) and the script that handles it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "description": "Zone id (32 hex characters), from cloudflare_list_zones."
+          }
+        },
+        "required": [
+          "zone_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zones/{zone_id}/workers/routes"
+      }
+    },
+    {
+      "name": "cloudflare_list_worker_domains",
+      "description": "List the custom domains attached to Workers in an account: hostname, zone, service (the Worker) and environment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          },
+          "hostname": {
+            "type": "string",
+            "description": "Only this hostname."
+          },
+          "service": {
+            "type": "string",
+            "description": "Only domains of this Worker."
+          },
+          "zone_id": {
+            "type": "string",
+            "description": "Only domains in this zone."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/workers/domains",
+        "queryParams": {
+          "hostname": "$hostname",
+          "service": "$service",
+          "zone_id": "$zone_id"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_list_r2_buckets",
+      "description": "List an account's R2 buckets: name, creation_date, location and jurisdiction. Pages with cursor (result_info.cursor). Needs R2 to be enabled on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Only buckets whose name contains this text."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Buckets per page, 1 to 1000 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "result_info.cursor from the previous page."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/r2/buckets",
+        "queryParams": {
+          "name_contains": "$name_contains",
+          "per_page": "$per_page",
+          "cursor": "$cursor",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "cloudflare_get_r2_bucket",
+      "description": "Get one R2 bucket: name, creation_date, location, jurisdiction and storage_class.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (32 hex characters), from cloudflare_list_accounts or a zone's account.id."
+          },
+          "bucket_name": {
+            "type": "string",
+            "description": "Bucket name."
+          }
+        },
+        "required": [
+          "account_id",
+          "bucket_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/r2/buckets/{bucket_name}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,1730 @@
+{
+  "slug": "miro",
+  "name": "Miro",
+  "unlisted": true,
+  "description": "Let your AI work on your Miro boards: find boards, read what is on them, add and edit sticky notes, shapes, text, cards and frames, connect them with lines, organise with tags, and see who has access. Signed in with your Miro account.",
+  "instructions": "## Miro\nThis connector works with Miro boards through the **REST API v2** (`https://api.miro.com/v2`): boards (find, read, create, rename, copy), items of every type (list, read, move, delete), sticky notes, shapes, text, cards and frames (create and change), connector lines, tags, and board members. It signs in with **OAuth 2.0** through a Miro app of your own, as the user who authorizes it: the AI sees and changes the boards that user can.\n\n**Setup (one-time, about 5 minutes)**\n1. Open https://miro.com/app/settings/user-profile/apps (avatar → **Settings** → **Your apps**) and click **+ Create new app**. Miro asks for a developer team first if you have none (free; create it at https://miro.com/app/dashboard/?createDevTeam=1).\n2. Name the app (for example \"AnythingMCP\"), pick the developer team, tick **Expire user authorization token** and click **Create app**. This choice cannot be changed later; without it the token never expires, which also works but is less safe.\n3. On the app page, under **Redirect URI for OAuth2.0**, add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and click **Add**. It must match character for character.\n4. Under **Permissions** tick `boards:read` and `boards:write`.\n5. Copy **Client ID** and **Client secret** from **App Credentials** into `MIRO_CLIENT_ID` and `MIRO_CLIENT_SECRET` and install the connector.\n6. On the connector page click **Authorize with Provider**, choose the Miro team whose boards the AI should work with and click **Install & authorize**. To reach boards of another team, authorize again and pick that team. Access tokens last an hour and are renewed automatically; the refresh token lasts 60 days and renews with every use, so a connector unused for two months needs authorizing again.\n\n**Read-only setup**: tick only `boards:read`, authorize again, and switch off every tool that creates, changes or deletes (`miro_create_*`, `miro_update_*`, `miro_copy_board`, `miro_move_item`, `miro_delete_item`, `miro_delete_connector`, `miro_delete_tag`, `miro_attach_tag`, `miro_remove_tag_from_item`). `miro_delete_board`, `miro_share_board`, `miro_update_board_member` and `miro_remove_board_member` are installed switched off.\n\n**Ids**: a board id is the part after `/board/` in its URL, e.g. `uXjVOD6LSME=` (keep the `=`). Item, connector, tag and user ids are long numbers: always pass them as strings, never as numbers, or they lose digits.\n\n**Positions and sizes**: positions are the item's center in board units; `{\"x\": 0, \"y\": 0}` is the board's center, x grows to the right and y downwards. Inside a frame (`parent`), positions are relative to the frame's top-left corner. To lay out several notes, space them by their width plus a gap (a default sticky note is about 200 wide). Sticky notes take either a width or a height, never both. Text items take a width only.\n\n**Styles**: sticky notes use named colors (`light_yellow`, `yellow`, `orange`, `light_green`, `green`, `cyan`, `light_pink`, `pink`, `violet`, `red`, `light_blue`, `blue`, `dark_blue`, `gray`, `black` ...); shapes, text, frames and connectors use hex colors, and their style values (font size, border width, opacity) are strings such as `\"14\"`. Content accepts simple HTML such as `<p>`, `<strong>` and `<a href=\"...\">`.\n\n**Reading a board**: `miro_list_items` returns every item (filter by `type` or by frame with `parent_item_id`), `miro_list_connectors` the lines between them. Both page with a `cursor` and take 10 to 50 per page. Boards, members and tags page with `offset` and `limit`.\n\n**Tags**: only cards and sticky notes can carry tags, at most 8 each. Create the tag (`miro_create_tag`), then `miro_attach_tag`; `miro_list_items_by_tag` finds the tagged items. Tag changes made through the API appear on an open board after a refresh.\n\n**Deleting**: `miro_delete_item` removes any item for good (there is no undo through the API); deleting a frame leaves its contents on the board. `miro_delete_tag` removes the tag from every item. Confirm deletions with the user unless the AI just created the item in the same task.\n\n**Plans**: the API is free to use. Free teams may hold only 3 editable boards, so `miro_create_board` and `miro_copy_board` can fail there; boards of a developer team carry a watermark.\n\n**Rate limits**: Miro counts credits per user and app, 100,000 a minute: a read costs 50, most writes 100, creating or deleting boards and deleting items 500, copying a board 2,000. Over the limit Miro answers 429; wait a minute.\n\n**Errors**: 401 (`tokenNotProvided`) means the authorization expired or was revoked: click **Authorize with Provider** again. 403 means a missing permission (`boards:write` for changes) or no access to that board. 404 is a wrong board or item id (or one passed as a number). 400 (`invalidParameters`) names the field, e.g. a sticky note with both width and height, a hex color on a sticky note, or a frame used as a connector end. 409 means the item changed at the same time; read it again and retry.\n\n**Out of scope here**: images, documents and embeds (read only through `miro_list_items`), app cards, comments, mind maps, exports, and team or organization administration.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "miro",
+  "docsUrl": "https://developers.miro.com/reference/api-reference",
+  "requiredEnvVars": [
+    "MIRO_CLIENT_ID",
+    "MIRO_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://miro.com/app/settings/user-profile/apps",
+  "envVarMeta": {
+    "MIRO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Miro → avatar → Settings → Your apps → your app → App Credentials: Client ID.",
+      "link": "https://miro.com/app/settings/user-profile/apps",
+      "pattern": "^[0-9]{6,}$",
+      "patternMessage": "The Client ID is a long number, e.g. 3458764512345678901."
+    },
+    "MIRO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page → App Credentials: Client secret (click to reveal and copy).",
+      "link": "https://miro.com/app/settings/user-profile/apps"
+    }
+  },
+  "verifyHints": {
+    "401": "Miro refused the access token. Click Authorize with Provider again; if the app was deleted or its secret reset, update MIRO_CLIENT_SECRET first.",
+    "403": "The app lacks the boards:read or boards:write permission, or the user has no access to this board. Tick the permissions in the app settings and authorize again.",
+    "rate_limited": "Miro is rate limiting this user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "miro_get_token_info"
+  },
+  "prerequisites": "A Miro account (the free plan works) and a Miro app in a developer team (free, about 5 minutes) with the redirect URI below, the permissions boards:read and boards:write, and expiring tokens turned on when the app is created.",
+  "connector": {
+    "name": "Miro REST API v2",
+    "type": "REST",
+    "baseUrl": "https://api.miro.com/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MIRO_CLIENT_ID}}",
+      "clientSecret": "{{MIRO_CLIENT_SECRET}}",
+      "authorizationUrl": "https://miro.com/oauth/authorize",
+      "tokenUrl": "https://api.miro.com/v1/oauth/token"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/boards?limit=1"
+  },
+  "tools": [
+    {
+      "name": "miro_get_token_info",
+      "description": "Show who the connection belongs to: the Miro user, the team the app was installed in, the organization and the granted scopes. A cheap check that the authorization works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.miro.com/v1/oauth-token"
+      }
+    },
+    {
+      "name": "miro_list_boards",
+      "description": "Find boards the user can open: by text, owner, team or project. Returns id, name, description, owner, team, viewLink, createdAt and modifiedAt, with total for paging by offset. Recently created boards can take a few seconds to show up in a search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search in board names and descriptions."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Only boards of this team (then query and owner are ignored)."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Only boards in this project (space)."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Only boards owned by this user id."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "default",
+              "last_modified",
+              "last_opened",
+              "last_created",
+              "alphabetically"
+            ],
+            "description": "default, last_modified, last_opened, last_created or alphabetically (applies when filtering by team or project)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Boards per page, 1 to 50 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many boards to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards",
+        "queryParams": {
+          "query": "$query",
+          "team_id": "$team_id",
+          "project_id": "$project_id",
+          "owner": "$owner",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "miro_get_board",
+      "description": "Get one board: name, description, owner, team, project, sharing and permission policies, viewLink, createdAt and modifiedAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_create_board",
+      "description": "Create a board. Returns the new board with its id and viewLink. Free plans allow only 3 editable boards per team. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Board name, up to 60 characters (default Untitled)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description, up to 300 characters."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Team to create it in; the user's default team otherwise."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project (space) to put it in."
+          },
+          "policy": {
+            "type": "object",
+            "description": "Sharing and permissions, e.g. {\"sharingPolicy\": {\"access\": \"private\", \"teamAccess\": \"edit\"}, \"permissionsPolicy\": {\"copyAccess\": \"team_members\"}}. access and teamAccess: private, view, comment or edit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "teamId": "$team_id",
+          "projectId": "$project_id",
+          "policy": "$policy"
+        }
+      }
+    },
+    {
+      "name": "miro_update_board",
+      "description": "Rename a board, change its description or its sharing policy. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name, up to 60 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description, up to 300 characters."
+          },
+          "policy": {
+            "type": "object",
+            "description": "Sharing and permissions, e.g. {\"sharingPolicy\": {\"access\": \"private\", \"teamAccess\": \"edit\"}, \"permissionsPolicy\": {\"copyAccess\": \"team_members\"}}. access and teamAccess: private, view, comment or edit."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "policy": "$policy"
+        }
+      }
+    },
+    {
+      "name": "miro_copy_board",
+      "description": "Copy a board with all its content into a new board, optionally with a new name and in another team. Returns the new board. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the copy."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the copy."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Team to put the copy in."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/boards?copy_from={board_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "teamId": "$team_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miro_delete_board",
+      "enabled": false,
+      "description": "Delete a whole board with everything on it. On paid plans it stays in the trash for 90 days. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_list_items",
+      "description": "List the items on a board: id, type, data (content, title ...), style, position, geometry, parent (frame) and who changed them when. Filter by type or by frame (parent_item_id). Pages with cursor: pass the cursor of the answer until none comes back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sticky_note",
+              "shape",
+              "text",
+              "card",
+              "app_card",
+              "frame",
+              "image",
+              "document",
+              "embed",
+              "preview"
+            ],
+            "description": "Only items of this type."
+          },
+          "parent_item_id": {
+            "type": "string",
+            "description": "Only items inside this frame."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 50,
+            "description": "Items per page, 10 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "type": "$type",
+          "parent_item_id": "$parent_item_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "miro_get_item",
+      "description": "Get one item of any type (sticky note, shape, text, card, frame, image ...): type, data, style, position, geometry and parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/items/{item_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_move_item",
+      "description": "Move any item: to a new position, into a frame (parent {\"id\": \"<frame id>\"}) or out of it back onto the board (parent {\"id\": null}).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "parent": {
+            "type": "object",
+            "description": "New frame {\"id\": \"<frame id>\"}, or {\"id\": null} to take it out of its frame."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "position": "$position",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_delete_item",
+      "description": "Delete an item of any type (sticky note, shape, text, card, frame, image ...). Deleting a frame does not delete the items inside it. Confirm with the user before deleting anything they did not just create.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}/items/{item_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_create_sticky_note",
+      "description": "Add a sticky note to a board. Returns the note with its id. Content may use simple HTML (<p>, <strong>, <a>).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "content": {
+            "type": "string",
+            "description": "Text of the note."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "square",
+              "rectangle"
+            ],
+            "description": "square (default) or rectangle."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look: {\"fillColor\": \"light_yellow\", \"textAlign\": \"center\", \"textAlignVertical\": \"middle\"}. fillColor is a name: gray, light_yellow (default), yellow, orange, light_green, green, dark_green, cyan, light_pink, pink, violet, red, light_blue, blue, dark_blue or black. textAlign left, center or right; textAlignVertical top, middle or bottom."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 200} or {\"height\": 200}, never both (sticky notes keep their aspect ratio)."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/sticky_notes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "content": "$content",
+            "shape": "$shape"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_update_sticky_note",
+      "description": "Change a sticky note's text, shape, color, position, size or frame. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "content": {
+            "type": "string",
+            "description": "New text."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "square",
+              "rectangle"
+            ],
+            "description": "square or rectangle."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look: {\"fillColor\": \"light_yellow\", \"textAlign\": \"center\", \"textAlignVertical\": \"middle\"}. fillColor is a name: gray, light_yellow (default), yellow, orange, light_green, green, dark_green, cyan, light_pink, pink, violet, red, light_blue, blue, dark_blue or black. textAlign left, center or right; textAlignVertical top, middle or bottom."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 200} or {\"height\": 200}, never both (sticky notes keep their aspect ratio)."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/sticky_notes/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "content": "$content",
+            "shape": "$shape"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_create_shape",
+      "description": "Add a shape (rectangle, circle, flowchart symbol ...) with optional text to a board. Returns the shape with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "shape": {
+            "type": "string",
+            "default": "rectangle",
+            "description": "Shape: rectangle (default), round_rectangle, circle, triangle, rhombus, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cloud, cross, can, right_arrow, left_arrow, left_right_arrow, left_brace, right_brace, wedge_round_rectangle_callout, or a flowchart shape such as flow_chart_process, flow_chart_decision, flow_chart_terminator."
+          },
+          "content": {
+            "type": "string",
+            "description": "Text inside the shape; simple HTML allowed."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look, all values as strings: {\"fillColor\": \"#fff9b1\", \"fillOpacity\": \"1\", \"borderColor\": \"#1a1a1a\", \"borderWidth\": \"2\", \"borderStyle\": \"normal\", \"color\": \"#1a1a1a\", \"fontSize\": \"14\", \"fontFamily\": \"arial\", \"textAlign\": \"center\", \"textAlignVertical\": \"middle\"}. Colors are hex; borderStyle normal, dotted or dashed; fontSize 10 to 288."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 300, \"height\": 200} in board units; shapes, cards and frames also take \"rotation\" in degrees."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/shapes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "shape": "$shape",
+            "content": "$content"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_update_shape",
+      "description": "Change a shape's type, text, style, position, size or frame. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "shape": {
+            "type": "string",
+            "description": "New shape: rectangle (default), round_rectangle, circle, triangle, rhombus, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cloud, cross, can, right_arrow, left_arrow, left_right_arrow, left_brace, right_brace, wedge_round_rectangle_callout, or a flowchart shape such as flow_chart_process, flow_chart_decision, flow_chart_terminator."
+          },
+          "content": {
+            "type": "string",
+            "description": "New text."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look, all values as strings: {\"fillColor\": \"#fff9b1\", \"fillOpacity\": \"1\", \"borderColor\": \"#1a1a1a\", \"borderWidth\": \"2\", \"borderStyle\": \"normal\", \"color\": \"#1a1a1a\", \"fontSize\": \"14\", \"fontFamily\": \"arial\", \"textAlign\": \"center\", \"textAlignVertical\": \"middle\"}. Colors are hex; borderStyle normal, dotted or dashed; fontSize 10 to 288."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 300, \"height\": 200} in board units; shapes, cards and frames also take \"rotation\" in degrees."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/shapes/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "shape": "$shape",
+            "content": "$content"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_create_text",
+      "description": "Add a free text item to a board (a heading, a label, a paragraph). Returns it with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "content": {
+            "type": "string",
+            "description": "The text; simple HTML allowed."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look, values as strings: {\"color\": \"#1a1a1a\", \"fontSize\": \"24\", \"fontFamily\": \"arial\", \"textAlign\": \"left\", \"fillColor\": \"#ffffff\", \"fillOpacity\": \"1\"}."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "{\"width\": 400} and optionally \"rotation\"; the height follows the text. The width must be at least 1.7 times the font size."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/texts",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "content": "$content"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_update_text",
+      "description": "Change a text item. Miro wants the text on every update, so pass the current content when only changing style, position or size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "content": {
+            "type": "string",
+            "description": "The text (new or current)."
+          },
+          "style": {
+            "type": "object",
+            "description": "Look, values as strings: {\"color\": \"#1a1a1a\", \"fontSize\": \"24\", \"fontFamily\": \"arial\", \"textAlign\": \"left\", \"fillColor\": \"#ffffff\", \"fillOpacity\": \"1\"}."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "{\"width\": 400} and optionally \"rotation\"; the height follows the text. The width must be at least 1.7 times the font size."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/texts/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "content": "$content"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_create_card",
+      "description": "Add a card (a task-like item with title, description, assignee and due date) to a board. Returns it with its id. Cards and sticky notes are the items that can carry tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Card title; simple HTML allowed."
+          },
+          "description": {
+            "type": "string",
+            "description": "Card description."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id of the assignee (from miro_list_board_members)."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601 in UTC, e.g. 2026-10-31T17:00:00Z."
+          },
+          "style": {
+            "type": "object",
+            "description": "{\"cardTheme\": \"#2d9bf0\"}: the card's accent color in hex."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 300, \"height\": 200} in board units; shapes, cards and frames also take \"rotation\" in degrees."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/cards",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "title": "$title",
+            "description": "$description",
+            "assigneeId": "$assignee_id",
+            "dueDate": "$due_date"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_update_card",
+      "description": "Change a card's title, description, assignee, due date, color, position, size or frame. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "title": {
+            "type": "string",
+            "description": "Card title; simple HTML allowed."
+          },
+          "description": {
+            "type": "string",
+            "description": "Card description."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id of the assignee (from miro_list_board_members)."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601 in UTC, e.g. 2026-10-31T17:00:00Z."
+          },
+          "style": {
+            "type": "object",
+            "description": "{\"cardTheme\": \"#2d9bf0\"}: the card's accent color in hex."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 300, \"height\": 200} in board units; shapes, cards and frames also take \"rotation\" in degrees."
+          },
+          "parent": {
+            "type": "object",
+            "description": "Frame to put the item in: {\"id\": \"<frame id>\"}."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/cards/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "title": "$title",
+            "description": "$description",
+            "assigneeId": "$assignee_id",
+            "dueDate": "$due_date"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "miro_create_frame",
+      "description": "Add a frame (a titled area that groups items) to a board. Returns it with its id; put items into it with their parent field or miro_move_item. Frames cannot sit inside other frames here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Frame title."
+          },
+          "style": {
+            "type": "object",
+            "description": "{\"fillColor\": \"#ffffff\"}: background color in hex; transparent when left out."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 1200, \"height\": 800}."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/frames",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "title": "$title",
+            "format": "custom",
+            "type": "freeform"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry"
+        }
+      }
+    },
+    {
+      "name": "miro_update_frame",
+      "description": "Change a frame's title, background, position or size. Only the fields given change; the items inside move with the frame.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id, a long number as a string, e.g. \"3458764517517819000\". Keep it a string."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "style": {
+            "type": "object",
+            "description": "{\"fillColor\": \"#ffffff\"}: background color in hex; transparent when left out."
+          },
+          "position": {
+            "type": "object",
+            "description": "Where the item's center goes, in board units: {\"x\": 0, \"y\": 0} is the board center; x grows to the right, y downwards. Inside a frame (parent), relative to the frame's top-left corner."
+          },
+          "geometry": {
+            "type": "object",
+            "description": "Size: {\"width\": 1200, \"height\": 800}."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/frames/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "data": {
+            "title": "$title"
+          },
+          "style": "$style",
+          "position": "$position",
+          "geometry": "$geometry"
+        }
+      }
+    },
+    {
+      "name": "miro_list_connectors",
+      "description": "List the connector lines on a board: id, startItem and endItem (item ids), shape, captions and style. Pages with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 50,
+            "description": "Connectors per page, 10 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor from the previous page."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/connectors",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "miro_get_connector",
+      "description": "Get one connector line: the items it joins, its shape, captions and style.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "connector_id": {
+            "type": "string",
+            "description": "Connector id."
+          }
+        },
+        "required": [
+          "board_id",
+          "connector_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/connectors/{connector_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_create_connector",
+      "description": "Draw a connector line between two items (sticky notes, shapes, cards, texts; not frames), e.g. to link steps of a flowchart. Returns it with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "start_item": {
+            "type": "object",
+            "description": "Where the line starts: {\"id\": \"<item id>\", \"snapTo\": \"auto\"} (snapTo auto, top, right, bottom or left) or {\"id\": \"<item id>\", \"position\": {\"x\": \"50%\", \"y\": \"0%\"}}. Frames cannot be connected."
+          },
+          "end_item": {
+            "type": "object",
+            "description": "Where the line ends, another item: {\"id\": \"<item id>\", \"snapTo\": \"auto\"} (snapTo auto, top, right, bottom or left) or {\"id\": \"<item id>\", \"position\": {\"x\": \"50%\", \"y\": \"0%\"}}. Frames cannot be connected."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "straight",
+              "elbowed",
+              "curved"
+            ],
+            "description": "straight, elbowed or curved (default curved)."
+          },
+          "captions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Labels on the line, up to 20: [{\"content\": \"yes\", \"position\": \"50%\"}]."
+          },
+          "style": {
+            "type": "object",
+            "description": "Line look, values as strings: {\"strokeColor\": \"#1a1a1a\", \"strokeWidth\": \"2\", \"strokeStyle\": \"normal\", \"startStrokeCap\": \"none\", \"endStrokeCap\": \"arrow\", \"color\": \"#1a1a1a\", \"fontSize\": \"14\"}. strokeStyle normal, dotted or dashed; caps none, arrow, stealth, triangle, filled_triangle, diamond, oval and more."
+          }
+        },
+        "required": [
+          "board_id",
+          "start_item",
+          "end_item"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/connectors",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "startItem": "$start_item",
+          "endItem": "$end_item",
+          "shape": "$shape",
+          "captions": "$captions",
+          "style": "$style"
+        }
+      }
+    },
+    {
+      "name": "miro_update_connector",
+      "description": "Change a connector line: its ends, shape, captions or style. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "connector_id": {
+            "type": "string",
+            "description": "Connector id."
+          },
+          "start_item": {
+            "type": "object",
+            "description": "New start: {\"id\": \"<item id>\", \"snapTo\": \"auto\"} (snapTo auto, top, right, bottom or left) or {\"id\": \"<item id>\", \"position\": {\"x\": \"50%\", \"y\": \"0%\"}}. Frames cannot be connected."
+          },
+          "end_item": {
+            "type": "object",
+            "description": "New end: {\"id\": \"<item id>\", \"snapTo\": \"auto\"} (snapTo auto, top, right, bottom or left) or {\"id\": \"<item id>\", \"position\": {\"x\": \"50%\", \"y\": \"0%\"}}. Frames cannot be connected."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "straight",
+              "elbowed",
+              "curved"
+            ],
+            "description": "straight, elbowed or curved."
+          },
+          "captions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Labels on the line, up to 20: [{\"content\": \"yes\", \"position\": \"50%\"}]."
+          },
+          "style": {
+            "type": "object",
+            "description": "Line look, values as strings: {\"strokeColor\": \"#1a1a1a\", \"strokeWidth\": \"2\", \"strokeStyle\": \"normal\", \"startStrokeCap\": \"none\", \"endStrokeCap\": \"arrow\", \"color\": \"#1a1a1a\", \"fontSize\": \"14\"}. strokeStyle normal, dotted or dashed; caps none, arrow, stealth, triangle, filled_triangle, diamond, oval and more."
+          }
+        },
+        "required": [
+          "board_id",
+          "connector_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/connectors/{connector_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "startItem": "$start_item",
+          "endItem": "$end_item",
+          "shape": "$shape",
+          "captions": "$captions",
+          "style": "$style"
+        }
+      }
+    },
+    {
+      "name": "miro_delete_connector",
+      "description": "Delete a connector line between two items; the items it joined stay where they are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "connector_id": {
+            "type": "string",
+            "description": "Connector id."
+          }
+        },
+        "required": [
+          "board_id",
+          "connector_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}/connectors/{connector_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_list_board_members",
+      "description": "List who has access to a board: member id (the user id), name, role (viewer, commenter, editor, coowner, owner). Pages by offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Members per page, 1 to 50 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many to skip."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/members",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "miro_get_board_member",
+      "description": "Get one member of a board: user id, name and role (viewer, commenter, editor, coowner, owner).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "board_member_id": {
+            "type": "string",
+            "description": "Member id, from miro_list_board_members."
+          }
+        },
+        "required": [
+          "board_id",
+          "board_member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/members/{board_member_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_share_board",
+      "enabled": false,
+      "description": "Invite people to a board by email with a role; Miro emails them an invitation. Returns successful and failed invitations. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses, up to 20."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "commenter",
+              "editor",
+              "coowner"
+            ],
+            "description": "viewer, commenter (default), editor or coowner."
+          },
+          "message": {
+            "type": "string",
+            "description": "Personal message for the invitation email."
+          }
+        },
+        "required": [
+          "board_id",
+          "emails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/members",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "emails": "$emails",
+          "role": "$role",
+          "message": "$message"
+        }
+      }
+    },
+    {
+      "name": "miro_update_board_member",
+      "enabled": false,
+      "description": "Change a board member's role, e.g. from viewer to editor. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "board_member_id": {
+            "type": "string",
+            "description": "Member id."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "commenter",
+              "editor",
+              "coowner"
+            ],
+            "description": "New role."
+          }
+        },
+        "required": [
+          "board_id",
+          "board_member_id",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/members/{board_member_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "role": "$role"
+        }
+      }
+    },
+    {
+      "name": "miro_remove_board_member",
+      "enabled": false,
+      "description": "Remove someone's access to a board. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "board_member_id": {
+            "type": "string",
+            "description": "Member id."
+          }
+        },
+        "required": [
+          "board_id",
+          "board_member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}/members/{board_member_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_list_tags",
+      "description": "List the tags defined on a board: id, title and fillColor. Pages by offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Tags per page, 1 to 50 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many to skip."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/tags",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "miro_get_tag",
+      "description": "Get one tag of a board by its id: title and fillColor, as shown on cards and sticky notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          }
+        },
+        "required": [
+          "board_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/tags/{tag_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_create_tag",
+      "description": "Create a tag on a board, to attach to cards and sticky notes. Titles are unique per board and case-sensitive. Returns the tag with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Tag text, up to 120 characters."
+          },
+          "fill_color": {
+            "type": "string",
+            "enum": [
+              "red",
+              "light_green",
+              "cyan",
+              "yellow",
+              "magenta",
+              "green",
+              "blue",
+              "gray",
+              "violet",
+              "dark_green",
+              "dark_blue",
+              "black"
+            ],
+            "description": "Color (default red)."
+          }
+        },
+        "required": [
+          "board_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/tags",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "fillColor": "$fill_color"
+        }
+      }
+    },
+    {
+      "name": "miro_update_tag",
+      "description": "Rename a tag or change its color; every item carrying it changes too. The board shows API tag changes after a refresh.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          },
+          "title": {
+            "type": "string",
+            "description": "New text."
+          },
+          "fill_color": {
+            "type": "string",
+            "enum": [
+              "red",
+              "light_green",
+              "cyan",
+              "yellow",
+              "magenta",
+              "green",
+              "blue",
+              "gray",
+              "violet",
+              "dark_green",
+              "dark_blue",
+              "black"
+            ],
+            "description": "New color."
+          }
+        },
+        "required": [
+          "board_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/boards/{board_id}/tags/{tag_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "fillColor": "$fill_color"
+        }
+      }
+    },
+    {
+      "name": "miro_delete_tag",
+      "description": "Delete a tag from a board; it is removed from every item that carries it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          }
+        },
+        "required": [
+          "board_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}/tags/{tag_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_attach_tag",
+      "description": "Attach an existing tag to a card or sticky note (other item types cannot carry tags; at most 8 per item). The board shows it after a refresh.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Id of a card or sticky note."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_id}/items/{item_id}?tag_id={tag_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_remove_tag_from_item",
+      "description": "Take a tag off a card or sticky note; the tag itself stays on the board. Always pass tag_id: this is the same address as deleting the item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Id of the card or sticky note."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/boards/{board_id}/items/{item_id}?tag_id={tag_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "miro_get_item_tags",
+      "description": "List the tags attached to one card or sticky note, each with id, title and fillColor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Id of the card or sticky note."
+          }
+        },
+        "required": [
+          "board_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/items/{item_id}/tags",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "miro_list_items_by_tag",
+      "description": "List the cards and sticky notes that carry a tag. Pages by offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id, e.g. uXjVOD6LSME= (the part after /board/ in the board's URL, = included)."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id, a long number as a string, from miro_list_tags."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Items per page, 1 to 50 (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many to skip."
+          }
+        },
+        "required": [
+          "board_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "tag_id": "$tag_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

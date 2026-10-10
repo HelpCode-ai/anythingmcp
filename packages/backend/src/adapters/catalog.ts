@@ -109,6 +109,7 @@ import * as clearbit from './intl/clearbit.json';
 import * as clickup from './intl/clickup.json';
 import * as clockify from './intl/clockify.json';
 import * as close from './intl/close.json';
+import * as cloudflare from './intl/cloudflare.json';
 import * as coda from './intl/coda.json';
 import * as coingecko from './intl/coingecko.json';
 import * as convertkit from './intl/convertkit.json';
@@ -131,6 +132,7 @@ import * as etsy from './intl/etsy.json';
 import * as exerciseCom from './intl/exercise-com.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
+import * as figma from './intl/figma.json';
 import * as fillout from './intl/fillout.json';
 import * as firecrawl from './intl/firecrawl.json';
 import * as firma from './intl/firma.json';
@@ -150,6 +152,7 @@ import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as github from './intl/github.json';
+import * as gitlab from './intl/gitlab.json';
 import * as glpi from './intl/glpi.json';
 import * as gmail from './intl/gmail.json';
 import * as gocardless from './intl/gocardless.json';
@@ -213,6 +216,7 @@ import * as microsoftOutlook from './intl/microsoft-outlook.json';
 import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
+import * as miro from './intl/miro.json';
 import * as mollie from './intl/mollie.json';
 import * as monday from './intl/monday.json';
 import * as mongodb from './intl/mongodb.json';
@@ -288,6 +292,7 @@ import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
+import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
 import * as tally from './intl/tally.json';
@@ -666,6 +671,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   clickup as unknown as AdapterDefinition,
   clockify as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
+  cloudflare as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
@@ -688,6 +694,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   exerciseCom as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
+  figma as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
   firecrawl as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
@@ -707,6 +714,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   github as unknown as AdapterDefinition,
+  gitlab as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
   gmail as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
@@ -770,6 +778,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
+  miro as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   monday as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
@@ -845,6 +854,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
+  supabase as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
