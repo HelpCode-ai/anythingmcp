@@ -35,7 +35,7 @@ function makeOrgSettings() {
 
 function makePrisma() {
   return {
-    connector: { findUnique: jest.fn().mockResolvedValue({ id: 'conn1', name: 'SAP' }) },
+    connector: { findFirst: jest.fn().mockResolvedValue({ id: 'conn1', name: 'SAP' }) },
     mcpTool: { findUnique: jest.fn().mockResolvedValue({ name: 'get_orders' }) },
   };
 }
@@ -53,18 +53,24 @@ function makeDisconnectedRedis() {
   };
 }
 
-function makeConfigService() {
+function makeConfigService(cloud = false) {
   return {
     get: (key: string) =>
-      key === 'ENCRYPTION_KEY' ? ENCRYPTION_KEY : key === 'FRONTEND_URL' ? 'https://app.test' : undefined,
+      key === 'ENCRYPTION_KEY'
+        ? ENCRYPTION_KEY
+        : key === 'FRONTEND_URL'
+          ? 'https://app.test'
+          : key === 'DEPLOYMENT_MODE'
+            ? (cloud ? 'cloud' : 'self-hosted')
+            : undefined,
   };
 }
 
-function buildService(overrides: { prisma?: any; orgSettings?: any; redis?: any } = {}) {
+function buildService(overrides: { prisma?: any; orgSettings?: any; redis?: any; cloud?: boolean } = {}) {
   const prisma = overrides.prisma ?? makePrisma();
   const orgSettings = overrides.orgSettings ?? makeOrgSettings();
   const redis = overrides.redis ?? makeDisconnectedRedis();
-  const service = new AlertsService(prisma as any, orgSettings as any, redis as any, makeConfigService() as any);
+  const service = new AlertsService(prisma as any, orgSettings as any, redis as any, makeConfigService(overrides.cloud) as any);
   return { service, prisma, orgSettings, redis };
 }
 
@@ -179,6 +185,47 @@ describe('AlertsService', () => {
     expect(rotated.secret).not.toBe(first.secret);
   });
 
+  it('reads the webhook config once a minute per organization, not on every failure', async () => {
+    const orgSettings = makeOrgSettings();
+    const getJson = jest.spyOn(orgSettings, 'getJson');
+    const { service } = buildService({ orgSettings });
+    for (let i = 0; i < 5; i++) {
+      await service.recordFailure({ organizationId: 'org-none', connectorId: 'conn1', toolId: 't', error: 'e' });
+    }
+    expect(getJson).toHaveBeenCalledTimes(1);
+
+    // Saving a webhook takes effect at once, not after the cache expires.
+    await service.saveConfig('org-none', { url: 'https://hooks.example.com/x', type: 'json', threshold: 1 });
+    await service.recordFailure({ organizationId: 'org-none', connectorId: 'conn1', toolId: 't', error: 'e' });
+    expect(mockedOutboundRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('escapes the connector name and the vendor error in a Slack message', async () => {
+    const prisma = makePrisma();
+    prisma.connector.findFirst.mockResolvedValue({ id: 'conn1', name: 'Shop <!channel>' });
+    const { service } = buildService({ prisma });
+    await service.saveConfig('org1', { url: 'https://hooks.slack.com/x', type: 'slack', threshold: 1 });
+    await service.recordFailure({
+      organizationId: 'org1',
+      connectorId: 'conn1',
+      toolId: 't',
+      error: 'see <https://evil.example|Reset password>',
+    });
+    const text = JSON.parse(mockedOutboundRequest.mock.calls[0][0].data).text as string;
+    expect(text).toContain('Shop &lt;!channel&gt;');
+    expect(text).toContain('&lt;https://evil.example|Reset password&gt;');
+    expect(text).not.toContain('<!channel>');
+  });
+
+  it('only looks up the connector inside the organization that failed', async () => {
+    const { service, prisma } = buildService();
+    await service.saveConfig('org1', { url: 'https://hooks.example.com/x', type: 'json', threshold: 1 });
+    await service.recordFailure({ organizationId: 'org1', connectorId: 'conn1', toolId: 't', error: 'e' });
+    expect(prisma.connector.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'conn1', organizationId: 'org1' } }),
+    );
+  });
+
   describe('SSRF: the webhook target must not inherit the connector allowlist', () => {
     const originalGuard = process.env.SSRF_GUARD;
     const originalAllowed = process.env.SSRF_ALLOWED_HOSTS;
@@ -187,17 +234,33 @@ describe('AlertsService', () => {
       process.env.SSRF_GUARD = 'enabled';
     });
     afterEach(() => {
-      process.env.SSRF_GUARD = originalGuard;
+      if (originalGuard === undefined) delete process.env.SSRF_GUARD;
+      else process.env.SSRF_GUARD = originalGuard;
       if (originalAllowed === undefined) delete process.env.SSRF_ALLOWED_HOSTS;
       else process.env.SSRF_ALLOWED_HOSTS = originalAllowed;
     });
 
-    it('rejects a private IP even when it is on the admin SSRF allowlist', async () => {
+    it('on Cloud, rejects a private IP even when it is on the SSRF allowlist', async () => {
+      process.env.SSRF_ALLOWED_HOSTS = '127.0.0.1';
+      const { service } = buildService({ cloud: true });
+      await expect(
+        service.saveConfig('org1', { url: 'https://127.0.0.1/hook', type: 'json' }),
+      ).rejects.toThrow(/not a public IP/);
+    });
+
+    it('on Cloud, requires https', async () => {
+      const { service } = buildService({ cloud: true });
+      await expect(
+        service.saveConfig('org1', { url: 'http://hooks.example.com/hook', type: 'json' }),
+      ).rejects.toThrow(/must use https/);
+    });
+
+    it('self-hosted, keeps the operator allowlist so an internal chat server can receive alerts', async () => {
       process.env.SSRF_ALLOWED_HOSTS = '127.0.0.1';
       const { service } = buildService();
       await expect(
         service.saveConfig('org1', { url: 'http://127.0.0.1/hook', type: 'json' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).resolves.toBeDefined();
     });
 
     it('rejects the cloud metadata address', async () => {

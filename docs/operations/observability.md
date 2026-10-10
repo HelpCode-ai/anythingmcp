@@ -108,7 +108,7 @@ journalctl -u anythingmcp-stuck-report -n 50
 
 The three pipelines above tell *you* something is wrong once you go looking. This one pushes a notification the moment a connector starts failing, so you find out without watching the logs.
 
-An admin configures one webhook per organization at `PUT /api/admin/settings/alert-webhook` (`GET`/`DELETE` and `POST .../test` alongside it; ADMIN role required). Nothing fires until it's configured — self-hosted installs that never set one up get no outbound traffic from this feature.
+An admin configures one webhook per organization at `PUT /api/admin/settings/alert-webhook` (`GET`/`DELETE` and `POST .../test` alongside it; ADMIN role required). Nothing fires until it's configured: self-hosted installs that never set one up get no outbound traffic from this feature.
 
 ```json
 {
@@ -121,11 +121,11 @@ An admin configures one webhook per organization at `PUT /api/admin/settings/ale
 }
 ```
 
-`type: "slack"` posts a ready-to-render Slack message (`{ "text": "..." }`) instead of the JSON event below — point it at an Incoming Webhook URL. The signing secret is generated server-side on first save (or when `rotateSecret: true` is sent) and returned exactly once in the response; `GET` never returns it.
+`type: "slack"` posts a ready-to-render Slack message (`{ "text": "..." }`) instead of the JSON event below; point it at an Incoming Webhook URL. The signing secret is generated server-side on first save (or when `rotateSecret: true` is sent) and returned exactly once in the response; `GET` never returns it.
 
 ### When it fires
 
-Every tool call against a connector that ends in `ERROR` or `TIMEOUT` counts toward a sliding window (`windowMinutes`, default 10). Once the count for that connector reaches `threshold` (default 5) within the window, exactly one alert is dispatched; a `cooldownMinutes` (default 30) cooldown then suppresses further alerts for that connector even if it keeps failing, so a sustained outage sends one notification, not one per call.
+Every tool call against a connector that ends in `ERROR` or `TIMEOUT` counts toward a window of `windowMinutes` (default 10) that starts at the connector's first failure. Once the count for that connector reaches `threshold` (default 5) within the window, exactly one alert is dispatched; a `cooldownMinutes` (default 30) cooldown then suppresses further alerts for that connector even if it keeps failing, so a sustained outage sends one notification, not one per call.
 
 ### Payload (`type: "json"`)
 
@@ -143,7 +143,7 @@ Every tool call against a connector that ends in `ERROR` or `TIMEOUT` counts tow
 }
 ```
 
-`lastError.message` is truncated to 300 characters and never includes tool input or output — same boundary the audit log itself keeps.
+`lastError.message` is truncated to 300 characters and never includes tool input or output, the same boundary the audit log itself keeps.
 
 ### Headers and signature
 
@@ -164,17 +164,19 @@ function verify(secret, timestamp, rawBody, signatureHeader) {
     .createHmac('sha256', secret)
     .update(`${timestamp}.${rawBody}`)
     .digest('hex');
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false; // reject replays
+  if (signatureHeader.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
 }
 ```
 
-Use the *raw* request body — not a re-serialized JSON object — since re-serializing can change key order or whitespace and break the comparison.
+Use the *raw* request body, not a re-serialized JSON object, since re-serializing can change key order or whitespace and break the comparison.
 
 ### SSRF
 
-The webhook URL is validated with the same guard (`SSRF_GUARD`, private/loopback/metadata-address blocking) used for every other outbound call this app makes on a user's behalf, both when it's saved and again on every dispatch. Unlike a connector's own base URL, it deliberately ignores both the env (`SSRF_ALLOWED_HOSTS`) and the admin-editable SSRF allowlist: those exist so a *connector* can reach a specific internal host for its own reason, and a webhook URL must not inherit that trust.
+The webhook URL is validated with the same guard (`SSRF_GUARD`, private/loopback/metadata-address blocking) used for every other outbound call this app makes on a user's behalf, both when it's saved and again on every dispatch, and redirects are not followed. On AnythingMCP Cloud the URL must use `https`, and it ignores both the env (`SSRF_ALLOWED_HOSTS`) and the admin-editable SSRF allowlist, which name hosts only the platform may reach. On a self-hosted instance the operator's allowlist applies, so an internal Mattermost or Slack proxy can receive alerts.
 
-
+## Correlating across pipelines
 
 The same `req.id` UUID appears in:
 - the Pino log line (`req.id`)

@@ -1,13 +1,16 @@
 import { Body, Controller, Delete, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { AlertsService } from './alerts.service';
 
 class SaveAlertWebhookDto {
   @ApiProperty({ description: 'Webhook URL to POST the signed alert to.', example: 'https://example.com/hooks/anythingmcp' })
   @IsString()
+  @MaxLength(2048)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   url: string;
 
   @ApiProperty({ description: 'Payload shape: a generic JSON event, or a ready-to-post Slack message.', enum: ['json', 'slack'] })
@@ -23,18 +26,21 @@ class SaveAlertWebhookDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(1000)
   threshold?: number;
 
-  @ApiPropertyOptional({ description: 'Sliding window, in minutes, that failures are counted over. Default 10.' })
+  @ApiPropertyOptional({ description: 'Window, in minutes, that failures are counted over; it starts at the first failure. Default 10.' })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(1440)
   windowMinutes?: number;
 
   @ApiPropertyOptional({ description: 'Minutes to wait after a dispatch before the same connector can alert again. Default 30.' })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(10080)
   cooldownMinutes?: number;
 
   @ApiPropertyOptional({
@@ -75,6 +81,8 @@ export class AlertsAdminController {
   }
 
   @Post('alert-webhook/test')
+  // It reports the status any public URL answers with: keep it a test, not a probe.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Send a test alert to the configured webhook (ADMIN)' })
   async testWebhook(@Req() req: any) {
     return this.alerts.testWebhook(req.user.organizationId);

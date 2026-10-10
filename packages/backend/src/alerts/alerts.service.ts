@@ -45,6 +45,13 @@ const MAX_ERROR_CHARS = 300;
 const DISPATCH_TIMEOUT_MS = 5000;
 /** One retry on top of the first attempt — enough to ride out a blip without piling up requests. */
 const DISPATCH_ATTEMPTS = 2;
+/**
+ * How long a webhook config (or its absence) is reused for failure counting.
+ * recordFailure runs on every failed tool call of every organization, nearly
+ * all of which have no webhook: without this, each failure cost a DB read.
+ */
+const CONFIG_CACHE_MS = 60_000;
+const CONFIG_CACHE_MAX = 10_000;
 
 /**
  * Detects a connector that keeps failing and dispatches a signed webhook
@@ -66,6 +73,7 @@ export class AlertsService {
   private readonly memCounters = new Map<string, { count: number; expiresAt: number }>();
   private readonly memCooldowns = new Map<string, number>();
   private readonly memFirstFailure = new Map<string, { value: string; expiresAt: number }>();
+  private readonly configCache = new Map<string, { config: AlertWebhookConfig | null; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -101,12 +109,13 @@ export class AlertsService {
     organizationId: string,
     dto: SaveAlertWebhookDto,
   ): Promise<{ secret?: string }> {
+    this.assertHttpsOnCloud(dto.url);
     try {
-      // skipAllowlists: the admin allowlist exists so a *connector* can
-      // reach a specific internal host for its own reason. A webhook URL
-      // supplied here is a different destination and must not inherit
-      // that trust — see VetHostOptions in ssrf.util.ts.
-      await assertSafeOutboundUrl(dto.url, process.env, { skipAllowlists: true });
+      // On Cloud the allowlists name hosts that only the platform may reach,
+      // so a webhook URL supplied here must not inherit them (see
+      // VetHostOptions in ssrf.util.ts). A self-hosted operator's allowlist is
+      // their own, which is how an internal Mattermost or Slack proxy works.
+      await assertSafeOutboundUrl(dto.url, process.env, { skipAllowlists: this.isCloud() });
     } catch (err) {
       if (err instanceof SsrfBlockedError) {
         throw new BadRequestException(err.message);
@@ -136,12 +145,14 @@ export class AlertsService {
       secretEnc,
     };
     await this.orgSettings.setJson(organizationId, ALERT_WEBHOOK_SETTINGS_KEY, config);
+    this.configCache.delete(organizationId);
 
     return plaintextSecret ? { secret: plaintextSecret } : {};
   }
 
   async deleteConfig(organizationId: string): Promise<void> {
     await this.orgSettings.delete(organizationId, ALERT_WEBHOOK_SETTINGS_KEY);
+    this.configCache.delete(organizationId);
   }
 
   async testWebhook(organizationId: string): Promise<WebhookDispatchResult> {
@@ -175,10 +186,7 @@ export class AlertsService {
    */
   async recordFailure(input: RecordFailureInput): Promise<void> {
     try {
-      const config = await this.orgSettings.getJson<AlertWebhookConfig>(
-        input.organizationId,
-        ALERT_WEBHOOK_SETTINGS_KEY,
-      );
+      const config = await this.cachedConfig(input.organizationId);
       if (!config?.enabled || !config.url) return;
 
       const threshold = config.threshold || DEFAULT_THRESHOLD;
@@ -190,7 +198,7 @@ export class AlertsService {
       const firstFailureKey = `alerts:firstfail:${scope}`;
 
       const now = new Date();
-      const count = await this.incrWithExpiry(failKey, windowSeconds);
+      const count = await this.incrWithExpiry(failKey, windowSeconds, threshold);
       if (count === 1) {
         await this.setKeyWithExpiry(firstFailureKey, now.toISOString(), windowSeconds);
       }
@@ -201,14 +209,14 @@ export class AlertsService {
       // TTL lapses and a fresh cycle starts.
       if (count !== threshold) return;
       if (await this.isCooldownActive(cooldownKey)) return;
-      // Set the cooldown before sending: two failures crossing the
-      // threshold at the same moment both read the pre-increment count and
-      // could otherwise both dispatch.
+      // INCR is atomic, so only one call sees exactly `threshold`. The
+      // cooldown is set before sending so a slow dispatch cannot overlap the
+      // next window's alert.
       await this.setCooldown(cooldownKey, cooldownSeconds);
 
       const [connector, tool] = await Promise.all([
-        this.prisma.connector.findUnique({
-          where: { id: input.connectorId },
+        this.prisma.connector.findFirst({
+          where: { id: input.connectorId, organizationId: input.organizationId },
           select: { id: true, name: true },
         }),
         this.prisma.mcpTool.findUnique({
@@ -220,7 +228,7 @@ export class AlertsService {
 
       const firstFailureAt = (await this.getKey(firstFailureKey)) ?? now.toISOString();
 
-      await this.dispatch(input.organizationId, config, {
+      const result = await this.dispatch(input.organizationId, config, {
         event: 'connector.failing',
         organizationId: input.organizationId,
         connector: { id: connector.id, name: connector.name },
@@ -234,6 +242,12 @@ export class AlertsService {
         lastFailureAt: now.toISOString(),
         logsUrl: this.buildLogsUrl(connector.id),
       });
+      if (!result.success) {
+        // Never log the URL: a Slack webhook URL is itself a credential.
+        this.logger.warn(
+          `Connector-failure alert for org ${input.organizationId} was not delivered: ${result.status ?? ''} ${result.message ?? ''}`.trim(),
+        );
+      }
     } catch (err: any) {
       this.logger.warn(`Failed to process connector-failure alert: ${err?.message || err}`);
     }
@@ -269,12 +283,17 @@ export class AlertsService {
       'X-AnythingMCP-Signature': `sha256=${signature}`,
     };
 
+    try {
+      this.assertHttpsOnCloud(config.url);
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+    const skipAllowlists = this.isCloud();
     for (let attempt = 1; attempt <= DISPATCH_ATTEMPTS; attempt++) {
       try {
-        // Re-check at send time, not only at save time: policy or DNS can
-        // change between the two. skipAllowlists for the same reason as
-        // in saveConfig — this call must not inherit the connector allowlist.
-        await assertSafeOutboundUrl(config.url, process.env, { skipAllowlists: true });
+        // The outbound adapter re-checks every hop at send time (policy or
+        // DNS can change after the save), with the same allowlist rule as
+        // saveConfig.
         const res = await outboundRequest(
           {
             url: config.url,
@@ -284,7 +303,7 @@ export class AlertsService {
             timeout: DISPATCH_TIMEOUT_MS,
             validateStatus: () => true,
           },
-          { skipAllowlists: true, maxRedirects: 0 },
+          { skipAllowlists, maxRedirects: 0 },
         );
         if (res.status >= 200 && res.status < 300) {
           return { success: true, status: res.status };
@@ -301,6 +320,34 @@ export class AlertsService {
     return { success: false, message: 'Webhook dispatch failed' };
   }
 
+  private isCloud(): boolean {
+    return this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+  }
+
+  /** Signed alerts carry error text: on Cloud they only go out over TLS. */
+  private assertHttpsOnCloud(url: string): void {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      throw new BadRequestException('The webhook URL is not a valid URL');
+    }
+    if (this.isCloud() && protocol !== 'https:') {
+      throw new BadRequestException('On AnythingMCP Cloud the webhook URL must use https');
+    }
+  }
+
+  private async cachedConfig(organizationId: string): Promise<AlertWebhookConfig | null> {
+    const now = Date.now();
+    const hit = this.configCache.get(organizationId);
+    if (hit && hit.expiresAt > now) return hit.config;
+    const config =
+      (await this.orgSettings.getJson<AlertWebhookConfig>(organizationId, ALERT_WEBHOOK_SETTINGS_KEY)) ?? null;
+    if (this.configCache.size >= CONFIG_CACHE_MAX) this.configCache.clear();
+    this.configCache.set(organizationId, { config, expiresAt: now + CONFIG_CACHE_MS });
+    return config;
+  }
+
   private buildLogsUrl(connectorId?: string): string {
     const base =
       (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/+$/, '');
@@ -309,11 +356,21 @@ export class AlertsService {
 
   // ── Counters: Redis when connected, in-memory fallback otherwise ───────
 
-  private async incrWithExpiry(key: string, ttlSeconds: number): Promise<number> {
+  private async incrWithExpiry(key: string, ttlSeconds: number, threshold: number): Promise<number> {
     if (this.redis.isConnected) {
       const count = await this.redis.incr(key);
-      if (count === 1) await this.redis.expire(key, ttlSeconds);
+      if (count === 1) {
+        await this.redis.expire(key, ttlSeconds);
+      } else if (count > threshold && count % 20 === 0 && (await this.redis.ttl(key)) === -1) {
+        // INCR and EXPIRE are two round trips: if the EXPIRE was lost, the
+        // key would count past the threshold forever and never alert again.
+        await this.redis.expire(key, ttlSeconds);
+      }
       return count;
+    }
+    if (this.memCounters.size > 1000) {
+      const now = Date.now();
+      for (const [k, v] of this.memCounters) if (v.expiresAt <= now) this.memCounters.delete(k);
     }
     const now = Date.now();
     const entry = this.memCounters.get(key);
@@ -362,14 +419,20 @@ function truncate(text: string | undefined, maxChars: number): string {
 
 function slackText(payload: Record<string, unknown>): string {
   if (payload.event === 'connector.test') {
-    return ':white_check_mark: AnythingMCP test alert — your webhook is configured correctly.';
+    return ':white_check_mark: AnythingMCP test alert: your webhook is configured correctly.';
   }
   const connector = payload.connector as { name?: string } | undefined;
   const lastError = payload.lastError as { tool?: string; message?: string } | undefined;
+  // The connector name and the vendor's error text are not ours: escaped, so
+  // an upstream body cannot ping <!channel> or disguise a link in the org's Slack.
   return (
-    `:rotating_light: *${connector?.name ?? 'A connector'}* has failed ${payload.failures} times ` +
+    `:rotating_light: *${slackEscape(connector?.name ?? 'A connector')}* has failed ${payload.failures} times ` +
     `in the last ${payload.windowMinutes} minutes.\n` +
-    `Last error (${lastError?.tool ?? 'unknown tool'}): ${lastError?.message ?? 'n/a'}\n` +
+    `Last error (${slackEscape(lastError?.tool ?? 'unknown tool')}): ${slackEscape(lastError?.message ?? 'n/a')}\n` +
     `<${payload.logsUrl}|View logs>`
   );
+}
+
+function slackEscape(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
