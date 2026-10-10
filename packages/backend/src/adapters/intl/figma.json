@@ -1,0 +1,956 @@
+{
+  "slug": "figma",
+  "name": "Figma",
+  "unlisted": true,
+  "description": "Let your AI read your Figma designs: browse team projects and files, inspect pages, frames and layers, export images, look up components and styles, follow version history, read and post comments, and manage Dev Mode links. With a personal access token.",
+  "instructions": "## Figma\nThis connector works with Figma through the **REST API** (`https://api.figma.com`): team projects and their files, file metadata, pages, frames and layers, image exports, image fills, version history, comments and reactions, published components, component sets and styles, and Dev Mode resources. It authenticates with a **personal access token**, so it sees exactly the files the token's user can open. It does not edit designs: the REST API cannot change layers.\n\n**Setup (about 2 minutes)**\n1. In Figma open the account menu (top left in the file browser) → **Settings** → **Security** → **Personal access tokens** → **Generate new token**.\n2. Name it (for example \"AnythingMCP\"), choose an expiry (at most 90 days; Figma no longer issues tokens that never expire) and set these scopes:\n   - `current_user:read`, `file_content:read`, `file_metadata:read`, `file_versions:read`\n   - `file_comments:read` and `file_comments:write`\n   - `library_content:read`, `library_assets:read`, `team_library_content:read`\n   - `folders:read` (older token screens call it `projects:read`)\n   - `file_dev_resources:read` and `file_dev_resources:write`\n3. Click **Generate token**, copy it right away (Figma shows it once) and paste it into `FIGMA_ACCESS_TOKEN`. When it expires, generate a new one and paste it again.\n\n**Read-only setup**: leave out `file_comments:write` and `file_dev_resources:write` and switch off `figma_post_comment`, `figma_delete_comment`, `figma_add_comment_reaction`, `figma_create_dev_resource` and `figma_update_dev_resource`. `figma_delete_dev_resource` is installed switched off.\n\n**Finding things**\n- File key: the part after `/design/` (or `/file/`, `/board/`, `/slides/`) in a file URL: `https://www.figma.com/design/aBcD1234EfGh/Website` → `aBcD1234EfGh`.\n- Node ids: a link's `node-id=12-345` is `12:345` in the API.\n- Team id: the number after `/team/` in the URL of a team page in the file browser. The API cannot list a user's teams, so ask the user for a team link. `figma_list_team_projects` → `figma_list_project_files` then lead to file keys.\n- Component and style keys (not node ids) come from the library list tools or from a file's `components` and `styles` maps.\n\n**Reading designs efficiently**: start with `figma_get_file_meta` (cheap), then `figma_get_file` with `depth` 1 or 2 to see pages and top-level frames, then `figma_get_file_nodes` for the frames that matter. Whole documents are very large; answers over 200 KB are cut and marked `_truncated`. To see a screen, `figma_render_images` returns PNG, JPG, SVG or PDF URLs, valid for 30 days.\n\n**Rate limits**: Figma limits per user and per plan of the file, in three tiers. File content, node reads and image renders (`figma_get_file`, `figma_get_file_nodes`, `figma_render_images`) are the tightest: on a paid plan with a Full or Dev seat 10 to 20 a minute, but for files on the free Starter plan, or for View and Collab seats, only a handful a month. Comments, versions, image fills, projects and dev resources allow 5 (Starter) to 100 a minute; metadata, components and styles 10 to 150. Over a limit Figma answers 429 with Retry-After; wait that long. Prefer metadata and single nodes over whole files.\n\n**Comments**: `figma_post_comment` posts as the token's user; pin it with `client_meta` (`{\"node_id\": \"1:2\", \"node_offset\": {\"x\": 0, \"y\": 0}}`) or reply with `comment_id` (top-level comments only). `figma_delete_comment` only works on the user's own comments.\n\n**Dev resources** are Dev Mode links (tickets, docs, code) on nodes; Dev Mode needs a paid plan and a Full or Dev seat. At most 10 per node and each URL once per node; refused ones come back in `errors`, which this connector reports as a failed call.\n\n**Errors**: 403 means the token is wrong, expired or lacks the scope for the call (the message says \"Invalid token\" or names the scope). 404 means no such file or node, or the user cannot open the file. 400 names an invalid parameter, e.g. a node id with a hyphen instead of a colon. 429 is a rate limit (see above). Library endpoints refuse a branch key: use the main file's key.\n\n**Out of scope here**: editing designs, variables (Enterprise only), webhooks, FigJam and Slides content beyond the file tree, and library analytics.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "figma",
+  "docsUrl": "https://developers.figma.com/docs/rest-api/",
+  "requiredEnvVars": [
+    "FIGMA_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "FIGMA_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Figma → account menu (top left) → Settings → Security → Personal access tokens → Generate new token, with the scopes listed in the setup steps. Shown only once.",
+      "link": "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token (it usually starts with figd_), without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "403": "Figma refused the token: it is wrong, expired (tokens last at most 90 days) or lacks a scope this call needs. Generate a new one under Settings → Security → Personal access tokens.",
+    "404": "Figma found no file with this key, or the token's user cannot open it. Copy the key from the file's URL.",
+    "rate_limited": "Figma is rate limiting this token. File content and image renders have the tightest limits, very low on Starter (free) files. Wait and try again, or read single nodes instead of whole files."
+  },
+  "probe": {
+    "tool": "figma_get_me"
+  },
+  "prerequisites": "A Figma account with access to the files the AI should read, and a personal access token with the scopes listed below (about 2 minutes). On the free Starter plan file content can only be read a few times a month; dev resources need a paid plan with Dev Mode.",
+  "connector": {
+    "name": "Figma REST API",
+    "type": "REST",
+    "baseUrl": "https://api.figma.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Figma-Token",
+      "apiKey": "{{FIGMA_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/me",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "err",
+          "status": 400
+        },
+        {
+          "path": "errors[0].error",
+          "messagePath": "errors[0].error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "figma_get_me",
+      "description": "Get the Figma user the token belongs to: id, handle, email and avatar URL. A cheap check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/me"
+      }
+    },
+    {
+      "name": "figma_get_file_meta",
+      "description": "Get a file's metadata without its content: name, folder (project) name, editor type (figma, figjam, slides ...), creator, last_touched_at and by whom, thumbnail, version, link access and the user's role. Cheap; use it before reading the file itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/meta",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_get_file",
+      "description": "Read a file's document tree: pages, frames and layers with their ids, names, types, sizes, fills, text and layout, plus the components and styles it uses. Keep depth low (1 = pages only, 2 = pages and top-level frames) and then read single frames with figma_get_file_nodes; whole files are huge and cut at 200 KB. Counts against Figma's strictest rate limit tier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 2,
+            "description": "How deep to walk the tree: 1 = pages, 2 = pages and their top-level frames (default 2)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Only these node ids (comma-separated, e.g. 1:2,4:17) and their ancestors."
+          },
+          "version": {
+            "type": "string",
+            "description": "A version id from figma_list_versions, to read the file as it was then; the current version when left out."
+          },
+          "geometry": {
+            "type": "string",
+            "enum": [
+              "paths"
+            ],
+            "description": "paths to include vector path data."
+          },
+          "plugin_data": {
+            "type": "string",
+            "description": "Comma-separated plugin ids, or shared, to include plugin data."
+          },
+          "branch_data": {
+            "type": "boolean",
+            "description": "Include the file's branches."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}",
+        "encodePathParams": true,
+        "queryParams": {
+          "depth": "$depth",
+          "ids": "$ids",
+          "version": "$version",
+          "geometry": "$geometry",
+          "plugin_data": "$plugin_data",
+          "branch_data": "$branch_data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "figma_get_file_nodes",
+      "description": "Read specific nodes (frames, components, layers) of a file with everything below them: type, name, absolute bounding box, fills, strokes, effects, text and style, auto layout and constraints. The way to inspect one screen or component in detail. Cut at 200 KB; lower depth for big frames.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated node ids with a colon, e.g. 1:2,4:17. A node-id=1-2 in a URL is 1:2 here."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many levels below each node to include; everything when left out."
+          },
+          "version": {
+            "type": "string",
+            "description": "A version id from figma_list_versions, to read the file as it was then; the current version when left out."
+          },
+          "geometry": {
+            "type": "string",
+            "enum": [
+              "paths"
+            ],
+            "description": "paths to include vector path data."
+          },
+          "plugin_data": {
+            "type": "string",
+            "description": "Comma-separated plugin ids, or shared, to include plugin data."
+          }
+        },
+        "required": [
+          "file_key",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/nodes",
+        "encodePathParams": true,
+        "queryParams": {
+          "ids": "$ids",
+          "depth": "$depth",
+          "version": "$version",
+          "geometry": "$geometry",
+          "plugin_data": "$plugin_data"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "figma_render_images",
+      "description": "Render nodes of a file as PNG, JPG, SVG or PDF and get a download URL per node id (null when a node could not be rendered). The URLs stay valid for 30 days. Renders over 32 megapixels are scaled down.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated node ids with a colon, e.g. 1:2,4:17. A node-id=1-2 in a URL is 1:2 here."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpg",
+              "svg",
+              "pdf"
+            ],
+            "description": "png (default), jpg, svg or pdf."
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 4,
+            "description": "Scale factor from 0.01 to 4 (default 1)."
+          },
+          "version": {
+            "type": "string",
+            "description": "A version id from figma_list_versions, to read the file as it was then; the current version when left out."
+          },
+          "svg_outline_text": {
+            "type": "boolean",
+            "description": "SVG only: draw text as outlines (default true); false keeps it as text elements."
+          },
+          "svg_include_id": {
+            "type": "boolean",
+            "description": "SVG only: add each layer's name as an id attribute."
+          },
+          "svg_include_node_id": {
+            "type": "boolean",
+            "description": "SVG only: add each layer's node id as a data-node-id attribute."
+          },
+          "svg_simplify_stroke": {
+            "type": "boolean",
+            "description": "SVG only: simplify inside and outside strokes (default true)."
+          },
+          "contents_only": {
+            "type": "boolean",
+            "description": "Leave out overlapping content outside the node (default true)."
+          },
+          "use_absolute_bounds": {
+            "type": "boolean",
+            "description": "Render the node's full bounds, ignoring cropping and empty space (default false)."
+          }
+        },
+        "required": [
+          "file_key",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/images/{file_key}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ids": "$ids",
+          "format": "$format",
+          "scale": "$scale",
+          "version": "$version",
+          "svg_outline_text": "$svg_outline_text",
+          "svg_include_id": "$svg_include_id",
+          "svg_include_node_id": "$svg_include_node_id",
+          "svg_simplify_stroke": "$svg_simplify_stroke",
+          "contents_only": "$contents_only",
+          "use_absolute_bounds": "$use_absolute_bounds"
+        }
+      }
+    },
+    {
+      "name": "figma_get_image_fills",
+      "description": "Get download URLs for every image used as a fill in a file, keyed by imageRef (the imageRef in a node's fills). The URLs expire within 14 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/images",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_versions",
+      "description": "List a file's version history, newest first: id, label and description of named versions, created_at, the user and thumbnail. Pass an id as version to the file tools to read an older state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Versions per page, up to 50 (default 30)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only versions older than this version id (from pagination.next_page)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only versions newer than this version id."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/versions",
+        "encodePathParams": true,
+        "queryParams": {
+          "page_size": "$page_size",
+          "before": "$before",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "figma_list_comments",
+      "description": "List all comments on a file: id, message, user, created_at, resolved_at, parent_id (for replies), client_meta (where it is pinned: node_id and offset, or x/y) and reactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "as_md": {
+            "type": "boolean",
+            "description": "Return messages as Markdown."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/comments",
+        "encodePathParams": true,
+        "queryParams": {
+          "as_md": "$as_md"
+        }
+      }
+    },
+    {
+      "name": "figma_post_comment",
+      "description": "Post a comment on a file as the token's user, optionally pinned to a node or a point, or as a reply to a top-level comment (comment_id). Everyone with access to the file sees it and may be notified. Show the user the text and wait for confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "message": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "comment_id": {
+            "type": "string",
+            "description": "Id of a top-level comment to reply to. Replies to replies are not possible."
+          },
+          "client_meta": {
+            "type": "object",
+            "description": "Where to pin the comment: {\"node_id\": \"1:2\", \"node_offset\": {\"x\": 10, \"y\": 20}} for a spot on a node, {\"x\": 100, \"y\": 200} for a canvas point, or add region_width and region_height for an area. Left out, it is a file-level comment."
+          }
+        },
+        "required": [
+          "file_key",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/files/{file_key}/comments",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message": "$message",
+          "comment_id": "$comment_id",
+          "client_meta": "$client_meta"
+        }
+      }
+    },
+    {
+      "name": "figma_delete_comment",
+      "description": "Delete a comment. Figma lets only the person who wrote it delete it, so this works on the token user's own comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "comment_id": {
+            "type": "string",
+            "description": "Comment id."
+          }
+        },
+        "required": [
+          "file_key",
+          "comment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/files/{file_key}/comments/{comment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_comment_reactions",
+      "description": "List the emoji reactions on a comment: emoji, user and created_at. Pages with cursor (pagination.next_page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "comment_id": {
+            "type": "string",
+            "description": "Comment id."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page."
+          }
+        },
+        "required": [
+          "file_key",
+          "comment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/comments/{comment_id}/reactions",
+        "encodePathParams": true,
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "figma_add_comment_reaction",
+      "description": "React to a comment with an emoji shortcode, as the token's user; it shows next to the comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "comment_id": {
+            "type": "string",
+            "description": "Comment id."
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Emoji shortcode, e.g. :+1:, :heart: or :eyes:."
+          }
+        },
+        "required": [
+          "file_key",
+          "comment_id",
+          "emoji"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/files/{file_key}/comments/{comment_id}/reactions",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "emoji": "$emoji"
+        }
+      }
+    },
+    {
+      "name": "figma_list_team_projects",
+      "description": "List the projects (folders) of a team that the token's user can see: id and name. Figma cannot list a user's teams through the API; take the team id from the team page's URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id: the number after /team/ in the URL of the team's page in the Figma file browser."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}/projects",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_project_files",
+      "description": "List the files in a project: key, name, thumbnail_url and last_modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id, from figma_list_team_projects."
+          },
+          "branch_data": {
+            "type": "boolean",
+            "description": "Include each file's branches."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/files",
+        "encodePathParams": true,
+        "queryParams": {
+          "branch_data": "$branch_data"
+        }
+      }
+    },
+    {
+      "name": "figma_list_team_components",
+      "description": "List the published components of a team library: key, name, description, the file and node they live in, thumbnail and who last updated them. Pages with meta.cursor (after / before).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id: the number after /team/ in the URL of the team's page in the Figma file browser."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Items per page (default 30)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "meta.cursor.after from the previous page, for the next page."
+          },
+          "before": {
+            "type": "integer",
+            "description": "meta.cursor.before from the previous page, for the previous page."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}/components",
+        "encodePathParams": true,
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "figma_list_team_component_sets",
+      "description": "List the published component sets (components with variants) of a team library: key, name, description, the file and node they live in, thumbnail and who last updated them. Pages with meta.cursor (after / before).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id: the number after /team/ in the URL of the team's page in the Figma file browser."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Items per page (default 30)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "meta.cursor.after from the previous page, for the next page."
+          },
+          "before": {
+            "type": "integer",
+            "description": "meta.cursor.before from the previous page, for the previous page."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}/component_sets",
+        "encodePathParams": true,
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "figma_list_team_styles",
+      "description": "List the published styles (colors, text, effects, grids) of a team library: key, name, description, the file and node they live in, thumbnail and who last updated them. Pages with meta.cursor (after / before).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id: the number after /team/ in the URL of the team's page in the Figma file browser."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Items per page (default 30)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "meta.cursor.after from the previous page, for the next page."
+          },
+          "before": {
+            "type": "integer",
+            "description": "meta.cursor.before from the previous page, for the previous page."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}/styles",
+        "encodePathParams": true,
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "figma_list_file_components",
+      "description": "List the published components of a library file: key, name, description, node_id and thumbnail. Use the main file's key, not a branch's.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/components",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_file_component_sets",
+      "description": "List the published component sets of a library file: key, name, description, node_id and thumbnail. Use the main file's key, not a branch's.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/component_sets",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_file_styles",
+      "description": "List the published styles of a library file: key, name, description, node_id and thumbnail. Use the main file's key, not a branch's.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/styles",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_get_component",
+      "description": "Get one published component by its key: name, description, the file and node it lives in, its containing frame and component set, thumbnail and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Component key (not the node id), from a component list or a file's components map."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/components/{key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_get_component_set",
+      "description": "Get one published component set (a component with variants) by its key: name, description, file, node and thumbnail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Component set key."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/component_sets/{key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_get_style",
+      "description": "Get one published style by its key: name, description, style_type (FILL, TEXT, EFFECT, GRID), the file and node it lives in and thumbnail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Style key."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/styles/{key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_dev_resources",
+      "description": "List the dev resources of a file: links that developers attached to nodes in Dev Mode (tickets, docs, code), each with id, name, url and node_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "node_ids": {
+            "type": "string",
+            "description": "Only resources on these node ids (comma-separated)."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/files/{file_key}/dev_resources",
+        "encodePathParams": true,
+        "queryParams": {
+          "node_ids": "$node_ids"
+        }
+      }
+    },
+    {
+      "name": "figma_create_dev_resource",
+      "description": "Attach a link (a ticket, a doc, a code file) to a node as a dev resource, visible to everyone in Dev Mode. A node holds at most 10, each URL once. Returns links_created, or errors naming what was refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Node id with a colon, e.g. 1:2."
+          },
+          "name": {
+            "type": "string",
+            "description": "Link title shown in Dev Mode."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The link."
+          }
+        },
+        "required": [
+          "file_key",
+          "node_id",
+          "name",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/dev_resources",
+        "bodyMapping": {
+          "dev_resources": [
+            {
+              "name": "$name",
+              "url": "$url",
+              "file_key": "$file_key",
+              "node_id": "$node_id"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "figma_update_dev_resource",
+      "description": "Change the name or URL of a dev resource. Returns links_updated, or errors naming what was refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dev_resource_id": {
+            "type": "string",
+            "description": "Dev resource id, from figma_list_dev_resources."
+          },
+          "name": {
+            "type": "string",
+            "description": "New title."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "New link."
+          }
+        },
+        "required": [
+          "dev_resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/dev_resources",
+        "bodyMapping": {
+          "dev_resources": [
+            {
+              "id": "$dev_resource_id",
+              "name": "$name",
+              "url": "$url"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "figma_delete_dev_resource",
+      "enabled": false,
+      "description": "Remove a dev resource link from a node, for everyone. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "File key: the part after /design/ (or /file/, /board/, /slides/) in the file's URL, e.g. aBcD1234EfGh for https://www.figma.com/design/aBcD1234EfGh/Website."
+          },
+          "dev_resource_id": {
+            "type": "string",
+            "description": "Dev resource id."
+          }
+        },
+        "required": [
+          "file_key",
+          "dev_resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/files/{file_key}/dev_resources/{dev_resource_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

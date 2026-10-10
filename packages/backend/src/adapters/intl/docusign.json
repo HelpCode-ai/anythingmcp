@@ -1,0 +1,688 @@
+{
+  "slug": "docusign",
+  "name": "DocuSign",
+  "description": "Let your AI work with DocuSign eSignature: find envelopes and check who has signed, read recipients, documents, form data and the audit trail, send documents or templates for signature, resend or void envelopes, and browse templates. Demo or production, signed in as a DocuSign user.",
+  "unlisted": true,
+  "instructions": "## DocuSign\nThis connector works with one DocuSign eSignature account through the **eSignature REST API v2.1** (`<base URI>/restapi/v2.1/accounts/<account id>`): envelopes (list, status, details, recipients, documents, audit trail, form data), sending documents or templates for signature, resending and voiding, and templates. It runs as the DocuSign user who authorized it (OAuth authorization code grant), within that user's permissions.\n\n**Setup (about 15 minutes; the free developer account works)**\n1. Get a free developer (demo) account at https://www.docusign.com/developers/sandbox, or use your production account.\n2. Open **Apps and Keys**: https://admindemo.docusign.com/apps-and-keys for demo, https://admin.docusign.com/apps-and-keys for production (or Settings → Integrations → Apps and Keys).\n3. Click **Add App and Integration Key**, name it (for example \"AnythingMCP\"). Under **User Application → Authentication method** answer \"Is your application able to securely store a client secret?\" with **Yes** (Authorization Code Grant).\n4. Click **Add Secret Key** and copy it at once (it is shown only once). Copy the **Integration Key** too.\n5. Under **Redirect URIs** add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match exactly. Save; changes can take up to 5 minutes.\n6. On the same Apps and Keys page, in **My Account Information**, copy the **API Account ID** (a GUID) into `DOCUSIGN_ACCOUNT_ID` and the **Account's Base URI** (for example `https://demo.docusign.net` or `https://eu.docusign.net`) into `DOCUSIGN_BASE_URI`.\n7. Put the Integration Key into `DOCUSIGN_CLIENT_ID`, the secret into `DOCUSIGN_CLIENT_SECRET`, and set `DOCUSIGN_AUTH_URL` to `https://account-d.docusign.com` (demo) or `https://account.docusign.com` (production).\n8. Install, then click **Authorize with Provider** on the connector page and sign in to DocuSign. Then run `docusign_get_user_info`: it lists every account this user can reach with its `account_id` and `base_uri`. If they differ from `DOCUSIGN_ACCOUNT_ID` / `DOCUSIGN_BASE_URI`, correct the variables (the base URI is per account and can change when DocuSign moves an account).\n\n**Going live**: a new integration key works only in demo. To use it in production, on the demo Apps and Keys page choose **Actions → Start Go-Live Review**, then in your production account add a new secret key and the redirect URI again (they are not copied), and switch `DOCUSIGN_AUTH_URL`, `DOCUSIGN_BASE_URI` and `DOCUSIGN_ACCOUNT_ID` to the production values.\n\n**Scopes**: `signature extended`. `signature` covers the eSignature API, `extended` lets AnythingMCP keep renewing the sign-in: access tokens last 8 hours, each refresh issues a new refresh token valid for 30 days, so the connector stays signed in as long as it is used at least once a month.\n\n**Sending is real: confirm first.** An envelope with status \"sent\" emails every recipient a signing request in your company's name. `docusign_create_envelope_from_template` and `docusign_create_envelope_with_document` create a **draft** unless `status` is \"sent\"; `docusign_send_draft_envelope`, `docusign_resend_envelope` and `docusign_void_envelope` act on real recipients. Before any of them, say who will receive what and wait for the user's yes. `docusign_move_envelope_to_trash` is installed switched off.\n\n**Envelopes**: `docusign_list_envelopes` needs a `from_date` (or `envelope_ids`); filter by `status` (created, sent, delivered, completed, declined, voided) or `search_text`. `docusign_get_envelope` with `include: \"recipients,documents\"` gives the full picture in one call. DocuSign asks integrations not to poll one envelope more than once every 15 minutes.\n\n**Documents**: `docusign_create_envelope_with_document` takes files as base64 (PDF, Word, ...); keep them small, a whole request is limited to about 35 MB and every byte passes through the conversation. Signature fields go on the signer as `tabs.signHereTabs`: either at an anchor text in the document (`{\"anchorString\": \"/sig1/\", \"anchorUnits\": \"pixels\", \"anchorXOffset\": \"0\", \"anchorYOffset\": \"0\"}`) or at a position (`{\"documentId\": \"1\", \"pageNumber\": \"1\", \"xPosition\": \"100\", \"yPosition\": \"600\"}`, 72 dots per inch). `docusign_download_document` returns one document (or `combined` for all as one PDF, `certificate` for the completion certificate) as base64 text; answers above about 1.5 MB come back truncated, and DocuSign allows only a few downloads of the same document per hour.\n\n**Templates**: `docusign_list_templates` and `docusign_get_template` show each template's roles (`recipients.signers[].roleName`). To send from a template, give every role an email and name in `template_roles`.\n\n**Limits**: 3,000 API calls per hour per account (shared by all integrations), and bursts of up to 500 calls in 30 seconds (200 in demo).\n\n**Common errors** (`errorCode` and `message`)\n- 401 `AUTHORIZATION_INVALID_TOKEN` / `USER_AUTHENTICATION_FAILED`: the sign-in expired or was revoked; click **Authorize with Provider** again.\n- 400 `USER_LACKS_MEMBERSHIP` or 404: `DOCUSIGN_ACCOUNT_ID` or `DOCUSIGN_BASE_URI` does not belong to the signed-in user; compare with `docusign_get_user_info`.\n- 400 `ENVELOPE_IS_INCOMPLETE`, `INVALID_EMAIL_ADDRESS_FOR_RECIPIENT`, `TEMPLATE_ROLE_NAME_MISMATCH` (a role name that is not in the template), `ENVELOPE_CANNOT_VOID_INVALID_STATE` (only sent or delivered envelopes can be voided).\n- 429 / `HOURLY_APIINVOCATION_LIMIT_EXCEEDED`: wait for the next hour.\n\n**Out of scope here**: embedded signing and sending views, PowerForms, bulk send, Connect webhooks, editing templates, users and account settings.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "docusign",
+  "docsUrl": "https://developers.docusign.com/docs/esign-rest-api/reference/",
+  "requiredEnvVars": [
+    "DOCUSIGN_CLIENT_ID",
+    "DOCUSIGN_CLIENT_SECRET",
+    "DOCUSIGN_AUTH_URL",
+    "DOCUSIGN_BASE_URI",
+    "DOCUSIGN_ACCOUNT_ID"
+  ],
+  "appRegistrationUrl": "https://admindemo.docusign.com/apps-and-keys",
+  "envVarMeta": {
+    "DOCUSIGN_CLIENT_ID": {
+      "label": "Integration key",
+      "kind": "credential",
+      "help": "Apps and Keys → your app → Integration Key (a GUID).",
+      "link": "https://admindemo.docusign.com/apps-and-keys",
+      "pattern": "^[0-9a-fA-F-]{36}$",
+      "patternMessage": "The integration key is a GUID such as 1a2b3c4d-1234-5678-9abc-0123456789ab."
+    },
+    "DOCUSIGN_CLIENT_SECRET": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Apps and Keys → your app → Authentication → Add Secret Key. Shown only once.",
+      "link": "https://admindemo.docusign.com/apps-and-keys",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret key without spaces."
+    },
+    "DOCUSIGN_AUTH_URL": {
+      "label": "Environment (sign-in server)",
+      "kind": "address",
+      "help": "https://account-d.docusign.com for demo (developer) accounts, https://account.docusign.com for production.",
+      "example": "https://account-d.docusign.com",
+      "pattern": "^https://account(-d)?\\.docusign\\.com$",
+      "patternMessage": "Use https://account-d.docusign.com or https://account.docusign.com, without a trailing slash."
+    },
+    "DOCUSIGN_BASE_URI": {
+      "label": "Account base URI",
+      "kind": "address",
+      "help": "Apps and Keys → My Account Information → Account's Base URI, e.g. https://demo.docusign.net, https://eu.docusign.net, https://na3.docusign.net. docusign_get_user_info shows it as base_uri.",
+      "example": "https://demo.docusign.net",
+      "pattern": "^https://[a-z0-9-]+(\\.[a-z0-9-]+)*\\.docusign\\.(net|com)$",
+      "patternMessage": "Paste the base URI only, like https://demo.docusign.net, without /restapi and without a trailing slash."
+    },
+    "DOCUSIGN_ACCOUNT_ID": {
+      "label": "API Account ID",
+      "kind": "setting",
+      "help": "Apps and Keys → My Account Information → API Account ID (a GUID, not the short account number).",
+      "example": "f0f1c2d3-4e5f-6789-abcd-ef0123456789",
+      "pattern": "^[0-9a-fA-F-]{36}$",
+      "patternMessage": "Use the API Account ID, a GUID such as f0f1c2d3-4e5f-6789-abcd-ef0123456789."
+    }
+  },
+  "verifyHints": {
+    "401": "DocuSign refused the sign-in. Click Authorize with Provider again, and check that DOCUSIGN_AUTH_URL matches the environment (account-d for demo, account for production).",
+    "400": "DocuSign did not accept the account. Run docusign_get_user_info and copy the account_id and base_uri of the right account into DOCUSIGN_ACCOUNT_ID and DOCUSIGN_BASE_URI.",
+    "rate_limited": "The account reached DocuSign's hourly API limit (3,000 calls, shared by all integrations). Wait for the next hour."
+  },
+  "probe": {
+    "tool": "docusign_get_account"
+  },
+  "prerequisites": "A DocuSign account (a free developer account for demo) with admin access to Apps and Keys, to create an integration key with a secret and the redirect URI below. Production use needs DocuSign's Go-Live review of the key. About 15 minutes.",
+  "connector": {
+    "name": "DocuSign eSignature REST API",
+    "type": "REST",
+    "baseUrl": "{{DOCUSIGN_BASE_URI}}/restapi/v2.1/accounts/{{DOCUSIGN_ACCOUNT_ID}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{DOCUSIGN_CLIENT_ID}}",
+      "clientSecret": "{{DOCUSIGN_CLIENT_SECRET}}",
+      "authorizationUrl": "{{DOCUSIGN_AUTH_URL}}/oauth/auth",
+      "tokenUrl": "{{DOCUSIGN_AUTH_URL}}/oauth/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "signature extended"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "docusign_get_user_info",
+      "description": "Read who signed in and which DocuSign accounts they can use: name, email, and for each account account_id, account_name, is_default and base_uri. Use it to check DOCUSIGN_ACCOUNT_ID and DOCUSIGN_BASE_URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "{DOCUSIGN_AUTH_URL}/oauth/userinfo"
+      }
+    },
+    {
+      "name": "docusign_get_account",
+      "description": "Read the connected account: name, plan, billing period, envelopes sent this period and allowed, and the account's base URL. Optionally with its settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_account_settings": {
+            "type": "boolean",
+            "description": "true to also return the account settings."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "",
+        "queryParams": {
+          "include_account_settings": "$include_account_settings"
+        }
+      }
+    },
+    {
+      "name": "docusign_list_envelopes",
+      "description": "List envelopes changed since from_date, with id, status, subject, sender, dates and (optionally) recipients. Returns envelopes, resultSetSize, totalSetSize and paging positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Changed on or after this date, e.g. \"2026-09-01\" or \"2026-09-01T00:00:00Z\". Required unless envelope_ids is given."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Changed before this date."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated: created (drafts), sent, delivered, signed, completed, declined, voided, or \"any\"."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Free text in subject, sender or recipient names and emails."
+          },
+          "folder_ids": {
+            "type": "string",
+            "description": "Comma-separated folder ids or names: drafts, inbox, sentitems, recyclebin, awaiting_my_signature, completed, out_for_signature, waiting_for_others, expiring_soon."
+          },
+          "envelope_ids": {
+            "type": "string",
+            "description": "Comma-separated envelope ids to read instead of a date range."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: recipients, documents, custom_fields, folders."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field, e.g. last_modified, created, sent, completed, status, subject."
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "description": "Envelopes per page (default 50 here, up to 1000).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "start_position": {
+            "type": "integer",
+            "description": "0-based position of the first envelope, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "status": "$status",
+          "search_text": "$search_text",
+          "folder_ids": "$folder_ids",
+          "envelope_ids": "$envelope_ids",
+          "include": "$include",
+          "order_by": "$order_by",
+          "order": "$order",
+          "count": "$count",
+          "start_position": "$start_position"
+        }
+      }
+    },
+    {
+      "name": "docusign_get_envelope",
+      "description": "Read one envelope: status, subject, sender, sent, delivered and completed times, void reason, and with include its recipients, documents and fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: recipients, documents, tabs, custom_fields, attachments, folders, workflow."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "docusign_create_envelope_from_template",
+      "description": "Create an envelope from a template, filling each template role with a person. Creates a DRAFT unless status is \"sent\", which emails the signers at once: confirm recipients and subject with the user before sending. Returns envelopeId and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id (docusign_list_templates)."
+          },
+          "template_roles": {
+            "type": "array",
+            "description": "One entry per template role, e.g. [{\"roleName\": \"Signer\", \"name\": \"Ana Diaz\", \"email\": \"ana@example.com\"}]. Role names must match the template exactly. Optional per role: routingOrder, tabs with prefilled values.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "email_subject": {
+            "type": "string",
+            "description": "Email subject; the template's subject is used when omitted."
+          },
+          "email_blurb": {
+            "type": "string",
+            "description": "Email message text."
+          },
+          "status": {
+            "type": "string",
+            "description": "\"created\" for a draft (default) or \"sent\" to send now.",
+            "enum": [
+              "created",
+              "sent"
+            ],
+            "default": "created"
+          }
+        },
+        "required": [
+          "template_id",
+          "template_roles"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelopes",
+        "bodyMapping": {
+          "templateId": "$template_id",
+          "templateRoles": "$template_roles",
+          "emailSubject": "$email_subject",
+          "emailBlurb": "$email_blurb",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "docusign_create_envelope_with_document",
+      "description": "Create an envelope from documents passed as base64 and the recipients who must sign them. Creates a DRAFT unless status is \"sent\", which emails the signers at once: confirm recipients, documents and subject with the user before sending. Returns envelopeId and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_subject": {
+            "type": "string",
+            "description": "Email subject, e.g. \"Please sign: service agreement\"."
+          },
+          "email_blurb": {
+            "type": "string",
+            "description": "Email message text."
+          },
+          "documents": {
+            "type": "array",
+            "description": "Documents, e.g. [{\"documentId\": \"1\", \"name\": \"Agreement.pdf\", \"fileExtension\": \"pdf\", \"documentBase64\": \"JVBERi0...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "recipients": {
+            "type": "object",
+            "description": "Recipients, e.g. {\"signers\": [{\"recipientId\": \"1\", \"routingOrder\": \"1\", \"name\": \"Ana Diaz\", \"email\": \"ana@example.com\", \"tabs\": {\"signHereTabs\": [{\"anchorString\": \"/sig1/\", \"anchorUnits\": \"pixels\", \"anchorXOffset\": \"0\", \"anchorYOffset\": \"0\"}]}}], \"carbonCopies\": [{\"recipientId\": \"2\", \"routingOrder\": \"2\", \"name\": \"Office\", \"email\": \"office@example.com\"}]}. A signer without tabs can sign anywhere (free-form)."
+          },
+          "status": {
+            "type": "string",
+            "description": "\"created\" for a draft (default) or \"sent\" to send now.",
+            "enum": [
+              "created",
+              "sent"
+            ],
+            "default": "created"
+          }
+        },
+        "required": [
+          "email_subject",
+          "documents",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/envelopes",
+        "bodyMapping": {
+          "emailSubject": "$email_subject",
+          "emailBlurb": "$email_blurb",
+          "documents": "$documents",
+          "recipients": "$recipients",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "docusign_send_draft_envelope",
+      "description": "Send a draft envelope: DocuSign emails the signing request to its recipients. Confirm with the user first. Returns an update summary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/envelopes/{envelope_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "sent"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "docusign_void_envelope",
+      "description": "Void an envelope that is out for signature (sent or delivered): it can no longer be signed and every recipient is told why. Cannot be undone: confirm the envelope and reason with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          },
+          "voided_reason": {
+            "type": "string",
+            "description": "Why it is voided (sent to the recipients), up to 200 characters."
+          }
+        },
+        "required": [
+          "envelope_id",
+          "voided_reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/envelopes/{envelope_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "voided",
+          "voidedReason": "$voided_reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "docusign_resend_envelope",
+      "description": "Email the signing request again to the recipients who have not finished yet. Only for envelopes out for signature, not drafts, voided or completed ones. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/envelopes/{envelope_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "resend_envelope": "true"
+        },
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "docusign_move_envelope_to_trash",
+      "description": "Move envelopes to the Deleted folder (recycle bin). Drafts are discarded; an envelope that was sent is VOIDED by this. Recoverable for 24 hours. Confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_ids": {
+            "type": "array",
+            "description": "Envelope ids to move.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "envelope_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/folders/recyclebin",
+        "bodyMapping": {
+          "envelopeIds": "$envelope_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "docusign_list_recipients",
+      "description": "List an envelope's recipients by type (signers, carbonCopies, ...) with routing order, status (created, sent, delivered, completed, declined), signed and declined times and decline reason, plus currentRoutingOrder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          },
+          "include_tabs": {
+            "type": "boolean",
+            "description": "true to include each recipient's fields and their values."
+          },
+          "include_extended": {
+            "type": "boolean",
+            "description": "true to include extended recipient details."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}/recipients",
+        "encodePathParams": true,
+        "queryParams": {
+          "include_tabs": "$include_tabs",
+          "include_extended": "$include_extended"
+        }
+      }
+    },
+    {
+      "name": "docusign_list_envelope_documents",
+      "description": "List an envelope's documents: documentId, name, type, page count and order. The documentId is what docusign_download_document takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}/documents",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "docusign_download_document",
+      "description": "Download one document of an envelope as base64 text (documentBase64): a documentId from docusign_list_envelope_documents, \"combined\" for all documents as one PDF, or \"certificate\" for the completion certificate. Large files come back truncated (about 1.5 MB); DocuSign allows only a few downloads of the same document per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "documentId, \"combined\" or \"certificate\"."
+          },
+          "certificate": {
+            "type": "boolean",
+            "description": "With \"combined\": true to append the completion certificate."
+          }
+        },
+        "required": [
+          "envelope_id",
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}/documents/{document_id}",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Transfer-Encoding": "base64"
+        },
+        "queryParams": {
+          "certificate": "$certificate"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{documentBase64: @}",
+          "maxBytes": 1500000
+        }
+      }
+    },
+    {
+      "name": "docusign_list_audit_events",
+      "description": "Read an envelope's audit trail: each event (created, sent, viewed, signed, voided, ...) with user, time, client IP and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}/audit_events",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "docusign_get_form_data",
+      "description": "Read the values entered in an envelope's fields, per recipient. Needs the account setting that allows senders to download form data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "description": "The envelope id (a GUID)."
+          }
+        },
+        "required": [
+          "envelope_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/envelopes/{envelope_id}/form_data",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "docusign_list_templates",
+      "description": "List templates with id, name, description, folder, owner, last used and modified dates; optionally with their recipients (roles) and documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text in the template name or description (up to 48 characters)."
+          },
+          "folder_ids": {
+            "type": "string",
+            "description": "Comma-separated folder ids."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: recipients, documents, folders, custom_fields, notifications."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "name, modified or used.",
+            "enum": [
+              "name",
+              "modified",
+              "used"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "description": "Templates per page (default 50 here).",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 50
+          },
+          "start_position": {
+            "type": "integer",
+            "description": "0-based position of the first template, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "search_text": "$search_text",
+          "folder_ids": "$folder_ids",
+          "include": "$include",
+          "order_by": "$order_by",
+          "order": "$order",
+          "count": "$count",
+          "start_position": "$start_position"
+        }
+      }
+    },
+    {
+      "name": "docusign_get_template",
+      "description": "Read one template: subject, message, documents and recipients with their role names (needed for docusign_create_envelope_from_template), routing order and optionally fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: tabs, documents, powerforms, favorite_template_status."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    }
+  ]
+}

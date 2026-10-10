@@ -1,0 +1,1150 @@
+{
+  "slug": "paypal",
+  "name": "PayPal",
+  "description": "Let your AI work with your PayPal business account: create and capture orders, refund payments, create, send and chase invoices, search the transaction history and balances, review disputes, and look up subscription plans, subscriptions and payout batches. Sandbox or live, with your own REST app keys.",
+  "unlisted": true,
+  "instructions": "## PayPal\nThis connector works with one PayPal business account through the **PayPal REST APIs** (`https://api-m.paypal.com`, or `https://api-m.sandbox.paypal.com` for the sandbox): orders and captures, refunds, invoices (Invoicing v2), the transaction history (Transaction Search), balances, disputes, catalog products, subscription plans and subscriptions, and payout batches. It signs in as your own REST app with its client ID and secret (OAuth2 client credentials); no PayPal user has to click through a consent screen.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://developer.paypal.com with the PayPal business account and open **Apps & Credentials**. The toggle at the top switches between **Sandbox** and **Live**; each has its own apps and keys.\n2. Use the **Default Application** or click **Create App**, type **Merchant**, and (in the sandbox) pick the sandbox business account it should act for.\n3. Open the app and, under its features, tick what the AI should reach: **Invoicing**, **Transaction Search**, **Subscriptions** (also covers catalog products), **Customer Disputes**, **Payouts**. PayPal can take up to 9 hours to grant a newly ticked feature to an app that already issued tokens; until then those calls answer 403 `NOT_AUTHORIZED`.\n4. Copy the **Client ID** and **Secret** into `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`.\n5. Set `PAYPAL_API_URL` to `https://api-m.sandbox.paypal.com` for sandbox keys or `https://api-m.paypal.com` for live keys. Sandbox keys do not work against the live URL and the other way round (the token request fails with `invalid_client`).\n6. Install. AnythingMCP fetches an access token from `PAYPAL_API_URL/v1/oauth2/token` with the client ID and secret and renews it before it expires.\n\n**Money moves: confirm first.** `paypal_capture_order`, `paypal_refund_capture` and `paypal_cancel_subscription` move or stop real money on a live account, and `paypal_send_invoice`, `paypal_remind_invoice` and `paypal_cancel_invoice` email the customer. Before calling any of them, state exactly what will happen (amount, currency, customer, ids) and wait for the user's explicit yes. Pass `request_id` (any UUID) on captures and refunds so a retry cannot act twice. `paypal_delete_draft_invoice` is installed switched off.\n\n**Orders**: `paypal_create_order` creates an order and returns an `approve` (or `payer-action`) link. The buyer must open it and approve before `paypal_capture_order` can collect the money; capturing an unapproved order fails with 422 `ORDER_NOT_APPROVED`. Amounts are strings with the currency's decimals: `{\"currency_code\": \"EUR\", \"value\": \"19.99\"}`. When an order lists `items`, `amount.breakdown.item_total` must equal their sum. The capture id needed for refunds is in `purchase_units[].payments.captures[].id`.\n\n**Refunds**: `paypal_refund_capture` with no amount refunds the whole capture; pass `amount` for a partial refund. Refunds can only be made on captures, up to the captured amount minus earlier refunds.\n\n**Invoices**: `paypal_create_draft_invoice` creates a draft (nothing is emailed); `paypal_send_invoice` sends it (or, with `send_to_recipient: false`, just makes it payable through its link). `paypal_remind_invoice` works on sent, unpaid invoices (at most 2 reminders a day). `paypal_cancel_invoice` works only on sent invoices; drafts are deleted instead. Invoice numbers are generated if you leave `detail.invoice_number` out.\n\n**Transaction history** (`paypal_search_transactions`): `start_date` and `end_date` in RFC 3339 with seconds (`2026-10-01T00:00:00Z` or `2026-10-01T00:00:00+02:00`), at most 31 days apart; for longer periods call once per month. New transactions show up after up to 3 hours, history goes back 3 years. Amount filters use minor units: `[500 TO 1005]` means 5.00 to 10.05.\n\n**Disputes**: `dispute_state` filters by REQUIRED_ACTION (waiting for you), UNDER_PAYPAL_REVIEW, RESOLVED and so on; date filters reach back 180 days.\n\n**Subscriptions**: plans belong to catalog products (`paypal_list_products`, `paypal_list_plans`). `paypal_list_subscriptions` filters by plan and status. `paypal_list_subscription_transactions` needs `start_time` and `end_time`. `paypal_cancel_subscription` ends a subscription for good (it cannot be reactivated) and needs a `reason`.\n\n**Paging**: invoices and disputes take `page` and `page_size`; products, plans and subscriptions allow at most 20 per page; the transaction history up to 500.\n\n**Common errors**\n- 401 `invalid_client` or `invalid_token`: wrong client ID or secret, or keys from the other environment than `PAYPAL_API_URL`.\n- 403 `NOT_AUTHORIZED` / `PERMISSION_DENIED`: the feature is not ticked on the app (Transaction Search, Invoicing, Disputes, Subscriptions, Payouts), or was ticked less than 9 hours ago.\n- 422 `UNPROCESSABLE_ENTITY`: a business rule, named in `details[].issue` (ORDER_NOT_APPROVED, AMOUNT_MISMATCH, CAPTURE_FULLY_REFUNDED, ...).\n- 429 `RATE_LIMIT_REACHED`: wait a little and retry.\n\n**Out of scope here**: card payments and vaulting, webhooks, sending payouts, accepting or answering disputes, editing plans.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "paypal",
+  "docsUrl": "https://developer.paypal.com/api/rest/",
+  "requiredEnvVars": [
+    "PAYPAL_CLIENT_ID",
+    "PAYPAL_CLIENT_SECRET",
+    "PAYPAL_API_URL"
+  ],
+  "appRegistrationUrl": "https://developer.paypal.com/dashboard/applications",
+  "envVarMeta": {
+    "PAYPAL_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "developer.paypal.com → Apps & Credentials (Sandbox or Live toggle) → your app → Client ID.",
+      "link": "https://developer.paypal.com/dashboard/applications",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client ID without spaces."
+    },
+    "PAYPAL_CLIENT_SECRET": {
+      "label": "Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app page: Secret key 1 (click to show), from the same Sandbox or Live section as the client ID.",
+      "link": "https://developer.paypal.com/dashboard/applications",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    },
+    "PAYPAL_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "https://api-m.sandbox.paypal.com for sandbox keys, https://api-m.paypal.com for live keys.",
+      "example": "https://api-m.sandbox.paypal.com",
+      "link": "https://developer.paypal.com/api/rest/",
+      "pattern": "^https://api-m\\.(sandbox\\.)?paypal\\.com$",
+      "patternMessage": "Use https://api-m.paypal.com or https://api-m.sandbox.paypal.com, without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "PayPal refused the client ID or secret. Check that both come from the same app and that PAYPAL_API_URL matches it (sandbox keys with the sandbox URL, live keys with the live URL).",
+    "403": "The app lacks the feature this call needs. On developer.paypal.com open the app and tick Invoicing, Transaction Search, Subscriptions, Customer Disputes or Payouts; a new feature can take up to 9 hours to reach the app.",
+    "rate_limited": "PayPal is rate limiting this app. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "paypal_list_products",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A PayPal business account (or a free developer account with sandbox accounts) and a REST app on developer.paypal.com with the features you need ticked. About 10 minutes.",
+  "connector": {
+    "name": "PayPal REST API",
+    "type": "REST",
+    "baseUrl": "{{PAYPAL_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{PAYPAL_CLIENT_ID}}",
+      "clientSecret": "{{PAYPAL_CLIENT_SECRET}}",
+      "tokenUrl": "{{PAYPAL_API_URL}}/v1/oauth2/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/catalogs/products?page_size=1"
+  },
+  "tools": [
+    {
+      "name": "paypal_create_order",
+      "description": "Create a checkout order (nothing is charged yet). Returns the order id, status CREATED or PAYER_ACTION_REQUIRED, and links: the buyer must open the \"approve\" or \"payer-action\" link and approve before paypal_capture_order can collect the money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "CAPTURE to collect the money right after approval, AUTHORIZE to only hold it.",
+            "enum": [
+              "CAPTURE",
+              "AUTHORIZE"
+            ],
+            "default": "CAPTURE"
+          },
+          "purchase_units": {
+            "type": "array",
+            "description": "1 to 10 purchase units. Minimal: [{\"amount\": {\"currency_code\": \"EUR\", \"value\": \"19.99\"}, \"description\": \"Order 1042\"}]. Optional per unit: reference_id, invoice_id, custom_id, items (each name, quantity as string, unit_amount; then amount.breakdown.item_total is required), shipping.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "payment_source": {
+            "type": "object",
+            "description": "Optional payer experience, e.g. {\"paypal\": {\"experience_context\": {\"return_url\": \"https://shop.example/ok\", \"cancel_url\": \"https://shop.example/cancel\", \"user_action\": \"PAY_NOW\", \"shipping_preference\": \"NO_SHIPPING\"}}}."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional idempotency key (PayPal-Request-Id), for example a UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "purchase_units"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/checkout/orders",
+        "headers": {
+          "Prefer": "return=representation",
+          "PayPal-Request-Id": "$request_id"
+        },
+        "bodyMapping": {
+          "intent": "$intent",
+          "purchase_units": "$purchase_units",
+          "payment_source": "$payment_source"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_order",
+      "description": "Read one checkout order: status (CREATED, APPROVED, COMPLETED, VOIDED, ...), amounts, payer, and for completed orders the captures under purchase_units[].payments.captures[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id, e.g. \"5O190127TN364715T\"."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/checkout/orders/{order_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_capture_order",
+      "description": "Collect the money of an order the buyer has approved (intent CAPTURE). This charges the buyer: confirm the order id, amount and currency with the user first. Fails with 422 ORDER_NOT_APPROVED if the buyer has not approved yet. Returns the completed order with the capture id under purchase_units[].payments.captures[].id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The approved order id."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional idempotency key (PayPal-Request-Id), for example a UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/checkout/orders/{order_id}/capture",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation",
+          "PayPal-Request-Id": "$request_id"
+        },
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "paypal_get_capture",
+      "description": "Read one captured payment: amount, status (COMPLETED, PENDING, PARTIALLY_REFUNDED, REFUNDED, DECLINED), seller fees and net amount, and links to its order and refunds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "capture_id": {
+            "type": "string",
+            "description": "The capture id (a transaction id), e.g. \"2GG279541U471931P\"."
+          }
+        },
+        "required": [
+          "capture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/payments/captures/{capture_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_refund_capture",
+      "description": "Refund a captured payment, in full (no amount) or in part. This sends money back to the buyer and cannot be undone: confirm the capture id, amount and currency with the user first. Returns the refund id and status (COMPLETED or PENDING).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "capture_id": {
+            "type": "string",
+            "description": "The capture id to refund."
+          },
+          "amount": {
+            "type": "object",
+            "description": "For a partial refund, e.g. {\"currency_code\": \"EUR\", \"value\": \"5.00\"}. Leave out to refund what remains of the capture."
+          },
+          "note_to_payer": {
+            "type": "string",
+            "description": "Reason shown to the buyer, up to 255 characters."
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Your own invoice or reference number for this refund, up to 127 characters."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional idempotency key (PayPal-Request-Id), for example a UUID. Retrying with the same key returns the first result instead of acting twice."
+          }
+        },
+        "required": [
+          "capture_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/payments/captures/{capture_id}/refund",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation",
+          "PayPal-Request-Id": "$request_id"
+        },
+        "bodyMapping": {
+          "amount": "$amount",
+          "note_to_payer": "$note_to_payer",
+          "invoice_id": "$invoice_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "paypal_get_refund",
+      "description": "Read one refund: amount, status (COMPLETED, PENDING, FAILED, CANCELLED), note to the payer and the capture it belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "description": "The refund id."
+          }
+        },
+        "required": [
+          "refund_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/payments/refunds/{refund_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_get_authorization",
+      "description": "Read one authorized payment (an order created with intent AUTHORIZE): amount, status (CREATED, CAPTURED, PARTIALLY_CAPTURED, VOIDED, DENIED, PENDING) and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "authorization_id": {
+            "type": "string",
+            "description": "The authorization id."
+          }
+        },
+        "required": [
+          "authorization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/payments/authorizations/{authorization_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_list_invoices",
+      "description": "List invoices, newest first, with id, number, status, recipient, amount and due date. Returns items, plus total_items and total_pages when total_required is true. For filters (status, recipient, dates, amount) use paypal_search_invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Invoices per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "total_required": {
+            "type": "boolean",
+            "description": "true to also return total_items and total_pages."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated extra fields to include, e.g. \"items,payments\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/invoicing/invoices",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "total_required": "$total_required",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "paypal_search_invoices",
+      "description": "Search invoices by recipient, number, status, currency, dates or amount (all filters combined with AND). Read-only, although it is a POST. Returns items with total_items and total_pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_email": {
+            "type": "string",
+            "description": "Recipient email address."
+          },
+          "recipient_business_name": {
+            "type": "string",
+            "description": "Recipient business name."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Exact invoice number."
+          },
+          "status": {
+            "type": "array",
+            "description": "Up to 5 statuses, e.g. [\"SENT\", \"UNPAID\", \"PARTIALLY_PAID\"]. Others: DRAFT, SCHEDULED, PAID, MARKED_AS_PAID, CANCELLED, REFUNDED, PARTIALLY_REFUNDED, PAYMENT_PENDING.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reference": {
+            "type": "string",
+            "description": "The invoice reference field."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Three-letter currency code, e.g. \"EUR\"."
+          },
+          "invoice_date_range": {
+            "type": "object",
+            "description": "Invoice date range, e.g. {\"start\": \"2026-09-01\", \"end\": \"2026-09-30\"}."
+          },
+          "due_date_range": {
+            "type": "object",
+            "description": "Due date range, e.g. {\"start\": \"2026-10-01\", \"end\": \"2026-10-31\"}."
+          },
+          "creation_date_range": {
+            "type": "object",
+            "description": "Creation time range in RFC 3339, both bounds required, e.g. {\"start\": \"2026-09-01T00:00:00Z\", \"end\": \"2026-09-30T23:59:59Z\"}."
+          },
+          "total_amount_range": {
+            "type": "object",
+            "description": "Amount range, both bounds required, e.g. {\"lower_amount\": {\"currency_code\": \"EUR\", \"value\": \"100.00\"}, \"upper_amount\": {\"currency_code\": \"EUR\", \"value\": \"500.00\"}}."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived invoices only, false for not archived."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Invoices per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoicing/search-invoices",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "total_required": "true"
+        },
+        "bodyMapping": {
+          "recipient_email": "$recipient_email",
+          "recipient_business_name": "$recipient_business_name",
+          "invoice_number": "$invoice_number",
+          "status": "$status",
+          "reference": "$reference",
+          "currency_code": "$currency_code",
+          "invoice_date_range": "$invoice_date_range",
+          "due_date_range": "$due_date_range",
+          "creation_date_range": "$creation_date_range",
+          "total_amount_range": "$total_amount_range",
+          "archived": "$archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paypal_create_draft_invoice",
+      "description": "Create a draft invoice. Nothing is emailed: send it with paypal_send_invoice. Returns the full invoice with its id (INV2-...), number and status DRAFT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "object",
+            "description": "Invoice header. currency_code is required, e.g. {\"currency_code\": \"EUR\", \"invoice_date\": \"2026-10-10\", \"payment_term\": {\"term_type\": \"NET_30\"}, \"note\": \"Thank you\", \"reference\": \"PO-77\"}. Add \"invoice_number\" to set one yourself (unique, up to 25 characters); otherwise PayPal numbers it."
+          },
+          "primary_recipients": {
+            "type": "array",
+            "description": "The customer, e.g. [{\"billing_info\": {\"name\": {\"given_name\": \"Ana\", \"surname\": \"Diaz\"}, \"email_address\": \"ana@example.com\"}}]. Without an email address PayPal cannot email the invoice.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Line items, each with name, quantity (string) and unit_amount, e.g. [{\"name\": \"Consulting\", \"quantity\": \"2\", \"unit_amount\": {\"currency_code\": \"EUR\", \"value\": \"150.00\"}, \"tax\": {\"name\": \"VAT\", \"percent\": \"19\"}}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "invoicer": {
+            "type": "object",
+            "description": "Optional seller details, e.g. {\"email_address\": \"billing@yourshop.example\", \"business_name\": \"Your Shop\"}. The email must belong to the PayPal account; the primary one is used if omitted."
+          },
+          "configuration": {
+            "type": "object",
+            "description": "Optional settings, e.g. {\"allow_tip\": false, \"partial_payment\": {\"allow_partial_payment\": true}}."
+          }
+        },
+        "required": [
+          "detail",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoicing/invoices",
+        "headers": {
+          "Prefer": "return=representation"
+        },
+        "bodyMapping": {
+          "detail": "$detail",
+          "invoicer": "$invoicer",
+          "primary_recipients": "$primary_recipients",
+          "items": "$items",
+          "configuration": "$configuration"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_invoice",
+      "description": "Read one invoice: status, recipient, items, amounts, due amount, payments and refunds recorded on it, and the payer link (links[] rel \"payer-view\").",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The invoice id, e.g. \"INV2-Z56S-5LLA-Q52L-CPZ5\"."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/invoicing/invoices/{invoice_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_send_invoice",
+      "description": "Send a draft invoice. By default PayPal emails it to the recipient: confirm with the user first. With send_to_recipient false the invoice becomes payable through its link without an email. Returns a link to the payer view, or 202 when the send is scheduled for a future invoice date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The draft invoice id."
+          },
+          "send_to_recipient": {
+            "type": "boolean",
+            "description": "Email the invoice to the recipient (default true)."
+          },
+          "send_to_invoicer": {
+            "type": "boolean",
+            "description": "Also email a copy to the seller (default false)."
+          },
+          "additional_recipients": {
+            "type": "array",
+            "description": "Extra email addresses to copy, e.g. [\"accounts@example.com\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoicing/invoices/{invoice_id}/send",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "send_to_recipient": "$send_to_recipient",
+          "send_to_invoicer": "$send_to_invoicer",
+          "additional_recipients": "$additional_recipients"
+        }
+      }
+    },
+    {
+      "name": "paypal_remind_invoice",
+      "description": "Email a payment reminder for a sent, unpaid invoice (PayPal allows 2 reminders a day). Confirm with the user first. Returns no content on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The sent invoice id."
+          },
+          "send_to_recipient": {
+            "type": "boolean",
+            "description": "Email the reminder to the recipient (default true)."
+          },
+          "send_to_invoicer": {
+            "type": "boolean",
+            "description": "Also email a copy to the seller (default false)."
+          },
+          "additional_recipients": {
+            "type": "array",
+            "description": "Extra email addresses to copy.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoicing/invoices/{invoice_id}/remind",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "send_to_recipient": "$send_to_recipient",
+          "send_to_invoicer": "$send_to_invoicer",
+          "additional_recipients": "$additional_recipients"
+        }
+      }
+    },
+    {
+      "name": "paypal_cancel_invoice",
+      "description": "Cancel a sent invoice so it can no longer be paid; by default the recipient is told by email. Drafts cannot be cancelled (they are deleted instead). This cannot be undone: confirm with the user first. Returns no content on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The sent invoice id."
+          },
+          "send_to_recipient": {
+            "type": "boolean",
+            "description": "Email the cancellation to the recipient (default true)."
+          },
+          "send_to_invoicer": {
+            "type": "boolean",
+            "description": "Also email a copy to the seller (default false)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/invoicing/invoices/{invoice_id}/cancel",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "send_to_recipient": "$send_to_recipient",
+          "send_to_invoicer": "$send_to_invoicer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "paypal_delete_draft_invoice",
+      "description": "Delete a draft or scheduled invoice for good (sent invoices are cancelled with paypal_cancel_invoice instead). Confirm with the user first. Returns no content on success.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "The draft invoice id."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/invoicing/invoices/{invoice_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_search_transactions",
+      "description": "Search the account history (Transaction Search): payments received and sent, refunds, fees, transfers and their payer and cart details. At most 31 days per call; data can lag up to 3 hours. Returns transaction_details[] with total_items and total_pages. Needs Transaction Search enabled on the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start, RFC 3339 with seconds, e.g. \"2026-09-01T00:00:00Z\" or \"2026-09-01T00:00:00+02:00\"."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, same format, at most 31 days after start_date."
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Only this transaction id (17 to 19 characters)."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "PayPal event code, e.g. \"T0006\" (checkout payment), \"T1107\" (refund), \"T0400\" (withdrawal)."
+          },
+          "transaction_status": {
+            "type": "string",
+            "description": "D denied, P pending, S success, V reversed.",
+            "enum": [
+              "D",
+              "P",
+              "S",
+              "V"
+            ]
+          },
+          "transaction_amount": {
+            "type": "string",
+            "description": "Amount range in minor units, e.g. \"[500 TO 1005]\" for 5.00 to 10.05."
+          },
+          "transaction_currency": {
+            "type": "string",
+            "description": "Three-letter currency code."
+          },
+          "balance_affecting_records_only": {
+            "type": "string",
+            "description": "Y (default) for rows that change the balance only, N for all rows.",
+            "enum": [
+              "Y",
+              "N"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Which details to include: \"all\" (default here) or a comma list of transaction_info, payer_info, shipping_info, cart_info, incentive_info, store_info, auction_info.",
+            "default": "all"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500 (default 100).",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reporting/transactions",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction_id": "$transaction_id",
+          "transaction_type": "$transaction_type",
+          "transaction_status": "$transaction_status",
+          "transaction_amount": "$transaction_amount",
+          "transaction_currency": "$transaction_currency",
+          "balance_affecting_records_only": "$balance_affecting_records_only",
+          "fields": "$fields",
+          "page_size": "$page_size",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_balances",
+      "description": "Read the account balances per currency (available, withheld and total), now or as of a past time. Refreshed with up to 3 hours delay. Needs Transaction Search enabled on the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "as_of_time": {
+            "type": "string",
+            "description": "Optional point in time, RFC 3339, e.g. \"2026-09-30T23:59:59Z\"."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only this currency, e.g. \"EUR\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reporting/balances",
+        "queryParams": {
+          "as_of_time": "$as_of_time",
+          "currency_code": "$currency_code"
+        }
+      }
+    },
+    {
+      "name": "paypal_list_disputes",
+      "description": "List disputes, claims and chargebacks raised against the account (last 180 days), with dispute_id, reason, status, dispute_state, amount and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispute_state": {
+            "type": "string",
+            "description": "Comma-separated: OPEN_INQUIRIES, REQUIRED_ACTION, REQUIRED_OTHER_PARTY_ACTION, UNDER_PAYPAL_REVIEW, APPEALABLE, RESOLVED."
+          },
+          "disputed_transaction_id": {
+            "type": "string",
+            "description": "Only disputes about this transaction id."
+          },
+          "create_time_after": {
+            "type": "string",
+            "description": "Created after, RFC 3339."
+          },
+          "create_time_before": {
+            "type": "string",
+            "description": "Created before, RFC 3339."
+          },
+          "update_time_after": {
+            "type": "string",
+            "description": "Updated after, RFC 3339."
+          },
+          "update_time_before": {
+            "type": "string",
+            "description": "Updated before, RFC 3339."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Disputes per page, 1 to 50 (default 10).",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customer/disputes",
+        "queryParams": {
+          "dispute_state": "$dispute_state",
+          "disputed_transaction_id": "$disputed_transaction_id",
+          "create_time_after": "$create_time_after",
+          "create_time_before": "$create_time_before",
+          "update_time_after": "$update_time_after",
+          "update_time_before": "$update_time_before",
+          "page_size": "$page_size",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_dispute",
+      "description": "Read one dispute in full: reason, status, amounts, disputed transactions, messages, offers, evidence and the deadline to respond (seller_response_due_date).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispute_id": {
+            "type": "string",
+            "description": "The dispute id, e.g. \"PP-D-27803\"."
+          }
+        },
+        "required": [
+          "dispute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customer/disputes/{dispute_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_list_products",
+      "description": "List catalog products (the products subscription plans belong to): id, name, description, type and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 20 (default 10).",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "total_required": {
+            "type": "boolean",
+            "description": "true to also return total_items and total_pages."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/catalogs/products",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page": "$page",
+          "total_required": "$total_required"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_product",
+      "description": "Read one catalog product: name, description, type (PHYSICAL, DIGITAL, SERVICE), category, image and home URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id, e.g. \"PROD-XYAB12ABSB7868434\"."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/catalogs/products/{product_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_list_plans",
+      "description": "List subscription plans, optionally for one product: id, name, status (CREATED, ACTIVE, INACTIVE), product_id and dates. Prices are in paypal_get_plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Only plans of this product id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Plans per page, 1 to 20 (default 10).",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "total_required": {
+            "type": "boolean",
+            "description": "true to also return total_items and total_pages."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/plans",
+        "queryParams": {
+          "product_id": "$product_id",
+          "page_size": "$page_size",
+          "page": "$page",
+          "total_required": "$total_required"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_plan",
+      "description": "Read one subscription plan: billing cycles with prices and frequency, trial periods, setup fee, taxes and payment failure settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "The plan id, e.g. \"P-5ML4271244454362WXNWU5NQ\"."
+          }
+        },
+        "required": [
+          "plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/plans/{plan_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "paypal_list_subscriptions",
+      "description": "List subscriptions, filtered by plan and status: id, status, plan_id, subscriber, start time and next billing time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_ids": {
+            "type": "string",
+            "description": "Comma-separated plan ids."
+          },
+          "statuses": {
+            "type": "string",
+            "description": "Comma-separated: APPROVAL_PENDING, APPROVED, ACTIVE, SUSPENDED, CANCELLED, EXPIRED."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created after, RFC 3339."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created before, RFC 3339."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Subscriptions per page, 1 to 20 (default 10).",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/subscriptions",
+        "queryParams": {
+          "plan_ids": "$plan_ids",
+          "statuses": "$statuses",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "page_size": "$page_size",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paypal_get_subscription",
+      "description": "Read one subscription: status, plan, subscriber (name, email, shipping address), billing info (outstanding balance, last payment, next billing time, failed payments count).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "The subscription id, e.g. \"I-BW452GLLEP1G\"."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra details: \"last_failed_payment\", \"plan\" or both comma-separated."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/subscriptions/{subscription_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "paypal_list_subscription_transactions",
+      "description": "List the payments of one subscription between two times: id, status, amounts with fees and net, payer and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "The subscription id."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, RFC 3339, e.g. \"2026-01-01T00:00:00Z\"."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, RFC 3339."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/subscriptions/{subscription_id}/transactions",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "paypal_cancel_subscription",
+      "description": "Cancel a subscription for good: no further payments are collected and it cannot be reactivated. Confirm the subscription and the reason with the user first. Returns no content on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "The subscription id."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why it is cancelled, 1 to 128 characters (shown in the subscription history)."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/billing/subscriptions/{subscription_id}/cancel",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "paypal_get_payout_batch",
+      "description": "Read one payout batch: batch status and totals, and its items (receiver, amount, status, fees, errors). Sending payouts is not part of this connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payout_batch_id": {
+            "type": "string",
+            "description": "The payout batch id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "total_required": {
+            "type": "boolean",
+            "description": "true to also return total_items and total_pages."
+          }
+        },
+        "required": [
+          "payout_batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments/payouts/{payout_batch_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "total_required": "$total_required"
+        }
+      }
+    }
+  ]
+}
