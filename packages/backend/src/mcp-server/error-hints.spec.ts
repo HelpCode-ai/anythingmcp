@@ -159,6 +159,15 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(hint).toMatch(/printful_list_stores/);
   });
 
+  it('tells the model to send Etsy property values back complete', () => {
+    const hint = deriveErrorHint({
+      host: 'openapi.etsy.com',
+      status: 400,
+      body: { error: "Expected string value for 'property_name' (got NULL)." },
+    });
+    expect(hint).toMatch(/etsy_read_listing_inventory/);
+  });
+
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });

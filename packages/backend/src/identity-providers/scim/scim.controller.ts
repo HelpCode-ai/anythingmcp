@@ -117,11 +117,11 @@ export class ScimController {
   @HttpCode(HttpStatus.CREATED)
   @ScimJson()
   async createUser(@Req() req: Request, @Body() body: unknown) {
-    // Provisioning someone new needs Business and a free seat. Updates,
+    // Provisioning someone new needs Enterprise and a free seat. Updates,
     // deactivation and deletion keep working whatever the edition, so a
     // directory can always take a leaver's access away.
     if (!(await this.edition.hasBusiness())) {
-      throw new ScimError(403, 'Provisioning new users through SCIM requires AnythingMCP Business.');
+      throw new ScimError(403, 'Provisioning new users through SCIM requires AnythingMCP Enterprise.');
     }
     const seat = await this.edition.seatAvailable();
     if (!seat.ok) throw new ScimError(403, seatLimitMessage(seat.limit!));
@@ -165,7 +165,7 @@ export class ScimController {
   @ScimJson()
   async createGroup(@Req() req: Request, @Body() body: unknown) {
     if (!(await this.edition.hasBusiness())) {
-      throw new ScimError(403, 'Provisioning new groups through SCIM requires AnythingMCP Business.');
+      throw new ScimError(403, 'Provisioning new groups through SCIM requires AnythingMCP Enterprise.');
     }
     return this.groups.create(this.provider(req), body, this.ctx(req));
   }

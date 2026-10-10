@@ -26,8 +26,8 @@ export function EditionBanner() {
     if (left <= 7) {
       text =
         left === 0
-          ? 'Your Business trial ends today.'
-          : `Business trial: ${left} day${left === 1 ? '' : 's'} left.`;
+          ? 'Your Enterprise trial ends today.'
+          : `Enterprise trial: ${left} day${left === 1 ? '' : 's'} left.`;
       tone = left <= 2 ? 'warn' : 'info';
     }
   } else if (edition.source === 'transition' && edition.transitionUntil) {
@@ -49,7 +49,7 @@ export function EditionBanner() {
     >
       <span>{text}</span>{' '}
       <Link href="/settings/license" className="underline font-medium hover:no-underline">
-        {edition.trialAvailable ? 'Try Business' : 'See options'}
+        {edition.trialAvailable ? 'Try Enterprise' : 'See options'}
       </Link>
       <button
         type="button"

@@ -53,6 +53,30 @@ describe('EmailVerifiedGuard', () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
+  it('leaves a token whose user no longer exists to the route (which answers 401), instead of a 403', async () => {
+    const { guard, prisma } = makeGuard({ verified: false });
+    (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(null);
+    await expect(
+      guard.canActivate(ctx({ path: '/mcp/srv', headers: { authorization: 'Bearer good' } })),
+    ).resolves.toBe(true);
+  });
+
+  it('resolves a legacy token whose sub is an email through its OAuth profile', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ({ emailVerified: false })) },
+      oAuthUserProfile: { findUnique: jest.fn(async () => ({ externalId: 'u-legacy' })) },
+    };
+    const guard = new EmailVerifiedGuard(
+      { get: () => 'cloud' } as any,
+      prisma as any,
+      { verifyToken: () => ({ sub: 'someone@example.com', user_profile_id: 'p1' }) } as any,
+    );
+    await expect(
+      guard.canActivate(ctx({ path: '/mcp/srv', headers: { authorization: 'Bearer legacy' } })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u-legacy' } }));
+  });
+
   it('does nothing on self-hosted', async () => {
     const { guard } = makeGuard({ cloud: false, verified: false });
     await expect(

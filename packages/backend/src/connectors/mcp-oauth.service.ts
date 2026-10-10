@@ -78,6 +78,25 @@ export interface PendingOAuthFlow {
   createdAt: number;
 }
 
+/**
+ * The provider's token endpoint refused the code exchange. Kept apart from
+ * other failures because the cause is almost always a setting the user can
+ * fix (a mistyped client secret, a redirect URI the app does not list), not
+ * a fault on our side.
+ */
+export class TokenExchangeError extends Error {
+  constructor(
+    message: string,
+    /** HTTP status the token endpoint answered with. */
+    readonly status: number,
+    /** RFC 6749 §5.2 `error` code, when the provider sent one. */
+    readonly providerError?: string,
+  ) {
+    super(message);
+    this.name = 'TokenExchangeError';
+  }
+}
+
 @Injectable()
 export class McpOAuthService {
   private readonly logger = new Logger(McpOAuthService.name);
@@ -486,8 +505,10 @@ export class McpOAuthService {
               .map((v: string) => v.slice(0, 200))
           : [];
       if (typeof status === 'number') {
-        throw new Error(
+        throw new TokenExchangeError(
           `Token exchange failed: HTTP ${status}${reason.length ? `: ${[...new Set(reason)].join(': ')}` : ''}`,
+          status,
+          typeof data?.error === 'string' ? data.error : undefined,
         );
       }
       throw err;
@@ -495,7 +516,11 @@ export class McpOAuthService {
 
     const data = response.data;
     if (data.error) {
-      throw new Error(`Token exchange failed: ${data.error} — ${data.error_description || ''}`);
+      throw new TokenExchangeError(
+        `Token exchange failed: ${data.error} — ${data.error_description || ''}`,
+        response.status,
+        String(data.error),
+      );
     }
 
     return {

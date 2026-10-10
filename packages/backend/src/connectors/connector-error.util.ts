@@ -32,6 +32,9 @@ const AUTH_HINTS: Record<string, string> = {
   NONE: 'The API refused the request as unauthenticated. If the key or token is part of the address or the request (a bot token in the URL, for example), check that value; otherwise set an auth type and credentials.',
 };
 
+const PERMISSION_DENIED =
+  /not permitted|not allowed|no permission|insufficient (privileges|permissions?)|not authori[sz]ed to|access to this (object|resource) is denied|-6006/i;
+
 export function classifyToolExecutionError(input: {
   status?: number;
   authType?: string | null;
@@ -39,6 +42,16 @@ export function classifyToolExecutionError(input: {
 }): { kind: ToolErrorKind; hint: string } {
   const { status, authType, message } = input;
 
+  // A 403 that says the user may not do this is a missing permission, not a
+  // rejected login: SAP Business One answers a write by a read-only user with
+  // "Modifying this object is not permitted for current user" (-6006), and
+  // "Login failed" would send the user to the wrong field.
+  if (status === 403 && PERMISSION_DENIED.test(String(message ?? ''))) {
+    return {
+      kind: 'auth_failed',
+      hint: 'The credentials work, but this user is not allowed to perform this action. Grant the permission in the target system, or keep the user read-only and use the reading tools.',
+    };
+  }
   if (status === 401 || status === 403) {
     const hint =
       AUTH_HINTS[String(authType ?? 'NONE')] ?? 'Credentials were rejected.';

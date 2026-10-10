@@ -155,7 +155,12 @@ import * as gmail from './intl/gmail.json';
 import * as gocardless from './intl/gocardless.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
+import * as googleCalendar from './intl/google-calendar.json';
+import * as googleDocs from './intl/google-docs.json';
+import * as googleDrive from './intl/google-drive.json';
 import * as googleSearchConsole from './intl/google-search-console.json';
+import * as googleSheets from './intl/google-sheets.json';
+import * as googleTasks from './intl/google-tasks.json';
 import * as gorgias from './intl/gorgias.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
@@ -307,6 +312,7 @@ import * as workable from './intl/workable.json';
 import * as worksection from './intl/worksection.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
+import * as xero from './intl/xero.json';
 import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
@@ -694,7 +700,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gocardless as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
+  googleCalendar as unknown as AdapterDefinition,
+  googleDocs as unknown as AdapterDefinition,
+  googleDrive as unknown as AdapterDefinition,
   googleSearchConsole as unknown as AdapterDefinition,
+  googleSheets as unknown as AdapterDefinition,
+  googleTasks as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,
@@ -846,6 +857,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   worksection as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  xero as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,

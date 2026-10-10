@@ -4,14 +4,19 @@ import { useEffect, useState } from 'react';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useManagePlan } from '@/lib/use-manage-plan';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 
 type Usage = Awaited<ReturnType<typeof license.getUsage>>;
 
 const NEXT_TIER: Record<string, string> = {
   starter: 'Team',
-  team: 'Business',
+  // Past Team there is no self-service plan: Enterprise is a quote, so the
+  // banner links to the contact form instead of the billing portal.
+  team: 'Enterprise',
   // No nudge for business/enterprise — they're at unlimited or near it.
 };
+
+const UTM = { utm_source: 'soft-warn', utm_medium: 'banner', utm_campaign: 'usage-cap' };
 
 /**
  * Soft-warn upgrade nudge. Renders when the current org is over any cap
@@ -23,11 +28,7 @@ export function UsageBanner() {
   const { token, deploymentMode } = useAuth();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const managePlan = useManagePlan({
-    utm_source: 'soft-warn',
-    utm_medium: 'banner',
-    utm_campaign: 'usage-cap',
-  });
+  const managePlan = useManagePlan(UTM);
 
   // Cloud only: these are the Cloud plans' limits. A self-hosted instance has
   // its own (EditionBanner).
@@ -63,17 +64,28 @@ export function UsageBanner() {
         You&apos;re using <strong>{overAxes.join(', ')}</strong> — upgrade to{' '}
         <strong>{next}</strong> for higher limits.
       </span>{' '}
-      <a
-        // Only Starter and Team see this banner, so everyone who clicks it
-        // already has a subscription: change it, do not buy a second one.
-        href={managePlan.href}
-        onClick={managePlan.onClick}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline font-medium hover:no-underline"
-      >
-        Change plan
-      </a>{' '}
+      {next === 'Enterprise' ? (
+        <a
+          href={buildEnterpriseContactUrl(UTM)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline font-medium hover:no-underline"
+        >
+          Contact us
+        </a>
+      ) : (
+        <a
+          // Only Starter and Team see this banner, so everyone who clicks it
+          // already has a subscription: change it, do not buy a second one.
+          href={managePlan.href}
+          onClick={managePlan.onClick}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline font-medium hover:no-underline"
+        >
+          Change plan
+        </a>
+      )}{' '}
       <button
         type="button"
         onClick={() => setDismissed(true)}

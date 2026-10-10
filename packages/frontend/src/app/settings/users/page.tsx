@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { useEdition } from '@/lib/use-edition';
-import { BusinessNotice } from '@/components/business-notice';
+import { EnterpriseNotice } from '@/components/enterprise-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
@@ -279,10 +279,11 @@ export default function SettingsUsersPage() {
       )}
 
       {seatsFull && edition!.edition === 'community' && (
-        <BusinessNotice
+        <EnterpriseNotice
           edition={edition!}
           title={`Community includes ${edition!.seatLimit} users`}
-          body="Everyone here keeps working. To invite more people, move to AnythingMCP Business — it also adds single sign-on and SCIM."
+          body="Everyone here keeps working. To invite more people, choose a paid plan. Single sign-on and SCIM come with Enterprise."
+          upgrade="plans"
         />
       )}
 

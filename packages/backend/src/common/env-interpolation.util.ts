@@ -187,8 +187,33 @@ export function interpolateConnectorConfig(
           })
         : undefined,
       headers: endpointMapping.headers
-        ? interpolateDeep(endpointMapping.headers, envVars, options)
+        ? interpolateToolHeaders(endpointMapping.headers, envVars, options)
         : undefined,
     },
   };
+}
+
+/** A value that is exactly one `{{VAR}}` placeholder. */
+const ONLY_VARIABLE = /^\{\{([^{}]+)\}\}$/;
+
+/**
+ * Tool headers, interpolated like the rest of the mapping, except that a
+ * header whose whole value is one variable set to an empty string keeps its
+ * placeholder. The install form saves an optional field left empty as "",
+ * which would otherwise go out as a blank header (Xero's tenant ID before
+ * it is chosen); kept, it is refused with the variable's name, like one that
+ * was never set.
+ */
+function interpolateToolHeaders(
+  headers: Record<string, string>,
+  envVars: Record<string, string>,
+  options?: InterpolateOptions,
+): Record<string, string> {
+  const resolved = interpolateDeep(headers, envVars, options);
+  for (const [key, value] of Object.entries(headers)) {
+    const name = typeof value === 'string' ? ONLY_VARIABLE.exec(value)?.[1].trim() : undefined;
+    if (!name || (options?.reservedPrefix && name.startsWith(options.reservedPrefix))) continue;
+    if (typeof envVars[name] === 'string' && envVars[name].trim() === '') resolved[key] = value;
+  }
+  return resolved;
 }

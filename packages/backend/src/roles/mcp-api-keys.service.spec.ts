@@ -17,6 +17,9 @@ describe('McpApiKeysService', () => {
       organizationMember: {
         findUnique: jest.fn().mockResolvedValue({ deactivatedAt: null }),
       },
+      mcpServerConfig: {
+        findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1' }),
+      },
     };
     service = new McpApiKeysService(mockPrisma);
   });
@@ -55,6 +58,25 @@ describe('McpApiKeysService', () => {
 
       const result = await service.generate('user-1', 'org-1', 'Key', 'server-1');
       expect(result.mcpServerId).toBe('server-1');
+      expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId_organizationId: { userId: 'user-1', organizationId: 'org-1' } },
+        }),
+      );
+    });
+
+    it('refuses a server that does not exist, or whose organization the user is not an active member of', async () => {
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValueOnce(null);
+      await expect(service.generate('user-1', 'org-1', 'Key', 'missing')).rejects.toThrow('MCP server not found');
+
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValueOnce({ organizationId: 'org-other' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValueOnce(null);
+      await expect(service.generate('user-1', 'org-1', 'Key', 'foreign')).rejects.toThrow('MCP server not found');
+
+      mockPrisma.organizationMember.findUnique.mockResolvedValueOnce({ deactivatedAt: new Date() });
+      await expect(service.generate('user-1', 'org-1', 'Key', 'server-1')).rejects.toThrow('MCP server not found');
+
+      expect(mockPrisma.mcpApiKey.create).not.toHaveBeenCalled();
     });
   });
 

@@ -35,6 +35,8 @@ import {
 } from '../mcp-servers/mcp-connection-grant.service';
 import {
   SharedToolsetDeps,
+  assistantForRedirectUris,
+  httpsRedirectHosts,
   profileForRedirectUris,
   registerSharedToolset,
   sharedEndpointMode,
@@ -269,15 +271,9 @@ export class McpEndpointController {
    */
   private async serveSharedToolset(req: Request, res: Response): Promise<void> {
     const user = (req as any).user;
-    let scopeTools: RegisteredTool[] =
+    // Already narrowed to a pinned credential's server by attachVisibleTools.
+    const scopeTools: RegisteredTool[] =
       (req as { visibleTools?: RegisteredTool[] }).visibleTools ?? [];
-
-    // A credential pinned to one server reaches that server's connectors only,
-    // as its calls already did on this endpoint.
-    if (user.mcpServerId) {
-      const ids = new Set(await this.mcpServersService.getConnectorIds(user.mcpServerId));
-      scopeTools = scopeTools.filter((t) => ids.has(t.connectorId));
-    }
 
     const grant = (req as { mcpGrant?: ResolvedGrant | null }).mcpGrant ?? null;
     const serverIds: string[] = user.mcpServerId
@@ -300,14 +296,20 @@ export class McpEndpointController {
         : grant?.mode === 'servers'
           ? grant.servers[0]?.organizationId
           : user.organizationId;
+    // The OAuth client the token was issued to, by the redirect URIs it
+    // registered: which tool set this connection gets, and which assistant a
+    // setup link sends the user back to. API keys have none.
+    const redirectUris = await this.grants.clientRedirectUris(oauthClientId(user));
+    const assistant = assistantForRedirectUris(redirectUris);
     const setupProvider = this.sharedSetup?.get() ?? null;
     const setupCtx = setupOrg
-      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase }
+      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant }
       : null;
     const canSetUp =
       !!setupProvider && !!setupCtx && !user.mcpServerId && grant?.mode !== 'none'
         ? await setupProvider.canSetUp(setupCtx)
         : false;
+    if (canSetUp && !assistant) this.noteUnknownAssistant(redirectUris);
 
     const deps: SharedToolsetDeps = {
       execute: async (tool, args) => {
@@ -381,9 +383,7 @@ export class McpEndpointController {
     // Which assistant this connection belongs to, from the OAuth client the
     // token was issued to. API keys and anything unidentified get the default
     // set, the one the Claude directory reviewed.
-    const profile = profileForRedirectUris(
-      await this.grants.clientRedirectUris(oauthClientId(user)),
-    );
+    const profile = profileForRedirectUris(redirectUris);
 
     await this.serveStateless(
       req,
@@ -398,6 +398,23 @@ export class McpEndpointController {
         return mcpServer;
       },
       'shared /mcp',
+    );
+  }
+
+  /**
+   * Logs, once per host, an OAuth client whose redirect host names no known
+   * assistant, so a new one (Meta's Muse redirect host is not confirmed yet) shows
+   * up in the logs instead of silently getting the neutral setup page. Only
+   * hosts, never full URIs; bounded so a flood of registrations cannot grow it.
+   */
+  private static readonly unknownAssistantHosts = new Set<string>();
+  private noteUnknownAssistant(redirectUris: readonly string[]): void {
+    const seen = McpEndpointController.unknownAssistantHosts;
+    const hosts = httpsRedirectHosts(redirectUris).filter((h) => !seen.has(h));
+    if (hosts.length === 0 || seen.size >= 200) return;
+    hosts.forEach((h) => seen.add(h));
+    this.logger.log(
+      `Connector setup: no known assistant for OAuth redirect host(s) ${hosts.join(', ')}; setup links use the neutral return`,
     );
   }
 
@@ -480,6 +497,17 @@ export class McpEndpointController {
         .filter((t) => connectorIds.has(t.connectorId));
     } else {
       reachable = [];
+    }
+
+    // A credential pinned to one server reaches that server's connectors only,
+    // for listing as well as for calls (`resolveCallScope` already pinned the
+    // calls). Narrowed here so both shapes of this endpoint, the fixed tool set
+    // and the direct tool list, start from the same reach.
+    if (user.mcpServerId) {
+      const pinned = new Set(
+        await this.mcpServersService.getConnectorIds(user.mcpServerId),
+      );
+      reachable = reachable.filter((t) => pinned.has(t.connectorId));
     }
 
     // Roles are per organization, and a grant may span more than one, so the
@@ -697,6 +725,7 @@ export class McpEndpointController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    if (this.refuseOtherServer(serverId, req, res)) return;
     // In stateful mode the GET opens the long-lived SSE stream that carries
     // server-initiated notifications (e.g. tools/list_changed). Route it to the
     // client's existing session; otherwise GET is unsupported (stateless).
@@ -714,6 +743,7 @@ export class McpEndpointController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    if (this.refuseOtherServer(serverId, req, res)) return;
     // In stateful mode a DELETE terminates the client's session.
     if (await this.routeToSession(serverId, req, res)) return;
     res.status(405).json({
@@ -814,12 +844,58 @@ export class McpEndpointController {
     }
   }
 
+  /** Who sent a refused request, for the log: ids and the key's name, never a secret or an email. */
+  private describePrincipal(user: any): string {
+    if (!user) return 'no principal';
+    const parts = [
+      `user ${user.sub ?? 'none'}`,
+      `org ${user.organizationId ?? 'none'}`,
+      `auth ${user.authMethod ?? 'unknown'}`,
+    ];
+    if (user.apiKeyName) parts.push(`key "${String(user.apiKeyName).slice(0, 60)}"`);
+    if (user.mcpServerId) parts.push(`key bound to server ${user.mcpServerId}`);
+    return parts.join(', ');
+  }
+
+  /**
+   * A credential pinned to one MCP server (an MCP API key created for it)
+   * opens that server only, not every server of its organization. Refused
+   * with a 403, like a server of another workspace, and before the server is
+   * looked up, so the answer is the same whether `serverId` exists or not.
+   * Credentials that are not pinned (OAuth and app JWTs, keys without a
+   * server, the static operator credentials) are unaffected.
+   */
+  private refuseOtherServer(serverId: string, req: Request, res: Response): boolean {
+    const user = (req as any).user;
+    const pinned = user?.mcpServerId;
+    if (typeof pinned !== 'string' || !pinned || pinned === serverId) return false;
+    this.logger.warn(
+      `MCP request refused: server ${serverId} is not the one the key was created for (${this.describePrincipal(user)})`,
+    );
+    res.status(403).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message:
+          'Access denied: this API key was created for a different MCP server. ' +
+          "Use the key created for this server, or create one on this server's page.",
+      },
+      id: null,
+    });
+    return true;
+  }
+
   private async handleMcpRequest(
     serverId: string,
     req: Request,
     res: Response,
     body: unknown,
   ) {
+    // Before anything else, the session routing included: a session is bound
+    // to a server and a user, and a key pinned to another server of that same
+    // user must not reach it either.
+    if (this.refuseOtherServer(serverId, req, res)) return;
+
     // Stateful reuse: a POST carrying a known, owned session id is routed
     // straight to that session's live transport (skips rebuilding the server).
     if (await this.routeToSession(serverId, req, res, body)) return;
@@ -835,6 +911,9 @@ export class McpEndpointController {
     }
 
     if (!mcpServerConfig.isActive) {
+      this.logger.warn(
+        `MCP request refused: server ${serverId} is inactive (${this.describePrincipal((req as any).user)})`,
+      );
       return res.status(403).json({
         jsonrpc: '2.0',
         error: { code: -32001, message: 'MCP server is inactive' },
@@ -870,9 +949,22 @@ export class McpEndpointController {
             serverOrg,
           )));
       if (!isMember) {
+        // The auth headers are redacted from the request log, so without this
+        // line a refused client can't be told apart from a working one: a paying
+        // workspace was refused on every call for two weeks before anyone saw
+        // which credential its clients were sending.
+        this.logger.warn(
+          `MCP request refused: server ${serverId} belongs to org ${serverOrg ?? 'none'}, ` +
+            `caller is not a member (${this.describePrincipal(user)})`,
+        );
         return res.status(403).json({
           jsonrpc: '2.0',
-          error: { code: -32001, message: 'Access denied' },
+          error: {
+            code: -32001,
+            message:
+              'Access denied: this sign-in or API key belongs to a different workspace than this MCP server. ' +
+              'Connect with a key created in the workspace that owns the server, or sign in with an account that is a member of it.',
+          },
           id: null,
         });
       }

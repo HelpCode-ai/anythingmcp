@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { connectors } from '@/lib/api';
+import { ApiError, connectors } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -24,7 +24,8 @@ function CompleteContent() {
 
   const state = params.get('state');
   const code = params.get('code');
-  const connectorId = params.get('connectorId');
+  // From the provider redirect, or from the answer when the exchange is refused.
+  const [connectorId, setConnectorId] = useState<string | null>(params.get('connectorId'));
 
   useEffect(() => {
     if (error || !state || !code || started.current || isLoading) return;
@@ -44,7 +45,12 @@ function CompleteContent() {
         const fallback = `/connectors/${out.connectorId}?oauth=success&tools=${out.toolsImported}`;
         router.replace(out.returnTo || fallback);
       })
-      .catch((err: Error) => setError(err.message || 'The authorization could not be completed.'));
+      .catch((err: Error) => {
+        if (err instanceof ApiError && typeof err.body?.connectorId === 'string') {
+          setConnectorId(err.body.connectorId);
+        }
+        setError(err.message || 'The authorization could not be completed.');
+      });
   }, [error, state, code, token, isLoading, router]);
 
   if (!error && !state) {

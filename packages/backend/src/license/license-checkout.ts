@@ -11,7 +11,12 @@ import type { AttributionClickId } from '../audit/signup-attribution';
  * the existing activation page handles.
  */
 
-export const CHECKOUT_PLANS = ['starter', 'team', 'business'] as const;
+/**
+ * Plans this app opens a checkout for. Business was retired on 8 Oct 2026:
+ * beyond Team, Enterprise is quoted through the contact form. The licence site
+ * keeps the Business prices for subscriptions that already exist.
+ */
+export const CHECKOUT_PLANS = ['starter', 'team'] as const;
 
 /** A card trial needs at least this much of the free trial left (Stripe: 48 h). */
 export const CARD_TRIAL_MIN_LEAD_MS = 48 * 60 * 60 * 1000;

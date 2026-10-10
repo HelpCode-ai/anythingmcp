@@ -11,7 +11,7 @@ import { safeRedirect } from './safe-redirect';
  * that touch storage go through `storage`, which never throws.
  */
 
-export type CloudPlanId = 'starter' | 'team' | 'business';
+export type CloudPlanId = 'starter' | 'team';
 export type BillingPeriod = 'monthly' | 'yearly';
 
 export interface PlanSelection {
@@ -33,7 +33,8 @@ export interface CloudPlan {
 /**
  * Mirrors anythingmcp.com/pricing and the live Stripe prices (Cloud plans,
  * EUR incl. VAT). Keep in step with the marketing site when a price changes:
- * the checkout charges what Stripe says, this only describes it.
+ * the checkout charges what Stripe says, this only describes it. Business was
+ * retired on 8 Oct 2026; beyond Team, Enterprise is quoted, not checked out.
  */
 export const CLOUD_PLANS: readonly CloudPlan[] = [
   {
@@ -42,6 +43,7 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     monthly: 19,
     yearly: 190,
     summary: '5 connectors · 3 MCP servers · 1 user',
+    popular: true,
   },
   {
     id: 'team',
@@ -49,21 +51,14 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     monthly: 49,
     yearly: 490,
     summary: '15 connectors · 10 MCP servers · up to 3 users',
-    popular: true,
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    monthly: 99,
-    yearly: 990,
-    summary: 'Unlimited connectors and MCP servers · up to 10 users',
   },
 ];
 
 /**
  * Preselected when the pricing page left no intent. Starter, not Team: with
  * Team preselected, 77 of 80 card-trial checkouts (1-6 Oct 2026) were left
- * unfinished, against 51 of 113 for Starter. Team keeps its "Most popular" badge.
+ * unfinished, against 51 of 113 for Starter. Starter is also the featured plan
+ * on the pricing page, so it carries the "Most popular" badge.
  */
 export const DEFAULT_SELECTION: PlanSelection = { plan: 'starter', period: 'monthly' };
 
@@ -96,7 +91,8 @@ export function yearlySaving(plan: CloudPlan): number {
 
 /**
  * The pricing page opens sign-up as `?mode=register&plan=cloud_team&period=yearly`.
- * Accepts `cloud_<tier>` or the bare tier; anything else is no intent at all.
+ * Accepts `cloud_<tier>` or the bare tier; anything else is no intent at all,
+ * including the retired `cloud_business` an old link may still carry.
  * A missing or unknown period falls back to monthly.
  */
 export function parsePlanIntent(
@@ -105,7 +101,7 @@ export function parsePlanIntent(
 ): PlanSelection | null {
   if (!plan) return null;
   const tier = plan.trim().toLowerCase().replace(/^cloud_/, '');
-  if (tier !== 'starter' && tier !== 'team' && tier !== 'business') return null;
+  if (tier !== 'starter' && tier !== 'team') return null;
   const p = (period ?? '').trim().toLowerCase();
   return { plan: tier, period: p === 'yearly' || p === 'annual' ? 'yearly' : 'monthly' };
 }

@@ -1,10 +1,13 @@
 import {
+  BadGatewayException,
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
   Get,
   GoneException,
   HttpCode,
+  HttpException,
   Logger,
   Optional,
   Post,
@@ -17,7 +20,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { McpOAuthService, PendingOAuthFlow } from './mcp-oauth.service';
+import { McpOAuthService, PendingOAuthFlow, TokenExchangeError } from './mcp-oauth.service';
 import { ConnectorsService } from './connectors.service';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { PrismaService } from '../common/prisma.service';
@@ -157,6 +160,9 @@ export class McpOAuthCallbackController {
       toolsImported = await this.exchangeAndStore(flow, String(body.code));
     } catch (err: any) {
       void this.recordFailure(flow, 'token_exchange', err?.message, [flow.clientSecret, String(body.code)]);
+      if (err instanceof TokenExchangeError) {
+        throw refusedExchange(err, flow, [flow.clientSecret, String(body.code)], await this.connectorName(flow.connectorId));
+      }
       throw err;
     }
     return { connectorId: flow.connectorId, toolsImported, ...(returnTo ? { returnTo } : {}) };
@@ -193,6 +199,19 @@ export class McpOAuthCallbackController {
       });
     } catch (err: any) {
       this.logger.warn(`oauth_failed not recorded: ${err?.message ?? err}`);
+    }
+  }
+
+  /** The connector's name for a message, or undefined if it cannot be read. */
+  private async connectorName(connectorId: string): Promise<string | undefined> {
+    try {
+      const row = await this.prisma.connector.findUnique({
+        where: { id: connectorId },
+        select: { name: true },
+      });
+      return row?.name || undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -400,6 +419,40 @@ export class McpOAuthCallbackController {
 
 function singleQueryValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * A code exchange the provider's token endpoint refused, as an answer the
+ * dashboard shows: what the provider said and what to check. A 4xx (502 when
+ * the provider itself failed), not a 500: a mistyped client secret is the
+ * user's to fix, and the page needs the reason, not "Internal server error".
+ */
+function refusedExchange(
+  err: TokenExchangeError,
+  flow: PendingOAuthFlow,
+  secrets: unknown[],
+  connectorName?: string,
+): HttpException {
+  const said = scrubProviderMessage(err.message.replace(/^Token exchange failed:\s*/, ''), secrets);
+  const detail = said ? ` (${said})` : '';
+  let message: string;
+  if (err.status >= 500) {
+    message = `The provider could not complete the sign-in${detail}. Try again in a few minutes.`;
+  } else if (err.providerError === 'invalid_client' || err.providerError === 'unauthorized_client') {
+    const where = connectorName ? `the connector "${connectorName.slice(0, 80)}"` : 'this connector';
+    message =
+      `The client ID or client secret saved in ${where} is wrong or expired: the provider refused it${detail}. ` +
+      "Check the credentials in the OAuth settings of your app in the provider's developer console, " +
+      "copy both again into the connector's settings, then authorize again.";
+  } else if (err.providerError === 'invalid_grant') {
+    message =
+      `The provider refused the authorization code${detail}. Start the authorization again; ` +
+      `if it keeps failing, check that the app's redirect URI is exactly ${flow.redirectUri}.`;
+  } else {
+    message = `The provider refused the sign-in${detail}. Check the connector's OAuth settings and authorize again.`;
+  }
+  const body = { message, connectorId: flow.connectorId };
+  return err.status >= 500 ? new BadGatewayException(body) : new BadRequestException(body);
 }
 
 /** The provider's refusal in words a user can act on. */
