@@ -3,12 +3,20 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { adminSettings } from '@/lib/api';
+import { adminSettings, type AlertWebhookInput } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AppSelect } from '@/components/ui/select';
+import { copyText } from '@/lib/clipboard';
+
+const ALERT_WEBHOOK_TYPE_OPTIONS = [
+  { value: 'json', label: 'Generic JSON webhook' },
+  { value: 'slack', label: 'Slack incoming webhook' },
+];
 
 export default function SettingsAdminPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
+  const isCloud = deploymentMode === 'cloud';
 
   // SMTP
   const [smtpHost, setSmtpHost] = useState('');
@@ -24,6 +32,19 @@ export default function SettingsAdminPage() {
   const [footerLinks, setFooterLinks] = useState<Array<{ label: string; url: string }>>([]);
   const [footerMsg, setFooterMsg] = useState('');
 
+  // Connector-failure alert webhook
+  const [alertUrl, setAlertUrl] = useState('');
+  const [alertType, setAlertType] = useState<'json' | 'slack'>('json');
+  const [alertEnabled, setAlertEnabled] = useState(true);
+  const [alertThreshold, setAlertThreshold] = useState(5);
+  const [alertWindowMinutes, setAlertWindowMinutes] = useState(10);
+  const [alertCooldownMinutes, setAlertCooldownMinutes] = useState(30);
+  const [alertConfigured, setAlertConfigured] = useState(false);
+  const [alertRotateSecret, setAlertRotateSecret] = useState(false);
+  const [alertMsg, setAlertMsg] = useState('');
+  const [alertSecret, setAlertSecret] = useState('');
+  const [alertSecretCopied, setAlertSecretCopied] = useState(false);
+
   useEffect(() => {
     if (!token) return;
 
@@ -37,6 +58,17 @@ export default function SettingsAdminPage() {
     }).catch(() => {});
 
     adminSettings.getFooterLinks(token).then(setFooterLinks).catch(() => {});
+
+    adminSettings.getAlertWebhook(token).then((data) => {
+      if (!('url' in data)) return;
+      setAlertConfigured(true);
+      setAlertUrl(data.url);
+      setAlertType(data.type);
+      setAlertEnabled(data.enabled);
+      setAlertThreshold(data.threshold);
+      setAlertWindowMinutes(data.windowMinutes);
+      setAlertCooldownMinutes(data.cooldownMinutes);
+    }).catch(() => {});
   }, [token]);
 
   const handleSaveSmtp = async () => {
@@ -85,6 +117,70 @@ export default function SettingsAdminPage() {
       setSmtpMsg('SMTP configuration removed — emails now use the platform mail service');
     } catch (err: any) {
       setSmtpMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleSaveAlertWebhook = async () => {
+    if (!token) return;
+    const data: AlertWebhookInput = {
+      url: alertUrl,
+      type: alertType,
+      enabled: alertEnabled,
+      threshold: alertThreshold,
+      windowMinutes: alertWindowMinutes,
+      cooldownMinutes: alertCooldownMinutes,
+      rotateSecret: alertRotateSecret,
+    };
+    try {
+      const result = await adminSettings.updateAlertWebhook(data, token);
+      setAlertConfigured(true);
+      setAlertRotateSecret(false);
+      setAlertMsg('Alert webhook saved');
+      setTimeout(() => setAlertMsg(''), 3000);
+      if (result.secret) {
+        setAlertSecret(result.secret);
+        setAlertSecretCopied(false);
+      }
+    } catch (err: any) {
+      setAlertMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleTestAlertWebhook = async () => {
+    if (!token) return;
+    setAlertMsg('Sending test alert...');
+    try {
+      const result = await adminSettings.testAlertWebhook(token);
+      setAlertMsg(result.success ? 'Test alert delivered' : `Error: ${result.message || 'delivery failed'}`);
+    } catch (err: any) {
+      setAlertMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRemoveAlertWebhook = async () => {
+    if (!token) return;
+    if (!confirm('Remove the connector-failure alert webhook? Alerts will stop firing for this organization.')) return;
+    try {
+      await adminSettings.deleteAlertWebhook(token);
+      setAlertConfigured(false);
+      setAlertUrl('');
+      setAlertType('json');
+      setAlertEnabled(true);
+      setAlertThreshold(5);
+      setAlertWindowMinutes(10);
+      setAlertCooldownMinutes(30);
+      setAlertSecret('');
+      setAlertMsg('Alert webhook removed');
+    } catch (err: any) {
+      setAlertMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleCopyAlertSecret = async () => {
+    const ok = await copyText(alertSecret);
+    if (ok) {
+      setAlertSecretCopied(true);
+      setTimeout(() => setAlertSecretCopied(false), 2000);
     }
   };
 
@@ -203,6 +299,139 @@ export default function SettingsAdminPage() {
                   Test Connection
                 </Button>
                 <Button variant="ghost" onClick={handleRemoveSmtp} className="text-[var(--danger)] hover:text-[var(--danger)]">
+                  Remove
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Connector Failure Alerts */}
+      <Card className="p-[22px]">
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Connector Failure Alerts</h3>
+        <p className="text-sm text-[var(--text-2)] mb-4">
+          Get a webhook or Slack notification when a connector keeps failing, instead of finding out from the logs.
+        </p>
+        <div className="space-y-4 max-w-lg">
+          <div>
+            <label className={labelClass}>Webhook URL</label>
+            <input
+              type="text"
+              value={alertUrl}
+              onChange={(e) => setAlertUrl(e.target.value)}
+              placeholder="https://example.com/hooks/anythingmcp"
+              className={inputClass}
+            />
+            {isCloud && (
+              <p className="text-[11.5px] text-[var(--text-3)] mt-1">On AnythingMCP Cloud the URL must use https.</p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Payload type</label>
+              <AppSelect
+                value={alertType}
+                onValueChange={(v) => setAlertType(v as 'json' | 'slack')}
+                options={ALERT_WEBHOOK_TYPE_OPTIONS}
+                className={inputClass}
+                aria-label="Payload type"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-6">
+              <input
+                type="checkbox"
+                id="alertEnabled"
+                checked={alertEnabled}
+                onChange={(e) => setAlertEnabled(e.target.checked)}
+                className="accent-[var(--brand)]"
+              />
+              <label htmlFor="alertEnabled" className="text-sm text-[var(--text-2)]">Enabled</label>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className={labelClass}>Failure threshold</label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(Number(e.target.value))}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Window (minutes)</label>
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={alertWindowMinutes}
+                onChange={(e) => setAlertWindowMinutes(Number(e.target.value))}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Cooldown (minutes)</label>
+              <input
+                type="number"
+                min={1}
+                max={10080}
+                value={alertCooldownMinutes}
+                onChange={(e) => setAlertCooldownMinutes(Number(e.target.value))}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <p className="text-[11.5px] text-[var(--text-3)]">
+            Alerts after {alertThreshold} failures of the same connector within {alertWindowMinutes} minutes, then waits {alertCooldownMinutes} minutes before alerting again.
+          </p>
+          {alertConfigured && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="alertRotateSecret"
+                checked={alertRotateSecret}
+                onChange={(e) => setAlertRotateSecret(e.target.checked)}
+                className="accent-[var(--brand)]"
+              />
+              <label htmlFor="alertRotateSecret" className="text-sm text-[var(--text-2)]">
+                Rotate signing secret on save
+              </label>
+            </div>
+          )}
+          {alertSecret && (
+            <div className="rounded-[9px] border border-[var(--brand)] bg-[var(--brand-tint)] p-3 space-y-2">
+              <p className="text-[12.5px] font-medium text-[var(--text)]">
+                Signing secret — shown once, copy it now:
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 overflow-x-auto text-[12px] text-[var(--text)]">{alertSecret}</code>
+                <Button size="sm" variant="secondary" onClick={handleCopyAlertSecret}>
+                  {alertSecretCopied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <p className="text-[11.5px] text-[var(--text-3)]">
+                Use this to verify the <code>X-AnythingMCP-Signature</code> header. It will not be shown again.
+              </p>
+            </div>
+          )}
+          {alertMsg && (
+            <p className={`text-sm ${alertMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+              {alertMsg}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button onClick={handleSaveAlertWebhook} disabled={!alertUrl}>
+              Save Alert Webhook
+            </Button>
+            {alertConfigured && (
+              <>
+                <Button variant="secondary" onClick={handleTestAlertWebhook}>
+                  Send Test Alert
+                </Button>
+                <Button variant="ghost" onClick={handleRemoveAlertWebhook} className="text-[var(--danger)] hover:text-[var(--danger)]">
                   Remove
                 </Button>
               </>
