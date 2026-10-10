@@ -114,6 +114,16 @@ describe('hubspot adapter: static spec conformance', () => {
     expect(a.instructions).toContain('paging.next.after');
   });
 
+  it('lists properties without a name filter: that query parameter picks definition fields, not properties', () => {
+    expect(tool('hubspot_list_properties').parameters.properties).not.toHaveProperty('properties');
+    expect(tool('hubspot_list_properties').endpointMapping.queryParams).toEqual({ archived: '$archived' });
+  });
+
+  it('tells the model about hs_legal_basis on accounts with data privacy settings', () => {
+    expect(a.instructions).toContain('hs_legal_basis');
+    expect(JSON.stringify(tool('hubspot_create_object').parameters)).toContain('hs_legal_basis');
+  });
+
   it('documents scopes, the read-only setup and the association type ids', () => {
     for (const scope of ['crm.objects.contacts.read', 'crm.objects.owners.read', 'crm.objects.deals.write', 'crm.objects.tickets.read']) {
       expect(a.instructions).toContain(scope);
@@ -243,8 +253,8 @@ live('hubspot adapter: live calls', () => {
   it('lists deal pipelines and contact properties', async () => {
     const pipelines = await run('hubspot_list_pipelines', { object_type: 'deals' });
     expect(Array.isArray(pipelines.results)).toBe(true);
-    const props = await run('hubspot_list_properties', { object_type: 'contacts', properties: 'email,lifecyclestage' });
-    expect(props.results.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['email']));
+    const props = await run('hubspot_list_properties', { object_type: 'contacts' });
+    expect(props.results.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['email', 'lifecyclestage']));
   }, 30000);
 
   (process.env.HUBSPOT_LIVE_WRITE === '1' ? it : it.skip)(
@@ -256,7 +266,13 @@ live('hubspot adapter: live calls', () => {
       try {
         const contact = await run('hubspot_create_object', {
           object_type: 'contacts',
-          properties: { firstname: 'AnythingMCP', lastname: 'test', email: `anythingmcp-test-${Date.now()}@example.com` },
+          // hs_legal_basis is mandatory on accounts with data privacy (GDPR) settings on.
+          properties: {
+            firstname: 'AnythingMCP',
+            lastname: 'test',
+            email: `anythingmcp-test-${Date.now()}@example.com`,
+            hs_legal_basis: 'Legitimate interest – prospect/lead',
+          },
         });
         created.push(['contacts', contact.id]);
         const updated = await run('hubspot_update_object', { object_type: 'contacts', object_id: contact.id, properties: { jobtitle: 'AnythingMCP test' } });
@@ -273,7 +289,12 @@ live('hubspot adapter: live calls', () => {
         const assoc = await run('hubspot_get_associations', { from_object_type: 'contacts', object_id: contact.id, to_object_type: 'notes' });
         expect(JSON.stringify(assoc)).toContain(String(note.id));
       } finally {
-        for (const [type, id] of created.reverse()) await archive(type, id).catch(() => undefined);
+        // Archive everything that was created, even after a failure, and say so if any of it stays behind.
+        const leftovers: string[] = [];
+        for (const [type, id] of created.reverse()) {
+          await archive(type, id).catch(() => leftovers.push(`${type}/${id}`));
+        }
+        expect(leftovers).toEqual([]);
       }
     },
     60000,
