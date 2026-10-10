@@ -7,7 +7,6 @@
   "category": "accounting",
   "icon": "quickbooks-online",
   "docsUrl": "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
-  "unlisted": true,
   "requiredEnvVars": [
     "QBO_CLIENT_ID",
     "QBO_CLIENT_SECRET",
