@@ -98,8 +98,6 @@ export function clientTilePair(clientName: string, redirectHost: string): string
 export interface TrustRowOptions {
   /** Cloud-only claims (Frankfurt, DPA) are shown only on AnythingMCP Cloud. */
   cloud: boolean;
-  /** GitHub stars, formatted ("984", "1,100+"), or null when unknown. */
-  stars: string | null;
 }
 
 export function trustRow(opts: TrustRowOptions): string {
@@ -107,9 +105,7 @@ export function trustRow(opts: TrustRowOptions): string {
     `<span>${LOCK_SVG} AES-256-GCM encryption</span>`,
     ...(opts.cloud ? ['<span>&#127466;&#127482; Hosted in Frankfurt</span>', '<span>GDPR &middot; DPA</span>'] : []),
     '<span>Every call in your audit log</span>',
-    opts.stars
-      ? `<span class="gh"><span class="star">&#9733;</span> ${escapeHtml(opts.stars)} on GitHub &middot; open source</span>`
-      : '<span class="gh">Open source on GitHub</span>',
+    '<span class="gh">Open source on GitHub</span>',
   ];
   return `<div class="trust">${items.join('')}</div>
   <div class="foot">AnythingMCP by helpcode.ai GmbH, Freiburg, Germany</div>`;
@@ -189,7 +185,7 @@ const STYLES = `
   .trust { max-width: 440px; width: 100%; margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center;
            gap: 8px 16px; font-size: 12px; color: var(--text-3); }
   .trust span { display: inline-flex; align-items: center; gap: 6px; }
-  .trust .gh { color: var(--text-2); font-weight: 500; } .trust .star { color: #e3a008; }
+  .trust .gh { color: var(--text-2); font-weight: 500; }
   .foot { margin-top: 10px; font-size: 11.5px; color: var(--text-3); text-align: center; }
   @media (max-width: 480px) {
     body { padding: 16px 12px 24px; justify-content: flex-start; }

@@ -129,15 +129,16 @@ describe('trust band', () => {
 
   it('shows the numbers, never below their floors', () => {
     const html = verify.render(cloud, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('1,000+');
     expect(html).toContain('200,000+');
     expect(html).toContain('1M+');
     expect(html).toContain('3,800+');
+    expect(html).toContain('workspaces on AnythingMCP Cloud');
+    expect(html).not.toContain('stars on GitHub');
   });
 
   it('shows the floors without live numbers, and no workspace count', () => {
     const html = verify.render(noStats, { name: 'A', other: 'B' }).html;
-    expect(html).toContain('stars on GitHub');
+    expect(html).not.toContain('stars on GitHub');
     expect(html).toContain('200,000+');
     expect(html).not.toContain('workspaces on');
     expect(html).not.toMatch(/\b0\+/);

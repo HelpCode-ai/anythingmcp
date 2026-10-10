@@ -1126,7 +1126,7 @@ function LoginForm() {
   return (
     <div className={singleColumn}>
       {formCard}
-      {infoLoaded && <TrustLine cloud={isCloudMode} stats={trustStats} />}
+      {infoLoaded && <TrustLine cloud={isCloudMode} />}
     </div>
   );
 }
