@@ -1,0 +1,795 @@
+{
+  "slug": "microsoft-onedrive",
+  "name": "OneDrive (Microsoft 365)",
+  "description": "Let your AI work in OneDrive: browse and search files and folders, see details and who has access, create folders, upload and update text files, copy, rename and move. OneDrive for work or school and personal OneDrive through Microsoft Graph, signed in with your Microsoft account.",
+  "instructions": "## OneDrive\nThis connector works with the signed-in user's OneDrive through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`, `/me/drive`): browse folders, find files, read details and who has access, create folders, upload and replace small text files, copy, rename and move. It works with OneDrive for work or school (Microsoft 365) and, depending on the app registration, with personal OneDrive. Everything runs as the user who authorized the connector: the AI sees and changes exactly what that user can.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Files.ReadWrite`.\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose OneDrive the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration → **API permissions → Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Files.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. `Files.ReadWrite` covers the user's own OneDrive. To open files that other people shared with the user, add `Files.ReadWrite.All` to the app registration and replace `Files.ReadWrite` with it in the connector's OAuth settings, then authorize again. For a read-only setup, use `offline_access User.Read Files.Read` (or `Files.Read.All`), authorize again, and disable `onedrive_create_folder`, `onedrive_upload_text_file`, `onedrive_replace_file_content`, `onedrive_copy_item`, `onedrive_rename_item`, `onedrive_move_item`.\n\n**Switched off at install**: `onedrive_delete_item`, `onedrive_create_sharing_link` and `onedrive_invite`. Sharing gives other people access to the user's files, and a document the AI reads could ask it to share something, so turn these on per tool only if the AI should share or delete. Deleted items go to the OneDrive recycle bin and can be restored there.\n\n**Ids and paths**: every file and folder has an `id` (in list and search results). The top folder is `root`. The `_by_path` tools take a path from the top of the OneDrive without a leading slash, e.g. `Documents/Reports 2026`; names containing `#`, `%` or `?` cannot be addressed by path, use the id tools for them. `parentReference` names an item's folder (`id`, `path`) and drive (`driveId`).\n\n**Reading content**: this connector does not download files. Graph answers a download with a redirect to the whole file and does not promise to honour a byte range, so a single large file could exhaust the server. Give the user the item's `webUrl` to open it. For cell values of Excel workbooks use the Microsoft Excel connector, which reads them through the workbook API.\n\n**Writing**\n- `onedrive_upload_text_file` creates a text file in a folder in one call (up to about 4 MB); the extension decides the file type (`.txt`, `.md`, `.csv`, `.json`, `.html`, `.xml`). With `conflict_behavior` `fail` (default) an existing file is never overwritten; `rename` stores the new one as `name 1.txt`.\n- `onedrive_replace_file_content` overwrites an existing text file; the previous content stays in its version history. Office documents, PDFs and images cannot be created or edited here.\n- `onedrive_copy_item` is asynchronous: Graph accepts the request without a body and the copy appears in the target folder shortly after. It needs the target's drive id (`onedrive_get_drive` → `id`) and folder id.\n- `onedrive_move_item` moves within the same OneDrive; `onedrive_rename_item` renames in place.\n\n**Sharing**: `onedrive_list_permissions` shows who has access and which sharing links exist. `onedrive_create_sharing_link` (switched off) makes a view or edit link for `anonymous` (anyone with the link, where the organisation allows it), `organization` or `users`. `onedrive_invite` (switched off) grants named people `read` or `write` access and can email them.\n\n**Search**: `onedrive_search` searches names, metadata and content in the user's own OneDrive. `onedrive_search_shared` also returns files shared with the user; such hits carry `remoteItem`, which `onedrive_get_shared_item` opens. Graph's separate *recent* and *shared with me* lists are deprecated and stop returning data in November 2026, so this connector has no tools for them.\n\n**Pagination**: list and search responses carry `@odata.nextLink` while more results exist. Call the same tool again with the same arguments and `skip_token` set to the `$skiptoken` (or `skipToken`) value in that link. `top` sets the page size.\n\n**Rate limits**: Microsoft Graph throttles per user and per app. A throttled call answers 429 or 503 with Retry-After; wait and retry.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `accessDenied`: a permission from step 4 is missing or was not consented, or the user may not change that item. A write on a read-only setup also ends here.\n- 404 `itemNotFound`: the id or path is wrong, the item was deleted, or it lives in another drive (use `onedrive_get_shared_item`).\n- 409 `nameAlreadyExists`: an item with that name exists in the folder; pick another name or `conflict_behavior` `rename`.\n- 423 `resourceLocked`: the file is open for editing or checked out. 507 `quotaLimitReached`: the OneDrive is full.\n- 400 `invalidRequest`: often a name with a character OneDrive does not allow (`\" * : < > ? / \\ |`).\n\n**Out of scope here**: downloading file content, uploading binary files or files over 4 MB, restoring versions, emptying the recycle bin, other users' OneDrives and SharePoint document libraries (use the Microsoft SharePoint connector).",
+  "region": "intl",
+  "category": "storage",
+  "icon": "microsoft-onedrive",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/onedrive",
+  "unlisted": true,
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Files.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "404": "Microsoft Graph found no OneDrive for this account. Work or school accounts need a OneDrive licence, and the user must have opened OneDrive once.",
+    "rate_limited": "Microsoft Graph is throttling this account. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "onedrive_get_drive"
+  },
+  "prerequisites": "An app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read` and `Files.ReadWrite`, and a client secret. The app registration of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "OneDrive (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Files.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me/drive"
+  },
+  "tools": [
+    {
+      "name": "onedrive_get_drive",
+      "description": "Get the signed-in user's OneDrive: drive id, type (personal, business), owner, storage quota (total, used, remaining, deleted, state) and webUrl. The drive id is needed by onedrive_copy_item and by the Microsoft Excel connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive",
+        "queryParams": {
+          "$select": "id,driveType,name,owner,quota,webUrl"
+        }
+      }
+    },
+    {
+      "name": "onedrive_list_root",
+      "description": "List the files and folders at the top of the user's OneDrive: id, name, size, dates, who changed it last, folder child count or file mimeType, and webUrl. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\", \"lastModifiedDateTime desc\" or \"size desc\". OneDrive for work or school sorts only by some properties and answers 400 for others."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root/children",
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "onedrive_list_folder",
+      "description": "List the files and folders inside one folder, addressed by its id. Returns the same fields as onedrive_list_root. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Id of the folder, from a list or search result (or \"root\")."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\", \"lastModifiedDateTime desc\" or \"size desc\". OneDrive for work or school sorts only by some properties and answers 400 for others."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/items/{item_id}/children",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "onedrive_list_folder_by_path",
+      "description": "List the files and folders inside a folder addressed by its path from the top of the OneDrive, e.g. \"Documents/Reports\". Returns the same fields as onedrive_list_root. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the top of the OneDrive, without a leading slash, e.g. \"Documents/Reports 2026\" or \"Documents/notes.txt\". Names containing #, % or ? cannot be addressed by path: use the id tools."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\", \"lastModifiedDateTime desc\" or \"size desc\". OneDrive for work or school sorts only by some properties and answers 400 for others."
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root:/{path}:/children",
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared",
+          "$top": "$top",
+          "$orderby": "$orderby",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "onedrive_get_item",
+      "description": "Get one file's or folder's metadata by id: name, size, dates, creator and last modifier, parent folder (parentReference with driveId, id and path), file mimeType and hashes or folder child count, sharing state and webUrl. Does not return the content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,description,createdBy,fileSystemInfo,eTag,cTag,specialFolder,root"
+        }
+      }
+    },
+    {
+      "name": "onedrive_get_item_by_path",
+      "description": "Get one file's or folder's metadata by its path from the top of the OneDrive, e.g. \"Documents/Budget 2026.xlsx\". Returns the same fields as onedrive_get_item, including the id the other tools need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the top of the OneDrive, without a leading slash, e.g. \"Documents/Reports 2026\" or \"Documents/notes.txt\". Names containing #, % or ? cannot be addressed by path: use the id tools."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root:/{path}",
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,description,createdBy,fileSystemInfo,eTag,cTag,specialFolder,root"
+        }
+      }
+    },
+    {
+      "name": "onedrive_get_shared_item",
+      "description": "Get the metadata of an item in another drive, typically a file someone shared with the user: pass remoteItem.parentReference.driveId and remoteItem.id from onedrive_search_shared. Needs Files.Read.All or Files.ReadWrite.All in the connector's scopes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "The drive the item lives in (remoteItem.parentReference.driveId), e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item's id in that drive (remoteItem.id)."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,description,createdBy,fileSystemInfo,eTag,cTag,specialFolder,root"
+        }
+      }
+    },
+    {
+      "name": "onedrive_search",
+      "description": "Search the user's own OneDrive for files and folders whose name, metadata or content matches the text. Returns id, name, size, dates, parentReference and webUrl per hit. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against file names, metadata and content, e.g. \"budget 2026\". Write a single quote as two (''), e.g. \"O''Brien\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root/search(q='{query}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,searchResult",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "onedrive_search_shared",
+      "description": "Search the user's OneDrive and the files other people shared with the user. Hits stored elsewhere carry remoteItem (with parentReference.driveId and id): open them with onedrive_get_shared_item. Finding shared files needs Files.Read.All or Files.ReadWrite.All in the scopes. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, matched against file names, metadata and content, e.g. \"budget 2026\". Write a single quote as two (''), e.g. \"O''Brien\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (Graph's default is 200 for folders and lists).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/search(q='{query}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,package,remoteItem,shared,searchResult",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "onedrive_create_folder",
+      "description": "Create a folder inside a parent folder (default: the top of the OneDrive). Returns the new folder's id, name, parentReference and webUrl. With conflict_behavior \"fail\" (default) Graph answers 409 when the name exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name. Not allowed: \" * : < > ? / \\ |."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the folder: from a list or search result, or \"root\" for the top of the OneDrive.",
+            "default": "root"
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "What to do when an item with that name already exists: \"fail\" (default) or \"rename\" (Graph appends a number).",
+            "enum": [
+              "fail",
+              "rename"
+            ],
+            "default": "fail"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/drive/items/{parent_id}/children",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "folder": {},
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        }
+      }
+    },
+    {
+      "name": "onedrive_upload_text_file",
+      "description": "Create a new text file (.txt, .md, .csv, .json, .html, .xml...) with the given content in a folder, in one call, up to about 4 MB. Returns the new file's id, name, size and webUrl. With conflict_behavior \"fail\" (default) an existing file of that name is left alone and Graph answers 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "description": "File name with extension, e.g. \"Meeting notes.md\", \"export.csv\". The extension decides the file type. Not allowed: \" * : < > ? / \\ |."
+          },
+          "content": {
+            "type": "string",
+            "description": "The full text content (UTF-8), not empty, at most about 4 MB.",
+            "minLength": 1
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the folder: from a list or search result, or \"root\" for the top of the OneDrive.",
+            "default": "root"
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "What to do when an item with that name already exists: \"fail\" (default) or \"rename\" (Graph appends a number).",
+            "enum": [
+              "fail",
+              "rename"
+            ],
+            "default": "fail"
+          }
+        },
+        "required": [
+          "file_name",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/me/drive/items/{parent_id}:/{file_name}:/content",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "queryParams": {
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        },
+        "bodyMapping": {
+          "__raw": "$content"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      }
+    },
+    {
+      "name": "onedrive_replace_file_content",
+      "description": "Overwrite the content of an existing text file with new text (up to about 4 MB). OneDrive keeps the previous content in the file's version history. Returns the file's id, name, size and webUrl. Only for text files: binary files would be replaced with text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "content": {
+            "type": "string",
+            "description": "The full text content (UTF-8), not empty, at most about 4 MB.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "item_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/me/drive/items/{item_id}/content",
+        "encodePathParams": true,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "bodyMapping": {
+          "__raw": "$content"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      }
+    },
+    {
+      "name": "onedrive_copy_item",
+      "description": "Copy a file or folder (with its contents) into a folder, optionally under a new name. Runs asynchronously: Graph accepts the request with an empty answer and the copy appears shortly after; check with onedrive_list_folder. Needs the target drive id (onedrive_get_drive) and folder id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "destination_drive_id": {
+            "type": "string",
+            "description": "Drive id of the target folder: the id from onedrive_get_drive for the user's own OneDrive."
+          },
+          "destination_folder_id": {
+            "type": "string",
+            "description": "Id of the target folder, from a list result or onedrive_get_item_by_path. For the top folder, use the real id that onedrive_get_item returns for item_id \"root\"."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the copy (default: the original's name)."
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "When the name exists in the target: \"fail\" (default) or \"rename\". Personal OneDrive ignores it.",
+            "enum": [
+              "fail",
+              "rename"
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "destination_drive_id",
+          "destination_folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/drive/items/{item_id}/copy",
+        "encodePathParams": true,
+        "queryParams": {
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        },
+        "bodyMapping": {
+          "parentReference": {
+            "driveId": "$destination_drive_id",
+            "id": "$destination_folder_id"
+          },
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "onedrive_rename_item",
+      "description": "Rename a file or folder in place. Keep the extension for files. Returns the item's id, name, parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name. Not allowed: \" * : < > ? / \\ |."
+          }
+        },
+        "required": [
+          "item_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/drive/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "onedrive_move_item",
+      "description": "Move a file or folder into another folder of the same OneDrive, optionally renaming it on the way. Returns the item's id, name, new parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "new_parent_id": {
+            "type": "string",
+            "description": "Id of the target folder (a list or search result, or onedrive_get_item_by_path)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional new name."
+          }
+        },
+        "required": [
+          "item_id",
+          "new_parent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/drive/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "parentReference": {
+            "id": "$new_parent_id"
+          },
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "onedrive_delete_item",
+      "description": "Delete a file or folder (a folder with its contents). It goes to the OneDrive recycle bin and can be restored from there by the user. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/me/drive/items/{item_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "onedrive_list_permissions",
+      "description": "List who has access to a file or folder: each permission's id, roles (read, write, owner), the people or groups granted (grantedToV2, grantedToIdentitiesV2), sharing links (link.type, link.scope, link.webUrl), inheritance and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/items/{item_id}/permissions",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "onedrive_create_sharing_link",
+      "description": "Create a sharing link for a file or folder: type \"view\" or \"edit\", scope \"anonymous\" (anyone with the link, if the organisation allows it), \"organization\" (people in the organisation) or \"users\" (only people already given access). Returns the link with its webUrl. Installed switched off: a link gives other people access to the user's files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "type": {
+            "type": "string",
+            "description": "Link type.",
+            "enum": [
+              "view",
+              "edit"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Who the link works for. Personal OneDrive supports only anonymous.",
+            "enum": [
+              "anonymous",
+              "organization",
+              "users"
+            ]
+          },
+          "expiration_date_time": {
+            "type": "string",
+            "description": "Optional ISO 8601 expiry, e.g. 2026-12-31T23:00:00Z (where the organisation allows expiring links)."
+          },
+          "password": {
+            "type": "string",
+            "description": "Optional password for an anonymous link (personal OneDrive and where the organisation allows it)."
+          }
+        },
+        "required": [
+          "item_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/drive/items/{item_id}/createLink",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "type": "$type",
+          "scope": "$scope",
+          "expirationDateTime": "$expiration_date_time",
+          "password": "$password"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "onedrive_invite",
+      "description": "Give people access to a file or folder by email address, with role \"read\" or \"write\", and optionally send them an invitation email with a message. Returns the permissions created. Installed switched off: inviting gives other people access to the user's files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id from a list or search result (onedrive_list_root, onedrive_list_folder, onedrive_search...). Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "People to invite, e.g. [{\"email\": \"ana@example.com\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Email address."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "roles": {
+            "type": "array",
+            "description": "[\"read\"] or [\"write\"].",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write"
+              ]
+            }
+          },
+          "send_invitation": {
+            "type": "boolean",
+            "description": "true to email the people (default true in Graph); false to grant access silently (work or school only)."
+          },
+          "require_sign_in": {
+            "type": "boolean",
+            "description": "true (recommended) so the recipients must sign in to open the item."
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional message in the invitation email."
+          },
+          "expiration_date_time": {
+            "type": "string",
+            "description": "Optional ISO 8601 time when the access ends."
+          }
+        },
+        "required": [
+          "item_id",
+          "recipients",
+          "roles"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/drive/items/{item_id}/invite",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "recipients": "$recipients",
+          "roles": "$roles",
+          "sendInvitation": "$send_invitation",
+          "requireSignIn": "$require_sign_in",
+          "message": "$message",
+          "expirationDateTime": "$expiration_date_time"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}
