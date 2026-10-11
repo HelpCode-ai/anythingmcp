@@ -1,0 +1,838 @@
+{
+  "slug": "canva",
+  "name": "Canva",
+  "description": "Let your AI work in Canva: find and read designs, create new ones, export them to PDF, PNG, PowerPoint or video with download links, organise folders, upload images from a link, read brand templates and comment on designs.",
+  "instructions": "## Canva\nThis connector works with a Canva account through the **Canva REST API** (formerly Connect API, `https://api.canva.com/rest/v1`), as the user who authorizes it: designs (list, search, read, create), exports to PDF, PNG, JPG, PPTX, MP4 and more with download links, folders, uploaded assets (read, rename, upload from a URL), brand templates and comments.\n\n**Setup (one-time, about 10 minutes)**\n1. Turn on multi-factor authentication for your Canva account (Canva requires it for developers): Settings → Login & security.\n2. Open the Canva Developer Portal at https://www.canva.com/developers/apps, click **Create an app** and pick who it is for. A **private** app (only possible on a Canva Enterprise team) is approved by your own team admins; a **public** app works for its developer and needs Canva's review before other Canva users can authorize it. Then open **Outside Canva → Start integrating**.\n3. Under **Configuration → Scopes** tick: `profile:read`, `design:meta:read`, `design:content:read`, `design:content:write`, `folder:read`, `folder:write`, `asset:read`, `asset:write`, `brandtemplate:meta:read`, `brandtemplate:content:read`, `comment:read`, `comment:write`. The connector asks for all of them; Canva refuses an authorization that asks for a scope not ticked here.\n4. Under **Authentication** add the redirect URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. For a local test Canva accepts `http://127.0.0.1:<port>/...`, not `localhost`.\n5. Copy the **Client ID** and generate a **Client secret** (shown only once) into `CANVA_CLIENT_ID` and `CANVA_CLIENT_SECRET`, install the connector, click **Authorize with Provider** and allow access in Canva. Access tokens last about four hours and are renewed automatically; each refresh token works once and is replaced on every renewal.\n\n**Smaller scope set**: to keep the connector read-only, untick the `:write` scopes in the portal and in the connector's OAuth settings, authorize again and switch off the tools that create, change or move things.\n\n**Exports** run as jobs: `canva_create_export` returns a job id, then call `canva_get_export` every few seconds until `status` is `success`; `urls` holds one link per file, valid 24 hours. Check the possible formats first with `canva_get_design_export_formats`. Designs with premium elements the user has not licensed fail with `license_required`. Limits: 75 exports per user per 5 minutes and 500 per day.\n\n**Uploads from a URL** run as jobs too: `canva_upload_asset_from_url`, then `canva_get_asset_upload` until `success`.\n\n**Folders**: `root` stands for the top level of the user's Projects and `uploads` for the Uploads folder (`canva_list_folder_items`, `canva_create_folder`, `canva_move_folder_item`).\n\n**Plans**: designs, folders, assets, exports and comments work on every plan, including free. Brand templates need a plan with brand templates (Pro, Teams or Enterprise); `canva_get_capabilities` shows `brand_template` when it is available.\n\n**Preview APIs**: comments and uploads from a URL are Canva preview APIs; they can change without notice, and a public app using them cannot pass Canva's review. For a public app, switch off `canva_upload_asset_from_url`, `canva_get_asset_upload` and the comment tools.\n\n**Confirm first**: `canva_create_comment` and `canva_reply_to_comment` are seen by collaborators. `canva_delete_folder` and `canva_delete_asset` (move to Trash) are installed switched off.\n\n**Ids**: a design id is the part after `/design/` in a Canva link (`https://www.canva.com/design/DAFVztcvd9z/...`). Thumbnail URLs expire after 15 minutes, `edit_url` and `view_url` after 30 days. Times are Unix seconds.\n\n**Common errors** (`code` in the answer)\n- `invalid_access_token`, `revoked_access_token`: authorize again.\n- `missing_scope`: tick the scope in the portal and in the connector's OAuth settings, then authorize again.\n- `permission_denied`, `not_found` (`design_not_found`, `folder_not_found`, `asset_not_found`): the user cannot see that object or the id is wrong.\n- 403 \"requires one of capabilities\": a paid feature such as brand templates.\n- `too_many_requests`: most calls allow 10 to 100 per minute per user; wait a minute.\n\n**Out of scope here**: editing design content, autofill, resizing, imports of files, AI generation, design analytics and webhooks.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "canva",
+  "docsUrl": "https://www.canva.dev/docs/apps/rest-apis/",
+  "requiredEnvVars": [
+    "CANVA_CLIENT_ID",
+    "CANVA_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://www.canva.com/developers/apps",
+  "envVarMeta": {
+    "CANVA_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Canva Developer Portal → your app → Outside Canva → Configuration: Client ID.",
+      "link": "https://www.canva.com/developers/apps",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client ID without spaces."
+    },
+    "CANVA_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page → Generate secret. Shown only once.",
+      "link": "https://www.canva.com/developers/apps",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Canva refused the access token. Click Authorize with Provider again; if the client secret was regenerated, update CANVA_CLIENT_SECRET first.",
+    "403": "The authorization lacks a scope (missing_scope) or the user cannot use this feature. Tick the scopes in the Canva Developer Portal, then authorize again.",
+    "rate_limited": "Canva is rate limiting this user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "canva_get_me"
+  },
+  "prerequisites": "A Canva account with multi-factor authentication turned on and an app in the Canva Developer Portal with the redirect URL below and the scopes listed in the setup. A private app needs Canva Enterprise; a public one works for its developer before review. About 10 minutes.",
+  "unlisted": true,
+  "connector": {
+    "name": "Canva REST API",
+    "type": "REST",
+    "baseUrl": "https://api.canva.com/rest/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{CANVA_CLIENT_ID}}",
+      "clientSecret": "{{CANVA_CLIENT_SECRET}}",
+      "authorizationUrl": "https://www.canva.com/api/oauth/authorize",
+      "tokenUrl": "https://api.canva.com/rest/v1/oauth/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "profile:read design:meta:read design:content:read design:content:write folder:read folder:write asset:read asset:write brandtemplate:meta:read brandtemplate:content:read comment:read comment:write"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "canva_get_me",
+      "description": "Read who authorized the connector: the Canva user_id and team_id. Needs no scope; a quick check that the authorization works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "canva_get_profile",
+      "description": "Read the display name of the signed-in Canva user (scope profile:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/profile"
+      }
+    },
+    {
+      "name": "canva_get_capabilities",
+      "description": "List the paid features the signed-in user can use through the API, e.g. brand_template, autofill, resize, export_png_transparency. An empty list means a free plan: brand templates are then not available (scope profile:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/capabilities"
+      }
+    },
+    {
+      "name": "canva_list_designs",
+      "description": "List or search the user's designs, with id, title, owner, page_count, a thumbnail (its URL expires after 15 minutes), edit_url and view_url (valid 30 days, open them only as the user) and created_at and updated_at as Unix seconds. The answer has items[] and, when there are more, continuation (scope design:meta:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, up to 255 characters."
+          },
+          "ownership": {
+            "type": "string",
+            "description": "Whose designs: any (default), owned or shared.",
+            "enum": [
+              "any",
+              "owned",
+              "shared"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Order of the results (default relevance).",
+            "enum": [
+              "relevance",
+              "modified_descending",
+              "modified_ascending",
+              "title_descending",
+              "title_ascending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 25).",
+            "default": 25
+          },
+          "continuation": {
+            "type": "string",
+            "description": "The continuation token of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/designs",
+        "queryParams": {
+          "query": "$query",
+          "ownership": "$ownership",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "continuation": "$continuation"
+        }
+      }
+    },
+    {
+      "name": "canva_get_design",
+      "description": "Read one design by id: title, owner, page_count, thumbnail, edit_url, view_url and timestamps (scope design:meta:read). The design id is the part after /design/ in a Canva link, e.g. DAFVztcvd9z.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id, e.g. DAFVztcvd9z."
+          }
+        },
+        "required": [
+          "design_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/designs/{design_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_create_design",
+      "description": "Create a new, empty design and return it with id, edit_url and view_url (scope design:content:write). design_type is either a preset, {\"type\": \"preset\", \"name\": \"presentation\"} (doc, email, presentation or whiteboard), or a custom size in pixels, {\"type\": \"custom\", \"width\": 1080, \"height\": 1080} (40 to 8000 each). asset_id optionally places an image asset on it. The design opens in the user's Projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_type": {
+            "type": "object",
+            "description": "{\"type\": \"preset\", \"name\": \"doc|email|presentation|whiteboard\"} or {\"type\": \"custom\", \"width\": <px>, \"height\": <px>}."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the design, 1 to 255 characters."
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of an image asset to put on the design."
+          }
+        },
+        "required": [
+          "design_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/designs",
+        "bodyMapping": {
+          "type": "type_and_asset",
+          "design_type": "$design_type",
+          "title": "$title",
+          "asset_id": "$asset_id"
+        }
+      }
+    },
+    {
+      "name": "canva_get_design_export_formats",
+      "description": "List the file formats a design can be exported to (pdf, jpg, png, svg, pptx, gif, mp4, html_bundle, html_standalone, csv), depending on its type. Check it before canva_create_export (scope design:content:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          }
+        },
+        "required": [
+          "design_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/designs/{design_id}/export-formats",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_create_export",
+      "description": "Start exporting a design to a file. format is an object with type and options, e.g. {\"type\": \"pdf\", \"size\": \"a4\"}, {\"type\": \"png\", \"width\": 1080, \"pages\": [1]}, {\"type\": \"jpg\", \"quality\": 80} (quality is required for jpg), {\"type\": \"pptx\"} or {\"type\": \"mp4\", \"quality\": \"horizontal_1080p\"}. Returns job.id with status in_progress: read it with canva_get_export until status is success, which carries the download URLs. Limited to 75 exports per 5 minutes per user (scope design:content:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          },
+          "format": {
+            "type": "object",
+            "description": "Export format with type (pdf, jpg, png, gif, pptx, mp4, html_bundle, html_standalone, csv) and its options: pages (page numbers from 1), export_quality (regular or pro), size for pdf (a4, a3, letter, legal), width and height for images, quality for jpg (1 to 100) and mp4, lossless, transparent_background and as_single_image for png."
+          }
+        },
+        "required": [
+          "design_id",
+          "format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/exports",
+        "bodyMapping": {
+          "design_id": "$design_id",
+          "format": "$format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "canva_get_export",
+      "description": "Read an export job: status (in_progress, success or failed), and on success urls[], one download link per file (multi-page images give one per page; links expire after 24 hours). A failed job explains why in error.code, e.g. license_required for premium elements (scope design:content:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "description": "The job id returned by canva_create_export."
+          }
+        },
+        "required": [
+          "export_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/exports/{export_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_list_folder_items",
+      "description": "List what a folder contains, with each item's type (design, folder, image, brand_template) and details. Use root for the top level of the user's Projects and uploads for the Uploads folder. Videos are not listed; brand templates only when item_types names them. The answer has items[] and continuation (scope folder:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "The folder id, or root for the top level of Projects, or uploads."
+          },
+          "item_types": {
+            "type": "string",
+            "description": "Comma-separated item types, e.g. design,folder (default: design, folder and image)."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Order (default modified_descending).",
+            "enum": [
+              "created_ascending",
+              "created_descending",
+              "modified_ascending",
+              "modified_descending",
+              "title_ascending",
+              "title_descending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 50).",
+            "default": 50
+          },
+          "continuation": {
+            "type": "string",
+            "description": "The continuation token of the previous answer, for the next page."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "item_types": "$item_types",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "continuation": "$continuation"
+        }
+      }
+    },
+    {
+      "name": "canva_get_folder",
+      "description": "Read a folder by id: name, thumbnail and timestamps (scope folder:read). root and uploads are aliases, not folders, and cannot be read here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "The folder id."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_create_folder",
+      "description": "Create a folder in the user's Projects (parent_folder_id root), in Uploads (uploads) or inside another folder. Returns the folder with its id (scope folder:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name, 1 to 255 characters."
+          },
+          "parent_folder_id": {
+            "type": "string",
+            "description": "Where to create it: root, uploads or a folder id."
+          }
+        },
+        "required": [
+          "name",
+          "parent_folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_folder_id": "$parent_folder_id"
+        }
+      }
+    },
+    {
+      "name": "canva_rename_folder",
+      "description": "Rename a folder; the name is the only thing that can be changed (scope folder:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "The folder id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name, 1 to 255 characters."
+          }
+        },
+        "required": [
+          "folder_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/folders/{folder_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "canva_move_folder_item",
+      "description": "Move a design, folder or image into another folder (to_folder_id root for the top level of Projects). Fails with item_in_multiple_folders when the item sits in more than one folder (scope folder:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Id of the design, folder or image asset to move."
+          },
+          "to_folder_id": {
+            "type": "string",
+            "description": "Target folder id, or root."
+          }
+        },
+        "required": [
+          "item_id",
+          "to_folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders/move",
+        "bodyMapping": {
+          "item_id": "$item_id",
+          "to_folder_id": "$to_folder_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "canva_delete_folder",
+      "description": "Delete a folder. The user's own designs and files in it move to the Trash; items owned by others go back to their owner's Projects. Installed switched off; confirm with the user first (scope folder:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "The folder id."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/folders/{folder_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "canva_get_asset",
+      "description": "Read an uploaded asset (image or video): name, tags, owner, thumbnail and timestamps (scope asset:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset id."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/{asset_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_update_asset",
+      "description": "Rename an asset or replace its tags. tags replaces the whole list (up to 50 tags) (scope asset:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name, up to 50 characters."
+          },
+          "tags": {
+            "type": "array",
+            "description": "The complete new list of tags.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/assets/{asset_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "canva_delete_asset",
+      "description": "Move an asset to the Trash. Designs that already use it keep it. Installed switched off; confirm with the user first (scope asset:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset id."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/assets/{asset_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "canva_upload_asset_from_url",
+      "description": "Start uploading an image or video from a public URL into the user's Uploads. Returns job.id with status in_progress; read it with canva_get_asset_upload until status is success, which carries the new asset and its id (scope asset:write). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the asset, up to 50 characters."
+          },
+          "url": {
+            "type": "string",
+            "description": "Public https URL of the file, up to 2048 characters."
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/url-asset-uploads",
+        "bodyMapping": {
+          "name": "$name",
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "canva_get_asset_upload",
+      "description": "Read an upload job started with canva_upload_asset_from_url: status in_progress, success (with asset and its id) or failed (error.code file_too_big, import_failed or fetch_failed) (scope asset:read). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "The job id returned by canva_upload_asset_from_url."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/url-asset-uploads/{job_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_list_brand_templates",
+      "description": "List the brand templates the user can use, with id, title, view_url, create_url and thumbnail. Needs a Canva plan with brand templates (Pro, Teams or Enterprise; canva_get_capabilities shows brand_template) and scope brandtemplate:meta:read. items is empty when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "ownership": {
+            "type": "string",
+            "description": "Whose templates: any (default), owned or shared.",
+            "enum": [
+              "any",
+              "owned",
+              "shared"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Order (default relevance).",
+            "enum": [
+              "relevance",
+              "modified_descending",
+              "modified_ascending",
+              "title_descending",
+              "title_ascending"
+            ]
+          },
+          "dataset": {
+            "type": "string",
+            "description": "non_empty for only templates with autofill fields (default any).",
+            "enum": [
+              "any",
+              "non_empty"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 25).",
+            "default": 25
+          },
+          "continuation": {
+            "type": "string",
+            "description": "The continuation token of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brand-templates",
+        "queryParams": {
+          "query": "$query",
+          "ownership": "$ownership",
+          "sort_by": "$sort_by",
+          "dataset": "$dataset",
+          "limit": "$limit",
+          "continuation": "$continuation"
+        }
+      }
+    },
+    {
+      "name": "canva_get_brand_template",
+      "description": "Read one brand template by id: title, view_url, create_url (opens a new design from it), thumbnail and timestamps (scope brandtemplate:meta:read, plan with brand templates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_template_id": {
+            "type": "string",
+            "description": "The brand template id."
+          }
+        },
+        "required": [
+          "brand_template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brand-templates/{brand_template_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_get_brand_template_dataset",
+      "description": "Read the autofill fields of a brand template: each field name with its type (text, image or chart). Shows what data the template expects (scope brandtemplate:content:read, plan with brand templates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_template_id": {
+            "type": "string",
+            "description": "The brand template id."
+          }
+        },
+        "required": [
+          "brand_template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brand-templates/{brand_template_id}/dataset",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_create_comment",
+      "description": "Start a comment thread on a design, optionally assigned to a collaborator. Collaborators see it and may be notified, so confirm the text with the user. Returns the thread with its id (scope comment:write). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          },
+          "message_plaintext": {
+            "type": "string",
+            "description": "The comment, up to 2048 characters. Mention a user as [user_id:team_id]."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id to assign the comment to; must be mentioned in the message."
+          }
+        },
+        "required": [
+          "design_id",
+          "message_plaintext"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/designs/{design_id}/comments",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_plaintext": "$message_plaintext",
+          "assignee_id": "$assignee_id"
+        }
+      }
+    },
+    {
+      "name": "canva_get_comment_thread",
+      "description": "Read a comment thread on a design: the comment, its author, assignee, resolution state and timestamps. Canva has no call that lists all threads of a design, so the thread id must be known (scope comment:read). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "The thread id."
+          }
+        },
+        "required": [
+          "design_id",
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/designs/{design_id}/comments/{thread_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "canva_list_comment_replies",
+      "description": "List the replies in a comment thread, oldest first, with author and text. The answer has items[] and continuation (scope comment:read). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "The thread id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Replies per page, 1 to 100 (default 50).",
+            "default": 50
+          },
+          "continuation": {
+            "type": "string",
+            "description": "The continuation token of the previous answer."
+          }
+        },
+        "required": [
+          "design_id",
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/designs/{design_id}/comments/{thread_id}/replies",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "continuation": "$continuation"
+        }
+      }
+    },
+    {
+      "name": "canva_reply_to_comment",
+      "description": "Reply to a comment thread on a design (up to 100 replies per thread). Collaborators see it, so confirm the text with the user (scope comment:write). This is a Canva preview API: it can change without notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "description": "The design id."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "The thread id."
+          },
+          "message_plaintext": {
+            "type": "string",
+            "description": "The reply, up to 2048 characters."
+          }
+        },
+        "required": [
+          "design_id",
+          "thread_id",
+          "message_plaintext"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/designs/{design_id}/comments/{thread_id}/replies",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_plaintext": "$message_plaintext"
+        }
+      }
+    }
+  ]
+}

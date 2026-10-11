@@ -69,8 +69,8 @@ const WRITES = [
 ].sort();
 
 describe('gitlab adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls API v4 under the configured instance address with the token as Bearer', () => {
