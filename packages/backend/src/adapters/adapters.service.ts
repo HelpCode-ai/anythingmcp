@@ -433,7 +433,7 @@ export class AdaptersService {
           : typeof err?.response?.status === 'number'
             ? err.response.status
             : undefined;
-      const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
+      const upstream = withResponseExcerpt(String(err?.message ?? err ?? 'unknown error'), err).slice(0, 400);
       const classified = classifyToolExecutionError({
         status,
         authType: adapter.connector.authType,
@@ -1033,6 +1033,26 @@ function describeShape(value: unknown): string {
 }
 
 /** A short, printable slice of the probe's response for the install form. */
+/**
+ * The setup check's error with the start of the provider's answer appended,
+ * when the message does not carry it already. A bare "Request failed with
+ * status code 500" told one ShipStation user on 10 Oct 2026 nothing; the body
+ * holds the provider's own reason and the request id its support asks for.
+ */
+function withResponseExcerpt(message: string, err: any, max = 200): string {
+  const data = err?.response?.data;
+  if (data === undefined || data === null || message.includes('body=')) return message;
+  let body: string;
+  try {
+    body = typeof data === 'string' ? data : JSON.stringify(data);
+  } catch {
+    return message;
+  }
+  body = body.replace(/\s+/g, ' ').trim();
+  if (!body || body === '{}' || body === '""' || message.includes(body)) return message;
+  return `${message.replace(/[.\s]+$/, '')}: ${body.length > max ? `${body.slice(0, max)}…` : body}`;
+}
+
 function truncateSample(value: unknown, max = 600): string {
   let text: string;
   try {

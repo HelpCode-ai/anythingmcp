@@ -24,6 +24,7 @@
   "verifyHints": {
     "401": "ShipStation refused the key. Use a V2 API key from Settings → Account → API Settings (the V1 key and secret do not work here), and check that it was not replaced by a newer one.",
     "403": "The key is valid but the plan or user lacks API access to this resource. Check that your ShipStation plan includes API access.",
+    "500": "ShipStation accepted the key but answered the carrier list with a server error. Try again in a minute. If it keeps failing, check that at least one carrier is connected under Settings → Shipping → Carriers, generate a new V2 key under Settings → Account → API Settings, and if it still fails send ShipStation support the request_id below.",
     "rate_limited": "ShipStation allows 200 requests per minute by default. Wait for the number of seconds in Retry-After and try again."
   },
   "probe": {
