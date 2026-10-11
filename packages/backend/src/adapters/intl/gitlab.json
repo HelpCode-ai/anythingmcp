@@ -1,0 +1,2353 @@
+{
+  "slug": "gitlab",
+  "name": "GitLab",
+  "unlisted": true,
+  "description": "Let your AI work in GitLab: find projects, triage and update issues, review merge requests with their diffs and comments, check pipelines and read failing job logs, and read branches, commits and files. GitLab.com or your own GitLab instance, with a personal access token.",
+  "instructions": "## GitLab\nThis connector works with GitLab through the **REST API v4** (`<your GitLab address>/api/v4`): projects and members, issues with comments, merge requests with diffs, commits and comments, CI/CD pipelines, jobs and job logs, branches, commits, repository files and search. It runs against GitLab.com or a self-managed or Dedicated instance, as the user who owns the token: the AI sees and changes exactly what that user can.\n\n**Setup (about 3 minutes)**\n1. In GitLab click your avatar → **Edit profile** → **Access** → **Personal access tokens** (on GitLab.com: https://gitlab.com/-/user_settings/personal_access_tokens) → **Generate token**.\n2. Name it (for example \"AnythingMCP\"), set an expiry date (at most 365 days on GitLab.com) and tick the scope **api**. For a read-only setup tick **read_api** instead.\n3. Copy the token (it starts with `glpat-`) right away and paste it into `GITLAB_TOKEN`; GitLab shows it only once.\n4. Set `GITLAB_URL` to `https://gitlab.com` for GitLab.com, or to your instance's address (for example `https://gitlab.example.com`), without `/api/v4` and without a trailing slash.\n\n**Other token types**: a **fine-grained** personal access token (GitLab 19.2 and later) works the same way; give it read and write permission on issues, merge requests, repository, pipelines and jobs for the projects involved. Some GitLab.com groups enforce fine-grained tokens: a legacy token then fails on their projects with \"Access denied: This operation requires a fine-grained personal access token\". **Project and group access tokens** also work, but on GitLab.com they need Premium or Ultimate.\n\n**Read-only setup**: use a token with `read_api` and switch off `gitlab_create_issue`, `gitlab_update_issue`, `gitlab_add_issue_note`, `gitlab_create_merge_request`, `gitlab_update_merge_request`, `gitlab_add_merge_request_note` and `gitlab_create_branch`. `gitlab_delete_issue` and `gitlab_delete_branch` are installed switched off. Nothing here merges a merge request, pushes commits or runs pipelines.\n\n**Projects and numbers**: `project_id` takes the numeric id or the full path such as `my-group/my-project` (the path is URL-encoded for you; a file path or branch name with slashes too). Issues and merge requests are addressed by their **iid**, the number shown in the UI (`#42`, `!17`), not their global `id`. `gitlab_list_project_members` gives user ids for `assignee_ids` and `reviewer_ids`. Quick actions such as `/label` or `/close` in a comment body are executed by GitLab.\n\n**Reading code**: `gitlab_list_repository_tree` lists folders, `gitlab_get_file_content` returns a file as text (cut at 200 KB), `gitlab_get_file_info` gives size and last commit without the content. `gitlab_search_project` with scope `blobs` searches code inside one project on every tier; instance-wide code search (`gitlab_search` with `blobs`, `commits`, `notes` or `wiki_blobs`) needs advanced search, a Premium feature.\n\n**Reviewing merge requests**: `gitlab_get_merge_request` (check `detailed_merge_status` and `has_conflicts`), then `gitlab_get_merge_request_diffs` page by page, `gitlab_list_merge_request_commits` and `gitlab_list_merge_request_notes`. A file whose diff is too large comes back with `too_large` or `collapsed` and no diff text.\n\n**Pipelines**: `gitlab_list_pipelines` → `gitlab_list_pipeline_jobs` with `scope` `[\"failed\"]` → `gitlab_get_job_log`. Job logs are cut at 200 KB from the start; open the job's `web_url` for longer ones.\n\n**Pagination**: list tools take `page` (from 1) and `per_page` (up to 100). The response carries `_headers` with `x-next-page` (empty on the last page) and, for collections under 10,000 records, `x-total`. The commit list never reports a total.\n\n**Lists across projects**: `gitlab_list_my_issues` and `gitlab_list_my_merge_requests` default to the token user's own items; set `scope` to `all` for everything they can see (with a filter, on GitLab.com that list is huge).\n\n**Rate limits**: GitLab.com allows about 2,000 API requests per minute per user, 200 new issues and 60 new comments per minute, and 100 searches per minute. Self-managed limits are set by the administrator. Over a limit GitLab answers 429 with Retry-After.\n\n**Errors**: 401 means the token is wrong, expired or revoked, or `GITLAB_URL` points at another instance. 403 means a missing scope (for example a `read_api` token on a write) or a role too low for the action. 404 means the project, issue or file does not exist or the user cannot see it: GitLab hides private resources behind 404. 400 names the missing or invalid field; 409 on a new merge request means one is already open for those branches. A renamed project still answers reads at its old path, but writes there fail with 405: use the new path or the numeric id.\n\n**Out of scope here**: merging, approving, pushing commits or editing files, running, retrying or cancelling pipelines, CI/CD variables, releases, wikis, packages and container registry, and administration.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "gitlab",
+  "docsUrl": "https://docs.gitlab.com/api/rest/",
+  "requiredEnvVars": [
+    "GITLAB_URL",
+    "GITLAB_TOKEN"
+  ],
+  "envVarMeta": {
+    "GITLAB_URL": {
+      "label": "GitLab address",
+      "kind": "address",
+      "help": "https://gitlab.com for GitLab.com. For a self-managed or Dedicated instance, its address as you open it in the browser (e.g. https://gitlab.example.com), without /api/v4 and without a trailing slash.",
+      "example": "https://gitlab.com",
+      "pattern": "^(?!.*/api/v4/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Use the instance address, e.g. https://gitlab.com or https://gitlab.example.com, without /api/v4 and without a trailing slash."
+    },
+    "GITLAB_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "GitLab → avatar → Edit profile → Access → Personal access tokens → Generate token, with the api scope (read_api for read-only). On Premium or self-managed, a project or group access token works too.",
+      "link": "https://gitlab.com/-/user_settings/personal_access_tokens",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token (it usually starts with glpat-), without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "GitLab refused the token: it is wrong, expired or revoked. Create a new one under Edit profile → Access tokens and check GITLAB_URL points at the instance that issued it.",
+    "403": "The token lacks a scope this call needs (read_api for reads, api for writes), or the user's role in the project is too low.",
+    "404": "GitLab found nothing at this address. Check GITLAB_URL (e.g. https://gitlab.com, without /api/v4); for a project, check the id or path and that the token's user is a member.",
+    "rate_limited": "GitLab is rate limiting this token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gitlab_get_current_user"
+  },
+  "prerequisites": "A GitLab.com account (the Free tier works) or an account on a self-managed GitLab, and a personal access token with the api scope (read_api for a read-only setup). About 3 minutes.",
+  "connector": {
+    "name": "GitLab REST API v4",
+    "type": "REST",
+    "baseUrl": "{{GITLAB_URL}}/api/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GITLAB_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "gitlab_get_current_user",
+      "description": "Get the GitLab user the token belongs to: id, username, name, state, web_url and, for admins, is_admin. A quick check that the token and the instance address work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      }
+    },
+    {
+      "name": "gitlab_list_projects",
+      "description": "List projects the token can see, newest activity first by default: id, path_with_namespace, default_branch, web_url, visibility and last_activity_at. On GitLab.com always keep membership true (or set owned or search), or the list covers every public project. Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership": {
+            "type": "boolean",
+            "default": true,
+            "description": "Only projects the user is a member of (default true). Set false on a self-managed instance to list every project the user can see."
+          },
+          "owned": {
+            "type": "boolean",
+            "description": "Only projects the user owns."
+          },
+          "starred": {
+            "type": "boolean",
+            "description": "Only projects the user starred."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against project names and paths."
+          },
+          "search_namespaces": {
+            "type": "boolean",
+            "description": "Also match the search text against the group path, so \"acme/web\" finds projects in group acme."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived projects only, false to leave them out."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "internal",
+              "public"
+            ],
+            "description": "private, internal or public."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "id",
+              "name",
+              "path",
+              "created_at",
+              "updated_at",
+              "last_activity_at",
+              "star_count"
+            ],
+            "description": "id, name, path, created_at, updated_at, last_activity_at or star_count (default created_at)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "simple": {
+            "type": "boolean",
+            "default": true,
+            "description": "Return only the basic fields of each project (default true), which keeps the answer small."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "membership": "$membership",
+          "owned": "$owned",
+          "starred": "$starred",
+          "search": "$search",
+          "search_namespaces": "$search_namespaces",
+          "archived": "$archived",
+          "visibility": "$visibility",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "simple": "$simple",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_project",
+      "description": "Get one project by id or path: default_branch, visibility, description, web_url, open_issues_count, permissions of the token's user, and with statistics=true repository and storage sizes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "statistics": {
+            "type": "boolean",
+            "description": "Include repository, wiki and storage statistics (needs at least Reporter access)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "statistics": "$statistics"
+        }
+      }
+    },
+    {
+      "name": "gitlab_list_project_members",
+      "description": "List the members of a project, including those inherited from its groups: user id, username, name and access_level (10 Guest, 15 Planner, 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner). Use the ids for assignee_ids and reviewer_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "query": {
+            "type": "string",
+            "description": "Filter by name or username."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/members/all",
+        "encodePathParams": true,
+        "queryParams": {
+          "query": "$query",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_labels",
+      "description": "List a project's labels (including group labels): name, color, description and open issue and merge request counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "search": {
+            "type": "string",
+            "description": "Filter labels by name."
+          },
+          "with_counts": {
+            "type": "boolean",
+            "description": "Include issue and merge request counts."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/labels",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "with_counts": "$with_counts",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_issues",
+      "description": "List a project's issues with filters: iid, title, state, labels, assignees, author, milestone, due_date, web_url. Pages with page and per_page; x-next-page in _headers is empty on the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "all"
+            ],
+            "description": "opened, closed or all (default all)."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; all must match. None or Any filter for no label or any label."
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Milestone title. None for issues without one, Any for issues with one."
+          },
+          "assignee_username": {
+            "type": "string",
+            "description": "Only issues assigned to this username."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Only issues created by this username."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text searched in title and description."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only issues created on or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only issues updated on or after this time, ISO 8601."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "priority",
+              "due_date",
+              "relative_position",
+              "label_priority",
+              "milestone_due",
+              "popularity",
+              "weight",
+              "title"
+            ],
+            "description": "created_at, updated_at, priority, due_date, relative_position, label_priority, milestone_due, popularity, weight or title (default created_at)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/issues",
+        "encodePathParams": true,
+        "queryParams": {
+          "state": "$state",
+          "labels": "$labels",
+          "milestone": "$milestone",
+          "assignee_username": "$assignee_username",
+          "author_username": "$author_username",
+          "search": "$search",
+          "created_after": "$created_after",
+          "updated_after": "$updated_after",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_my_issues",
+      "description": "List issues across all projects: by default the ones assigned to the token's user, or the ones they created, or every issue they can see. Same fields and filters as gitlab_list_issues; each issue carries its project_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "assigned_to_me",
+              "created_by_me",
+              "all"
+            ],
+            "default": "assigned_to_me",
+            "description": "assigned_to_me (default), created_by_me or all."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "all"
+            ],
+            "description": "opened, closed or all (default all)."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; all must match. None or Any filter for no label or any label."
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Milestone title. None for issues without one, Any for issues with one."
+          },
+          "assignee_username": {
+            "type": "string",
+            "description": "Only issues assigned to this username."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Only issues created by this username."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text searched in title and description."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only issues created on or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only issues updated on or after this time, ISO 8601."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "priority",
+              "due_date",
+              "relative_position",
+              "label_priority",
+              "milestone_due",
+              "popularity",
+              "weight",
+              "title"
+            ],
+            "description": "created_at, updated_at, priority, due_date, relative_position, label_priority, milestone_due, popularity, weight or title (default created_at)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues",
+        "queryParams": {
+          "scope": "$scope",
+          "state": "$state",
+          "labels": "$labels",
+          "milestone": "$milestone",
+          "assignee_username": "$assignee_username",
+          "author_username": "$author_username",
+          "search": "$search",
+          "created_after": "$created_after",
+          "updated_after": "$updated_after",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_issue",
+      "description": "Get one issue by its iid: title, description (Markdown), state, labels, assignees, author, milestone, due_date, time stats, related merge request count and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "issue_iid": {
+            "type": "integer",
+            "description": "The issue's number inside the project (iid, the #42 in the UI), not its global id."
+          }
+        },
+        "required": [
+          "project_id",
+          "issue_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/issues/{issue_iid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_create_issue",
+      "description": "Create an issue in a project. Returns the new issue with its iid and web_url. Show the user the title and description and wait for confirmation first; never retry a create that succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "title": {
+            "type": "string",
+            "description": "Issue title."
+          },
+          "assignee_id": {
+            "type": "integer",
+            "description": "One user id to assign; works on every tier (assignee_ids needs Premium for more than one)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Body in Markdown, up to 1,048,576 characters."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; labels that do not exist yet are created."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to assign (from gitlab_list_project_members). More than one needs Premium; [0] removes all assignees on update."
+          },
+          "milestone_id": {
+            "type": "integer",
+            "description": "Global id of a milestone."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "confidential": {
+            "type": "boolean",
+            "description": "Make the issue confidential."
+          }
+        },
+        "required": [
+          "project_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/issues",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "assignee_id": "$assignee_id",
+          "description": "$description",
+          "labels": "$labels",
+          "assignee_ids": "$assignee_ids",
+          "milestone_id": "$milestone_id",
+          "due_date": "$due_date",
+          "confidential": "$confidential"
+        }
+      }
+    },
+    {
+      "name": "gitlab_update_issue",
+      "description": "Change an issue: title, description, labels (replace, add or remove), assignees, milestone, due date, or close or reopen it with state_event. Only the fields given change. Confirm with the user before changing someone else's issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "issue_iid": {
+            "type": "integer",
+            "description": "The issue's number inside the project (iid, the #42 in the UI), not its global id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "state_event": {
+            "type": "string",
+            "enum": [
+              "close",
+              "reopen"
+            ],
+            "description": "close or reopen."
+          },
+          "add_labels": {
+            "type": "string",
+            "description": "Comma-separated labels to add."
+          },
+          "remove_labels": {
+            "type": "string",
+            "description": "Comma-separated labels to remove."
+          },
+          "description": {
+            "type": "string",
+            "description": "Body in Markdown, up to 1,048,576 characters."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; labels that do not exist yet are created."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to assign (from gitlab_list_project_members). More than one needs Premium; [0] removes all assignees on update."
+          },
+          "milestone_id": {
+            "type": "integer",
+            "description": "Global id of a milestone."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "confidential": {
+            "type": "boolean",
+            "description": "Make the issue confidential."
+          }
+        },
+        "required": [
+          "project_id",
+          "issue_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/issues/{issue_iid}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "state_event": "$state_event",
+          "add_labels": "$add_labels",
+          "remove_labels": "$remove_labels",
+          "description": "$description",
+          "labels": "$labels",
+          "assignee_ids": "$assignee_ids",
+          "milestone_id": "$milestone_id",
+          "due_date": "$due_date",
+          "confidential": "$confidential"
+        }
+      }
+    },
+    {
+      "name": "gitlab_delete_issue",
+      "enabled": false,
+      "description": "Delete an issue for good. Only project owners and administrators may; closing it with gitlab_update_issue is usually what is wanted. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "issue_iid": {
+            "type": "integer",
+            "description": "The issue's number inside the project (iid, the #42 in the UI), not its global id."
+          }
+        },
+        "required": [
+          "project_id",
+          "issue_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/projects/{project_id}/issues/{issue_iid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_list_issue_notes",
+      "description": "List the comments on an issue, newest first by default, including system notes (label and status changes, flagged system: true): id, body, author, created_at, internal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "issue_iid": {
+            "type": "integer",
+            "description": "The issue's number inside the project (iid, the #42 in the UI), not its global id."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc by created_at (default desc)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ],
+            "description": "created_at or updated_at (default created_at)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "issue_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/issues/{issue_iid}/notes",
+        "encodePathParams": true,
+        "queryParams": {
+          "sort": "$sort",
+          "order_by": "$order_by",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_add_issue_note",
+      "description": "Post a comment on an issue, as the token's user. Markdown and quick actions (/label, /assign, /close) in the body are applied. Show the user the text and wait for confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "issue_iid": {
+            "type": "integer",
+            "description": "The issue's number inside the project (iid, the #42 in the UI), not its global id."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment text in Markdown."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "Make it an internal note, visible only to project members with at least Planner or Reporter access."
+          }
+        },
+        "required": [
+          "project_id",
+          "issue_iid",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/issues/{issue_iid}/notes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "body": "$body",
+          "internal": "$internal"
+        }
+      }
+    },
+    {
+      "name": "gitlab_list_merge_requests",
+      "description": "List a project's merge requests with filters: iid, title, state, draft, source and target branch, author, reviewers, labels, merge_status (detailed_merge_status) and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "locked",
+              "merged",
+              "all"
+            ],
+            "description": "opened, closed, locked, merged or all (default all)."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; all must match. None or Any filter for no label or any label."
+          },
+          "source_branch": {
+            "type": "string",
+            "description": "Only merge requests from this branch."
+          },
+          "target_branch": {
+            "type": "string",
+            "description": "Only merge requests into this branch."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Only merge requests created by this username."
+          },
+          "reviewer_username": {
+            "type": "string",
+            "description": "Only merge requests with this reviewer."
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "true for drafts only, false to leave drafts out."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text searched in title and description."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only merge requests updated on or after this time, ISO 8601."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "merged_at",
+              "title",
+              "label_priority"
+            ],
+            "description": "created_at, updated_at, merged_at, title or label_priority (default created_at)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/merge_requests",
+        "encodePathParams": true,
+        "queryParams": {
+          "state": "$state",
+          "labels": "$labels",
+          "source_branch": "$source_branch",
+          "target_branch": "$target_branch",
+          "author_username": "$author_username",
+          "reviewer_username": "$reviewer_username",
+          "draft": "$draft",
+          "search": "$search",
+          "updated_after": "$updated_after",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_my_merge_requests",
+      "description": "List merge requests across all projects: by default the ones created by the token's user, or assigned to them, or waiting for their review (reviews_for_me), or all they can see. Each carries its project_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "created_by_me",
+              "assigned_to_me",
+              "reviews_for_me",
+              "all"
+            ],
+            "default": "created_by_me",
+            "description": "created_by_me (default), assigned_to_me, reviews_for_me or all."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "locked",
+              "merged",
+              "all"
+            ],
+            "description": "opened, closed, locked, merged or all (default all)."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names; all must match. None or Any filter for no label or any label."
+          },
+          "source_branch": {
+            "type": "string",
+            "description": "Only merge requests from this branch."
+          },
+          "target_branch": {
+            "type": "string",
+            "description": "Only merge requests into this branch."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Only merge requests created by this username."
+          },
+          "reviewer_username": {
+            "type": "string",
+            "description": "Only merge requests with this reviewer."
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "true for drafts only, false to leave drafts out."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text searched in title and description."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only merge requests updated on or after this time, ISO 8601."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "merged_at",
+              "title",
+              "label_priority"
+            ],
+            "description": "created_at, updated_at, merged_at, title or label_priority (default created_at)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merge_requests",
+        "queryParams": {
+          "scope": "$scope",
+          "state": "$state",
+          "labels": "$labels",
+          "source_branch": "$source_branch",
+          "target_branch": "$target_branch",
+          "author_username": "$author_username",
+          "reviewer_username": "$reviewer_username",
+          "draft": "$draft",
+          "search": "$search",
+          "updated_after": "$updated_after",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_merge_request",
+      "description": "Get one merge request by iid: title, description, state, draft, source and target branch, sha, detailed_merge_status (mergeable, conflict, ci_must_pass, not_approved...), has_conflicts, the head pipeline, changes_count, author, assignees, reviewers and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_get_merge_request_diffs",
+      "description": "Get the changed files of a merge request, page by page: old_path, new_path, new_file, renamed_file, deleted_file and the diff text of each. Large diffs come back empty with too_large or collapsed set; read such a file with gitlab_get_file_content on the source branch instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          },
+          "unidiff": {
+            "type": "boolean",
+            "description": "Return the diffs in unified diff format (GitLab 16.5 and later)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}/diffs",
+        "encodePathParams": true,
+        "queryParams": {
+          "unidiff": "$unidiff",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_merge_request_commits",
+      "description": "List the commits of a merge request: id (SHA), short_id, title, message, author_name and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}/commits",
+        "encodePathParams": true,
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_merge_request_notes",
+      "description": "List the comments on a merge request, including review comments on lines (with a position) and system notes: id, body, author, created_at, resolvable, resolved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc by created_at (default desc)."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ],
+            "description": "created_at or updated_at (default created_at)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}/notes",
+        "encodePathParams": true,
+        "queryParams": {
+          "sort": "$sort",
+          "order_by": "$order_by",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_add_merge_request_note",
+      "description": "Post a general comment on a merge request, as the token's user. Quick actions in the body (/approve, /merge, /label) are applied, so only include them when the user asked. Show the user the text and wait for confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment text in Markdown."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "Make it an internal note, visible only to project members."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}/notes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "body": "$body",
+          "internal": "$internal"
+        }
+      }
+    },
+    {
+      "name": "gitlab_create_merge_request",
+      "description": "Open a merge request from a source branch into a target branch. Start the title with \"Draft:\" to open it as a draft. Returns the merge request with its iid and web_url. Confirm with the user first; never retry a create that succeeded (a second one for the same branches answers 409).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "source_branch": {
+            "type": "string",
+            "description": "Branch with the changes."
+          },
+          "target_branch": {
+            "type": "string",
+            "description": "Branch to merge into, usually the default branch."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title; prefix with Draft: for a draft."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in Markdown."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to assign."
+          },
+          "reviewer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to ask for a review."
+          },
+          "remove_source_branch": {
+            "type": "boolean",
+            "description": "Delete the source branch when the merge request is merged."
+          },
+          "squash": {
+            "type": "boolean",
+            "description": "Squash the commits into one on merge."
+          }
+        },
+        "required": [
+          "project_id",
+          "source_branch",
+          "target_branch",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/merge_requests",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "source_branch": "$source_branch",
+          "target_branch": "$target_branch",
+          "title": "$title",
+          "description": "$description",
+          "labels": "$labels",
+          "assignee_ids": "$assignee_ids",
+          "reviewer_ids": "$reviewer_ids",
+          "remove_source_branch": "$remove_source_branch",
+          "squash": "$squash"
+        }
+      }
+    },
+    {
+      "name": "gitlab_update_merge_request",
+      "description": "Change a merge request: title (add or remove the Draft: prefix), description, target branch, labels, assignees, reviewers, or close or reopen it with state_event. It does not merge. Only the fields given change; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "The merge request's number inside the project (iid, the !17 in the UI), not its global id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "target_branch": {
+            "type": "string",
+            "description": "New target branch."
+          },
+          "state_event": {
+            "type": "string",
+            "enum": [
+              "close",
+              "reopen"
+            ],
+            "description": "close or reopen."
+          },
+          "add_labels": {
+            "type": "string",
+            "description": "Comma-separated labels to add."
+          },
+          "remove_labels": {
+            "type": "string",
+            "description": "Comma-separated labels to remove."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in Markdown."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to assign."
+          },
+          "reviewer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to ask for a review."
+          },
+          "remove_source_branch": {
+            "type": "boolean",
+            "description": "Delete the source branch when the merge request is merged."
+          },
+          "squash": {
+            "type": "boolean",
+            "description": "Squash the commits into one on merge."
+          }
+        },
+        "required": [
+          "project_id",
+          "merge_request_iid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/merge_requests/{merge_request_iid}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "target_branch": "$target_branch",
+          "state_event": "$state_event",
+          "add_labels": "$add_labels",
+          "remove_labels": "$remove_labels",
+          "description": "$description",
+          "labels": "$labels",
+          "assignee_ids": "$assignee_ids",
+          "reviewer_ids": "$reviewer_ids",
+          "remove_source_branch": "$remove_source_branch",
+          "squash": "$squash"
+        }
+      }
+    },
+    {
+      "name": "gitlab_list_pipelines",
+      "description": "List a project's CI/CD pipelines, newest first: id, iid, status, ref, sha, source, created_at, updated_at and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "waiting_for_resource",
+              "preparing",
+              "waiting_for_callback",
+              "pending",
+              "running",
+              "success",
+              "failed",
+              "canceling",
+              "canceled",
+              "skipped",
+              "manual",
+              "scheduled"
+            ],
+            "description": "Only pipelines with this status."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "running",
+              "pending",
+              "finished",
+              "branches",
+              "tags"
+            ],
+            "description": "running, pending, finished, branches or tags (branches and tags return only the latest pipeline per ref)."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Only pipelines for this branch or tag."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Only pipelines for this commit SHA."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only pipelines triggered this way, e.g. push, web, merge_request_event, schedule, api, trigger."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only pipelines updated on or after this time, ISO 8601."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "id",
+              "status",
+              "ref",
+              "updated_at",
+              "user_id"
+            ],
+            "description": "id, status, ref, updated_at or user_id (default id)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/pipelines",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "scope": "$scope",
+          "ref": "$ref",
+          "sha": "$sha",
+          "source": "$source",
+          "updated_after": "$updated_after",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_pipeline",
+      "description": "Get one pipeline: status, ref, sha, source, duration, queued_duration, coverage, user, started_at, finished_at and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id (the global id, not the iid)."
+          }
+        },
+        "required": [
+          "project_id",
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/pipelines/{pipeline_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_list_pipeline_jobs",
+      "description": "List the jobs of a pipeline: id, name, stage, status, failure_reason, duration, runner, allow_failure and web_url. Filter with scope, e.g. [\"failed\"] to find what broke, then read its log with gitlab_get_job_log.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id."
+          },
+          "scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "created",
+                "pending",
+                "running",
+                "failed",
+                "success",
+                "canceled",
+                "skipped",
+                "waiting_for_resource",
+                "manual"
+              ]
+            },
+            "description": "Job statuses to include: created, pending, running, failed, success, canceled, skipped, waiting_for_resource or manual."
+          },
+          "include_retried": {
+            "type": "boolean",
+            "description": "Also list jobs that were retried."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/pipelines/{pipeline_id}/jobs",
+        "encodePathParams": true,
+        "queryParams": {
+          "include_retried": "$include_retried",
+          "scope[]": "$scope",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_job",
+      "description": "Get one CI/CD job: name, stage, status, failure_reason, duration, started_at, finished_at, the commit, the pipeline, artifacts and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "Job id."
+          }
+        },
+        "required": [
+          "project_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/jobs/{job_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_get_job_log",
+      "description": "Read the log (trace) of a CI/CD job as plain text, with ANSI color codes. Logs over 200 KB are cut and marked _truncated, keeping the beginning; the error is usually near the end, so open the job's web_url for very long logs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "Job id, from gitlab_list_pipeline_jobs."
+          }
+        },
+        "required": [
+          "project_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/jobs/{job_id}/trace",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gitlab_list_branches",
+      "description": "List a project's branches: name, merged, protected, default, the last commit (id, title, author, date) and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "search": {
+            "type": "string",
+            "description": "Only branches whose name contains this text; ^text and text$ anchor it."
+          },
+          "regex": {
+            "type": "string",
+            "description": "Only branches whose name matches this RE2 regular expression."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/branches",
+        "encodePathParams": true,
+        "queryParams": {
+          "search": "$search",
+          "regex": "$regex",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_branch",
+      "description": "Get one branch: its last commit, whether it is merged, protected or the default, and whether the user can push to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name, e.g. feature/login (URL-encoded for you)."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/branches/{branch}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_create_branch",
+      "description": "Create a branch from a branch, tag or commit. Needs Developer access and the write scope (api). Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Name of the new branch."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag or commit SHA to start from."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch",
+          "ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/repository/branches",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "branch": "$branch",
+          "ref": "$ref"
+        }
+      }
+    },
+    {
+      "name": "gitlab_delete_branch",
+      "enabled": false,
+      "description": "Delete a branch. Protected and default branches cannot be deleted. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name."
+          }
+        },
+        "required": [
+          "project_id",
+          "branch"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/projects/{project_id}/repository/branches/{branch}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_list_commits",
+      "description": "List commits of a branch, tag or the default branch, newest first: id (SHA), short_id, title, author_name, authored_date and web_url. Filter by path, author and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "ref_name": {
+            "type": "string",
+            "description": "Branch, tag or SHA range (a..b); default branch when left out."
+          },
+          "path": {
+            "type": "string",
+            "description": "Only commits that touch this file or folder path."
+          },
+          "author": {
+            "type": "string",
+            "description": "Only commits by this author name or email."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only commits after this time, ISO 8601."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only commits before this time, ISO 8601."
+          },
+          "with_stats": {
+            "type": "boolean",
+            "description": "Include additions and deletions per commit."
+          },
+          "first_parent": {
+            "type": "boolean",
+            "description": "Follow only the first parent of merge commits."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/commits",
+        "encodePathParams": true,
+        "queryParams": {
+          "ref_name": "$ref_name",
+          "path": "$path",
+          "author": "$author",
+          "since": "$since",
+          "until": "$until",
+          "with_stats": "$with_stats",
+          "first_parent": "$first_parent",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_commit",
+      "description": "Get one commit by SHA, branch or tag name: message, author, committer, parent_ids, stats (additions, deletions), the last pipeline and web_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Commit SHA, or a branch or tag name for its head commit."
+          }
+        },
+        "required": [
+          "project_id",
+          "sha"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/commits/{sha}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gitlab_get_commit_diff",
+      "description": "Get the changes of one commit, page by page: old_path, new_path, new_file, renamed_file, deleted_file and the diff text per file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Commit SHA."
+          },
+          "unidiff": {
+            "type": "boolean",
+            "description": "Return the diffs in unified diff format (GitLab 16.5 and later)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "sha"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/commits/{sha}/diff",
+        "encodePathParams": true,
+        "queryParams": {
+          "unidiff": "$unidiff",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_list_repository_tree",
+      "description": "List files and folders in a repository folder: id (blob or tree SHA), name, type (blob = file, tree = folder), path and mode. recursive=true walks all subfolders; page through big trees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "path": {
+            "type": "string",
+            "description": "Folder path inside the repository, e.g. src/app; the root when left out."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag or commit SHA. Defaults to the project's default branch where the API allows it."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "Include everything below the folder, not just its direct children."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/tree",
+        "encodePathParams": true,
+        "queryParams": {
+          "path": "$path",
+          "ref": "$ref",
+          "recursive": "$recursive",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_get_file_info",
+      "description": "Get a file's metadata without its content: file_name, file_path, size, encoding, content_sha256, blob_id, commit_id and last_commit_id on the given ref.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "File path inside the repository, e.g. src/app/main.ts (URL-encoded for you, slashes included)."
+          },
+          "ref": {
+            "type": "string",
+            "default": "HEAD",
+            "description": "Branch, tag or commit SHA; HEAD (default) is the default branch."
+          }
+        },
+        "required": [
+          "project_id",
+          "file_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/files/{file_path}",
+        "encodePathParams": true,
+        "queryParams": {
+          "ref": "$ref"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "name": "gitlab_get_file_content",
+      "description": "Read a file from the repository as text, at a branch, tag or commit (the default branch by default). Files over 200 KB are cut and marked _truncated. Binary files come back garbled; use gitlab_get_file_info for those.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "File path inside the repository, e.g. src/app/main.ts (URL-encoded for you, slashes included)."
+          },
+          "ref": {
+            "type": "string",
+            "default": "HEAD",
+            "description": "Branch, tag or commit SHA; HEAD (default) is the default branch."
+          },
+          "lfs": {
+            "type": "boolean",
+            "description": "For a Git LFS file, return the stored file instead of the pointer."
+          }
+        },
+        "required": [
+          "project_id",
+          "file_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/repository/files/{file_path}/raw",
+        "encodePathParams": true,
+        "queryParams": {
+          "ref": "$ref",
+          "lfs": "$lfs"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gitlab_search",
+      "description": "Search the whole instance (only what the token's user can see): projects, groups, issues, work_items, merge_requests, milestones, users or snippet_titles. Code (blobs), commits, comments and wiki search across the instance need advanced search (Premium); search inside one project with gitlab_search_project, which covers them on every tier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "projects",
+              "groups",
+              "issues",
+              "work_items",
+              "merge_requests",
+              "milestones",
+              "users",
+              "snippet_titles",
+              "blobs",
+              "commits",
+              "wiki_blobs",
+              "notes"
+            ],
+            "description": "What to search."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "merged",
+              "all"
+            ],
+            "description": "For issues and merge requests: opened, closed, merged (merge requests) or all."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "title"
+            ],
+            "description": "created_at (or title on GitLab 19.5 and later), for issues, merge requests and milestones."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc (default desc)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "scope",
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "scope": "$scope",
+          "search": "$search",
+          "state": "$state",
+          "order_by": "$order_by",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gitlab_search_project",
+      "description": "Search inside one project: code (blobs, with file name, path, line number and the matching lines), commits, issues, merge_requests, milestones, notes, wiki_blobs or users. Code search works on every tier within a project; filename:, path: and extension: filters can be added to the text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (e.g. \"278964\") or full path (e.g. \"gitlab-org/gitlab\"); the path is URL-encoded for you."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "blobs",
+              "commits",
+              "issues",
+              "work_items",
+              "merge_requests",
+              "milestones",
+              "notes",
+              "wiki_blobs",
+              "users"
+            ],
+            "description": "What to search."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search text, e.g. \"parseConfig filename:*.ts\"."
+          },
+          "ref": {
+            "type": "string",
+            "description": "For blobs and commits: the branch or tag to search (default branch otherwise)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "merged",
+              "all"
+            ],
+            "description": "For issues and merge requests: opened, closed, merged or all."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Results per page, 1 to 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1. The x-next-page header (in _headers) is empty on the last page."
+          }
+        },
+        "required": [
+          "project_id",
+          "scope",
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/search",
+        "encodePathParams": true,
+        "queryParams": {
+          "scope": "$scope",
+          "search": "$search",
+          "ref": "$ref",
+          "state": "$state",
+          "per_page": "$per_page",
+          "page": "$page"
+        },
+        "exposeHeaders": [
+          "x-next-page",
+          "x-total",
+          "x-total-pages"
+        ]
+      }
+    }
+  ]
+}

@@ -166,6 +166,13 @@ const PRINTFUL_STORE_ID_HINT =
   'empty, the account has no store yet: the user must create one in Printful ' +
   '(Stores → Add store → "Manual order platform / API") first.';
 
+const FIGMA_NO_DEV_MODE_HINT =
+  'Figma answers "File not found" to dev resource calls when the user has no Dev Mode ' +
+  'access to the file, even though the file exists (a file Figma really cannot find ' +
+  'answers "Not found"). Dev Mode needs a paid Figma plan and a Full or Dev seat; a ' +
+  'Starter or locked team, or a View or Collab seat, is refused. Retrying will not help: ' +
+  'tell the user that dev resources are not available to them on this file.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -275,6 +282,13 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
 
   if (/voucherStatus filter 'overdue' cannot be used in combination/i.test(text)) {
     return LEXWARE_OVERDUE_HINT;
+  }
+
+  // Figma hides a file from the dev resource API when the user lacks Dev Mode:
+  // 404 {"message": "File not found"} on a read, `errors[].error` on a write.
+  // A missing file reads {"err": "Not found"} instead.
+  if (hostMatches(input.host, 'api.figma.com') && /File not found/.test(text)) {
+    return FIGMA_NO_DEV_MODE_HINT;
   }
 
   // TypeSafe answers a question with an unknown type (and any other field it
