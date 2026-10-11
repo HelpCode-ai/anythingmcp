@@ -44,6 +44,11 @@ export default function SettingsAdminPage() {
   const [alertMsg, setAlertMsg] = useState('');
   const [alertSecret, setAlertSecret] = useState('');
   const [alertSecretCopied, setAlertSecretCopied] = useState(false);
+  // One request at a time: a double-clicked save with "rotate" would mint two
+  // secrets and could show the one that lost the race.
+  const [alertBusy, setAlertBusy] = useState(false);
+  // The URL the backend has, so a test is never sent to an unsaved edit.
+  const [savedAlertUrl, setSavedAlertUrl] = useState('');
 
   useEffect(() => {
     if (!token) return;
@@ -63,6 +68,7 @@ export default function SettingsAdminPage() {
       if (!('url' in data)) return;
       setAlertConfigured(true);
       setAlertUrl(data.url);
+      setSavedAlertUrl(data.url);
       setAlertType(data.type);
       setAlertEnabled(data.enabled);
       setAlertThreshold(data.threshold);
@@ -122,8 +128,9 @@ export default function SettingsAdminPage() {
 
   const handleSaveAlertWebhook = async () => {
     if (!token) return;
+    const url = alertUrl.trim();
     const data: AlertWebhookInput = {
-      url: alertUrl,
+      url,
       type: alertType,
       enabled: alertEnabled,
       threshold: alertThreshold,
@@ -131,9 +138,12 @@ export default function SettingsAdminPage() {
       cooldownMinutes: alertCooldownMinutes,
       rotateSecret: alertRotateSecret,
     };
+    setAlertBusy(true);
     try {
       const result = await adminSettings.updateAlertWebhook(data, token);
       setAlertConfigured(true);
+      setAlertUrl(url);
+      setSavedAlertUrl(url);
       setAlertRotateSecret(false);
       setAlertMsg('Alert webhook saved');
       setTimeout(() => setAlertMsg(''), 3000);
@@ -143,27 +153,34 @@ export default function SettingsAdminPage() {
       }
     } catch (err: any) {
       setAlertMsg(`Error: ${err.message}`);
+    } finally {
+      setAlertBusy(false);
     }
   };
 
   const handleTestAlertWebhook = async () => {
     if (!token) return;
+    setAlertBusy(true);
     setAlertMsg('Sending test alert...');
     try {
       const result = await adminSettings.testAlertWebhook(token);
       setAlertMsg(result.success ? 'Test alert delivered' : `Error: ${result.message || 'delivery failed'}`);
     } catch (err: any) {
       setAlertMsg(`Error: ${err.message}`);
+    } finally {
+      setAlertBusy(false);
     }
   };
 
   const handleRemoveAlertWebhook = async () => {
     if (!token) return;
     if (!confirm('Remove the connector-failure alert webhook? Alerts will stop firing for this organization.')) return;
+    setAlertBusy(true);
     try {
       await adminSettings.deleteAlertWebhook(token);
       setAlertConfigured(false);
       setAlertUrl('');
+      setSavedAlertUrl('');
       setAlertType('json');
       setAlertEnabled(true);
       setAlertThreshold(5);
@@ -173,6 +190,8 @@ export default function SettingsAdminPage() {
       setAlertMsg('Alert webhook removed');
     } catch (err: any) {
       setAlertMsg(`Error: ${err.message}`);
+    } finally {
+      setAlertBusy(false);
     }
   };
 
@@ -315,8 +334,9 @@ export default function SettingsAdminPage() {
         </p>
         <div className="space-y-4 max-w-lg">
           <div>
-            <label className={labelClass}>Webhook URL</label>
+            <label htmlFor="alertUrl" className={labelClass}>Webhook URL</label>
             <input
+              id="alertUrl"
               type="text"
               value={alertUrl}
               onChange={(e) => setAlertUrl(e.target.value)}
@@ -351,9 +371,11 @@ export default function SettingsAdminPage() {
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className={labelClass}>Failure threshold</label>
+              <label htmlFor="alertThreshold" className={labelClass}>Failure threshold</label>
               <input
+                id="alertThreshold"
                 type="number"
+                step={1}
                 min={1}
                 max={1000}
                 value={alertThreshold}
@@ -362,9 +384,11 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>Window (minutes)</label>
+              <label htmlFor="alertWindowMinutes" className={labelClass}>Window (minutes)</label>
               <input
+                id="alertWindowMinutes"
                 type="number"
+                step={1}
                 min={1}
                 max={1440}
                 value={alertWindowMinutes}
@@ -373,9 +397,11 @@ export default function SettingsAdminPage() {
               />
             </div>
             <div>
-              <label className={labelClass}>Cooldown (minutes)</label>
+              <label htmlFor="alertCooldownMinutes" className={labelClass}>Cooldown (minutes)</label>
               <input
+                id="alertCooldownMinutes"
                 type="number"
+                step={1}
                 min={1}
                 max={10080}
                 value={alertCooldownMinutes}
@@ -404,7 +430,7 @@ export default function SettingsAdminPage() {
           {alertSecret && (
             <div className="rounded-[9px] border border-[var(--brand)] bg-[var(--brand-tint)] p-3 space-y-2">
               <p className="text-[12.5px] font-medium text-[var(--text)]">
-                Signing secret — shown once, copy it now:
+                Signing secret, shown once. Copy it now:
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 overflow-x-auto text-[12px] text-[var(--text)]">{alertSecret}</code>
@@ -413,25 +439,34 @@ export default function SettingsAdminPage() {
                 </Button>
               </div>
               <p className="text-[11.5px] text-[var(--text-3)]">
-                Use this to verify the <code>X-AnythingMCP-Signature</code> header. It will not be shown again.
+                Use this to verify the <code>X-AnythingMCP-Signature</code> header
+                (<code>sha256=</code> HMAC of the timestamp and the body; Slack ignores it). It will not be shown again.
               </p>
+              <Button size="sm" variant="secondary" onClick={() => setAlertSecret('')}>
+                I have saved it
+              </Button>
             </div>
           )}
           {alertMsg && (
-            <p className={`text-sm ${alertMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+            <p role="status" className={`text-sm ${alertMsg.startsWith('Error') ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
               {alertMsg}
             </p>
           )}
           <div className="flex gap-2">
-            <Button onClick={handleSaveAlertWebhook} disabled={!alertUrl}>
+            <Button onClick={handleSaveAlertWebhook} disabled={alertBusy || !alertUrl.trim()}>
               Save Alert Webhook
             </Button>
             {alertConfigured && (
               <>
-                <Button variant="secondary" onClick={handleTestAlertWebhook}>
+                <Button
+                  variant="secondary"
+                  onClick={handleTestAlertWebhook}
+                  disabled={alertBusy || alertUrl.trim() !== savedAlertUrl}
+                  title={alertUrl.trim() !== savedAlertUrl ? 'Save the new URL first' : undefined}
+                >
                   Send Test Alert
                 </Button>
-                <Button variant="ghost" onClick={handleRemoveAlertWebhook} className="text-[var(--danger)] hover:text-[var(--danger)]">
+                <Button variant="ghost" onClick={handleRemoveAlertWebhook} disabled={alertBusy} className="text-[var(--danger)] hover:text-[var(--danger)]">
                   Remove
                 </Button>
               </>
