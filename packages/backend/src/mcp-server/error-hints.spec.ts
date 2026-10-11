@@ -32,6 +32,23 @@ describe('deriveErrorHint', () => {
     ).toMatch(/stock\.lot/);
   });
 
+  it('names phone when Odoo 18.3+ refuses the dropped mobile field on contacts', () => {
+    // 10 Oct 2026: 28 calls in a day asked res.partner for mobile on Odoo 19.
+    const rest = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'mobile' on 'res.partner'" },
+    });
+    expect(rest).toMatch(/`phone`/);
+    expect(
+      deriveErrorHint({ message: "JSON-RPC error 200: Odoo Server Error: Invalid field res.partner.mobile in leaf ('mobile', '!=', False)" }),
+    ).toMatch(/`phone`/);
+    // Another model's own mobile field keeps the generic advice.
+    expect(
+      deriveErrorHint({ status: 500, body: { message: "Invalid field 'mobile' on 'hr.employee'" } }),
+    ).toMatch(/fields_get/);
+  });
+
   describe('weclapp', () => {
     it('explains unknown properties instead of letting the model guess spellings', () => {
       const hint = deriveErrorHint({

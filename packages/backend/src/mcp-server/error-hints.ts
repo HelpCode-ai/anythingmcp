@@ -37,6 +37,13 @@ const ODOO_FIELD_HINT =
   'Odoo versions and installed apps. Do not guess another spelling: list the model\'s fields ' +
   'first (odoo_fields_get, or fields_get on the model) and use only the names it returns.';
 
+// Odoo 18.3 dropped `mobile` from contacts (res.partner, and res.users through
+// it); one number field is left. On 10 Oct 2026 a scheduled job asked for it 28
+// times in a day on Odoo 19, and the generic field hint did not stop it.
+const ODOO_PARTNER_MOBILE_HINT =
+  'Odoo 18.3 and later (Odoo 19 included) have no `mobile` field on contacts: every number is ' +
+  'in `phone`. Ask for `phone` instead and leave `mobile` out of fields and domains.';
+
 const ODOO_MODEL_HINT =
   'That model does not exist in this Odoo database: it was renamed in newer versions or its ' +
   'app is not installed (for example stock.production.lot is stock.lot since Odoo 16). Check ' +
@@ -214,6 +221,9 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
 
   // Odoo answers an unknown field or model with a 500 ValueError (REST) or a
   // JSON-RPC "Odoo Server Error", and the host is the customer's own domain.
+  if (/Invalid field '?(?:res\.(?:partner|users)\.)?mobile'? (?:on '?res\.(?:partner|users)|in leaf)/i.test(text)) {
+    return ODOO_PARTNER_MOBILE_HINT;
+  }
   if (/Invalid field '[^']+' on '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
     return ODOO_FIELD_HINT;
   }

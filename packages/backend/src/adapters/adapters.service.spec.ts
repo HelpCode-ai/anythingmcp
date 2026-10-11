@@ -446,6 +446,31 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 401 });
   });
 
+  it('shows the start of the provider answer when the error message lacks it', async () => {
+    // 10 Oct 2026: a ShipStation user saw only "Request failed with status
+    // code 500", without ShipStation's reason or the request id its support asks for.
+    const err: any = new Error('Request failed with status code 500');
+    err.response = {
+      status: 500,
+      data: { request_id: 'req-123', errors: [{ message: 'An internal error occurred.', error_code: 'unspecified' }] },
+    };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('shipstation', 'org1', { SHIPSTATION_API_KEY: 'k'.repeat(32) });
+    expect(out).toMatchObject({ ok: false, status: 500 });
+    expect(out.message).toContain('ShipStation accepted the key');
+    expect(out.message).toContain('req-123');
+    expect(out.message).toContain('An internal error occurred.');
+  });
+
+  it('does not repeat a body the error message already carries', async () => {
+    const err: any = new Error('401 Unauthorized: invalid token');
+    err.status = 401;
+    err.response = { status: 401, data: 'invalid token' };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'bad' });
+    expect(out.message.match(/invalid token/g)).toHaveLength(1);
+  });
+
   it('names what is still empty without calling the API', async () => {
     const execute = jest.fn();
     const { service } = build(execute);
