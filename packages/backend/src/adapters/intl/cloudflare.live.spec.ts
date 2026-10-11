@@ -62,8 +62,8 @@ const OFF = ['cloudflare_delete_dns_record', 'cloudflare_purge_everything'];
 const WRITES = [...OFF, 'cloudflare_create_dns_record', 'cloudflare_purge_cache', 'cloudflare_update_dns_record'].sort();
 
 describe('cloudflare adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls API v4 with the API token as Bearer', () => {

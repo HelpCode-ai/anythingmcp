@@ -52,8 +52,8 @@ const engine = () => new RestEngine({} as OAuth2TokenService, {} as LoginTokenSe
 const OFF = ['miro_delete_board', 'miro_remove_board_member', 'miro_share_board', 'miro_update_board_member'];
 
 describe('miro adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in through Miro OAuth with the secret in the token request body', () => {

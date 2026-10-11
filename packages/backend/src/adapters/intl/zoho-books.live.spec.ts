@@ -124,8 +124,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('zoho-books adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.prerequisites).toMatch(/free plan|trial/);
   });
 

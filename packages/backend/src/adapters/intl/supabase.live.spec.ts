@@ -54,8 +54,8 @@ const SQL_READS = ['supabase_describe_table', 'supabase_list_extensions', 'supab
 const READ_ONLY_PATH = '/v1/projects/{project_ref}/database/query/read-only';
 
 describe('supabase adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('calls the Management API with the personal access token as Bearer', () => {
