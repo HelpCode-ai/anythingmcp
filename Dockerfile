@@ -26,6 +26,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/backend/package.json ./packages/backend/
 COPY packages/frontend/package.json ./packages/frontend/
+COPY packages/cli/package.json ./packages/cli/
 
 # Install all workspace dependencies
 # Extended timeout for ARM64 QEMU emulation in CI
@@ -43,6 +44,10 @@ COPY packages/backend/package.json ./packages/backend/
 # packages — only backend production dependencies end up in node_modules.
 RUN mkdir -p packages/frontend && \
     echo '{"name":"@anythingmcp/frontend","version":"0.1.1","private":true}' > packages/frontend/package.json
+
+# The CLI is a workspace but does not ship in the server image.
+RUN mkdir -p packages/cli && \
+    echo '{"name":"@anythingmcp/cli","version":"0.1.0","private":true}' > packages/cli/package.json
 
 RUN npm install --omit=dev --network-timeout=600000 && \
     rm -rf node_modules/typescript node_modules/react-dom node_modules/react
