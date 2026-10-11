@@ -1057,6 +1057,18 @@ function encodeQueryComponent(value: string): string {
  * than axios's bracketed `columns[]=a`. Scalars are encoded exactly as axios
  * would encode them; null and undefined are dropped rather than sent as the
  * strings "null"/"undefined".
+ *
+ * An object, or an object inside an array, is written in the PHP bracket form
+ * that OpenAPI calls `style: deepObject`: `page: { number: 1 }` becomes
+ * `page[number]=1`, and `filter: [{ key: 'status', op: 'in', value: ['a',
+ * 'b'] }]` becomes `filter[0][key]=status&filter[0][op]=in&
+ * filter[0][value][0]=a&filter[0][value][1]=b`. Xentral (and most PHP and
+ * Laravel APIs) take filters and pages only in that shape and answer anything
+ * else with "filter must be an array". Before this an object went out as the
+ * text "[object Object]", so no working request depends on the old output.
+ * Byte for byte what axios itself sends for such a value: brackets are
+ * percent-encoded like the rest of a key, and PHP decodes the name before it
+ * reads the brackets.
  */
 export function serializeRepeatedParams(
   params: Record<string, unknown>,
@@ -1068,9 +1080,26 @@ export function serializeRepeatedParams(
       `${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`,
     );
   };
+  // Every level below the top one is indexed: `k[0]`, `k[name]`.
+  const pushNested = (key: string, value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => pushNested(`${key}[${i}]`, v));
+    } else if (value !== null && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        pushNested(`${key}[${k}]`, v);
+      }
+    } else {
+      push(key, value);
+    }
+  };
+  const isNested = (v: unknown) => v !== null && typeof v === 'object';
   for (const [key, value] of Object.entries(params ?? {})) {
     if (Array.isArray(value)) {
-      for (const v of value) push(key, v);
+      // A list of scalars keeps the repeated form (`k=a&k=b`); a member that
+      // is itself an object or list is written with its index.
+      value.forEach((v, i) => (isNested(v) ? pushNested(`${key}[${i}]`, v) : push(key, v)));
+    } else if (isNested(value)) {
+      pushNested(key, value);
     } else {
       push(key, value);
     }

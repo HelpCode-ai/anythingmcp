@@ -1542,6 +1542,22 @@ describe('RestEngine', () => {
       expect(seen).toHaveLength(1);
       expect(`/x?${serializeRepeatedParams(params)}`).toBe(seen[0]);
     });
+
+    it('writes objects in the bracket form, as axios does', async () => {
+      const realAxios = jest.requireActual('axios').default as (
+        cfg: unknown,
+      ) => Promise<unknown>;
+      const params = {
+        page: { number: 2, size: 25 },
+        filter: [
+          { key: 'status', op: 'in', value: ['released', 'sent'] },
+          { key: 'documentDate', op: 'greaterThanOrEquals', value: '2026-01-01' },
+        ],
+      };
+      seen = [];
+      await realAxios({ method: 'GET', url: `http://127.0.0.1:${port}/x`, params });
+      expect(`/x?${serializeRepeatedParams(params)}`).toBe(seen[0]);
+    });
   });
 
   describe('serializeRepeatedParams', () => {
@@ -1555,6 +1571,30 @@ describe('RestEngine', () => {
       expect(
         serializeRepeatedParams({ a: undefined, b: null, c: ['k', null], d: 0 }),
       ).toBe('c=k&d=0');
+    });
+
+    it('indexes objects inside a list (deepObject filters)', () => {
+      const query = serializeRepeatedParams({
+        filter: [{ key: 'status', op: 'equals', value: 'released' }],
+        page: { number: 1, size: 10 },
+        sort: 'id',
+      });
+      expect(decodeURIComponent(query)).toBe(
+        'filter[0][key]=status&filter[0][op]=equals&filter[0][value]=released' +
+          '&page[number]=1&page[size]=10&sort=id',
+      );
+      expect(query).not.toContain('[object Object]');
+    });
+
+    it('indexes a list nested in an object and skips empty members', () => {
+      const query = serializeRepeatedParams({
+        filter: [{ key: 'id', op: 'in', value: ['1', '2'] }, { key: 'x', op: 'isNull', value: null }],
+        ids: ['a', 'b'],
+      });
+      expect(decodeURIComponent(query)).toBe(
+        'filter[0][key]=id&filter[0][op]=in&filter[0][value][0]=1&filter[0][value][1]=2' +
+          '&filter[1][key]=x&filter[1][op]=isNull&ids=a&ids=b',
+      );
     });
   });
 

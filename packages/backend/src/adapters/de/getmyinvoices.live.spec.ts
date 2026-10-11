@@ -60,6 +60,18 @@ describe('getmyinvoices adapter — static spec conformance', () => {
     // the agent to the full date-time format.
     expect(desc).toMatch(/YYYY-MM-DD HH:MM:SS/);
   });
+
+  it('gives the same updatedOrNewSinceFilter format in the instructions as in the parameter', () => {
+    // The v3 OpenAPI (accounts/v3/doc/api.json) shows "2017-08-18 18:12:50";
+    // the instructions used to say YYYY-MM-DD, which the API answers with 422.
+    const { instructions } = adapter as unknown as { instructions: string };
+    const since = instructions.split('\n').filter((line) => line.includes('updatedOrNewSinceFilter'));
+    expect(since.length).toBeGreaterThan(0);
+    for (const line of since) {
+      expect(line).toMatch(/YYYY-MM-DD HH:MM:SS/);
+      expect(line).not.toMatch(/updatedOrNewSinceFilter=YYYY-MM-DD(?! HH)/);
+    }
+  });
 });
 
 const maybe = process.env.RUN_GETMYINVOICES_LIVE ? describe : describe.skip;
