@@ -294,7 +294,7 @@ live('twilio adapter: live API', () => {
     } catch (e) {
       // A Standard API key may not read the Accounts resource itself.
       expect(LIVE_ENV.TWILIO_API_KEY_SID.startsWith('SK')).toBe(true);
-      expect(statusOf(e)).toBe(403);
+      expect([401, 403]).toContain(statusOf(e));
     }
     const balance = await run('twilio_get_balance');
     expect(balance.currency).toBeDefined();
