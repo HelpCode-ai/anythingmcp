@@ -645,7 +645,7 @@
     },
     {
       "name": "paypal_search_transactions",
-      "description": "Search the account history (Transaction Search): payments received and sent, refunds, fees, transfers and their payer and cart details. At most 31 days per call; data can lag up to 3 hours. Returns transaction_details[] with total_items and total_pages. Needs Transaction Search enabled on the app.",
+      "description": "Search the account history (Transaction Search): payments received and sent, refunds, fees, transfers and their payer and cart details. At most 31 days per call; data can lag up to 3 hours. Returns transaction_details[] with total_items and total_pages; when nothing matches, PayPal leaves transaction_details out and total_items is 0. Needs Transaction Search enabled on the app.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -735,7 +735,7 @@
     },
     {
       "name": "paypal_get_balances",
-      "description": "Read the account balances per currency (available, withheld and total), now or as of a past time. Refreshed with up to 3 hours delay. Needs Transaction Search enabled on the app.",
+      "description": "Read the account balances per currency (available, withheld and total), now or as of a past time: balances[] with as_of_time. An account that has never held money gets no balances key at all. Refreshed with up to 3 hours delay. Needs Transaction Search enabled on the app.",
       "parameters": {
         "type": "object",
         "properties": {

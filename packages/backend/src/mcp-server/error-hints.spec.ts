@@ -155,6 +155,23 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     ).toBeUndefined();
   });
 
+  it('reads Figma\'s "File not found" on dev resources as missing Dev Mode, not a missing file', () => {
+    const read = deriveErrorHint({
+      host: 'api.figma.com',
+      status: 404,
+      body: { error: true, status: 404, message: 'File not found', i18n: 'error.not_found' },
+    });
+    expect(read).toMatch(/Dev Mode/);
+    const write = deriveErrorHint({
+      host: 'api.figma.com',
+      status: 400,
+      message: 'The API answered with an error in a successful response: File not found',
+      body: { links_created: [], errors: [{ file_key: 'k', node_id: '1:2', error: 'File not found' }] },
+    });
+    expect(write).toBe(read);
+    expect(deriveErrorHint({ host: 'api.figma.com', status: 404, body: { status: 404, err: 'Not found' } })).toBeUndefined();
+  });
+
   it('tells the user to install the Shopify app when the token answers app_not_installed', () => {
     const hint = deriveErrorHint({
       host: 'acme.myshopify.com',

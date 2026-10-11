@@ -329,7 +329,15 @@ function onePagePdf(): string {
 live('docusign adapter: live eSignature API', () => {
   const authUrl = process.env.DOCUSIGN_AUTH_URL || DEMO_AUTH;
   const write = process.env.DOCUSIGN_LIVE_WRITE === '1' && authUrl === DEMO_AUTH;
-  const env: Record<string, string> = { DOCUSIGN_AUTH_URL: authUrl };
+  // The connector's base URL carries the account variables, and the engine
+  // refuses any request while a {{VAR}} is unresolved, userinfo included (its
+  // absolute path never uses the base URL). Until userinfo names the real
+  // account, the base URL gets the given values or a stand-in.
+  const env: Record<string, string> = {
+    DOCUSIGN_AUTH_URL: authUrl,
+    DOCUSIGN_BASE_URI: process.env.DOCUSIGN_BASE_URI || 'https://demo.docusign.net',
+    DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID || '00000000-0000-0000-0000-000000000000',
+  };
   let me: { email: string; name: string } = { email: '', name: '' };
 
   beforeAll(async () => {

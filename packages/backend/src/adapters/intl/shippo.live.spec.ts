@@ -302,14 +302,18 @@ live('shippo adapter: live API', () => {
     const to = await run('shippo_create_address', {
       name: 'AnythingMCP test recipient', street1: '965 Mission St', city: 'San Francisco', state: 'CA', zip: '94103', country: 'US', phone: '+1 555 341 9394', email: 'anythingmcp-test@example.com',
     });
+    // Validation saves the standardized address as a new object (own
+    // object_id, ZIP+4) and leaves the original untouched; ship to the new one.
     const validated = await run('shippo_validate_address', { address_id: to.object_id });
-    expect(validated.object_id).toBe(to.object_id);
+    expect(validated.object_id).toMatch(/^[0-9a-f]{32}$/);
+    expect(validated.validation_results.is_valid).toBe(true);
+    expect(validated.zip.startsWith('94103')).toBe(true);
     expect((await run('shippo_get_address', { address_id: from.object_id })).object_id).toBe(from.object_id);
 
     const parcel = await run('shippo_create_parcel', { length: '10', width: '8', height: '4', distance_unit: 'in', weight: '2', mass_unit: 'lb', metadata: 'AnythingMCP test' });
     expect((await run('shippo_get_parcel', { parcel_id: parcel.object_id })).object_id).toBe(parcel.object_id);
 
-    const shipment = await run('shippo_create_shipment', { address_from: from.object_id, address_to: to.object_id, parcels: [parcel.object_id], metadata: 'AnythingMCP test' });
+    const shipment = await run('shippo_create_shipment', { address_from: from.object_id, address_to: validated.object_id, parcels: [parcel.object_id], metadata: 'AnythingMCP test' });
     expect(shipment.status).toBe('SUCCESS');
     expect((await run('shippo_get_shipment', { shipment_id: shipment.object_id })).object_id).toBe(shipment.object_id);
     const rates = await run('shippo_list_shipment_rates', { shipment_id: shipment.object_id });

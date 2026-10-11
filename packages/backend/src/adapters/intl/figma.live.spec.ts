@@ -14,13 +14,14 @@ import { getAdapter, listAdapters } from '../catalog';
  * The live block runs every read tool through the real RestEngine:
  *   FIGMA_ACCESS_TOKEN=figd_... FIGMA_FILE_KEY=aBcD1234EfGh [FIGMA_TEAM_ID=1535...] \
  *     npx jest src/adapters/intl/figma.live.spec.ts
- * File reads need FIGMA_FILE_KEY, team library and project reads FIGMA_TEAM_ID.
+ * File reads need FIGMA_FILE_KEY, team library and folder reads FIGMA_TEAM_ID.
  * figma_get_file, figma_get_file_nodes and figma_render_images count against
  * Figma's tier 1 limit, which for files on the free Starter plan is only a few
  * calls a month: run this against a file in a paid team when possible.
  * FIGMA_LIVE_WRITE=1 also posts a comment "AnythingMCP test" on the file,
  * reacts to it and deletes it, and attaches a dev resource to the first frame,
- * renames it and deletes it (dev resources need a paid plan with Dev Mode).
+ * renames it and deletes it (dev resources need a paid plan with Dev Mode;
+ * without it Figma answers "File not found" and the test checks that refusal).
  */
 
 type Mapping = { method: string; path: string; encodePathParams?: boolean; queryParams?: Record<string, unknown>; bodyMapping?: Record<string, unknown> };
@@ -137,6 +138,9 @@ describe('figma adapter: static spec conformance', () => {
     expect(a.instructions).toContain('file_content:read');
     expect(a.instructions).toContain('Read-only setup');
     expect(a.instructions).toMatch(/90 days/);
+    // New tokens can no longer get projects:read; the folder endpoints take folders:read.
+    expect(a.instructions).toContain('`folders:read`\n');
+    for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/\/projects\b/);
     expect(JSON.stringify(adapterJson)).not.toMatch(/[–—]/);
   });
 });
@@ -202,6 +206,13 @@ describe('figma adapter: requests through the real engine', () => {
     expect(JSON.parse(seen[1].body)).toEqual({ dev_resources: [{ id: 'd1', name: 'Ticket T-1' }] });
   });
 
+  it('walks team folders, subfolders and folder files on the v2 endpoints', async () => {
+    await run('figma_list_team_folders', { team_id: '1535' });
+    await run('figma_list_subfolders', { folder_id: '42' });
+    await run('figma_list_folder_files', { folder_id: '42', branch_data: true });
+    expect(seen.map((r) => r.url)).toEqual(['/v2/teams/1535/folders', '/v2/folders/42/folders', '/v2/folders/42/files?branch_data=true']);
+  });
+
   it('pages team components with the numeric cursor', async () => {
     await run('figma_list_team_components', { team_id: '1535', page_size: 100, after: 42 });
     expect(seen[0].url).toBe('/v1/teams/1535/components?page_size=100&after=42');
@@ -214,6 +225,12 @@ const TEAM = process.env.FIGMA_TEAM_ID;
 const live = TOKEN ? describe : describe.skip;
 const withFile = FILE ? it : it.skip;
 const withTeam = TEAM ? it : it.skip;
+/** Figma's answer to dev resource calls on a file without Dev Mode access (Starter plan, View seat). */
+const NO_DEV_MODE = /File not found/;
+const statusAndMessage = (e: any): { status?: number; message: string } => ({
+  status: e?.response?.status ?? e?.status,
+  message: String(e?.response?.data?.message ?? e?.message ?? ''),
+});
 
 live('figma adapter: live calls', () => {
   const config = () => ({ baseUrl: a.connector.baseUrl, authType: 'API_KEY', authConfig: { headerName: 'X-Figma-Token', apiKey: TOKEN as string }, headers: a.connector.headers, errorWhen: rules });
@@ -262,25 +279,36 @@ live('figma adapter: live calls', () => {
       const key = styles.meta.styles[0].key;
       expect((await run('figma_get_style', { key })).meta.key).toBe(key);
     }
+    // Without Dev Mode access Figma hides the file from the dev resource API: 404 "File not found".
     const dev = await run('figma_list_dev_resources', { file_key: FILE }).catch((e) => e);
-    expect(Array.isArray(dev?.dev_resources) || [400, 403].includes(dev?.response?.status)).toBe(true);
+    if (!Array.isArray(dev?.dev_resources)) expect(statusAndMessage(dev)).toMatchObject({ status: 404, message: expect.stringMatching(NO_DEV_MODE) });
   }, 90000);
 
-  withTeam('reads team projects, their files and the team library', async () => {
-    const projects = await run('figma_list_team_projects', { team_id: TEAM });
-    expect(Array.isArray(projects.projects)).toBe(true);
-    if (projects.projects[0]) {
-      expect(Array.isArray((await run('figma_list_project_files', { project_id: projects.projects[0].id })).files)).toBe(true);
+  it('reaches the folder endpoints with the folders:read scope', async () => {
+    // A team the user is not in: a permission refusal, not "requires the ... scope".
+    const refused = await run('figma_list_team_folders', { team_id: '1' }).catch((e) => e);
+    const { status, message } = statusAndMessage(refused);
+    expect([403, 404]).toContain(status);
+    expect(message).not.toMatch(/scope/i);
+  }, 30000);
+
+  withTeam('reads team folders, their files and the team library', async () => {
+    const folders = await run('figma_list_team_folders', { team_id: TEAM });
+    expect(Array.isArray(folders.folders)).toBe(true);
+    if (folders.folders[0]) {
+      const id = folders.folders[0].id;
+      expect(Array.isArray((await run('figma_list_subfolders', { folder_id: id })).folders)).toBe(true);
+      expect(Array.isArray((await run('figma_list_folder_files', { folder_id: id })).files)).toBe(true);
     }
     expect((await run('figma_list_team_components', { team_id: TEAM, page_size: 5 })).meta).toHaveProperty('components');
     expect((await run('figma_list_team_component_sets', { team_id: TEAM, page_size: 5 })).meta).toHaveProperty('component_sets');
     expect((await run('figma_list_team_styles', { team_id: TEAM, page_size: 5 })).meta).toHaveProperty('styles');
   }, 60000);
 
-  it('a wrong token is a 403', async () => {
+  it('a wrong token is a 401', async () => {
     await expect(
       engine().execute({ ...config(), authConfig: { headerName: 'X-Figma-Token', apiKey: 'figd_wrong' } } as never, tool('figma_get_me').endpointMapping, {}),
-    ).rejects.toMatchObject({ response: { status: 403 } });
+    ).rejects.toMatchObject({ response: { status: 401 } });
   }, 30000);
 
   const writes = process.env.FIGMA_LIVE_WRITE === '1' && FILE ? it : it.skip;
@@ -303,9 +331,20 @@ live('figma adapter: live calls', () => {
 
   writes('attaches a dev resource to a frame, renames it and deletes it', async () => {
     const nodeId = frameId ?? (await run('figma_get_file', { file_key: FILE, depth: 2 })).document.children[0].children[0].id;
+    const url = `https://example.com/anythingmcp-test-${Date.now()}`;
+    const access = await run('figma_list_dev_resources', { file_key: FILE }).catch((e) => e);
+    if (!Array.isArray(access?.dev_resources)) {
+      // No Dev Mode on this file: creating is refused inside a 200 answer,
+      // which errorWhen must turn into a failed call carrying Figma's words.
+      expect(statusAndMessage(access)).toMatchObject({ status: 404, message: expect.stringMatching(NO_DEV_MODE) });
+      const refused = await run('figma_create_dev_resource', { file_key: FILE, node_id: nodeId, name: 'AnythingMCP test', url }).catch((e) => e);
+      expect(refused).toBeInstanceOf(ResponseBodyError);
+      expect(refused.message).toMatch(NO_DEV_MODE);
+      return;
+    }
     let resourceId: string | undefined;
     try {
-      const created = await run('figma_create_dev_resource', { file_key: FILE, node_id: nodeId, name: 'AnythingMCP test', url: `https://example.com/anythingmcp-test-${Date.now()}` });
+      const created = await run('figma_create_dev_resource', { file_key: FILE, node_id: nodeId, name: 'AnythingMCP test', url });
       resourceId = created.links_created[0].id;
       const updated = await run('figma_update_dev_resource', { dev_resource_id: resourceId, name: 'AnythingMCP test (updated)' });
       expect(updated.links_updated.length).toBe(1);

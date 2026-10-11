@@ -2,8 +2,8 @@
   "slug": "figma",
   "name": "Figma",
   "unlisted": true,
-  "description": "Let your AI read your Figma designs: browse team projects and files, inspect pages, frames and layers, export images, look up components and styles, follow version history, read and post comments, and manage Dev Mode links. With a personal access token.",
-  "instructions": "## Figma\nThis connector works with Figma through the **REST API** (`https://api.figma.com`): team projects and their files, file metadata, pages, frames and layers, image exports, image fills, version history, comments and reactions, published components, component sets and styles, and Dev Mode resources. It authenticates with a **personal access token**, so it sees exactly the files the token's user can open. It does not edit designs: the REST API cannot change layers.\n\n**Setup (about 2 minutes)**\n1. In Figma open the account menu (top left in the file browser) → **Settings** → **Security** → **Personal access tokens** → **Generate new token**.\n2. Name it (for example \"AnythingMCP\"), choose an expiry (at most 90 days; Figma no longer issues tokens that never expire) and set these scopes:\n   - `current_user:read`, `file_content:read`, `file_metadata:read`, `file_versions:read`\n   - `file_comments:read` and `file_comments:write`\n   - `library_content:read`, `library_assets:read`, `team_library_content:read`\n   - `folders:read` (older token screens call it `projects:read`)\n   - `file_dev_resources:read` and `file_dev_resources:write`\n3. Click **Generate token**, copy it right away (Figma shows it once) and paste it into `FIGMA_ACCESS_TOKEN`. When it expires, generate a new one and paste it again.\n\n**Read-only setup**: leave out `file_comments:write` and `file_dev_resources:write` and switch off `figma_post_comment`, `figma_delete_comment`, `figma_add_comment_reaction`, `figma_create_dev_resource` and `figma_update_dev_resource`. `figma_delete_dev_resource` is installed switched off.\n\n**Finding things**\n- File key: the part after `/design/` (or `/file/`, `/board/`, `/slides/`) in a file URL: `https://www.figma.com/design/aBcD1234EfGh/Website` → `aBcD1234EfGh`.\n- Node ids: a link's `node-id=12-345` is `12:345` in the API.\n- Team id: the number after `/team/` in the URL of a team page in the file browser. The API cannot list a user's teams, so ask the user for a team link. `figma_list_team_projects` → `figma_list_project_files` then lead to file keys.\n- Component and style keys (not node ids) come from the library list tools or from a file's `components` and `styles` maps.\n\n**Reading designs efficiently**: start with `figma_get_file_meta` (cheap), then `figma_get_file` with `depth` 1 or 2 to see pages and top-level frames, then `figma_get_file_nodes` for the frames that matter. Whole documents are very large; answers over 200 KB are cut and marked `_truncated`. To see a screen, `figma_render_images` returns PNG, JPG, SVG or PDF URLs, valid for 30 days.\n\n**Rate limits**: Figma limits per user and per plan of the file, in three tiers. File content, node reads and image renders (`figma_get_file`, `figma_get_file_nodes`, `figma_render_images`) are the tightest: on a paid plan with a Full or Dev seat 10 to 20 a minute, but for files on the free Starter plan, or for View and Collab seats, only a handful a month. Comments, versions, image fills, projects and dev resources allow 5 (Starter) to 100 a minute; metadata, components and styles 10 to 150. Over a limit Figma answers 429 with Retry-After; wait that long. Prefer metadata and single nodes over whole files.\n\n**Comments**: `figma_post_comment` posts as the token's user; pin it with `client_meta` (`{\"node_id\": \"1:2\", \"node_offset\": {\"x\": 0, \"y\": 0}}`) or reply with `comment_id` (top-level comments only). `figma_delete_comment` only works on the user's own comments.\n\n**Dev resources** are Dev Mode links (tickets, docs, code) on nodes; Dev Mode needs a paid plan and a Full or Dev seat. At most 10 per node and each URL once per node; refused ones come back in `errors`, which this connector reports as a failed call.\n\n**Errors**: 403 means the token is wrong, expired or lacks the scope for the call (the message says \"Invalid token\" or names the scope). 404 means no such file or node, or the user cannot open the file. 400 names an invalid parameter, e.g. a node id with a hyphen instead of a colon. 429 is a rate limit (see above). Library endpoints refuse a branch key: use the main file's key.\n\n**Out of scope here**: editing designs, variables (Enterprise only), webhooks, FigJam and Slides content beyond the file tree, and library analytics.",
+  "description": "Let your AI read your Figma designs: browse team folders and files, inspect pages, frames and layers, export images, look up components and styles, follow version history, read and post comments, and manage Dev Mode links. With a personal access token.",
+  "instructions": "## Figma\nThis connector works with Figma through the **REST API** (`https://api.figma.com`): team folders (formerly called projects), subfolders and their files, file metadata, pages, frames and layers, image exports, image fills, version history, comments and reactions, published components, component sets and styles, and Dev Mode resources. It authenticates with a **personal access token**, so it sees exactly the files the token's user can open. It does not edit designs: the REST API cannot change layers.\n\n**Setup (about 2 minutes)**\n1. In Figma open the account menu (top left in the file browser) → **Settings** → **Security** → **Personal access tokens** → **Generate new token**.\n2. Name it (for example \"AnythingMCP\"), choose an expiry (at most 90 days; Figma no longer issues tokens that never expire) and set these scopes:\n   - `current_user:read`, `file_content:read`, `file_metadata:read`, `file_versions:read`\n   - `file_comments:read` and `file_comments:write`\n   - `library_content:read`, `library_assets:read`, `team_library_content:read`\n   - `folders:read`\n   - `file_dev_resources:read` and `file_dev_resources:write`\n   Tokens made before Figma renamed projects to folders may only carry `projects:read`; the folder tools need `folders:read`, so generate a new token if they answer 403 naming a scope.\n3. Click **Generate token**, copy it right away (Figma shows it once) and paste it into `FIGMA_ACCESS_TOKEN`. When it expires, generate a new one and paste it again.\n\n**Read-only setup**: leave out `file_comments:write` and `file_dev_resources:write` and switch off `figma_post_comment`, `figma_delete_comment`, `figma_add_comment_reaction`, `figma_create_dev_resource` and `figma_update_dev_resource`. `figma_delete_dev_resource` is installed switched off.\n\n**Finding things**\n- File key: the part after `/design/` (or `/file/`, `/board/`, `/slides/`) in a file URL: `https://www.figma.com/design/aBcD1234EfGh/Website` → `aBcD1234EfGh`.\n- Node ids: a link's `node-id=12-345` is `12:345` in the API.\n- Team id: the number after `/team/` in the URL of a team page in the file browser. The API cannot list a user's teams, so ask the user for a team link. `figma_list_team_folders` → `figma_list_subfolders` (folders can be nested) → `figma_list_folder_files` then lead to file keys. A folder id is also the long number in a folder's URL in the file browser.\n- Component and style keys (not node ids) come from the library list tools or from a file's `components` and `styles` maps.\n\n**Reading designs efficiently**: start with `figma_get_file_meta` (cheap), then `figma_get_file` with `depth` 1 or 2 to see pages and top-level frames, then `figma_get_file_nodes` for the frames that matter. Whole documents are very large; answers over 200 KB are cut and marked `_truncated`. To see a screen, `figma_render_images` returns PNG, JPG, SVG or PDF URLs, valid for 30 days.\n\n**Rate limits**: Figma limits per user and per plan of the file, in three tiers. File content, node reads and image renders (`figma_get_file`, `figma_get_file_nodes`, `figma_render_images`) are the tightest: on a paid plan with a Full or Dev seat 10 to 20 a minute, but for files on the free Starter plan, or for View and Collab seats, only a handful a month. Comments, versions, image fills, folders and dev resources allow 5 (Starter) to 100 a minute; metadata, components and styles 10 to 150. Over a limit Figma answers 429 with Retry-After; wait that long. Prefer metadata and single nodes over whole files.\n\n**Comments**: `figma_post_comment` posts as the token's user; pin it with `client_meta` (`{\"node_id\": \"1:2\", \"node_offset\": {\"x\": 0, \"y\": 0}}`) or reply with `comment_id` (top-level comments only). `figma_delete_comment` only works on the user's own comments.\n\n**Dev resources** are Dev Mode links (tickets, docs, code) on nodes; Dev Mode needs a paid plan and a Full or Dev seat. Without Dev Mode access to a file (a Starter or locked team, a View or Collab seat) Figma answers \"File not found\" to the dev resource tools, even for a file the other tools read fine: tell the user that Dev Mode is not available to them on that file rather than that the file is missing. At most 10 per node and each URL once per node; refused ones come back in `errors`, which this connector reports as a failed call.\n\n**Errors**: 401 \"Invalid token\" means the token is wrong, expired or revoked: generate a new one. 403 means the token lacks the scope for the call (the message names the scopes) or the user has no access to that team or folder. 404 means no such file or node, or the user cannot open the file (for dev resources, see above). 400 names an invalid parameter, e.g. a node id with a hyphen instead of a colon. 429 is a rate limit (see above). Library endpoints refuse a branch key: use the main file's key.\n\n**Out of scope here**: editing designs, variables (Enterprise only), webhooks, FigJam and Slides content beyond the file tree, and library analytics.",
   "region": "intl",
   "category": "productivity",
   "icon": "figma",
@@ -23,7 +23,8 @@
     }
   },
   "verifyHints": {
-    "403": "Figma refused the token: it is wrong, expired (tokens last at most 90 days) or lacks a scope this call needs. Generate a new one under Settings → Security → Personal access tokens.",
+    "401": "Figma refused the token: it is wrong, expired (tokens last at most 90 days) or revoked. Generate a new one under Settings → Security → Personal access tokens and paste it again.",
+    "403": "The token lacks a scope this call needs, or its user has no access here. Generate a new token under Settings → Security → Personal access tokens with the scopes listed in the setup steps.",
     "404": "Figma found no file with this key, or the token's user cannot open it. Copy the key from the file's URL.",
     "rate_limited": "Figma is rate limiting this token. File content and image renders have the tightest limits, very low on Starter (free) files. Wait and try again, or read single nodes instead of whole files."
   },
@@ -73,7 +74,7 @@
     },
     {
       "name": "figma_get_file_meta",
-      "description": "Get a file's metadata without its content: name, folder (project) name, editor type (figma, figjam, slides ...), creator, last_touched_at and by whom, thumbnail, version, link access and the user's role. Cheap; use it before reading the file itself.",
+      "description": "Get a file's metadata without its content: name, folder name, editor type (figma, figjam, slides ...), creator, last_touched_at and by whom, thumbnail, version, link access and the user's role. Cheap; use it before reading the file itself.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -519,8 +520,8 @@
       }
     },
     {
-      "name": "figma_list_team_projects",
-      "description": "List the projects (folders) of a team that the token's user can see: id and name. Figma cannot list a user's teams through the API; take the team id from the team page's URL.",
+      "name": "figma_list_team_folders",
+      "description": "List the top-level folders (formerly called projects) of a team that the token's user can see: id, name, parent_folder_id (null at the top), sharing_audience_control and created_at, plus the team's name. Figma cannot list a user's teams through the API; take the team id from the team page's URL.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -535,19 +536,40 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v1/teams/{team_id}/projects",
+        "path": "/v2/teams/{team_id}/folders",
         "encodePathParams": true
       }
     },
     {
-      "name": "figma_list_project_files",
-      "description": "List the files in a project: key, name, thumbnail_url and last_modified.",
+      "name": "figma_list_subfolders",
+      "description": "List the folders directly inside a folder (folders can be nested): id, name, parent_folder_id and created_at, plus the parent folder's name. Call it again on a subfolder to go deeper.",
       "parameters": {
         "type": "object",
         "properties": {
-          "project_id": {
+          "folder_id": {
             "type": "string",
-            "description": "Project id, from figma_list_team_projects."
+            "description": "Folder id, from figma_list_team_folders or figma_list_subfolders (or the long number in a folder's URL in the Figma file browser)."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/folders/{folder_id}/folders",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "figma_list_folder_files",
+      "description": "List the files directly in a folder (not in its subfolders): key, name, thumbnail_url and last_modified, plus the folder's name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from figma_list_team_folders or figma_list_subfolders (or the long number in a folder's URL in the Figma file browser)."
           },
           "branch_data": {
             "type": "boolean",
@@ -555,12 +577,12 @@
           }
         },
         "required": [
-          "project_id"
+          "folder_id"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v1/projects/{project_id}/files",
+        "path": "/v2/folders/{folder_id}/files",
         "encodePathParams": true,
         "queryParams": {
           "branch_data": "$branch_data"
@@ -815,7 +837,7 @@
     },
     {
       "name": "figma_list_dev_resources",
-      "description": "List the dev resources of a file: links that developers attached to nodes in Dev Mode (tickets, docs, code), each with id, name, url and node_id.",
+      "description": "List the dev resources of a file: links that developers attached to nodes in Dev Mode (tickets, docs, code), each with id, name, url and node_id. Needs Dev Mode access to the file (a paid plan with a Full or Dev seat); without it Figma answers \"File not found\" although the file exists.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -843,7 +865,7 @@
     },
     {
       "name": "figma_create_dev_resource",
-      "description": "Attach a link (a ticket, a doc, a code file) to a node as a dev resource, visible to everyone in Dev Mode. A node holds at most 10, each URL once. Returns links_created, or errors naming what was refused.",
+      "description": "Attach a link (a ticket, a doc, a code file) to a node as a dev resource, visible to everyone in Dev Mode. A node holds at most 10, each URL once. Returns links_created, or errors naming what was refused. Needs Dev Mode access to the file (a paid plan with a Full or Dev seat); without it the refusal reads \"File not found\" although the file exists.",
       "parameters": {
         "type": "object",
         "properties": {

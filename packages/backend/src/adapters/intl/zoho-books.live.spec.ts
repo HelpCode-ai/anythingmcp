@@ -245,6 +245,7 @@ describe('zoho-books adapter: static spec conformance', () => {
     ['zoho_books_email_invoice', { invoice_id: '3', to_mail_ids: ['a@example.com'] }, 'POST', '/invoices/3/email'],
     ['zoho_books_mark_invoice_sent', { invoice_id: '3' }, 'POST', '/invoices/3/status/sent'],
     ['zoho_books_void_invoice', { invoice_id: '3' }, 'POST', '/invoices/3/status/void'],
+    ['zoho_books_mark_invoice_draft', { invoice_id: '3' }, 'POST', '/invoices/3/status/draft'],
     ['zoho_books_delete_invoice', { invoice_id: '3' }, 'DELETE', '/invoices/3'],
     ['zoho_books_list_estimates', {}, 'GET', '/estimates'],
     ['zoho_books_get_estimate', { estimate_id: '4' }, 'GET', '/estimates/4'],
@@ -338,7 +339,7 @@ live('zoho-books adapter: live API', () => {
       ['zoho_books_list_items', 'items', 'zoho_books_get_item', 'item_id', 'item_id'],
       ['zoho_books_list_invoices', 'invoices', 'zoho_books_get_invoice', 'invoice_id', 'invoice_id'],
       ['zoho_books_list_estimates', 'estimates', 'zoho_books_get_estimate', 'estimate_id', 'estimate_id'],
-      ['zoho_books_list_customer_payments', 'customer_payments', 'zoho_books_get_customer_payment', 'payment_id', 'payment_id'],
+      ['zoho_books_list_customer_payments', 'customerpayments', 'zoho_books_get_customer_payment', 'payment_id', 'payment_id'],
       ['zoho_books_list_bills', 'bills', 'zoho_books_get_bill', 'bill_id', 'bill_id'],
       ['zoho_books_list_expenses', 'expenses', 'zoho_books_get_expense', 'expense_id', 'expense_id'],
     ]) {
@@ -417,7 +418,14 @@ live('zoho-books adapter: live API', () => {
         }
         await run('zoho_books_void_invoice', { invoice_id: invoice.invoice_id });
         expect((await run('zoho_books_get_invoice', { invoice_id: invoice.invoice_id })).invoice.status).toBe('void');
+        // A sent invoice cannot be deleted (code 4529), not even void; back to draft first.
+        await expect(run('zoho_books_delete_invoice', { invoice_id: invoice.invoice_id })).rejects.toMatchObject({ response: { status: 400 } });
+        await run('zoho_books_mark_invoice_draft', { invoice_id: invoice.invoice_id });
+        expect((await run('zoho_books_get_invoice', { invoice_id: invoice.invoice_id })).invoice.status).toBe('draft');
       } finally {
+        const { status } = (await run('zoho_books_get_invoice', { invoice_id: invoice.invoice_id })).invoice;
+        if (status !== 'draft' && status !== 'void') await run('zoho_books_void_invoice', { invoice_id: invoice.invoice_id });
+        if (status !== 'draft') await run('zoho_books_mark_invoice_draft', { invoice_id: invoice.invoice_id });
         await run('zoho_books_delete_invoice', { invoice_id: invoice.invoice_id });
       }
 

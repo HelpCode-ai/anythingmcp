@@ -245,7 +245,20 @@ live('miro adapter: live calls', () => {
         expect(renamed.name).toBe('AnythingMCP test (updated)');
         const b = testBoard!;
 
-        const frame = await run('miro_create_frame', { board_id: b, title: 'AnythingMCP frame', position: { x: 0, y: 0 }, geometry: { width: 1600, height: 900 } });
+        // Miro answered valid frame requests with 500 "Internal error occurred"
+        // for minutes at a time on 11 Oct 2026 (other item types kept working):
+        // retry a 500 for up to a minute before calling it a failure.
+        const createFrame = async (): Promise<any> => {
+          for (let attempt = 1; ; attempt++) {
+            try {
+              return await run('miro_create_frame', { board_id: b, title: 'AnythingMCP frame', position: { x: 0, y: 0 }, geometry: { width: 1600, height: 900 } });
+            } catch (e) {
+              if ((e as { response?: { status?: number } }).response?.status !== 500 || attempt >= 12) throw e;
+              await new Promise((r) => setTimeout(r, 5000));
+            }
+          }
+        };
+        const frame = await createFrame();
         const sticky = await run('miro_create_sticky_note', { board_id: b, content: 'AnythingMCP sticky', style: { fillColor: 'light_yellow' }, position: { x: -400, y: 0 } });
         const shape = await run('miro_create_shape', { board_id: b, content: 'AnythingMCP shape', shape: 'round_rectangle', position: { x: 0, y: 0 }, geometry: { width: 200, height: 100 } });
         const text = await run('miro_create_text', { board_id: b, content: 'AnythingMCP text', position: { x: 0, y: -300 } });

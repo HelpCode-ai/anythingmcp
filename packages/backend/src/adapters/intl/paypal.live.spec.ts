@@ -397,9 +397,13 @@ live('paypal adapter: live REST API', () => {
       end_date: iso(new Date()),
       page_size: 10,
     });
-    expect(Array.isArray(history.transaction_details)).toBe(true);
+    // With no matching transactions PayPal leaves transaction_details out entirely.
+    if (history.total_items === 0) expect(history.transaction_details ?? []).toEqual([]);
+    else expect(Array.isArray(history.transaction_details)).toBe(true);
     const balances = await run('paypal_get_balances');
-    expect(Array.isArray(balances.balances)).toBe(true);
+    // A fresh sandbox account that never held money answers without a balances key.
+    expect(balances.as_of_time).toBeDefined();
+    expect(Array.isArray(balances.balances ?? [])).toBe(true);
     const disputes = await run('paypal_list_disputes', { page_size: 5 });
     if (disputes.items?.length) {
       const one = await run('paypal_get_dispute', { dispute_id: disputes.items[0].dispute_id });

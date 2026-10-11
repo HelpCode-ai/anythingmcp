@@ -923,7 +923,7 @@
     },
     {
       "name": "miro_create_frame",
-      "description": "Add a frame (a titled area that groups items) to a board. Returns it with its id; put items into it with their parent field or miro_move_item. Frames cannot sit inside other frames here.",
+      "description": "Add a frame (a titled area that groups items) to a board. Returns it with its id; put items into it with their parent field or miro_move_item. Frames cannot sit inside other frames here. Miro sometimes answers a valid request with 500 \"Internal error occurred\" for several minutes; wait a minute and try the same request again instead of changing it.",
       "parameters": {
         "type": "object",
         "properties": {
