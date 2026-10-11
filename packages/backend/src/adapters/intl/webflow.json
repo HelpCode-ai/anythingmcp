@@ -1,0 +1,1240 @@
+{
+  "slug": "webflow",
+  "name": "Webflow",
+  "unlisted": true,
+  "description": "Let your AI work on a Webflow site: read the site, its pages and SEO settings, CMS collections and items, forms and submissions, assets, and e-commerce products and orders; draft and update CMS items, and publish items or the whole site once you agree. Uses a site API token.",
+  "instructions": "## Webflow\nThis connector works with one Webflow site through the **Data API v2** (`https://api.webflow.com/v2`), signed in with a site API token: the site, its custom domains and publishing, pages with their SEO and Open Graph settings, CMS collections and items (staged and live), forms and form submissions, assets, and e-commerce products and orders.\n\n**Setup (about 3 minutes; you need to be a site administrator)**\n1. Sign in at https://webflow.com/dashboard, hover the site and click its gear icon to open **Site settings**.\n2. In the left sidebar choose **Apps & integrations**, scroll to **API access** at the bottom of the page and click **Generate API token**.\n3. Name the token (for example \"AnythingMCP\"), choose the scopes below and click **Generate token**.\n4. Copy the token right away and paste it into `WEBFLOW_API_TOKEN`, without the word \"Bearer\".\n5. Run `webflow_get_token_info` to see the scopes and the site id the token grants, then `webflow_list_sites` for the site's details.\n\n**Scopes**: `sites:read` (and `sites:write` to publish the site), `pages:read` (and `pages:write` for page settings), `cms:read` (and `cms:write` to create, change, publish, unpublish or delete items), `forms:read`, `assets:read`, and `ecommerce:read` on an e-commerce site. Scopes cannot be added to a token later: generate a new one.\n\n**Read-only setup**: tick only the `:read` scopes and switch off `webflow_publish_site`, `webflow_update_page_settings`, `webflow_create_item`, `webflow_update_item`, `webflow_publish_items`, `webflow_create_live_item` and `webflow_update_live_item`. `webflow_delete_item` and `webflow_unpublish_live_item` are installed switched off.\n\n**One site per token**: a site token only reaches the site it was generated on, so `webflow_list_sites` returns that one site; its `id` is the `site_id` the other tools take. A site can have up to 5 tokens, and a token expires after 365 days without use. For several sites, install the connector once per site.\n\n**Plans**: the API works on every site plan, the free Starter plan and a free workspace included. The CMS needs a site plan that has it: Starter includes a small one (20 collections, 50 items), Basic none, the paid CMS plans more. Webflow lists publishing and unpublishing single CMS items as a feature of the paid CMS plans, so on Starter `webflow_publish_items`, `webflow_create_live_item`, `webflow_update_live_item` and `webflow_unpublish_live_item` may be refused: publish the whole site instead. Products and orders need an e-commerce site plan; other sites answer 409.\n\n**Staged and live content**: every CMS item has a staged version (what editors see) and, once published, a live version on the website.\n- `webflow_create_item`, `webflow_update_item` and `webflow_delete_item` work on staged content and change nothing on the public site. New items are drafts unless `is_draft` is false, which queues them for the next site publish.\n- `webflow_publish_items` puts chosen staged items live; `webflow_publish_site` publishes every staged change of the site, pages and items.\n- `webflow_create_live_item` and `webflow_update_live_item` write straight to the public site. `webflow_unpublish_live_item` takes an item off the site and turns it back into a draft without deleting it.\n- Setting `is_draft` to true on a published item does not unpublish it: its changes wait as \"changes in draft\". Setting `is_archived` to true removes it from the site at the next site publish.\n- `webflow_list_items` shows the staged items, `webflow_list_live_items` what visitors see.\n\n**Publishing is public: confirm first.** Before `webflow_publish_site`, `webflow_publish_items`, `webflow_create_live_item`, `webflow_update_live_item` or `webflow_update_page_settings`, tell the user exactly what will change on the website and wait for a yes. Webflow accepts one successful site publish per minute.\n\n**Field data**: an item's content is `fieldData`, keyed by each field's **slug** from `webflow_get_collection` (not its display name). `name` and `slug` are required when creating. Values: plain text as a string, rich text as an HTML string, numbers, `true`/`false` for a Switch, ISO 8601 date-times, an option id for an Option field, an item id for a Reference and an array of item ids for a MultiReference, `{\"url\": \"https://...\"}` for a new image (a public URL, at most 4 MB) and an array of those for a MultiImage. Changing a slug breaks links to the old URL.\n\n**Locales**: on a localized site `webflow_get_site` lists the locales. CMS tools take a locale's `cmsLocaleId`, page and asset tools its `id` as `locale_id`. Without one, the primary locale is used.\n\n**Pagination**: list tools take `offset` and `limit` (at most 100) and answer with `pagination` (`limit`, `offset`, `total`). Sites, collections and custom domains come back in one call.\n\n**Rate limits**: per token, 60 requests a minute on Starter and Basic site plans, 120 on CMS, e-commerce and Business plans, custom on Enterprise. Over the limit Webflow answers 429 with a Retry-After header (usually 60 seconds).\n\n**Errors** (JSON with `code`, `message` and `details`)\n- 400 `bad_request` or a validation error: an unknown field slug, a value in the wrong format, or a missing `name` or `slug`; `details` names the field.\n- 401 `not_authorized`: the token is wrong, revoked or expired.\n- 403 `missing_scopes` or `forbidden`: the token lacks the scope (generate a new token with it), or the site plan does not include the feature.\n- 404 `resource_not_found`: a wrong id, or an id from another site.\n- 409 `conflict`: the request clashes with the site's state, for example e-commerce calls on a site without e-commerce.\n- 429 `too_many_requests`: wait for Retry-After.\n\n**Out of scope here**: creating or changing collections and fields, page content and components, custom code, uploading or deleting assets, changing or deleting form submissions, editing products, SKUs or orders (fulfilment, refunds), webhooks, comments, analytics, the Content Delivery API, and workspace and Enterprise endpoints.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "webflow",
+  "docsUrl": "https://developers.webflow.com/data/reference/rest-introduction",
+  "requiredEnvVars": [
+    "WEBFLOW_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "WEBFLOW_API_TOKEN": {
+      "label": "Site API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Webflow dashboard → the site's gear icon (Site settings) → Apps & integrations → API access (at the bottom) → Generate API token, with the scopes from the setup. Needs site administrator access.",
+      "link": "https://webflow.com/dashboard",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Webflow refused the token: it is wrong, was revoked, or expired after 365 days without use. Generate a new one under Site settings → Apps & integrations → API access.",
+    "403": "The token lacks a scope this call needs. Scopes cannot be added to an existing token: generate a new one with the scopes listed in the setup.",
+    "rate_limited": "The token reached Webflow's per-minute limit (60 or 120 requests a minute, depending on the site plan). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "webflow_get_token_info"
+  },
+  "prerequisites": "Site administrator access to a Webflow site, to generate a site API token. Any site plan works, the free Starter plan included; CMS tools need a plan with the CMS (Starter has a small one), products and orders an e-commerce plan. About 3 minutes.",
+  "connector": {
+    "name": "Webflow Data API v2",
+    "type": "REST",
+    "baseUrl": "https://api.webflow.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WEBFLOW_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/token/introspect"
+  },
+  "tools": [
+    {
+      "name": "webflow_get_token_info",
+      "description": "Check the connected token: its scopes (comma-separated), the site ids it is authorized for, its rate limit per minute, grant type, and when it was created and last used. Needs no scope; a quick test that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/token/introspect"
+      }
+    },
+    {
+      "name": "webflow_list_sites",
+      "description": "List the sites the token can reach: id, displayName, shortName, workspaceId, lastPublished, lastUpdated, timeZone, customDomains and locales. A site token reaches only its own site, so this returns that one site. No pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites"
+      }
+    },
+    {
+      "name": "webflow_get_site",
+      "description": "Read one site: displayName, shortName, lastPublished, lastUpdated, timeZone, customDomains (id and url) and locales (primary and secondary, each with id, cmsLocaleId, tag and subdirectory). The locale ids are what the locale_id and cms_locale_id arguments take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_list_custom_domains",
+      "description": "List the site's custom domains with id, url and lastPublished. The ids are what webflow_publish_site takes as custom_domain_ids. A site without custom domains returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/custom_domains",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_publish_site",
+      "description": "Publish the site (or one page with page_id) to its custom domains and/or the webflow.io subdomain: every staged change, pages and CMS items, goes live on the public website. Confirm with the user first. Not idempotent, and Webflow allows one successful publish per minute. Returns the domains published to and publishScope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "custom_domain_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Custom domain ids to publish to (webflow_list_custom_domains). Give this, publish_to_webflow_subdomain, or both."
+          },
+          "publish_to_webflow_subdomain": {
+            "type": "boolean",
+            "description": "true to publish to the site's webflow.io subdomain."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Publish only this page (webflow_list_pages) instead of the whole site."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/publish",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "customDomains": "$custom_domain_ids",
+          "publishToWebflowSubdomain": "$publish_to_webflow_subdomain",
+          "pageId": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "webflow_list_pages",
+      "description": "List the site's pages: id, title, slug, parentId, collectionId (set for CMS template pages), publishedPath, draft, archived, lastUpdated, and the seo and openGraph settings. Pages with offset and limit; pagination.total gives the count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "locale_id": {
+            "type": "string",
+            "description": "Locale id (the locale's id in webflow_get_site, not its cmsLocaleId) for a localized site; the primary locale when omitted."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/pages",
+        "encodePathParams": true,
+        "queryParams": {
+          "localeId": "$locale_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_page",
+      "description": "Read one page's settings: title, slug, publishedPath, draft, archived, collectionId, lastUpdated, seo (title, description) and openGraph (title, description and whether each is copied from the SEO value), optionally for one locale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "The page id (webflow_list_pages)."
+          },
+          "locale_id": {
+            "type": "string",
+            "description": "Locale id (the locale's id in webflow_get_site, not its cmsLocaleId) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "localeId": "$locale_id"
+        }
+      }
+    },
+    {
+      "name": "webflow_update_page_settings",
+      "description": "Change a page's title, slug, SEO title and description, or Open Graph title and description, optionally for one locale. Only the fields given change. This is what search engines and social previews show, so confirm the new text with the user first; it reaches the public site with the next publish. Returns the updated page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "The page id (webflow_list_pages)."
+          },
+          "locale_id": {
+            "type": "string",
+            "description": "Locale id (the locale's id in webflow_get_site, not its cmsLocaleId) for a localized site; the primary locale when omitted."
+          },
+          "title": {
+            "type": "string",
+            "description": "New page title (the page name in Webflow)."
+          },
+          "slug": {
+            "type": "string",
+            "description": "New URL slug. Ignored for the home page, CMS template pages and utility pages; changing it breaks links to the old URL."
+          },
+          "seo": {
+            "type": "object",
+            "description": "Search result texts, e.g. {\"title\": \"Spring sale | Acme\", \"description\": \"Ten days of spring deals.\"}. Either key may be left out."
+          },
+          "open_graph": {
+            "type": "object",
+            "description": "Social preview texts, e.g. {\"title\": \"Spring sale\", \"titleCopied\": false, \"description\": \"Ten days only\", \"descriptionCopied\": false}. Set titleCopied or descriptionCopied to true to reuse the SEO value instead."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/pages/{page_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "localeId": "$locale_id"
+        },
+        "bodyMapping": {
+          "title": "$title",
+          "slug": "$slug",
+          "seo": "$seo",
+          "openGraph": "$open_graph"
+        }
+      }
+    },
+    {
+      "name": "webflow_list_collections",
+      "description": "List the site's CMS collections: id, displayName, singularName, slug, createdOn and lastUpdated. A site without CMS collections returns an empty list. No pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/collections",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_get_collection",
+      "description": "Read a collection's schema: displayName, singularName, slug and fields, each with id, slug, displayName, type (PlainText, RichText, Image, Reference, Option, ...), isRequired, isEditable, helpText and validations (option ids, referenced collection). Call it before writing items: fieldData is keyed by these slugs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collection_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_list_items",
+      "description": "List a collection's staged items (drafts and published ones, as editors see them): id, fieldData, isDraft, isArchived, lastPublished (null if never published), lastUpdated, createdOn and cmsLocaleId. Filter by name, slug or custom fields, sort, and page with offset and limit; pagination.total gives the count. An empty collection returns an empty items list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId in webflow_get_site), several comma-separated; the primary locale when omitted."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only items with exactly this name."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the item with exactly this slug."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "createdOn",
+              "lastPublished",
+              "lastUpdated",
+              "name",
+              "slug"
+            ],
+            "description": "Sort by createdOn, lastPublished, lastUpdated, name or slug."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "filter_query": {
+            "type": "string",
+            "description": "Filters and sorts on custom fields as a query string in bracket notation, with field slugs from webflow_get_collection, e.g. \"filter[price][gte]=10&filter[title][contains]=shirt&sort[price]=desc\". Operators: eq, ne, gt, gte, lt, lte, in and nin (comma-separated values), contains, ncontains, exists. Up to 10 filter terms (2 of them text searches) and 3 sort fields, combined with AND."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (default 25 here).",
+            "default": 25
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collection_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "cmsLocaleId": "$cms_locale_id",
+          "name": "$name",
+          "slug": "$slug",
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order",
+          "offset": "$offset",
+          "limit": "$limit",
+          "__rawquery": "$filter_query"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_item",
+      "description": "Read one staged item: id, fieldData (keyed by field slug), isDraft, isArchived, lastPublished, lastUpdated, createdOn and cmsLocaleId, optionally in one locale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId of a locale in webflow_get_site) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collection_id}/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "cmsLocaleId": "$cms_locale_id"
+        }
+      }
+    },
+    {
+      "name": "webflow_create_item",
+      "description": "Create a staged CMS item; nothing appears on the public site. It is a draft unless is_draft is false, which queues it for the next site publish. field_data needs name and slug plus the collection's required fields. Returns items with the new id. To put it live, use webflow_publish_items after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "field_data": {
+            "type": "object",
+            "description": "Field values keyed by field slug (webflow_get_collection), e.g. {\"name\": \"Spring sale\", \"slug\": \"spring-sale\", \"summary\": \"Ten days only\", \"post-body\": \"<p>Hello</p>\"}."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) keeps the item a draft; false queues it to go live with the next site publish."
+          },
+          "is_archived": {
+            "type": "boolean",
+            "description": "true to create it archived."
+          },
+          "cms_locale_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CMS locale ids to create the item in (cmsLocaleId in webflow_get_site); the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "field_data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections/{collection_id}/items/insert",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": [
+            {
+              "fieldData": "$field_data",
+              "isDraft": "$is_draft",
+              "isArchived": "$is_archived",
+              "cmsLocaleIds": "$cms_locale_ids"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "webflow_update_item",
+      "description": "Change a staged item: only the fields in field_data change. A published item keeps its live version until it is published again (status \"changes in draft\"), so the public site does not change. Returns the updated item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "field_data": {
+            "type": "object",
+            "description": "Field values to change, keyed by field slug (webflow_get_collection), e.g. {\"summary\": \"Now twelve days\"}."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "description": "true holds the changes as a draft; false queues the item for the next site publish. Does not unpublish a live item."
+          },
+          "is_archived": {
+            "type": "boolean",
+            "description": "true archives the item (it leaves the live site at the next site publish), false restores it."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId of a locale in webflow_get_site) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/collections/{collection_id}/items",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": [
+            {
+              "id": "$item_id",
+              "cmsLocaleId": "$cms_locale_id",
+              "fieldData": "$field_data",
+              "isDraft": "$is_draft",
+              "isArchived": "$is_archived"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "webflow_delete_item",
+      "description": "Delete an item from the CMS for good (in the primary locale, or in the given locales). Cannot be undone: confirm the item with the user first. To only take it off the website, use webflow_unpublish_live_item. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "cms_locale_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Delete only these locale versions (cmsLocaleId in webflow_get_site); the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/collections/{collection_id}/items",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": [
+            {
+              "id": "$item_id",
+              "cmsLocaleIds": "$cms_locale_ids"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "webflow_publish_items",
+      "description": "Publish staged items to the live site without publishing the rest of it: their current staged content becomes public and drafts stop being drafts. Confirm with the user first. Give item_ids for the primary locale, or items for specific locales. Returns publishedItemIds, and errors for ids that failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Item ids to publish in the primary locale, up to 100."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Instead of item_ids, per locale: [{\"id\": \"<item id>\", \"cmsLocaleIds\": [\"<cmsLocaleId>\"]}]."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections/{collection_id}/items/publish",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "itemIds": "$item_ids",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "webflow_list_live_items",
+      "description": "List a collection's published items as visitors see them: id, fieldData, lastPublished, lastUpdated, createdOn and cmsLocaleId. Same filters and paging as webflow_list_items; pagination.total gives the count. A collection with nothing published returns an empty items list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId in webflow_get_site), several comma-separated; the primary locale when omitted."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only items with exactly this name."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the item with exactly this slug."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "createdOn",
+              "lastPublished",
+              "lastUpdated",
+              "name",
+              "slug"
+            ],
+            "description": "Sort by createdOn, lastPublished, lastUpdated, name or slug."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "filter_query": {
+            "type": "string",
+            "description": "Filters and sorts on custom fields as a query string in bracket notation, with field slugs from webflow_get_collection, e.g. \"filter[price][gte]=10&filter[title][contains]=shirt&sort[price]=desc\". Operators: eq, ne, gt, gte, lt, lte, in and nin (comma-separated values), contains, ncontains, exists. Up to 10 filter terms (2 of them text searches) and 3 sort fields, combined with AND."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (default 25 here).",
+            "default": 25
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collection_id}/items/live",
+        "encodePathParams": true,
+        "queryParams": {
+          "cmsLocaleId": "$cms_locale_id",
+          "name": "$name",
+          "slug": "$slug",
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order",
+          "offset": "$offset",
+          "limit": "$limit",
+          "__rawquery": "$filter_query"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_live_item",
+      "description": "Read the published version of one item: id, fieldData, lastPublished, lastUpdated and cmsLocaleId. Answers 404 when the item was never published or was unpublished.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId of a locale in webflow_get_site) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collection_id}/items/{item_id}/live",
+        "encodePathParams": true,
+        "queryParams": {
+          "cmsLocaleId": "$cms_locale_id"
+        }
+      }
+    },
+    {
+      "name": "webflow_create_live_item",
+      "description": "Create an item and publish it on the live website at once, skipping the draft stage. Confirm the content with the user first, or prefer webflow_create_item for a draft. field_data needs name and slug plus the collection's required fields. Returns the new item with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "field_data": {
+            "type": "object",
+            "description": "Field values keyed by field slug (webflow_get_collection), e.g. {\"name\": \"Spring sale\", \"slug\": \"spring-sale\", \"summary\": \"Ten days only\", \"post-body\": \"<p>Hello</p>\"}."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId of a locale in webflow_get_site) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "field_data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections/{collection_id}/items/live",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "isArchived": false,
+          "isDraft": false,
+          "fieldData": "$field_data",
+          "cmsLocaleId": "$cms_locale_id"
+        }
+      }
+    },
+    {
+      "name": "webflow_update_live_item",
+      "description": "Change a published item and push the change to the live website immediately: only the fields in field_data change. This overwrites public content, so confirm the change with the user first. Returns the updated items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "field_data": {
+            "type": "object",
+            "description": "Field values to change, keyed by field slug (webflow_get_collection), e.g. {\"price-note\": \"Sold out\"}."
+          },
+          "cms_locale_id": {
+            "type": "string",
+            "description": "CMS locale id (cmsLocaleId of a locale in webflow_get_site) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id",
+          "field_data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/collections/{collection_id}/items/live",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": [
+            {
+              "id": "$item_id",
+              "cmsLocaleId": "$cms_locale_id",
+              "fieldData": "$field_data"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "webflow_unpublish_live_item",
+      "description": "Take a published item off the live website (primary locale, or the given locales). It stays in the CMS as a draft and can be published again. Confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id (webflow_list_collections)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The item id (webflow_list_items or webflow_list_live_items)."
+          },
+          "cms_locale_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Unpublish only these locale versions (cmsLocaleId in webflow_get_site); the primary locale when omitted."
+          }
+        },
+        "required": [
+          "collection_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/collections/{collection_id}/items/live",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "items": [
+            {
+              "id": "$item_id",
+              "cmsLocaleIds": "$cms_locale_ids"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "webflow_list_forms",
+      "description": "List the site's forms: id, displayName, pageId, pageName, formElementId, fields (name and type per field), createdOn and lastUpdated. Pages with offset and limit; pagination.total gives the count. A site without forms returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/forms",
+        "encodePathParams": true,
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_form",
+      "description": "Read one form's schema: displayName, the page it sits on, formElementId, its fields with their types, and responseSettings (notification and redirect settings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "The form id (webflow_list_forms)."
+          }
+        },
+        "required": [
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_list_form_submissions",
+      "description": "List the site's form submissions: id, displayName (the form name), dateSubmitted, formResponse (the submitted values by field name) and localeId. element_id narrows it to one form wherever it is used, components included. Pages with offset and limit; pagination.total gives the count. A site without submissions returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "element_id": {
+            "type": "string",
+            "description": "Only this form: its formElementId from webflow_list_forms."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/form_submissions",
+        "encodePathParams": true,
+        "queryParams": {
+          "elementId": "$element_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_list_form_submissions_by_form",
+      "description": "List the submissions of one form by its form id: id, dateSubmitted, formResponse (the submitted values by field name) and localeId. Pages with offset and limit; pagination.total gives the count. For a form inside a component prefer webflow_list_form_submissions with element_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "form_id": {
+            "type": "string",
+            "description": "The form id (webflow_list_forms)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id",
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/forms/{form_id}/submissions",
+        "encodePathParams": true,
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_form_submission",
+      "description": "Read one form submission: form name, dateSubmitted, localeId and formResponse with every submitted value by field name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "form_submission_id": {
+            "type": "string",
+            "description": "The submission id (webflow_list_form_submissions)."
+          }
+        },
+        "required": [
+          "site_id",
+          "form_submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/form_submissions/{form_submission_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_list_assets",
+      "description": "List the files uploaded to the site: id, displayName, originalFileName, contentType, size in bytes, hostedUrl, altText, folderId, variants (responsive sizes) and dates. Pages with offset and limit; pagination.total gives the count. A site without assets returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only assets in this asset folder and its subfolders (a 24-character id)."
+          },
+          "locale_id": {
+            "type": "string",
+            "description": "Locale id (the locale's id in webflow_get_site, not its cmsLocaleId) for a localized site; the primary locale when omitted."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/assets",
+        "encodePathParams": true,
+        "queryParams": {
+          "folderId": "$folder_id",
+          "localeId": "$locale_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_asset",
+      "description": "Read one asset: displayName, originalFileName, contentType, size, hostedUrl (the public file URL), altText, variants and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset id (webflow_list_assets)."
+          },
+          "locale_id": {
+            "type": "string",
+            "description": "Locale id (the locale's id in webflow_get_site, not its cmsLocaleId) for a localized site; the primary locale when omitted."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/{asset_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "localeId": "$locale_id"
+        }
+      }
+    },
+    {
+      "name": "webflow_list_products",
+      "description": "List e-commerce products, each with its product fieldData (name, slug, description, ...) and its SKUs (variants with price, SKU code and options). Pages with offset and limit over products; pagination.total counts products, not SKUs. Needs an e-commerce site plan; other sites answer 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (Webflow's default is 100)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/products",
+        "encodePathParams": true,
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_product",
+      "description": "Read one e-commerce product with all its SKUs: the product's fieldData and, per SKU, price, compare-at price, SKU code and option values. Needs an e-commerce site plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "The product id (webflow_list_products)."
+          }
+        },
+        "required": [
+          "site_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/products/{product_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "webflow_list_orders",
+      "description": "List e-commerce orders: orderId, status, acceptedOn, fulfilledOn, customerInfo, shipping and billing address, purchasedItems, totals, customerPaid and shipping tracking. Filter by status; pages with offset and limit; pagination.total gives the count. Needs an e-commerce site plan; other sites answer 409.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "unfulfilled",
+              "fulfilled",
+              "disputed",
+              "dispute-lost",
+              "refunded"
+            ],
+            "description": "Only orders with this status: pending, unfulfilled, fulfilled, disputed, dispute-lost or refunded."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of records to skip, for paging (0 for the first page)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Records per page, at most 100 (default 25 here).",
+            "default": 25
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/orders",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "webflow_get_order",
+      "description": "Read one e-commerce order: status, dates, customerInfo, addresses, purchasedItems, totals with taxes and shipping, payment details, comments and shipping tracking. Needs an e-commerce site plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "The site id (webflow_list_sites returns it as id)."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "The order id (orderId in webflow_list_orders)."
+          }
+        },
+        "required": [
+          "site_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/orders/{order_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

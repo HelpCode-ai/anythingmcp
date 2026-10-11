@@ -1,0 +1,1023 @@
+{
+  "slug": "zoom",
+  "name": "Zoom",
+  "unlisted": true,
+  "description": "Let your AI work with Zoom: find and read your meetings, schedule, change and cancel them, manage registrants, see who attended past meetings, list cloud recordings and webinars, and pull usage reports. Signed in with your Zoom account through a Zoom app of your own (OAuth).",
+  "instructions": "## Zoom\nThis connector works with one Zoom account through the **Zoom REST API v2** (`https://api.zoom.us/v2`): the signed-in user and the account's users, scheduled meetings (list, read, create, change, delete), meeting registration (list, add and approve or deny registrants), past meetings with their instances and participants, cloud recordings (metadata only), webinars, and usage reports per user and per meeting. It signs in with **OAuth 2.0** (authorization code) through a Zoom **General app** of your own, as the Zoom user who authorizes it.\n\n**Why a General app and not Server-to-Server OAuth**: Zoom's Server-to-Server apps get their token with the `account_credentials` grant plus the account id, which this connector's OAuth engine does not send. A General app uses the standard authorization code flow with refresh tokens, which it does. The API calls are the same either way.\n\n**Setup (about 10 minutes; a free Zoom Basic account works for the meeting tools)**\n1. Sign in at https://marketplace.zoom.us/ as the account owner, an admin, or a user with the **Zoom for developers** role. In the lower-left navigation click **Developer**, then **Develop** (top right) → **Build an app** → **General app** → **Create**.\n2. On **Basic Info**, rename the app (for example \"AnythingMCP\") and choose how it is managed: **User-managed** when the AI should work with your own meetings and recordings (the usual case), **Admin-managed** when it should also read other users, their meetings and the usage reports (the `:admin` scopes below; an admin authorizes it).\n3. Under **App Credentials**, copy the development **Client ID** and **Client Secret** into `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET`. Development credentials are enough for your own account; an app that is never published can only be authorized by users of the account that built it.\n4. Under **OAuth Information**, set **OAuth Redirect URL** to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and add the same URL to the **OAuth Allow List**. Click **Continue**.\n5. Skip **Features** and **Surface** (no Zoom App, webhooks or in-client features are needed).\n6. On **Scopes** click **Add Scopes** and tick the granular scopes below (for each one Zoom asks for a short reason, e.g. \"lets the user's AI assistant read their meetings\").\n7. Install the connector, then click **Authorize with Provider** on the connector page, sign in to Zoom and click **Allow**. There is no need to click **Add App Now** under Local Test; authorizing does the same.\n\n**Scopes, read** (user-managed): `user:read:user`, `meeting:read:list_meetings`, `meeting:read:meeting`, `meeting:read:list_registrants`, `meeting:read:past_meeting`, `meeting:read:list_past_instances`, `meeting:read:list_past_participants`, `cloud_recording:read:list_user_recordings`, `cloud_recording:read:list_recording_files`, `webinar:read:list_webinars`, `webinar:read:webinar`.\n\n**Scopes, write**: `meeting:write:meeting` (create), `meeting:update:meeting` (change), `meeting:delete:meeting` (delete), `meeting:write:registrant` (add a registrant), `meeting:update:registrant_status` (approve, deny, cancel).\n\n**Scopes, admin** (admin-managed app, authorized by an admin; only if you need them): `user:read:list_users:admin` for `zoom_list_users`, `user:read:user:admin` to read other users, the `:admin` variant of each meeting, recording and webinar scope above (e.g. `meeting:read:list_meetings:admin`) to work with other users' meetings, and `report:read:user:admin`, `report:read:meeting:admin`, `report:read:list_meeting_participants:admin` for the report tools. If the scope picker does not offer `:admin` scopes, switch the app to **Admin-managed** on Basic Info.\n\n**Read-only setup**: tick only the read scopes and switch off `zoom_create_meeting`, `zoom_update_meeting`, `zoom_add_meeting_registrant` and `zoom_update_meeting_registrant_status`. `zoom_delete_meeting` is installed switched off.\n\n**Sign-in lifetime**: access tokens last one hour and are renewed automatically. The refresh token lasts 90 days and is replaced on every renewal, so the connector stays signed in as long as it is used at least once every 90 days. After scope changes in the app, click **Authorize with Provider** again: a token only carries the scopes granted when it was issued.\n\n**Users**: `me` stands for the signed-in user wherever a tool takes `user_id` (the default). Another user's id or email works only with the `:admin` scopes.\n\n**Meetings**: a meeting id is a number of 9 to 11 digits (pass it as text, e.g. \"85746065432\"). `zoom_list_meetings` returns scheduled meetings only, never instant ones, and with `type` upcoming or previous_meetings at most 6 months. Times are ISO 8601: `2026-10-20T15:00:00Z` in UTC, or `2026-10-20T17:00:00` together with `timezone` (e.g. `Europe/Berlin`). Meeting `type`: 1 instant, 2 scheduled (default), 3 recurring without fixed time, 8 recurring with fixed time (needs `recurrence`). On the free Basic plan, meetings with 3 or more participants end after 40 minutes.\n\n**Notifications: confirm first.** Creating or changing a meeting can email alternative hosts (`settings.alternative_hosts`) and invitees (`settings.meeting_invitees`); adding a registrant emails them a confirmation, and approving, denying or cancelling a registrant emails them too. Before any of these, say who will be notified and wait for the user's yes. `zoom_get_meeting` and `zoom_create_meeting` leave out `start_url`: it carries a host token and starts the meeting as the host, so it should not travel through the conversation; the host starts the meeting from the Zoom app or with `join_url` while signed in.\n\n**Registration** (Pro plan or higher): set `settings.approval_type` to 0 (automatic approval) or 1 (manual approval) when creating or updating the meeting; 2 means no registration. `zoom_list_meeting_registrants` lists approved registrants unless `status` is pending or denied; `zoom_update_meeting_registrant_status` takes registrant ids from that list. Zoom allows 3 registration requests and 10 status changes per registrant and meeting per day.\n\n**Past meetings and UUIDs**: every occurrence of a meeting has its own UUID (e.g. `aDYlohsHRtCd4ii1uC2+hA==`). `zoom_list_past_meeting_instances` lists them; `zoom_get_past_meeting`, `zoom_list_past_meeting_participants`, `zoom_get_meeting_recordings`, `zoom_get_meeting_report` and `zoom_get_meeting_participants_report` take a meeting id (latest occurrence) or a UUID. **A UUID that starts with `/` or contains `//` must reach Zoom double URL-encoded**: pass such a UUID already URL-encoded once (`/ajXp112QmuoKj4854875==` becomes `%2FajXp112QmuoKj4854875%3D%3D`) and the connector encodes it the second time. Pass every other UUID unchanged. Past meetings are readable for 12 months, participants and instances for 15 months; participant lists need a paid plan and leave out one-person meetings.\n\n**Recordings** (Pro plan or higher with cloud recording on): `zoom_list_recordings` covers at most one month per call (`from` and `to` as `yyyy-mm-dd`, default today); page back month by month for older ones. `zoom_get_meeting_recordings` returns each file's type, size, `play_url` and `download_url`. The connector does not download recordings: a `download_url` only works with an access token, so give the user the `play_url` or `share_url` instead.\n\n**Webinars** need a Pro or higher plan with the Webinars add-on; without it Zoom answers code 200 \"Webinar plan is missing\".\n\n**Reports** (Pro plan or higher, admin scopes): `zoom_get_user_meetings_report` covers one month per call within the last 6 months and lists only meetings with at least two participants. Report endpoints are counted as heavy requests.\n\n**Paging**: list tools return `next_page_token` while more results exist; pass it back unchanged with the same filters to get the next page (it expires after 15 minutes). `page_size` is at most 300 (2,000 for users). An empty account may answer with an empty list, a `total_records` of 0, or no list key at all. `zoom_list_webinars` still pages with `page_number`.\n\n**Rate limits** are per account and shared by all apps. Free accounts: light requests 4 per second and 6,000 a day, medium 2 per second and 2,000 a day, heavy 1 per second and 1,000 a day; Pro and higher allow 10 to 80 per second. Creating and updating meetings is limited to 100 a day per host. Over a limit Zoom answers 429; wait (a second, or until the next UTC day for daily limits).\n\n**Errors** (Zoom puts its own `code` and `message` in the body)\n- 401 code 124 \"Invalid access token\": the sign-in expired or was revoked; click **Authorize with Provider** again.\n- 400 code 4711 \"Invalid access token, does not contain scopes\" (or 4700): the app lacks the scope named in the message; add it under **Scopes**, then authorize again.\n- 400 code 200 \"No permission\" or \"Only available for Paid account\": the plan or the user's role does not allow it (registration, past participants, recordings, webinars and reports need paid plans).\n- 404 code 3001 \"Meeting does not exist\", 1001 \"User does not exist\", 3301 \"There is no recording for this meeting\"; code 300 \"The next page token is invalid or expired\".\n- 3161: the user may not host or schedule meetings.\n\n**Out of scope here**: the daily usage report (`/report/daily` has no granular scope, so a new Zoom app cannot request it), downloading recording files, transcripts and AI Companion summaries, creating or changing webinars, Zoom Phone, Team Chat, Rooms, account settings and user management.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "zoom",
+  "docsUrl": "https://developers.zoom.us/docs/api/",
+  "requiredEnvVars": [
+    "ZOOM_CLIENT_ID",
+    "ZOOM_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://marketplace.zoom.us/develop/create",
+  "envVarMeta": {
+    "ZOOM_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Zoom App Marketplace → Developer → your General app → Basic Info → App Credentials: Client ID.",
+      "link": "https://marketplace.zoom.us/user/build",
+      "pattern": "^[A-Za-z0-9_-]{10,64}$",
+      "patternMessage": "The Client ID is a code of letters and digits such as aB3dE5fG7hI9jK1lM3nO, without spaces."
+    },
+    "ZOOM_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page → App Credentials: Client Secret (click the eye icon to reveal, then copy).",
+      "link": "https://marketplace.zoom.us/user/build",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the Client Secret only, letters and digits without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Zoom refused the access token (code 124). Click Authorize with Provider again; if the app was deleted or its secret regenerated, update ZOOM_CLIENT_SECRET first.",
+    "400": "If Zoom names code 4711 or 4700, the app lacks a scope: add the scope from the message under Scopes in the Zoom app, then click Authorize with Provider again. Code 200 means the plan or role does not allow the call.",
+    "403": "The signed-in Zoom user has no permission for this. Other users, reports and account data need an admin-managed app, the :admin scopes and an admin who authorizes it.",
+    "rate_limited": "Zoom is rate limiting this account (limits are shared by all apps on the account, and daily on the free plan). Wait a moment, or until the next UTC day for a daily limit."
+  },
+  "probe": {
+    "tool": "zoom_get_current_user"
+  },
+  "prerequisites": "A Zoom account (free Basic works for meetings; registration, participants, recordings and reports need Pro or higher) where you are owner, admin or have the Zoom for developers role, to create a General app with the redirect URI below and its scopes. About 10 minutes.",
+  "connector": {
+    "name": "Zoom REST API v2",
+    "type": "REST",
+    "baseUrl": "https://api.zoom.us/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{ZOOM_CLIENT_ID}}",
+      "clientSecret": "{{ZOOM_CLIENT_SECRET}}",
+      "authorizationUrl": "https://zoom.us/oauth/authorize",
+      "tokenUrl": "https://zoom.us/oauth/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "zoom_get_current_user",
+      "description": "Read the signed-in Zoom user: id, first and last name, display name, email, type (1 Basic, 2 Licensed), role, time zone, personal meeting id (pmi), account id and status. A cheap check that the authorization works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "zoom_list_users",
+      "description": "List the users of the Zoom account (admin only, scope user:read:list_users:admin): id, name, email, type, status, role_id, department, time zone, last login. Returns users with total_records and next_page_token; an empty answer may carry no users key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "active (default), inactive (deactivated) or pending (invited, not yet activated).",
+            "enum": [
+              "active",
+              "inactive",
+              "pending"
+            ]
+          },
+          "role_id": {
+            "type": "string",
+            "description": "Only users with this role id."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Users per page, 1 to 2000 (default 30 here).",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 30
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "status": "$status",
+          "role_id": "$role_id",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_user",
+      "description": "Read one Zoom user by id or email: name, email, type, role, department, time zone, language, personal meeting id and URL, status and last login. Other users than \"me\" need the user:read:user:admin scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\", or a user id or email address."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zoom_list_meetings",
+      "description": "List a host's scheduled meetings (not instant ones): id, uuid, topic, type, start_time, duration, timezone, agenda, join_url, created_at. type upcoming shows what is coming, previous_meetings what has ended (both at most 6 months). Returns meetings with total_records and next_page_token; an empty calendar returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\" for the signed-in user (default), or another user's id or email (needs the :admin scopes).",
+            "default": "me"
+          },
+          "type": {
+            "type": "string",
+            "description": "scheduled (default: unexpired past, live and upcoming), live, upcoming, upcoming_meetings or previous_meetings.",
+            "enum": [
+              "scheduled",
+              "live",
+              "upcoming",
+              "upcoming_meetings",
+              "previous_meetings"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date \"yyyy-mm-dd\" of the range to list."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date \"yyyy-mm-dd\" of the range to list."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of from and to, e.g. \"Europe/Berlin\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/meetings",
+        "encodePathParams": true,
+        "queryParams": {
+          "type": "$type",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_meeting",
+      "description": "Read one meeting: topic, type, status, start_time, duration, timezone, agenda, join_url, passcode, host, occurrences of a recurring meeting, recurrence and settings (waiting room, registration approval_type, alternative hosts, auto recording). start_url is left out because it starts the meeting as the host.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "One occurrence of a recurring meeting (occurrence_id from zoom_get_meeting)."
+          },
+          "show_previous_occurrences": {
+            "type": "boolean",
+            "description": "true to include the past occurrences of a recurring meeting."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meetings/{meeting_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_id": "$occurrence_id",
+          "show_previous_occurrences": "$show_previous_occurrences"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zoom_create_meeting",
+      "description": "Schedule a Zoom meeting for a host. Returns id, uuid, topic, start_time, join_url, password and settings (start_url is left out). Zoom emails alternative hosts and meeting_invitees in settings: confirm topic, time and anyone notified with the user first. At most 100 creates or updates a day per host.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\" for the signed-in user (default), or another user's id or email (needs the :admin scopes).",
+            "default": "me"
+          },
+          "topic": {
+            "type": "string",
+            "description": "The meeting topic (title), up to 200 characters."
+          },
+          "type": {
+            "type": "integer",
+            "description": "1 instant, 2 scheduled, 3 recurring without fixed time, 8 recurring with fixed time (needs recurrence).",
+            "enum": [
+              1,
+              2,
+              3,
+              8
+            ]
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, e.g. \"2026-10-20T15:00:00Z\" (UTC) or \"2026-10-20T17:00:00\" with timezone. For types 2 and 8."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Planned length in minutes, 1 to 1440. For types 2 and 8.",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of start_time, e.g. \"Europe/Berlin\" or \"America/New_York\"."
+          },
+          "agenda": {
+            "type": "string",
+            "description": "The meeting description, up to 2,000 characters."
+          },
+          "password": {
+            "type": "string",
+            "description": "Meeting passcode, up to 10 characters (letters, digits, @ - _ *). Zoom generates one when the account requires it and none is given."
+          },
+          "schedule_for": {
+            "type": "string",
+            "description": "Email or user id of the user to schedule for (needs scheduling privilege for that user)."
+          },
+          "recurrence": {
+            "type": "object",
+            "description": "For type 8 (and 3 when it recurs): e.g. {\"type\": 2, \"repeat_interval\": 1, \"weekly_days\": \"2,4\", \"end_times\": 6} (weekly on Monday and Wednesday, 6 times). type 1 daily, 2 weekly, 3 monthly; weekly_days 1 = Sunday ... 7 = Saturday; end_times (max 60) or end_date_time."
+          },
+          "settings": {
+            "type": "object",
+            "description": "Meeting settings, e.g. {\"waiting_room\": true, \"join_before_host\": false, \"mute_upon_entry\": true, \"auto_recording\": \"none\", \"approval_type\": 2}. approval_type 0 or 1 turns on registration (Pro plan), 2 means none. alternative_hosts (emails separated by \";\") and meeting_invitees ([{\"email\": \"...\"}]) are notified by email; registrants_confirmation_email and registrants_email_notification set to false keep registration emails off."
+          }
+        },
+        "required": [
+          "topic"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/meetings",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "topic": "$topic",
+          "type": "$type",
+          "start_time": "$start_time",
+          "duration": "$duration",
+          "timezone": "$timezone",
+          "agenda": "$agenda",
+          "password": "$password",
+          "schedule_for": "$schedule_for",
+          "recurrence": "$recurrence",
+          "settings": "$settings"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zoom_update_meeting",
+      "description": "Change a meeting: only the fields given are changed, settings are merged. Answers 204 with no body; read it again with zoom_get_meeting. start_time must lie in the future. A change can email alternative hosts and registrants: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "Change only this occurrence of a recurring meeting (agenda, start_time, duration and a few settings)."
+          },
+          "topic": {
+            "type": "string",
+            "description": "The meeting topic (title), up to 200 characters."
+          },
+          "type": {
+            "type": "integer",
+            "description": "1 instant, 2 scheduled, 3 recurring without fixed time, 8 recurring with fixed time (needs recurrence).",
+            "enum": [
+              1,
+              2,
+              3,
+              8
+            ]
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, e.g. \"2026-10-20T15:00:00Z\" (UTC) or \"2026-10-20T17:00:00\" with timezone. For types 2 and 8."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Planned length in minutes, 1 to 1440. For types 2 and 8.",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of start_time, e.g. \"Europe/Berlin\" or \"America/New_York\"."
+          },
+          "agenda": {
+            "type": "string",
+            "description": "The meeting description, up to 2,000 characters."
+          },
+          "password": {
+            "type": "string",
+            "description": "Meeting passcode, up to 10 characters (letters, digits, @ - _ *). Zoom generates one when the account requires it and none is given."
+          },
+          "schedule_for": {
+            "type": "string",
+            "description": "Email or user id of the user to schedule for (needs scheduling privilege for that user)."
+          },
+          "recurrence": {
+            "type": "object",
+            "description": "For type 8 (and 3 when it recurs): e.g. {\"type\": 2, \"repeat_interval\": 1, \"weekly_days\": \"2,4\", \"end_times\": 6} (weekly on Monday and Wednesday, 6 times). type 1 daily, 2 weekly, 3 monthly; weekly_days 1 = Sunday ... 7 = Saturday; end_times (max 60) or end_date_time."
+          },
+          "settings": {
+            "type": "object",
+            "description": "Meeting settings, e.g. {\"waiting_room\": true, \"join_before_host\": false, \"mute_upon_entry\": true, \"auto_recording\": \"none\", \"approval_type\": 2}. approval_type 0 or 1 turns on registration (Pro plan), 2 means none. alternative_hosts (emails separated by \";\") and meeting_invitees ([{\"email\": \"...\"}]) are notified by email; registrants_confirmation_email and registrants_email_notification set to false keep registration emails off."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/meetings/{meeting_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_id": "$occurrence_id"
+        },
+        "bodyMapping": {
+          "topic": "$topic",
+          "type": "$type",
+          "start_time": "$start_time",
+          "duration": "$duration",
+          "timezone": "$timezone",
+          "agenda": "$agenda",
+          "password": "$password",
+          "schedule_for": "$schedule_for",
+          "recurrence": "$recurrence",
+          "settings": "$settings"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zoom_delete_meeting",
+      "description": "Delete a meeting, or one occurrence of a recurring meeting with occurrence_id; without it the whole series is deleted. Cannot be undone. No cancellation email goes out unless the reminder flags are true. Confirm the meeting with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "Delete only this occurrence of a recurring meeting."
+          },
+          "schedule_for_reminder": {
+            "type": "boolean",
+            "description": "true to email the host and alternative hosts about the cancellation (default false here).",
+            "default": false
+          },
+          "cancel_meeting_reminder": {
+            "type": "boolean",
+            "description": "true to email registrants about the cancellation (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/meetings/{meeting_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_id": "$occurrence_id",
+          "schedule_for_reminder": "$schedule_for_reminder",
+          "cancel_meeting_reminder": "$cancel_meeting_reminder"
+        }
+      }
+    },
+    {
+      "name": "zoom_list_meeting_registrants",
+      "description": "List the registrants of a meeting with registration (Pro plan): id, first_name, last_name, email, status, create_time, join_url and answers. Approved ones by default; status pending shows who waits for approval. Returns registrants with total_records and next_page_token; an empty list when nobody registered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "status": {
+            "type": "string",
+            "description": "approved (default), pending or denied.",
+            "enum": [
+              "approved",
+              "pending",
+              "denied"
+            ]
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "One occurrence of a recurring meeting (occurrence_id from zoom_get_meeting)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meetings/{meeting_id}/registrants",
+        "encodePathParams": true,
+        "queryParams": {
+          "status": "$status",
+          "occurrence_id": "$occurrence_id",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_add_meeting_registrant",
+      "description": "Register a person for a meeting that has registration on. Returns registrant_id, join_url (personal link), topic, start_time and occurrences. Zoom emails the person a confirmation unless the meeting turns that off: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "email": {
+            "type": "string",
+            "description": "The registrant's email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name, up to 64 characters."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name, up to 64 characters."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. \"DE\"."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Questions or comments from the registrant."
+          },
+          "custom_questions": {
+            "type": "array",
+            "description": "Answers to the meeting's custom questions, e.g. [{\"title\": \"Company size\", \"value\": \"10-50\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the confirmation email, e.g. en-US, de-DE, fr-FR, es-ES, it-IT."
+          },
+          "occurrence_ids": {
+            "type": "string",
+            "description": "Comma-separated occurrence ids, to register for only these occurrences of a recurring meeting."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "email",
+          "first_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/meetings/{meeting_id}/registrants",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_ids": "$occurrence_ids"
+        },
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "phone": "$phone",
+          "org": "$org",
+          "job_title": "$job_title",
+          "country": "$country",
+          "comments": "$comments",
+          "custom_questions": "$custom_questions",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "zoom_update_meeting_registrant_status",
+      "description": "Approve or deny pending registrants, or cancel approved ones. Answers 204 with no body. Zoom emails each registrant about the decision (unless the meeting turns registration emails off), and a denial or cancellation removes their access: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "action": {
+            "type": "string",
+            "description": "approve, deny or cancel.",
+            "enum": [
+              "approve",
+              "deny",
+              "cancel"
+            ]
+          },
+          "registrants": {
+            "type": "array",
+            "description": "Who, by id from zoom_list_meeting_registrants and email, e.g. [{\"id\": \"9tboDiHUQAeOnbmudzWa5g\", \"email\": \"ana@example.com\"}]. Up to 30 per call.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "One occurrence of a recurring meeting (occurrence_id from zoom_get_meeting)."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "action",
+          "registrants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/meetings/{meeting_id}/registrants/status",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_id": "$occurrence_id"
+        },
+        "bodyMapping": {
+          "action": "$action",
+          "registrants": "$registrants"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zoom_get_past_meeting",
+      "description": "Read a meeting that has ended: uuid, topic, host name and email, start_time, end_time, duration, total_minutes, participants_count and has_meeting_summary. With a meeting id it is the latest occurrence; with a UUID that one. Up to 12 months back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "A meeting id (latest occurrence) or one occurrence's UUID. A UUID that starts with \"/\" or contains \"//\" must be passed URL-encoded once (e.g. \"%2FajXp112QmuoKj4854875%3D%3D\"); the connector encodes it a second time as Zoom requires. Pass every other UUID unchanged."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/past_meetings/{meeting_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zoom_list_past_meeting_participants",
+      "description": "List who took part in an ended meeting (paid plan): name, user_email, join_time, leave_time, duration in seconds, status and internal_user. One row per join, so a person can appear more than once. Returns participants with total_records and next_page_token; meetings with a single person return nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "A meeting id (latest occurrence) or one occurrence's UUID. A UUID that starts with \"/\" or contains \"//\" must be passed URL-encoded once (e.g. \"%2FajXp112QmuoKj4854875%3D%3D\"); the connector encodes it a second time as Zoom requires. Pass every other UUID unchanged."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/past_meetings/{meeting_id}/participants",
+        "encodePathParams": true,
+        "queryParams": {
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_list_past_meeting_instances",
+      "description": "List the ended occurrences of a meeting id, each with uuid and start_time, to read one occurrence with the UUID tools. Returns meetings; an empty list when the meeting never took place. Up to 15 months back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The meeting id, the 9 to 11 digit number, as text (e.g. \"85746065432\")."
+          },
+          "from": {
+            "type": "string",
+            "description": "From date \"yyyy-mm-dd\" (UTC); only used together with to."
+          },
+          "to": {
+            "type": "string",
+            "description": "To date \"yyyy-mm-dd\" (UTC); only used together with from. Keep the range to about a month."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/past_meetings/{meeting_id}/instances",
+        "encodePathParams": true,
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "zoom_list_recordings",
+      "description": "List a user's cloud recordings in a date range of at most one month (Pro plan): per meeting uuid, id, topic, start_time, duration, total_size, share_url and recording_files (type, size, play_url, download_url). Without from and to only today is covered. Returns meetings with total_records and next_page_token; often an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\" for the signed-in user (default), or another user's id or email (needs the :admin scopes).",
+            "default": "me"
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date \"yyyy-mm-dd\" (UTC). Default today."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date \"yyyy-mm-dd\" (UTC), at most one month after from."
+          },
+          "meeting_id": {
+            "type": "string",
+            "description": "Only recordings of this meeting id."
+          },
+          "trash": {
+            "type": "boolean",
+            "description": "true to list recordings in the trash instead."
+          },
+          "trash_type": {
+            "type": "string",
+            "description": "With trash: meeting_recordings (default) or recording_file.",
+            "enum": [
+              "meeting_recordings",
+              "recording_file"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/recordings",
+        "encodePathParams": true,
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "meeting_id": "$meeting_id",
+          "trash": "$trash",
+          "trash_type": "$trash_type",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_meeting_recordings",
+      "description": "Read the cloud recording of one meeting or webinar: topic, start_time, duration, total_size, share_url, recording_play_passcode and recording_files (recording_type, file_type, file_size, recording_start, recording_end, status, play_url, download_url). Metadata only: files are not downloaded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "A meeting id (latest occurrence) or one occurrence's UUID. A UUID that starts with \"/\" or contains \"//\" must be passed URL-encoded once (e.g. \"%2FajXp112QmuoKj4854875%3D%3D\"); the connector encodes it a second time as Zoom requires. Pass every other UUID unchanged. A webinar id or UUID works too."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meetings/{meeting_id}/recordings",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zoom_list_webinars",
+      "description": "List a host's unexpired webinars (Webinars add-on): id, uuid, topic, type, start_time, duration, timezone, agenda, join_url, created_at. Returns webinars with total_records, page_count and page_number; without the add-on Zoom answers code 200 \"Webinar plan is missing\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\" for the signed-in user (default), or another user's id or email (needs the :admin scopes).",
+            "default": "me"
+          },
+          "type": {
+            "type": "string",
+            "description": "scheduled (default: past unexpired, live and upcoming) or upcoming.",
+            "enum": [
+              "scheduled",
+              "upcoming"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (this endpoint still pages by number).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/webinars",
+        "encodePathParams": true,
+        "queryParams": {
+          "type": "$type",
+          "page_size": "$page_size",
+          "page_number": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_webinar",
+      "description": "Read one webinar: topic, type, start_time, duration, timezone, agenda, join_url, registration_url, occurrences, recurrence and settings (approval, panelists video, Q&A). Needs the Webinars add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webinar_id": {
+            "type": "string",
+            "description": "The webinar id (a number, as text) or UUID."
+          },
+          "occurrence_id": {
+            "type": "string",
+            "description": "One occurrence of a recurring webinar."
+          },
+          "show_previous_occurrences": {
+            "type": "boolean",
+            "description": "true to include the past occurrences of a recurring webinar."
+          }
+        },
+        "required": [
+          "webinar_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webinars/{webinar_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "occurrence_id": "$occurrence_id",
+          "show_previous_occurrences": "$show_previous_occurrences"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_user_meetings_report",
+      "description": "Report of the meetings and webinars a user held in up to one month within the last 6 months (Pro plan, admin scope report:read:user:admin): uuid, id, topic, start_time, end_time, duration, total_minutes, participants_count, has_recording, has_screen_share. Only meetings with 2 or more participants. Returns meetings with next_page_token; may be empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "\"me\" for the signed-in user (default), or another user's id or email (needs the :admin scopes).",
+            "default": "me"
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date \"yyyy-mm-dd\"."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date \"yyyy-mm-dd\", at most one month after from."
+          },
+          "type": {
+            "type": "string",
+            "description": "past (default: meetings the user hosted), pastOne (single-person meetings) or pastJoined (hosted or joined).",
+            "enum": [
+              "past",
+              "pastOne",
+              "pastJoined"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/users/{user_id}/meetings",
+        "encodePathParams": true,
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "type": "$type",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    },
+    {
+      "name": "zoom_get_meeting_report",
+      "description": "Report on one ended meeting (Pro plan, admin scope report:read:meeting:admin): uuid, topic, host user_name and user_email, start_time, end_time, duration, total_minutes, participants_count, tracking fields and custom keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "A meeting id (latest occurrence) or one occurrence's UUID. A UUID that starts with \"/\" or contains \"//\" must be passed URL-encoded once (e.g. \"%2FajXp112QmuoKj4854875%3D%3D\"); the connector encodes it a second time as Zoom requires. Pass every other UUID unchanged."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/meetings/{meeting_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "zoom_get_meeting_participants_report",
+      "description": "Participant report of an ended meeting with 2 or more people (Pro plan, admin scope report:read:list_meeting_participants:admin): name, user_email, join_time, leave_time, duration in seconds, status, and with include_fields the registrant_id. Returns participants with next_page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "A meeting id (latest occurrence) or one occurrence's UUID. A UUID that starts with \"/\" or contains \"//\" must be passed URL-encoded once (e.g. \"%2FajXp112QmuoKj4854875%3D%3D\"); the connector encodes it a second time as Zoom requires. Pass every other UUID unchanged."
+          },
+          "include_fields": {
+            "type": "string",
+            "description": "registrant_id to add each participant's registrant id.",
+            "enum": [
+              "registrant_id"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 300 (Zoom's default 30).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token of the previous page, to fetch the next one (expires after 15 minutes)."
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/meetings/{meeting_id}/participants",
+        "encodePathParams": true,
+        "queryParams": {
+          "include_fields": "$include_fields",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      }
+    }
+  ]
+}

@@ -182,6 +182,7 @@ import * as inoreader from './intl/inoreader.json';
 import * as insightly from './intl/insightly.json';
 import * as instagram from './intl/instagram.json';
 import * as instantly from './intl/instantly.json';
+import * as intercom from './intl/intercom.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
 import * as jev from './intl/jev.json';
@@ -218,6 +219,7 @@ import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as miro from './intl/miro.json';
+import * as mixpanel from './intl/mixpanel.json';
 import * as mollie from './intl/mollie.json';
 import * as monday from './intl/monday.json';
 import * as mongodb from './intl/mongodb.json';
@@ -252,6 +254,7 @@ import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
+import * as posthog from './intl/posthog.json';
 import * as prestashop from './intl/prestashop.json';
 import * as printful from './intl/printful.json';
 import * as printify from './intl/printify.json';
@@ -319,6 +322,7 @@ import * as vinted from './intl/vinted.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
+import * as webflow from './intl/webflow.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as wildberries from './intl/wildberries.json';
 import * as wix from './intl/wix.json';
@@ -337,6 +341,7 @@ import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
 import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
+import * as zoom from './intl/zoom.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
 import * as zApi from './br/z-api.json';
@@ -749,6 +754,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   insightly as unknown as AdapterDefinition,
   instagram as unknown as AdapterDefinition,
   instantly as unknown as AdapterDefinition,
+  intercom as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
@@ -785,6 +791,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
+  mixpanel as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   monday as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
@@ -819,6 +826,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
+  posthog as unknown as AdapterDefinition,
   prestashop as unknown as AdapterDefinition,
   printful as unknown as AdapterDefinition,
   printify as unknown as AdapterDefinition,
@@ -886,6 +894,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
+  webflow as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
   wix as unknown as AdapterDefinition,
@@ -904,6 +913,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zenhub as unknown as AdapterDefinition,
   zohoBooks as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
+  zoom as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
   zApi as unknown as AdapterDefinition,

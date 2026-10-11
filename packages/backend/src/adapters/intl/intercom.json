@@ -1,0 +1,1913 @@
+{
+  "slug": "intercom",
+  "name": "Intercom",
+  "unlisted": true,
+  "description": "Let your AI work in Intercom: find and update contacts and companies, read, search and triage conversations and tickets (reply, add notes, assign, snooze, close, tag), and manage Help Center articles and collections. US, EU or Australian workspaces, with the access token of a Developer Hub app.",
+  "instructions": "## Intercom\nThis connector works with one Intercom workspace through the **Intercom REST API, version 2.16** (`https://api.intercom.io`, or the EU or Australian host): contacts (users and leads) with their tags, notes and companies, companies, conversations (read, search, reply, notes, assign, snooze, close, reopen, tags), tickets (search, read, reply, update), the Help Center (articles and collections), and the workspace's admins, teams, tags, segments and data attributes. Every call sends `Intercom-Version: 2.16` and the workspace access token as a Bearer token.\n\n**Setup (about 5 minutes)**\n1. Sign in to the workspace as an admin and open the **Developer Hub**: https://app.intercom.com/a/apps/_/developer-hub (or Settings → Integrations → Developer Hub; EU and Australian workspaces use the same path on app.eu.intercom.com or app.au.intercom.com).\n2. Click **New app**, name it (for example \"AnythingMCP\"), choose the workspace and click **Create app**. The app is installed on that workspace at once; your own workspace needs no OAuth and no app review.\n3. Open the app's **Configure → Authentication** page. It shows the workspace **Access token** and the permissions it carries. For every tool here, grant: Read and list users and companies, Write users and companies, Read conversations, Write conversations, Read tickets, Write tickets, Read and List articles, Read and Write Articles, Read admins, Read tags, Write tags. After changing permissions, regenerate the token (the page links to it) and use the new one.\n4. Paste the token into `INTERCOM_ACCESS_TOKEN`, without the word Bearer. Treat it like a password: it opens the workspace's customer data.\n5. Set `INTERCOM_API_URL` to the region of your workspace: `https://api.intercom.io` (US, you open app.intercom.com), `https://api.eu.intercom.io` (EU, app.eu.intercom.com) or `https://api.au.intercom.io` (Australia, app.au.intercom.com).\n6. Install and run `intercom_get_me`: it returns your admin `id` and the workspace with its `region`.\n\n**Read-only setup**: grant only the read permissions (Read and list users and companies, Read conversations, Read tickets, Read and List articles, Read admins, Read tags) and switch off the write tools here. The three search tools only read, although they are POST requests.\n\n**Trying it out**: a free development workspace from https://app.intercom.com/admins/sign_up/developer is enough. It lives in the US region, sends no emails or push notifications, holds up to 20 users and leads, and can never become a production workspace.\n\n**Acting as an admin**: replies, notes, assignment, snooze, close, reopen and conversation tags need `admin_id`, the teammate the action is credited to. Use the `id` from `intercom_get_me`, or another admin from `intercom_list_admins`. `intercom_create_article` needs an `author_id` the same way.\n\n**Customers see some of this: confirm first.**\n- `intercom_reply_to_conversation` posts a message the customer sees in the Messenger, or receives by email for email conversations. `intercom_close_conversation` with a `body` posts that text too. `intercom_reply_to_ticket` with `message_type` comment is shown to the customer.\n- Notes (`intercom_add_conversation_note`, `intercom_add_contact_note`, `intercom_reply_to_ticket` with `message_type` note, the default) are only visible to teammates.\n- `intercom_create_article` makes a **draft** unless `state` is published. `intercom_update_article` on a published article changes the public Help Center at once; `state` draft takes it offline.\n- Before any customer-visible message or publishing, show the text and wait for the user's yes. `intercom_delete_contact`, `intercom_delete_article` and `intercom_delete_collection` are installed switched off; `intercom_archive_contact` is the reversible way to hide a contact.\n\n**Searching**: `intercom_search_contacts`, `intercom_search_conversations` and `intercom_search_tickets` take a `query`, either one condition `{\"field\": \"email\", \"operator\": \"=\", \"value\": \"ana@example.com\"}` or a group `{\"operator\": \"AND\", \"value\": [ ... ]}` (or OR; at most 2 levels of nesting and 15 conditions per group). Operators: `=`, `!=`, `IN` and `NIN` (value is an array), `<`, `>`, `~` (contains), `!~`, `^` (starts with), `$` (ends with). Dates are Unix timestamps in seconds and are matched by whole day in the workspace's timezone; on contact dates only `=`, `<` and `>` work. Useful fields:\n- contacts: `email`, `name`, `phone`, `external_id`, `role` (user or lead), `created_at`, `last_seen_at`, `tag_id`, `segment_id`, `location.country`, `custom_attributes.<name>` (`intercom_list_data_attributes` lists the names);\n- conversations: `open`, `state` (open, closed, snoozed), `admin_assignee_id`, `team_assignee_id`, `contact_ids`, `tag_ids`, `priority`, `source.author.email`, `source.body` (matches single words only), `created_at`, `updated_at`;\n- tickets: `ticket_type_id`, `open`, `state`, `title`, `category` (request for customer tickets, task for back-office, tracker), `contact_ids`, `admin_assignee_id`, `created_at`.\nA contact created a few minutes ago may not be searchable yet.\n\n**Paging**\n- Cursor: `intercom_list_contacts`, `intercom_list_conversations` and the three search tools take `per_page` (default 20 here, max 150) and `starting_after`, the value of `pages.next.starting_after` in the previous answer. No `pages.next` means the last page.\n- Page numbers: `intercom_list_companies`, `intercom_list_articles` and `intercom_list_collections` take `page` and `per_page`.\n- `intercom_list_companies` only returns companies that have at least one contact, and at most 10,000 of them.\n\n**Ids**: contacts have 24-character hex ids; conversations have numeric ids sent as text. Tickets have an `id` (use this one) and a `ticket_id`, the #number in the Inbox, which the API does not accept. Companies have Intercom's `id` and your own `company_id`; tools that take a `company_id` argument mean Intercom's `id` except `intercom_create_or_update_company` and the `company_id` filter of `intercom_list_companies`. Tag ids come from `intercom_list_tags` or `intercom_create_tag` (which returns the existing tag when the name is taken).\n\n**What changed in 2.16**: an unassigned conversation reports `admin_assignee_id` and `team_assignee_id` as 0, not null; `priority` is none, low, medium, high or urgent; articles report their collections as `parent_ids`, while creating or moving one still takes `parent_id` and `parent_type`.\n\n**Empty workspaces**: lists come back with an empty `data` (or `conversations`, `admins`, `teams`, `segments`) array; be ready for the key to be missing altogether.\n\n**Limits**: by default 10,000 calls a minute per app and 25,000 per workspace, spread over 10-second windows. The `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers show what is left; a 429 means wait a few seconds.\n\n**Common errors** (`{\"type\": \"error.list\", \"errors\": [{\"code\": \"...\", \"message\": \"...\"}]}`)\n- 401 `unauthorized` / `token_unauthorized`: the token is wrong, was regenerated or the app was uninstalled, or `INTERCOM_API_URL` is not your workspace's region.\n- 403 `forbidden` / `api_plan_restricted`: the token lacks a permission (step 3), or the plan does not include the feature, e.g. tickets.\n- 404 `not_found`: wrong id; for tickets, the Inbox number instead of the `id`.\n- 410 `contact_merged`: the contact was merged into another; search by email for the surviving one.\n- 400 `parameter_invalid` / `parameter_not_found`: a bad search condition, an unknown field, a missing `admin_id`, or a date operator that dates do not support.\n- 429 `rate_limit_exceeded`: wait and retry.\n\n**Out of scope here**: starting outbound messages and creating conversations or tickets, deleting conversations, merging contacts, data events, news items, macros, Fin, custom objects, calls, data exports, webhooks and workspace settings.",
+  "region": "intl",
+  "category": "support",
+  "icon": "intercom",
+  "docsUrl": "https://developers.intercom.com/docs/references/rest-api/api.intercom.io",
+  "requiredEnvVars": [
+    "INTERCOM_API_URL",
+    "INTERCOM_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "INTERCOM_API_URL": {
+      "label": "Intercom API host (data region)",
+      "kind": "address",
+      "help": "https://api.intercom.io for US workspaces (you open app.intercom.com), https://api.eu.intercom.io for EU workspaces (app.eu.intercom.com), https://api.au.intercom.io for Australian workspaces (app.au.intercom.com). intercom_get_me shows the region as app.region.",
+      "example": "https://api.intercom.io",
+      "pattern": "^https://api(\\.eu|\\.au)?\\.intercom\\.io$",
+      "patternMessage": "Use https://api.intercom.io, https://api.eu.intercom.io or https://api.au.intercom.io, without a path or trailing slash."
+    },
+    "INTERCOM_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Intercom → Settings → Integrations → Developer Hub → your app → Configure → Authentication → Access token. Its permissions are set on the same page.",
+      "link": "https://app.intercom.com/a/apps/_/developer-hub",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Intercom refused the access token: it is wrong, was regenerated, or the app was uninstalled. Copy it again from the Developer Hub (Configure → Authentication) and check that INTERCOM_API_URL is the region of your workspace.",
+    "403": "The token lacks a permission this call needs, or your Intercom plan does not include the feature. Add the permission on the app's Authentication page in the Developer Hub, then regenerate and paste the token.",
+    "404": "Intercom found nothing at this address or id. Check the id; for tickets use the API id, not the #number from the Inbox.",
+    "rate_limited": "Intercom is rate limiting this app (by default 10,000 calls a minute per app, spread over 10-second windows). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "intercom_get_me"
+  },
+  "prerequisites": "An Intercom workspace where you are an admin (a free development workspace works for trying it out) and an app in its Developer Hub, whose access token you copy. No OAuth or app review is needed for your own workspace. About 5 minutes.",
+  "connector": {
+    "name": "Intercom REST API 2.16",
+    "type": "REST",
+    "baseUrl": "{{INTERCOM_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INTERCOM_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Intercom-Version": "2.16",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "intercom_get_me",
+      "description": "Read who the access token belongs to: the admin id, name and email, plus the workspace (app) with its id_code, name, timezone and region. The admin id is what replies, notes and state changes need as admin_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "intercom_list_admins",
+      "description": "List the workspace admins (teammates) with id, name, email, away_mode_enabled, has_inbox_seat and team_ids. Use an id as admin_id or as assignee_id when assigning. Returns admins (no paging).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admins"
+      }
+    },
+    {
+      "name": "intercom_get_admin",
+      "description": "Read one admin (teammate): name, email, away mode and reason, inbox seat and the ids of their teams.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "admin_id": {
+            "type": "string",
+            "description": "The admin id, from intercom_list_admins."
+          }
+        },
+        "required": [
+          "admin_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admins/{admin_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_list_teams",
+      "description": "List the workspace teams with id, name and admin_ids. A team id can be the assignee_id of intercom_assign_conversation. Returns teams, an empty list when the workspace has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams"
+      }
+    },
+    {
+      "name": "intercom_get_team",
+      "description": "Read one team: name, the ids of its admins, the assignment limit and the distribution method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "The team id, from intercom_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_list_tags",
+      "description": "List every tag in the workspace with id and name. Returns data (no paging); an empty workspace returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags"
+      }
+    },
+    {
+      "name": "intercom_create_tag",
+      "description": "Create a tag, or return the existing tag with that name (names are case-insensitive). With id it renames that tag instead, everywhere it is applied. Returns the tag with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The tag name, or the new name when id is given."
+          },
+          "id": {
+            "type": "string",
+            "description": "Only to rename: the id of the tag to rename."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags",
+        "bodyMapping": {
+          "name": "$name",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_segments",
+      "description": "List the saved contact and company segments with id, name, person_type and dates, optionally with how many contacts each holds. Returns segments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_count": {
+            "type": "boolean",
+            "description": "true to add the number of contacts in each segment."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments",
+        "queryParams": {
+          "include_count": "$include_count"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_data_attributes",
+      "description": "List the data attributes of contacts and companies, standard and custom: name, full_name (the field name to use in searches and updates), label, data_type, whether the API may write it, and archived. Returns data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "contact or company; both when omitted.",
+            "enum": [
+              "contact",
+              "company"
+            ]
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true to include archived attributes."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data_attributes",
+        "queryParams": {
+          "model": "$model",
+          "include_archived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_contacts",
+      "description": "List contacts (users and leads), newest first, with id, role, email, name, phone, external_id, owner_id, location, timestamps and custom_attributes. Returns data, total_count and pages; pages.next.starting_after is the cursor for the next page (no pages.next on the last page). For a filtered list use intercom_search_contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: pages.next.starting_after of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "per_page": "$per_page",
+          "starting_after": "$starting_after"
+        }
+      }
+    },
+    {
+      "name": "intercom_search_contacts",
+      "description": "Search contacts by their attributes, e.g. email, name, phone, external_id, role (user or lead), created_at, last_seen_at, tag_id, segment_id, location.country or custom_attributes.<name>. Read-only although it is a POST. Returns data, total_count and pages with the next cursor. Contacts created in the last few minutes may not be found yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "The filter. One condition: {\"field\": \"email\", \"operator\": \"=\", \"value\": \"ana@example.com\"}. Several: {\"operator\": \"AND\", \"value\": [condition, condition]} (or \"OR\"; groups nest at most 2 levels, 15 conditions per group). Operators: =, !=, IN, NIN (value is an array), <, >, ~ (contains), !~, ^ (starts with), $ (ends with). Dates are Unix timestamps in seconds."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Optional order, e.g. {\"field\": \"last_seen_at\", \"order\": \"descending\"} (order is ascending or descending)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: pages.next.starting_after of the previous answer. Omit for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/search",
+        "bodyMapping": {
+          "query": "$query",
+          "pagination": {
+            "per_page": "$per_page",
+            "starting_after": "$starting_after"
+          },
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "intercom_get_contact",
+      "description": "Read one contact: role, email, phone, name, external_id, owner_id, location, browser and device, unsubscribe and bounce flags, timestamps, custom_attributes, and the first tags, notes and companies. A merged contact answers 410 with code contact_merged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_find_contact_by_external_id",
+      "description": "Find a user by the external_id your own system gave them (users only, not leads). Returns the contact with the same fields as intercom_get_contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The external_id (your own user id) of the user."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/find_by_external_id/{external_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_create_contact",
+      "description": "Create a contact, a user or a lead. Needs at least an email, an external_id or a role. Nothing is sent to the person. Returns the new contact with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "user (a signed-up customer) or lead (a prospect). Defaults to user on create.",
+            "enum": [
+              "user",
+              "lead"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique id for this user."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number, e.g. +4930123456."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Id of the admin who owns this contact."
+          },
+          "signed_up_at": {
+            "type": "integer",
+            "description": "When they signed up, Unix timestamp in seconds."
+          },
+          "unsubscribed_from_emails": {
+            "type": "boolean",
+            "description": "true if they unsubscribed from your emails."
+          },
+          "custom_attributes": {
+            "type": "object",
+            "description": "Custom attributes by name, e.g. {\"plan\": \"pro\"}. Each must already exist (intercom_list_data_attributes, model contact)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "role": "$role",
+          "email": "$email",
+          "external_id": "$external_id",
+          "phone": "$phone",
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "signed_up_at": "$signed_up_at",
+          "unsubscribed_from_emails": "$unsubscribed_from_emails",
+          "custom_attributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "intercom_update_contact",
+      "description": "Change a contact: only the fields given are overwritten. Setting role to user turns a lead into a user. Changing the email resets its verified state. Returns the updated contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "role": {
+            "type": "string",
+            "description": "user (a signed-up customer) or lead (a prospect). Defaults to user on create.",
+            "enum": [
+              "user",
+              "lead"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique id for this user."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number, e.g. +4930123456."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Id of the admin who owns this contact."
+          },
+          "signed_up_at": {
+            "type": "integer",
+            "description": "When they signed up, Unix timestamp in seconds."
+          },
+          "unsubscribed_from_emails": {
+            "type": "boolean",
+            "description": "true if they unsubscribed from your emails."
+          },
+          "custom_attributes": {
+            "type": "object",
+            "description": "Custom attributes by name, e.g. {\"plan\": \"pro\"}. Each must already exist (intercom_list_data_attributes, model contact)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "role": "$role",
+          "email": "$email",
+          "external_id": "$external_id",
+          "phone": "$phone",
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "signed_up_at": "$signed_up_at",
+          "unsubscribed_from_emails": "$unsubscribed_from_emails",
+          "custom_attributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "intercom_archive_contact",
+      "description": "Archive a contact: it disappears from lists, searches and the Inbox until unarchived with intercom_unarchive_contact. Confirm with the user first. Returns id, external_id and archived: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/archive",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_unarchive_contact",
+      "description": "Bring an archived contact back, so it shows again in lists, searches and the Inbox. Returns id, external_id and archived: false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/unarchive",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "intercom_delete_contact",
+      "description": "Delete a contact for good, with their data. This cannot be undone; intercom_archive_contact is the reversible choice. Confirm with the user first. Installed switched off. Returns id and deleted: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "intercom_list_contact_tags",
+      "description": "List the tags on one contact with id, name, applied_at and who applied them. Returns data, empty when the contact has no tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/tags",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_tag_contact",
+      "description": "Put an existing tag on a contact (intercom_create_tag makes a new one). The contact does not see tags. Returns the tag with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "The tag id, from intercom_list_tags or intercom_create_tag."
+          }
+        },
+        "required": [
+          "contact_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/tags",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "id": "$tag_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_untag_contact",
+      "description": "Take a tag off a contact; the tag itself stays in the workspace. Returns the removed tag with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "The tag id to remove, from intercom_list_contact_tags."
+          }
+        },
+        "required": [
+          "contact_id",
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}/tags/{tag_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_list_contact_notes",
+      "description": "List the internal notes teammates left on a contact, newest first, with id, body (HTML), created_at and author. Returns data, empty when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/notes",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_add_contact_note",
+      "description": "Leave an internal note on a contact. Notes are only visible to teammates, never to the contact. Returns the note with id, body and author.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "body": {
+            "type": "string",
+            "description": "The note text; simple HTML such as <p> and <b> is allowed."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          }
+        },
+        "required": [
+          "contact_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/notes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "body": "$body",
+          "admin_id": "$admin_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_contact_companies",
+      "description": "List the companies a contact belongs to, with id, company_id, name, plan, user_count, monthly_spend and custom_attributes. Returns data, empty when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/companies",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_attach_contact_to_company",
+      "description": "Add a contact to a company. A company only shows in Intercom once it has at least one contact. Returns the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "The company id Intercom gave the company (the `id` field, not your own company_id), from intercom_list_companies."
+          }
+        },
+        "required": [
+          "contact_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/companies",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_detach_contact_from_company",
+      "description": "Remove a contact from a company; both stay in the workspace. Returns the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact id Intercom gave the contact (24 hex characters), from intercom_search_contacts or intercom_list_contacts."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "The company `id` Intercom gave it, from intercom_list_contact_companies."
+          }
+        },
+        "required": [
+          "contact_id",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}/companies/{company_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_list_companies",
+      "description": "List companies, or find one by name or by your own company_id, or filter by tag or segment. Each has id, company_id, name, plan, size, website, industry, user_count, monthly_spend, tags, segments and custom_attributes. Returns data, total_count and pages (page numbers). Companies without any contact are not listed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact company name to look up."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "Your own company_id to look up."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Only companies with this tag."
+          },
+          "segment_id": {
+            "type": "string",
+            "description": "Only companies in this segment."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "name": "$name",
+          "company_id": "$company_id",
+          "tag_id": "$tag_id",
+          "segment_id": "$segment_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "intercom_get_company",
+      "description": "Read one company by the id Intercom gave it: company_id, name, plan, size, website, industry, user_count, session_count, monthly_spend, tags, segments and custom_attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The company `id` Intercom gave it (not your own company_id), from intercom_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_create_or_update_company",
+      "description": "Create a company, or update the one that already has this company_id (your own id for it, which cannot be changed later). Only the fields given are written. It shows in Intercom once a contact is attached (intercom_attach_contact_to_company). Returns the company with its Intercom id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Your own unique id for the company; it identifies the company on later calls."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "plan": {
+            "type": "string",
+            "description": "Name of the plan the company is on."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of employees."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "industry": {
+            "type": "string",
+            "description": "Industry."
+          },
+          "monthly_spend": {
+            "type": "integer",
+            "description": "Revenue from this company per month, a whole number."
+          },
+          "remote_created_at": {
+            "type": "integer",
+            "description": "When the company was created in your system, Unix timestamp in seconds."
+          },
+          "custom_attributes": {
+            "type": "object",
+            "description": "Custom company attributes by name, e.g. {\"region\": \"DACH\"}. Each must already exist (intercom_list_data_attributes, model company)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "name": "$name",
+          "plan": "$plan",
+          "size": "$size",
+          "website": "$website",
+          "industry": "$industry",
+          "monthly_spend": "$monthly_spend",
+          "remote_created_at": "$remote_created_at",
+          "custom_attributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_company_contacts",
+      "description": "List the contacts that belong to a company, with id, role, email and name. Returns data, total_count and pages; for big companies search contacts instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The company `id` Intercom gave it, from intercom_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/contacts",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_list_conversations",
+      "description": "List conversations, most recently updated first, with id, title, state (open, closed, snoozed), open, read, priority, admin_assignee_id and team_assignee_id (0 when unassigned), contacts, tags, source (the first message) and timestamps. Returns conversations, total_count and pages with the next cursor. For filters use intercom_search_conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: pages.next.starting_after of the previous answer. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "per_page": "$per_page",
+          "starting_after": "$starting_after"
+        }
+      }
+    },
+    {
+      "name": "intercom_search_conversations",
+      "description": "Search conversations, e.g. by open, state (open, closed, snoozed), admin_assignee_id, team_assignee_id, contact_ids, tag_ids, priority, source.body (matches single words), source.author.email, created_at or updated_at. Read-only although it is a POST. Returns conversations, total_count and pages with the next cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "The filter. One condition: {\"field\": \"email\", \"operator\": \"=\", \"value\": \"ana@example.com\"}. Several: {\"operator\": \"AND\", \"value\": [condition, condition]} (or \"OR\"; groups nest at most 2 levels, 15 conditions per group). Operators: =, !=, IN, NIN (value is an array), <, >, ~ (contains), !~, ^ (starts with), $ (ends with). Dates are Unix timestamps in seconds."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: pages.next.starting_after of the previous answer. Omit for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/search",
+        "bodyMapping": {
+          "query": "$query",
+          "pagination": {
+            "per_page": "$per_page",
+            "starting_after": "$starting_after"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "intercom_get_conversation",
+      "description": "Read one conversation with its messages: state, assignees, contacts, tags, priority, statistics and conversation_parts (replies, notes, assignments and state changes, up to the 500 most recent), each with part_type, body, author and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "display_as": {
+            "type": "string",
+            "description": "plaintext to get message bodies as plain text instead of HTML.",
+            "enum": [
+              "plaintext"
+            ]
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "display_as": "$display_as"
+        }
+      }
+    },
+    {
+      "name": "intercom_reply_to_conversation",
+      "description": "Reply to a conversation as an admin. The customer sees this message (in the Messenger, or by email for email conversations): show the text and confirm with the user before sending. Returns the conversation with the new part.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "body": {
+            "type": "string",
+            "description": "The reply; simple HTML is allowed."
+          },
+          "attachment_urls": {
+            "type": "array",
+            "description": "Up to 10 public image URLs to attach.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/reply",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "comment",
+          "type": "admin",
+          "admin_id": "$admin_id",
+          "body": "$body",
+          "attachment_urls": "$attachment_urls"
+        }
+      }
+    },
+    {
+      "name": "intercom_add_conversation_note",
+      "description": "Add an internal note to a conversation. Notes are only visible to teammates, never to the customer. Returns the conversation with the new part.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "body": {
+            "type": "string",
+            "description": "The note; simple HTML is allowed."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/reply",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "note",
+          "type": "admin",
+          "admin_id": "$admin_id",
+          "body": "$body"
+        }
+      }
+    },
+    {
+      "name": "intercom_assign_conversation",
+      "description": "Assign a conversation to an admin or to a team (a conversation can have both), or unassign it with assignee_id \"0\". Teammates are notified; the customer is not. Returns the conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "assignee_type": {
+            "type": "string",
+            "description": "admin to assign to a teammate, team to assign to a team.",
+            "enum": [
+              "admin",
+              "team"
+            ]
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "Id of the admin or team to assign to, or \"0\" for unassigned."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id",
+          "assignee_type",
+          "assignee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/parts",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "assignment",
+          "type": "$assignee_type",
+          "admin_id": "$admin_id",
+          "assignee_id": "$assignee_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_close_conversation",
+      "description": "Close a conversation (intercom_open_conversation reopens it). An optional body is posted in the conversation and the customer sees it: confirm the text with the user first. Returns the conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "body": {
+            "type": "string",
+            "description": "Optional closing message, visible to the customer."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/parts",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "close",
+          "type": "admin",
+          "admin_id": "$admin_id",
+          "body": "$body"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "intercom_snooze_conversation",
+      "description": "Snooze a conversation until a time; it reopens by itself then. Returns the conversation with state snoozed and snoozed_until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "snoozed_until": {
+            "type": "integer",
+            "description": "When it should reopen, Unix timestamp in seconds, in the future."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id",
+          "snoozed_until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/parts",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "snoozed",
+          "admin_id": "$admin_id",
+          "snoozed_until": "$snoozed_until"
+        }
+      }
+    },
+    {
+      "name": "intercom_open_conversation",
+      "description": "Open a closed or snoozed conversation again, so it is back in the Inbox. Returns the conversation with state open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "admin_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/parts",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "open",
+          "admin_id": "$admin_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_tag_conversation",
+      "description": "Put an existing tag on a conversation (intercom_create_tag makes a new one). The customer does not see tags. Returns the tag with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "The tag id, from intercom_list_tags or intercom_create_tag."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "tag_id",
+          "admin_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/tags",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "id": "$tag_id",
+          "admin_id": "$admin_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_untag_conversation",
+      "description": "Take a tag off a conversation; the tag itself stays in the workspace. Returns the removed tag with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "The conversation id (a number, e.g. \"1295\"), from intercom_list_conversations or intercom_search_conversations."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "The tag id to remove, from the conversation's tags."
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "tag_id",
+          "admin_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/conversations/{conversation_id}/tags/{tag_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "admin_id": "$admin_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_search_tickets",
+      "description": "Search tickets, e.g. by ticket_type_id, open, state, title, description, category (request for customer tickets, task for back-office, tracker), contact_ids, admin_assignee_id, team_assignee_id, created_at or ticket_attribute.<id>. Read-only although it is a POST. Returns tickets, total_count and pages with the next cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "The filter. One condition: {\"field\": \"email\", \"operator\": \"=\", \"value\": \"ana@example.com\"}. Several: {\"operator\": \"AND\", \"value\": [condition, condition]} (or \"OR\"; groups nest at most 2 levels, 15 conditions per group). Operators: =, !=, IN, NIN (value is an array), <, >, ~ (contains), !~, ^ (starts with), $ (ends with). Dates are Unix timestamps in seconds."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: pages.next.starting_after of the previous answer. Omit for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/search",
+        "bodyMapping": {
+          "query": "$query",
+          "pagination": {
+            "per_page": "$per_page",
+            "starting_after": "$starting_after"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "intercom_get_ticket",
+      "description": "Read one ticket: id, ticket_id (the Inbox number), ticket_attributes (title, description and custom ones), ticket_state, ticket_type, contacts, assignees, open, is_shared, linked objects and ticket_parts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "description": "The ticket `id` from the API (intercom_search_tickets), not the #number shown in the Inbox (`ticket_id`)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_reply_to_ticket",
+      "description": "Reply to a ticket as an admin. message_type note stays internal; comment is shown to the customer: show the text and confirm with the user before sending a comment. Back-office and tracker tickets not shared with the customer only take notes. Returns the new ticket part.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "description": "The ticket `id` from the API (intercom_search_tickets), not the #number shown in the Inbox (`ticket_id`)."
+          },
+          "message_type": {
+            "type": "string",
+            "description": "note (internal, the default) or comment (visible to the customer).",
+            "enum": [
+              "note",
+              "comment"
+            ],
+            "default": "note"
+          },
+          "admin_id": {
+            "type": "string",
+            "description": "Id of the admin (teammate) doing this; the action appears under their name. intercom_get_me returns your own id, intercom_list_admins all of them."
+          },
+          "body": {
+            "type": "string",
+            "description": "The reply or note; simple HTML is allowed."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "admin_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/reply",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "message_type": "$message_type",
+          "type": "admin",
+          "admin_id": "$admin_id",
+          "body": "$body"
+        }
+      }
+    },
+    {
+      "name": "intercom_update_ticket",
+      "description": "Change a ticket: its attributes (title, description, custom ones), state, assignee, open or closed, snooze, sharing with the customer. Only the fields given change. Closing or a new state can notify the customer: confirm with the user first. Returns the updated ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "description": "The ticket `id` from the API (intercom_search_tickets), not the #number shown in the Inbox (`ticket_id`)."
+          },
+          "ticket_attributes": {
+            "type": "object",
+            "description": "Attributes to set, e.g. {\"_default_title_\": \"Login fails\", \"_default_description_\": \"...\"}; custom ones by name as in intercom_list_ticket_types."
+          },
+          "ticket_state_id": {
+            "type": "string",
+            "description": "A ticket state id of this ticket type, from intercom_list_ticket_states."
+          },
+          "open": {
+            "type": "boolean",
+            "description": "false closes the ticket (and ends a snooze), true reopens it."
+          },
+          "snoozed_until": {
+            "type": "integer",
+            "description": "Snooze until this time, Unix timestamp in seconds."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "Id of the admin or team to assign to, or \"0\" to unassign."
+          },
+          "is_shared": {
+            "type": "boolean",
+            "description": "true to make the ticket visible to the customer."
+          },
+          "admin_id": {
+            "type": "integer",
+            "description": "Id of the admin making the change (credited in the ticket history and needed by some workflows)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticket_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "ticket_attributes": "$ticket_attributes",
+          "ticket_state_id": "$ticket_state_id",
+          "open": "$open",
+          "snoozed_until": "$snoozed_until",
+          "assignee_id": "$assignee_id",
+          "is_shared": "$is_shared",
+          "admin_id": "$admin_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_list_ticket_types",
+      "description": "List the ticket types with id, name, category (Customer, Back-office, Tracker), archived and their ticket_type_attributes (name, data_type, required). Returns data, empty when the workspace has no ticket types.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ticket_types"
+      }
+    },
+    {
+      "name": "intercom_list_ticket_states",
+      "description": "List the ticket states with id, category (submitted, in_progress, waiting_on_customer, resolved), internal_label, external_label and the ticket types that use each. Returns data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ticket_states"
+      }
+    },
+    {
+      "name": "intercom_list_help_centers",
+      "description": "List the Help Centers of the workspace with id, identifier, display_name, url, custom_domain and whether the website is on. Returns data, which can be empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/help_center/help_centers"
+      }
+    },
+    {
+      "name": "intercom_list_collections",
+      "description": "List Help Center collections and sections, most recently updated first, with id, name, description, url, parent_id (set on sections and sub-collections) and help_center_id. Returns data, total_count and pages (page numbers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/help_center/collections",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "intercom_get_collection",
+      "description": "Read one Help Center collection: name, description, url, icon, order, parent_id, help_center_id and translated_content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id, from intercom_list_collections."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/help_center/collections/{collection_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_create_collection",
+      "description": "Create a Help Center collection, or a sub-collection with parent_id. It is visible in the public Help Center as soon as it holds a published article: confirm with the user first. Returns the collection with its id and url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Collection name in the default language."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description in the default language."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the parent collection, for a sub-collection."
+          },
+          "help_center_id": {
+            "type": "integer",
+            "description": "Help Center to create it in (intercom_list_help_centers); the default Help Center when omitted."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/help_center/collections",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parent_id": "$parent_id",
+          "help_center_id": "$help_center_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_update_collection",
+      "description": "Rename a Help Center collection, change its description or move it under another parent. Changes show in the public Help Center at once: confirm with the user first. Returns the collection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id, from intercom_list_collections."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name in the default language."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description in the default language."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Id of the new parent collection."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/help_center/collections/{collection_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parent_id": "$parent_id"
+        }
+      }
+    },
+    {
+      "name": "intercom_delete_collection",
+      "description": "Delete a Help Center collection for good. Confirm with the user first. Installed switched off. Returns id and deleted: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "The collection id, from intercom_list_collections."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/help_center/collections/{collection_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "intercom_list_articles",
+      "description": "List Help Center articles, most recently updated first, with id, title, description, body (HTML), author_id, state (published or draft), parent_ids (their collections), url and dates. Returns data, total_count and pages (page numbers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page (default 20 here, max 150).",
+            "minimum": 1,
+            "maximum": 150,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "intercom_search_articles",
+      "description": "Search Help Center articles for a phrase. Returns data.articles (id, title, description, body, state, url, parent_ids), data.highlights when asked for, and total_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "Words to look for in the articles."
+          },
+          "state": {
+            "type": "string",
+            "description": "published, draft or all.",
+            "enum": [
+              "published",
+              "draft",
+              "all"
+            ]
+          },
+          "help_center_id": {
+            "type": "integer",
+            "description": "Only articles of this Help Center (intercom_list_help_centers)."
+          },
+          "highlight": {
+            "type": "boolean",
+            "description": "true to also return the matching passages, highlighted."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles/search",
+        "queryParams": {
+          "phrase": "$phrase",
+          "state": "$state",
+          "help_center_id": "$help_center_id",
+          "highlight": "$highlight"
+        }
+      }
+    },
+    {
+      "name": "intercom_get_article",
+      "description": "Read one Help Center article: title, description, body (HTML), author_id, state, parent_ids, url, statistics and translated_content per language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "The article id, from intercom_list_articles or intercom_search_articles."
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles/{article_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "intercom_create_article",
+      "description": "Write a new Help Center article. It is created as a draft unless state is published, which puts it in the public Help Center at once: confirm with the user before publishing. Returns the article with id, state and url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Article title in the default language."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description shown under the title."
+          },
+          "body": {
+            "type": "string",
+            "description": "The article in HTML. Use either body or body_markdown."
+          },
+          "body_markdown": {
+            "type": "string",
+            "description": "The article in Markdown, instead of body."
+          },
+          "author_id": {
+            "type": "integer",
+            "description": "Id of the admin shown as author (intercom_get_me or intercom_list_admins)."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Id of the collection or section to put it in (intercom_list_collections)."
+          },
+          "parent_type": {
+            "type": "string",
+            "description": "collection or section, the kind of parent_id.",
+            "enum": [
+              "collection",
+              "section"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "draft (the default) or published.",
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "default": "draft"
+          }
+        },
+        "required": [
+          "title",
+          "author_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/articles",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "body": "$body",
+          "body_markdown": "$body_markdown",
+          "author_id": "$author_id",
+          "state": "$state",
+          "parent_id": "$parent_id",
+          "parent_type": "$parent_type"
+        }
+      }
+    },
+    {
+      "name": "intercom_update_article",
+      "description": "Change a Help Center article. Edits to a published article go live at once; state published publishes a draft and state draft takes the article offline. Confirm with the user before changing a published article or publishing. Returns the article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "The article id, from intercom_list_articles or intercom_search_articles."
+          },
+          "title": {
+            "type": "string",
+            "description": "Article title in the default language."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description shown under the title."
+          },
+          "body": {
+            "type": "string",
+            "description": "The article in HTML. Use either body or body_markdown."
+          },
+          "body_markdown": {
+            "type": "string",
+            "description": "The article in Markdown, instead of body."
+          },
+          "author_id": {
+            "type": "integer",
+            "description": "Id of the admin shown as author (intercom_get_me or intercom_list_admins)."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Id of the collection or section to put it in (intercom_list_collections)."
+          },
+          "parent_type": {
+            "type": "string",
+            "description": "collection or section, the kind of parent_id.",
+            "enum": [
+              "collection",
+              "section"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "published or draft; leave out to keep the current state.",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/articles/{article_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "body": "$body",
+          "body_markdown": "$body_markdown",
+          "author_id": "$author_id",
+          "state": "$state",
+          "parent_id": "$parent_id",
+          "parent_type": "$parent_type"
+        }
+      }
+    },
+    {
+      "name": "intercom_delete_article",
+      "description": "Delete a Help Center article for good; setting state draft with intercom_update_article only unpublishes it. Confirm with the user first. Installed switched off. Returns id and deleted: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "The article id, from intercom_list_articles."
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/articles/{article_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}

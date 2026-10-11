@@ -1,0 +1,1271 @@
+{
+  "slug": "mixpanel",
+  "name": "Mixpanel",
+  "unlisted": true,
+  "description": "Let your AI read your Mixpanel product analytics: event trends, segmentation by any property, saved funnels, retention, frequency, saved Insights reports, cohorts and user profiles, and manage chart annotations. Signs in with a service account; US, EU and India data residency.",
+  "instructions": "## Mixpanel\nThis connector reads one Mixpanel project through the **Query API** (`<host>/api/query`): event names and today's top events, event and property counts, segmentation (counts, numeric buckets, sums, averages), saved funnels, retention and frequency, saved Insights reports, cohorts, and user or group profiles. It also manages the project's **annotations** through the App API (`<host>/api/app/projects/<project id>/annotations`). It signs in as a **service account** with HTTP Basic auth and sees what that account's role allows in the project.\n\n**Setup (about 5 minutes; you need the Owner or Admin role)**\n1. Open **Organization Settings → Service Accounts** (https://mixpanel.com/settings/org#serviceaccounts, on an EU project https://eu.mixpanel.com/settings/org#serviceaccounts) and add a service account. A project Owner or Admin can also create one under **Project Settings → Service Accounts** (https://mixpanel.com/settings/project#serviceaccounts) for that project only.\n2. Name it (for example \"AnythingMCP\"), grant it the project and choose the role: **Consumer** is enough to read reports and profiles; creating, editing or deleting annotations and listing annotation tags need **Analyst** or higher. An expiry date is optional; when it passes, every call fails with 401.\n3. Copy the **username** (it looks like `anythingmcp.abc123.mp-service-account`) into `MIXPANEL_SERVICE_ACCOUNT_USERNAME` and the **secret** into `MIXPANEL_SERVICE_ACCOUNT_SECRET` straight away: Mixpanel shows the secret only once.\n4. Put the **project id** into `MIXPANEL_PROJECT_ID`: Project Settings → Overview → Project ID (https://mixpanel.com/settings/project), or the number after `/project/` in the project's address.\n5. Set `MIXPANEL_API_HOST` to the host the project lives on: `https://mixpanel.com` (US, the default), `https://eu.mixpanel.com` (EU Data Residency) or `https://in.mixpanel.com` (India Data Residency). Project Settings → Overview → Data Residency shows it, and an EU project opens on eu.mixpanel.com.\n6. Only for a project with **Data Views**: set `MIXPANEL_WORKSPACE_ID` to the id of the global data view (the number after `/view/` in the address). Leave it empty otherwise.\n\n**Plan**: the Query API is part of the Growth and Enterprise plans. A project on the Free plan has no Query API access, so the report tools fail on it.\n\n**Rate limits**: the Query API allows **60 queries per hour and 5 at the same time per project**, shared with every other integration that queries the project; above that Mixpanel answers 429. Every report tool call is one query, so plan them: one `mixpanel_query_segmentation` with `on` instead of one call per value, and never loop over days or users. On a 429, wait instead of retrying at once.\n\n**Dates**: `from_date` and `to_date` are whole days written `YYYY-MM-DD`, both included, in the **project's time zone** (Project Settings → Overview → Timezone). Annotation dates are `YYYY-MM-DD HH:mm:ss`.\n\n**Where to start**: `mixpanel_list_event_names` shows which events exist (exact names, case-sensitive), `mixpanel_get_top_event_properties` and `mixpanel_get_top_property_values` show the properties and values to filter on. Then `mixpanel_get_event_counts` for trends of several events, `mixpanel_query_segmentation` for one event filtered and broken down, `mixpanel_query_segmentation_sum` or `mixpanel_query_segmentation_average` for revenue-like numbers, `mixpanel_query_segmentation_numeric` for value ranges.\n\n**Expressions (`where` and `on`)**: refer to an event property as `properties[\"name\"]` (Mixpanel's own properties start with `$`, e.g. `properties[\"$browser\"]`). Operators: `==`, `!=`, `>`, `>=`, `<`, `<=`, `+`, `-`, `*`, `/`, `%`, `and`, `or`, `not`, `in`, plus `defined(...)`, `number(...)`, `string(...)`, `boolean(...)`, `floor`, `round`, `ceil`. Strings take double quotes. Examples:\n- `properties[\"$browser\"] == \"Chrome\"`\n- `properties[\"plan\"] == \"pro\" and number(properties[\"amount\"]) >= 50`\n- `properties[\"account_id\"] in [1,2,3,4]`\n- `defined(properties[\"utm_source\"])`, `not defined(properties[\"city\"])`\n- `on`: `properties[\"$country_code\"]`; for sums and buckets a number: `number(properties[\"amount\"])`.\nIn `mixpanel_query_profiles`, profile properties are written `user[\"$email\"]`. Comparing a number with a string gives no match, so cast with `number(...)` when a property was tracked as text.\n\n**Funnels**: only saved funnels can be queried. `mixpanel_list_funnels` gives the `funnel_id`; `mixpanel_query_funnel` returns, per date, each step's count and conversion ratios. The conversion window defaults to the one saved with the funnel.\n\n**Retention**: `mixpanel_query_retention` with `retention_type` \"birth\" (default) needs `born_event`, the event that starts a cohort (e.g. \"Sign Up\"); `event` is what counts as coming back (any event without it). `unit` and `interval_count` set the buckets, e.g. unit \"week\" and interval_count 8 for eight weeks. \"compounded\" measures recurring activity instead. `mixpanel_query_frequency` shows how many days or hours per period users are active.\n\n**Insights reports**: only saved reports can be run. `mixpanel_query_insights_report` needs the report's **bookmark id**: open the report and take the number after `report-` in the address (`editor-card-id=\"report-12345\"`), or after `#report/` in an older address.\n\n**Profiles**: `mixpanel_query_profiles` returns at most `page_size` profiles per call (usually 1000). For the next page pass the `session_id` from the first answer with `page` one higher and the same filter. Always set `output_properties` to the few properties you need. Members of a cohort: `filter_by_cohort` with the id from `mixpanel_list_cohorts`. `mixpanel_list_cohorts` and `mixpanel_query_profiles` are POST requests that only read.\n\n**Annotations**: notes on a date shown on every chart of the project. `mixpanel_create_annotation` and `mixpanel_update_annotation` change what all project members see: confirm the text and date with the user first. `mixpanel_delete_annotation` is installed switched off. They need the Analyst role or higher.\n\n**Errors**: 401 means the username or secret is wrong or the service account expired. 403 means the service account has no access to this project, or its role is too low (annotation changes need Analyst). 400 comes with Mixpanel's reason, usually a misspelled parameter, a date not written `YYYY-MM-DD` or an expression with a syntax error (check the quotes). 429 is the rate limit above. When a correct project id is refused, check `MIXPANEL_API_HOST` against the project's data residency. Results that are empty objects or lists are not errors: the event, property or range has no data.\n\n**Out of scope**: sending or importing events and profiles (the ingestion API lives on separate hosts, needs Owner or Admin, and tracked events cannot be removed again), raw event export, JQL (in maintenance mode; Mixpanel advises against new use), the per-user activity stream (in maintenance mode), Lexicon, cohort creation, feature flags, experiments and project administration.\n",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "mixpanel",
+  "docsUrl": "https://docs.mixpanel.com/reference/query-api",
+  "requiredEnvVars": [
+    "MIXPANEL_API_HOST",
+    "MIXPANEL_SERVICE_ACCOUNT_USERNAME",
+    "MIXPANEL_SERVICE_ACCOUNT_SECRET",
+    "MIXPANEL_PROJECT_ID"
+  ],
+  "optionalEnvVars": [
+    "MIXPANEL_WORKSPACE_ID"
+  ],
+  "envVarMeta": {
+    "MIXPANEL_API_HOST": {
+      "label": "Data residency host",
+      "kind": "address",
+      "help": "Where the project stores its data (Project Settings → Overview → Data Residency): https://mixpanel.com for US, https://eu.mixpanel.com for EU, https://in.mixpanel.com for India.",
+      "example": "https://mixpanel.com",
+      "pattern": "^https://(eu\\.|in\\.)?mixpanel\\.com$",
+      "patternMessage": "Use exactly https://mixpanel.com (US), https://eu.mixpanel.com (EU) or https://in.mixpanel.com (India), without a path or trailing slash."
+    },
+    "MIXPANEL_SERVICE_ACCOUNT_USERNAME": {
+      "label": "Service account username",
+      "kind": "credential",
+      "secret": false,
+      "help": "Organization Settings → Service Accounts: the username shown when the account is created, e.g. anythingmcp.abc123.mp-service-account.",
+      "example": "anythingmcp.abc123.mp-service-account",
+      "link": "https://mixpanel.com/settings/org#serviceaccounts",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the username without spaces."
+    },
+    "MIXPANEL_SERVICE_ACCOUNT_SECRET": {
+      "label": "Service account secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once, when the service account is created. If it is lost, create a new service account.",
+      "link": "https://mixpanel.com/settings/org#serviceaccounts",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    },
+    "MIXPANEL_PROJECT_ID": {
+      "label": "Project ID",
+      "kind": "setting",
+      "help": "Project Settings → Overview → Project ID, or the number after /project/ in the project address.",
+      "example": "3123456",
+      "link": "https://mixpanel.com/settings/project",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "Use the numeric project id, e.g. 3123456."
+    },
+    "MIXPANEL_WORKSPACE_ID": {
+      "label": "Data view (workspace) ID",
+      "kind": "setting",
+      "help": "Only for projects with Data Views: the id of the global data view, the number after /view/ in the project address. Leave empty otherwise.",
+      "example": "3654321",
+      "pattern": "^[0-9]*$",
+      "patternMessage": "Use the numeric data view id, or leave it empty.",
+      "advanced": true
+    }
+  },
+  "verifyHints": {
+    "401": "Mixpanel refused the service account: check the username and secret, and that the account has not expired (Organization Settings → Service Accounts).",
+    "403": "The service account has no access to this project or its role is too low. Grant it the project (Consumer or higher; Analyst for annotation changes) and check MIXPANEL_PROJECT_ID. The Query API also needs a Growth or Enterprise plan.",
+    "400": "Mixpanel did not accept the request. Check that MIXPANEL_PROJECT_ID is the numeric project id and that MIXPANEL_API_HOST matches the project's data residency (US, EU or India).",
+    "404": "Nothing found at this host. Check MIXPANEL_API_HOST: https://mixpanel.com (US), https://eu.mixpanel.com (EU) or https://in.mixpanel.com (India).",
+    "rate_limited": "The project used up the Query API allowance (60 queries per hour, 5 at a time, shared with other integrations). Wait and try again later."
+  },
+  "probe": {
+    "tool": "mixpanel_list_event_names",
+    "params": {
+      "limit": 5
+    }
+  },
+  "prerequisites": "A Mixpanel project on the Growth or Enterprise plan (the Free plan has no Query API access) and the Owner or Admin role, to create a service account with access to the project. About 5 minutes.",
+  "connector": {
+    "name": "Mixpanel Query and App API",
+    "type": "REST",
+    "baseUrl": "{{MIXPANEL_API_HOST}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{MIXPANEL_SERVICE_ACCOUNT_USERNAME}}",
+      "password": "{{MIXPANEL_SERVICE_ACCOUNT_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/app/me"
+  },
+  "tools": [
+    {
+      "name": "mixpanel_list_event_names",
+      "description": "List the names of the most common events in the project over the last 31 days, as a plain array of strings. A cheap first call to learn which event names exist; a project without events returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of names to return. Mixpanel defaults to 255.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events/names",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "type": "$type",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_top_events",
+      "description": "Get today's top events with their count (amount) and percent_change against yesterday, under events, plus the counting type. A project without events today returns an empty events list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of events to return. Mixpanel defaults to 100.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events/top",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "type": "$type",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_event_counts",
+      "description": "Count one or more events per minute, hour, day, week or month over a date range. Returns data.series (the dates) and data.values (event name to date to count) with legend_size. Events without data come back with zero or empty values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "string",
+            "description": "The events as a JSON array of names, e.g. [\"Sign Up\", \"Purchase\"]. A single event is [\"Sign Up\"]."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month"
+            ],
+            "default": "day",
+            "description": "Bucket size of the series: minute, hour, day (default), week or month. Unique counts cannot be hourly."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        },
+        "required": [
+          "events",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$events",
+          "type": "$type",
+          "unit": "$unit",
+          "from_date": "$from_date",
+          "to_date": "$to_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_top_event_properties",
+      "description": "List the most used property names of one event with how many events carry each, as an object of property name to {count}. Use it before a breakdown to find the right property; an event without data returns an empty object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of properties to return. Mixpanel defaults to 10.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events/properties/top",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_top_property_values",
+      "description": "List the most common values of one property of one event, as a plain array of strings (e.g. the browsers or plans seen). Useful to write an exact where filter; returns an empty list when the property was never set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "name": {
+            "type": "string",
+            "description": "Property name, e.g. \"$browser\" or \"plan\". mixpanel_get_top_event_properties lists them."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of values to return. Mixpanel defaults to 255.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "event",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events/properties/values",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "name": "$name",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_event_property_counts",
+      "description": "Count one event broken down by the values of one of its properties, per unit over a date range. Returns data.series (dates) and data.values (property value to date to count) with legend_size; empty values when nothing matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "name": {
+            "type": "string",
+            "description": "Property to break the event down by, e.g. \"$browser\" or \"plan\"."
+          },
+          "values": {
+            "type": "string",
+            "description": "Optional JSON array of the property values to keep, e.g. [\"pro\", \"team\"]. Without it the most common values are returned."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month"
+            ],
+            "default": "day",
+            "description": "Bucket size of the series: minute, hour, day (default), week or month."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of property values. Mixpanel defaults to 255.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "event",
+          "name",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/events/properties",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "name": "$name",
+          "values": "$values",
+          "type": "$type",
+          "unit": "$unit",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_segmentation",
+      "description": "Segmentation: count one event over a date range, optionally filtered with where and broken down with on. Returns data.series (the dates) and data.values (segment or event name to date to count) with legend_size; empty values when nothing matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "on": {
+            "type": "string",
+            "description": "Optional property expression to break the results down by, e.g. properties[\"$country_code\"]. Each distinct value becomes its own series."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day",
+              "month"
+            ],
+            "description": "Bucket size: minute, hour, day (Mixpanel default) or month."
+          },
+          "interval": {
+            "type": "integer",
+            "description": "Optional number of days per bucket, instead of unit.",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "With on: how many top segment values to return. Mixpanel defaults to 60, at most 10000.",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "event",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/segmentation",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "on": "$on",
+          "where": "$where",
+          "unit": "$unit",
+          "interval": "$interval",
+          "type": "$type",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_segmentation_numeric",
+      "description": "Segmentation into numeric buckets: count one event per day or hour, grouped into ranges of a numeric property expression (e.g. order amount 0 to 50, 50 to 100). Returns data.series and data.values (range to date to count); empty when nothing matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "on": {
+            "type": "string",
+            "description": "Numeric property expression to bucket on, e.g. number(properties[\"amount\"])."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "description": "Bucket size of the series: hour or day (Mixpanel default)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "unique",
+              "average"
+            ],
+            "default": "general",
+            "description": "general counts every event (default), unique counts distinct users, average gives events per user."
+          }
+        },
+        "required": [
+          "event",
+          "from_date",
+          "to_date",
+          "on"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/segmentation/numeric",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "on": "$on",
+          "where": "$where",
+          "unit": "$unit",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_segmentation_sum",
+      "description": "Sum a numeric expression over the events of one type per day or hour, e.g. revenue per day from properties[\"amount\"]. Returns results (date to sum), status and computed_at; non-numeric values count as 0 and an empty range returns empty results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "on": {
+            "type": "string",
+            "description": "Numeric expression to add up, e.g. properties[\"amount\"] or number(properties[\"price\"]) * number(properties[\"quantity\"])."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "description": "Bucket size: hour or day (Mixpanel default)."
+          }
+        },
+        "required": [
+          "event",
+          "from_date",
+          "to_date",
+          "on"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/segmentation/sum",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "on": "$on",
+          "where": "$where",
+          "unit": "$unit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_segmentation_average",
+      "description": "Average a numeric expression over the events of one type per day or hour, e.g. the average order value from properties[\"amount\"]. Returns results (date to average) and status; an empty range returns empty results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Exact event name as tracked, e.g. \"Sign Up\" (case-sensitive). mixpanel_list_event_names lists the names."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "on": {
+            "type": "string",
+            "description": "Numeric expression to average, e.g. properties[\"amount\"]."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "description": "Bucket size: hour or day (Mixpanel default)."
+          }
+        },
+        "required": [
+          "event",
+          "from_date",
+          "to_date",
+          "on"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/segmentation/average",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "event": "$event",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "on": "$on",
+          "where": "$where",
+          "unit": "$unit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_list_funnels",
+      "description": "List the saved funnels of the project with funnel_id and name. mixpanel_query_funnel needs one of these ids; a project without saved funnels returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/funnels/list",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_funnel",
+      "description": "Get the conversion data of a saved funnel over a date range: meta.dates and, per date, steps (count, step_conv_ratio, overall_conv_ratio, avg_time, event) and analysis (starting_amount, completion, worst step). Dates without traffic show zero counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "funnel_id": {
+            "type": "integer",
+            "description": "Id of a saved funnel, from mixpanel_list_funnels."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "length": {
+            "type": "integer",
+            "description": "Conversion window in length_unit units from the first step, at most 90 days. Defaults to the window saved with the funnel.",
+            "minimum": 1
+          },
+          "length_unit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "hour",
+              "minute",
+              "second"
+            ],
+            "description": "Unit of length: day, hour, minute or second. Defaults to the saved value."
+          },
+          "interval": {
+            "type": "integer",
+            "description": "Days per bucket (Mixpanel default 1).",
+            "minimum": 1
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Bucket size instead of interval: day, week or month."
+          },
+          "on": {
+            "type": "string",
+            "description": "Optional property expression to break the results down by, e.g. properties[\"$country_code\"]. Each distinct value becomes its own series."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "With on: how many top segment values to return. Mixpanel defaults to 255, at most 10000.",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "funnel_id",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/funnels",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "funnel_id": "$funnel_id",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "length": "$length",
+          "length_unit": "$length_unit",
+          "interval": "$interval",
+          "unit": "$unit",
+          "on": "$on",
+          "where": "$where",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_retention",
+      "description": "Retention: of the users who did born_event (first-time, \"birth\") or any event (recurring, \"compounded\") in each cohort date, how many came back per interval. Returns cohort date to {first, counts}; empty when nobody qualified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "retention_type": {
+            "type": "string",
+            "enum": [
+              "birth",
+              "compounded"
+            ],
+            "description": "birth (first-time retention, Mixpanel default; needs born_event) or compounded (recurring retention)."
+          },
+          "born_event": {
+            "type": "string",
+            "description": "With birth: the event that puts a user into a cohort, e.g. \"Sign Up\"."
+          },
+          "event": {
+            "type": "string",
+            "description": "The event that counts as coming back. Without it any event counts."
+          },
+          "born_where": {
+            "type": "string",
+            "description": "Optional filter expression on born_event, e.g. properties[\"$os\"] == \"iOS\"."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "interval": {
+            "type": "integer",
+            "description": "Units per bucket (Mixpanel default 1); at most 90 when unit is day.",
+            "minimum": 1
+          },
+          "interval_count": {
+            "type": "integer",
+            "description": "Number of buckets to return (Mixpanel default 1, plus bucket 0 for returns within the first interval).",
+            "minimum": 1
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Bucket unit: day (Mixpanel default), week or month."
+          },
+          "unbounded_retention": {
+            "type": "boolean",
+            "description": "true counts a user as retained in bucket N when they came back in N or any later bucket. Default false."
+          },
+          "on": {
+            "type": "string",
+            "description": "Optional property expression to break the returning event down by."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "With on: how many top segment values to return.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/retention",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "retention_type": "$retention_type",
+          "born_event": "$born_event",
+          "event": "$event",
+          "born_where": "$born_where",
+          "where": "$where",
+          "interval": "$interval",
+          "interval_count": "$interval_count",
+          "unit": "$unit",
+          "unbounded_retention": "$unbounded_retention",
+          "on": "$on",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_frequency",
+      "description": "Frequency (addiction): how often users do an event within each day, week or month, counted per hour or per day. Returns data: per date, an array of user counts by number of active hours or days in the period; empty when there is no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "First day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the range, inclusive, as YYYY-MM-DD in the project's time zone.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Period each frequency is measured over: day, week or month."
+          },
+          "addiction_unit": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "description": "Granularity counted inside the period: hour or day."
+          },
+          "event": {
+            "type": "string",
+            "description": "The event to measure. Without it any event counts."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter expression, e.g. properties[\"$browser\"] == \"Chrome\" or properties[\"plan\"] == \"pro\" and properties[\"amount\"] >= 50. Syntax in the connector instructions."
+          },
+          "on": {
+            "type": "string",
+            "description": "Optional property expression to break the results down by."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "With on: how many top segment values to return.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "unit",
+          "addiction_unit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/retention/addiction",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "unit": "$unit",
+          "addiction_unit": "$addiction_unit",
+          "event": "$event",
+          "where": "$where",
+          "on": "$on",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_query_insights_report",
+      "description": "Run a saved Insights report and return what it shows: computed_at, date_range, headers and series (metric name to date to value). Needs the report's bookmark id from its address; a report without data returns an empty series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookmark_id": {
+            "type": "integer",
+            "description": "Id of the saved Insights report: the number after \"report-\" in the report address (editor-card-id=report-<id>), or after #report/ in older addresses."
+          }
+        },
+        "required": [
+          "bookmark_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/query/insights",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}",
+          "bookmark_id": "$bookmark_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "mixpanel_list_cohorts",
+      "description": "List the saved cohorts of the project with id, name, description, count (members now), created and is_visible. Read-only although Mixpanel serves it as a POST. Use an id with mixpanel_query_profiles to read the members; empty list when none.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/query/cohorts/list",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mixpanel_query_profiles",
+      "description": "Read user profiles (or group profiles with data_group_id): one, a list of distinct ids, those matching a where expression, or the members of a cohort. Read-only although Mixpanel serves it as a POST. Returns results ($distinct_id, $properties), page, page_size, session_id and total; empty results when nothing matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "distinct_id": {
+            "type": "string",
+            "description": "Read one profile by its distinct id."
+          },
+          "distinct_ids": {
+            "type": "string",
+            "description": "JSON array of distinct ids to read, e.g. [\"u-1\", \"u-2\"]."
+          },
+          "where": {
+            "type": "string",
+            "description": "Filter expression on profile properties, e.g. user[\"$email\"] == \"ana@example.com\" or defined(user[\"plan\"])."
+          },
+          "filter_by_cohort": {
+            "type": "string",
+            "description": "JSON object with the cohort id to read its members, e.g. {\"id\": 12345}. Cohort ids come from mixpanel_list_cohorts."
+          },
+          "include_all_users": {
+            "type": "boolean",
+            "description": "Only with filter_by_cohort: true (Mixpanel default) also returns cohort members without a profile, false only those with one."
+          },
+          "output_properties": {
+            "type": "string",
+            "description": "JSON array of the property names to return, e.g. [\"$email\", \"$name\", \"plan\"]. Strongly recommended: it keeps answers small and fast."
+          },
+          "data_group_id": {
+            "type": "string",
+            "description": "Group key id to read group profiles (e.g. companies) instead of user profiles."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "session_id from the previous answer, to read the next page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. A page above 0 needs the session_id of page 0 and the same filter.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/query/engage",
+        "queryParams": {
+          "project_id": "{{MIXPANEL_PROJECT_ID}}",
+          "workspace_id": "${MIXPANEL_WORKSPACE_ID}"
+        },
+        "bodyMapping": {
+          "distinct_id": "$distinct_id",
+          "distinct_ids": "$distinct_ids",
+          "where": "$where",
+          "filter_by_cohort": "$filter_by_cohort",
+          "include_all_users": "$include_all_users",
+          "output_properties": "$output_properties",
+          "data_group_id": "$data_group_id",
+          "session_id": "$session_id",
+          "page": "$page"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "page": "page",
+            "page_size": "page_size",
+            "total": "total",
+            "session_id": "session_id",
+            "status": "status",
+            "results": "results"
+          },
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mixpanel_list_annotations",
+      "description": "List the annotations of the project (notes pinned to a date on charts), optionally within a date range. Returns results with id, date, description, user (who added it) and tags; empty results when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Optional first day, inclusive, as YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Optional last day, inclusive, as YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations",
+        "queryParams": {
+          "fromDate": "$from_date",
+          "toDate": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_get_annotation",
+      "description": "Read one annotation by id: results with id, date, description, user (who added it) and tags. Ids come from mixpanel_list_annotations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "annotation_id": {
+            "type": "integer",
+            "description": "Id of the annotation, from mixpanel_list_annotations."
+          }
+        },
+        "required": [
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations/{annotation_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mixpanel_list_annotation_tags",
+      "description": "List the tags used on annotations with id, name and has_annotations. Tag ids go into the tags of mixpanel_create_annotation and mixpanel_update_annotation. Needs the Analyst role or higher; empty list when no tag exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations/tags"
+      }
+    },
+    {
+      "name": "mixpanel_create_annotation",
+      "description": "Add an annotation to the project: a note pinned to a date and time that every chart of the project shows to all its users. Confirm the text and date with the user first. Needs the Analyst role or higher. Returns the new annotation with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "When it happened, as \"YYYY-MM-DD HH:mm:ss\", e.g. \"2026-10-01 09:00:00\".",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+          },
+          "description": {
+            "type": "string",
+            "description": "The note shown on the charts, e.g. \"Pricing page relaunch\"."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Optional tag ids from mixpanel_list_annotation_tags."
+          }
+        },
+        "required": [
+          "date",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations",
+        "bodyMapping": {
+          "date": "$date",
+          "description": "$description",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_update_annotation",
+      "description": "Change the description or tags of an existing annotation (the date cannot be changed). Everyone in the project sees the change, so confirm it with the user first. Needs the Analyst role or higher. Returns the updated annotation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "annotation_id": {
+            "type": "integer",
+            "description": "Id of the annotation, from mixpanel_list_annotations."
+          },
+          "description": {
+            "type": "string",
+            "description": "New text of the note."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "New full list of tag ids; replaces the current tags."
+          }
+        },
+        "required": [
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations/{annotation_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "description": "$description",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "mixpanel_delete_annotation",
+      "enabled": false,
+      "description": "Delete an annotation for everyone in the project; it cannot be restored. Confirm with the user first. Needs the Analyst role or higher. Returns the id of the deleted annotation. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "annotation_id": {
+            "type": "integer",
+            "description": "Id of the annotation to delete, from mixpanel_list_annotations."
+          }
+        },
+        "required": [
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/app/projects/{{MIXPANEL_PROJECT_ID}}/annotations/{annotation_id}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}
