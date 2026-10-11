@@ -103,6 +103,7 @@ import * as brevo from './intl/brevo.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as calendly from './intl/calendly.json';
+import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
 import * as claap from './intl/claap.json';
 import * as clearbit from './intl/clearbit.json';
@@ -112,6 +113,7 @@ import * as close from './intl/close.json';
 import * as cloudflare from './intl/cloudflare.json';
 import * as coda from './intl/coda.json';
 import * as coingecko from './intl/coingecko.json';
+import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
@@ -125,6 +127,7 @@ import * as docusign from './intl/docusign.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
+import * as easypost from './intl/easypost.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
 import * as erpnext from './intl/erpnext.json';
@@ -211,6 +214,7 @@ import * as matomo from './intl/matomo.json';
 import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
+import * as metaAds from './intl/meta-ads.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as microsoftExcel from './intl/microsoft-excel.json';
 import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
@@ -313,6 +317,7 @@ import * as togglTrack from './intl/toggl-track.json';
 import * as trello from './intl/trello.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as twelveData from './intl/twelve-data.json';
+import * as twilio from './intl/twilio.json';
 import * as typeform from './intl/typeform.json';
 import * as untappd from './intl/untappd.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
@@ -675,6 +680,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
+  canva as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
   clearbit as unknown as AdapterDefinition,
@@ -684,6 +690,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   cloudflare as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
+  contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
@@ -697,6 +704,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
   dropboxSign as unknown as AdapterDefinition,
+  easypost as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
   erpnext as unknown as AdapterDefinition,
@@ -783,6 +791,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mautic as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
+  metaAds as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
   microsoftExcel as unknown as AdapterDefinition,
   microsoftOnedrive as unknown as AdapterDefinition,
@@ -885,6 +894,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   trello as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
+  twilio as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
   untappd as unknown as AdapterDefinition,
   uptimeRobot as unknown as AdapterDefinition,

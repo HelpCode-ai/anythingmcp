@@ -1,0 +1,837 @@
+{
+  "slug": "twilio",
+  "name": "Twilio",
+  "description": "Let your AI work with Twilio: send and look up SMS and WhatsApp messages, review calls and phone numbers, check numbers with Lookup, send and check one-time codes with Verify, and keep an eye on usage, costs and balance.",
+  "instructions": "## Twilio\nThis connector works with one Twilio account through the **Twilio REST API**: messages (SMS, MMS and WhatsApp) on `https://api.twilio.com/2010-04-01`, calls, owned phone numbers, account balance and usage, Messaging Services, **Lookup v2** (`https://lookups.twilio.com/v2`) and **Verify v2** (`https://verify.twilio.com/v2`) for one-time codes.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://console.twilio.com. The **Account Info** panel on the start page shows the **Account SID** (starts with `AC`) and the **Auth Token**.\n2. Recommended: create an API key instead of using the Auth Token. In the Console open **Settings → Account settings → API keys & auth tokens** (in the legacy Console **Admin → Account management → API keys & tokens**), click **Create API key**, choose the type **Standard** and copy the **SID** (starts with `SK`) and the **Secret**; the secret is shown only once. A key can be revoked on its own without changing the Auth Token. A Standard key may not read the account record itself (`twilio_get_account` then answers 403); everything else works.\n3. Fill in `TWILIO_ACCOUNT_SID` with the Account SID, and either `TWILIO_API_KEY_SID` = the key SID (`SK...`) and `TWILIO_API_KEY_SECRET` = its secret, or `TWILIO_API_KEY_SID` = the Account SID again (`AC...`) and `TWILIO_API_KEY_SECRET` = the Auth Token.\n4. Install and run `twilio_list_phone_numbers`.\n\n**Sending costs money and reaches real people: confirm first.** `twilio_send_message` and `twilio_send_verification` send a message or a code to a real person and are billed per message or verification. Before calling them, state recipient, sender, channel and text and wait for the user's yes. `twilio_delete_message` is installed switched off.\n\n**Trial accounts** send only to up to five verified numbers (error 21608 otherwise) and only within the sign-up country. On the current trial, an SMS sent through the API may only set `to`, `body` and `status_callback`, and `body` must name one of Twilio's sample templates (`sms_2fa`, `sms_appointment_reminders`, `sms_order_confirmation`, `sms_delivery_updates`, `sms_customer_support`, `sms_marketing_promotions`, `sms_event_notifications`, `sms_account_alerts`, `sms_feedback_surveys`, `sms_internal_alerts`); free text needs an upgraded account.\n\n**WhatsApp**: prefix both numbers with `whatsapp:` (`whatsapp:+4915112345678`). For a first test use the WhatsApp Sandbox, which is set up in the legacy Console at https://www.twilio.com/console/sms/whatsapp/sandbox: the person sends `join <code>` to the sandbox number, then you can send from `whatsapp:+14155238886` for three days. Outside the 24 hours after the person last wrote, WhatsApp only delivers approved templates: send them with `content_sid` (HX...) and `content_variables` (error 63016 otherwise).\n\n**Numbers** are E.164: `+` country code and number without spaces (`+4915112345678`). `twilio_list_phone_numbers` shows the numbers that can be used as `from`; `twilio_list_messaging_services` the Messaging Services (needed for scheduled messages, `schedule_type` fixed with `send_at`).\n\n**Delivery status**: a new message is `queued`; read it later with `twilio_get_message`. `failed` or `undelivered` come with an `error_code`; look it up at https://www.twilio.com/docs/api/errors.\n\n**Lookup**: `twilio_lookup_phone_number` without `fields` is free and checks format and country. Every data package in `fields` (line_type_intelligence, sms_pumping_risk, caller_name and others) is billed per lookup; ask first.\n\n**Verify**: create a Verify service once in the Console (Verify, Services, Create new) and use its `VA...` sid. Each approved verification costs about 0.05 USD plus the channel fee. `twilio_send_verification` sends the code, `twilio_check_verification` checks what the person typed (status `approved` when right).\n\n**Paging**: list answers carry `next_page_uri` (null on the last page). For the next page pass `page` and `page_token` from that URI. Messages, calls and usage are listed newest first.\n\n**Usage and cost**: `twilio_list_usage_records` for a date range, `twilio_list_usage_records_by_period` per day, month or year or for a window like ThisMonth. Category `totalprice` is the total spend; `twilio_get_balance` the remaining balance.\n\n**Common errors**\n- 401 / 20003: wrong SID or secret, or an API key used with a different Account SID than the one it belongs to.\n- 404 / 20404: no such message, call, number or service on this account.\n- 400 / 21211: invalid `to` number. 21606: the `from` number is not a Twilio number of this account or cannot send SMS. 21610: the recipient replied STOP.\n- 429 / 20429: too many requests; wait and try again.\n\n**Out of scope here**: placing calls, buying or configuring numbers, Conversations, Studio, Flex, Voice TwiML and webhooks.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "twilio",
+  "docsUrl": "https://www.twilio.com/docs/usage/api",
+  "requiredEnvVars": [
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_API_KEY_SID",
+    "TWILIO_API_KEY_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.twilio.com",
+  "envVarMeta": {
+    "TWILIO_ACCOUNT_SID": {
+      "label": "Account SID",
+      "kind": "setting",
+      "help": "Twilio Console start page, Account Info: Account SID (starts with AC).",
+      "link": "https://console.twilio.com",
+      "example": "AC00000000000000000000000000000000",
+      "pattern": "^AC[0-9a-fA-F]{32}$",
+      "patternMessage": "The Account SID starts with AC followed by 32 hexadecimal characters."
+    },
+    "TWILIO_API_KEY_SID": {
+      "label": "API key SID (or Account SID)",
+      "kind": "credential",
+      "help": "The SID of an API key (starts with SK), or the Account SID again (AC...) when you use the Auth Token as the secret.",
+      "link": "https://console.twilio.com/us1/account/keys-credentials/api-keys",
+      "pattern": "^(SK|AC)[0-9a-fA-F]{32}$",
+      "patternMessage": "Use an API key SID (SK followed by 32 hexadecimal characters) or the Account SID (AC...)."
+    },
+    "TWILIO_API_KEY_SECRET": {
+      "label": "API key secret (or Auth Token)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The secret shown once when the API key was created, or the Auth Token from the Account Info panel when the field above holds the Account SID.",
+      "link": "https://console.twilio.com/us1/account/keys-credentials/api-keys",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Twilio refused the credentials. Check that the API key belongs to this Account SID (or that the Auth Token is current, it changes when it is rotated), and that the SID and secret are not swapped.",
+    "403": "The credentials may not use this resource: a Restricted API key lacks the permission, or test credentials were used (they only work for sending test messages).",
+    "404": "Twilio does not know this Account SID with these credentials. Check TWILIO_ACCOUNT_SID.",
+    "rate_limited": "Twilio is rate limiting this account. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "twilio_list_phone_numbers",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A Twilio account (a free trial works) with its Account SID, plus an API key and secret or the Auth Token from the Twilio Console. About 3 minutes.",
+  "unlisted": true,
+  "connector": {
+    "name": "Twilio REST API",
+    "type": "REST",
+    "baseUrl": "https://api.twilio.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{TWILIO_API_KEY_SID}}",
+      "password": "{{TWILIO_API_KEY_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "https://lookups.twilio.com/v2/PhoneNumbers/+14155552671"
+  },
+  "tools": [
+    {
+      "name": "twilio_get_account",
+      "description": "Read the Twilio account the connector works with: friendly_name, status (active, suspended, closed), type (Trial or Full), owner_account_sid and date_created. Needs the Auth Token or a Main API key; a Standard API key may be refused here (403, error 20003) while every other tool works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}.json"
+      }
+    },
+    {
+      "name": "twilio_get_balance",
+      "description": "Read the account balance and its currency. Subaccounts answer with the balance of the main account.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Balance.json"
+      }
+    },
+    {
+      "name": "twilio_list_messages",
+      "description": "List SMS, MMS and WhatsApp messages of the account, newest first, with sid, from, to, body, status (queued, sending, sent, delivered, undelivered, failed, received, read), direction, num_segments, price, error_code and date_sent. Filter by number and date. The answer has messages[] and next_page_uri (null on the last page); messages is empty on an account that never sent one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Only messages sent to this number, E.164 (e.g. +4915112345678) or whatsapp:+4915112345678."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only messages sent from this number or sender, E.164 or whatsapp:+E164."
+          },
+          "date_sent": {
+            "type": "string",
+            "description": "Only messages sent on this day, YYYY-MM-DD (UTC)."
+          },
+          "date_sent_after": {
+            "type": "string",
+            "description": "Only messages sent on or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "date_sent_before": {
+            "type": "string",
+            "description": "Only messages sent on or before this time, ISO 8601."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages.json",
+        "queryParams": {
+          "To": "$to",
+          "From": "$from",
+          "DateSent": "$date_sent",
+          "DateSent>": "$date_sent_after",
+          "DateSent<": "$date_sent_before",
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_get_message",
+      "description": "Read one message by its sid (SM... or MM...): status, error_code and error_message when it failed, price, segments, sender and recipient, and the times it was created, sent and updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_sid": {
+            "type": "string",
+            "description": "The message sid, e.g. SM1234567890abcdef1234567890abcdef."
+          }
+        },
+        "required": [
+          "message_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages/{message_sid}.json",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "twilio_send_message",
+      "description": "Send an SMS, MMS or WhatsApp message. This sends a real message to a real person and costs money, so confirm the recipient, sender and text with the user first. Set from (a Twilio number in E.164, an alphanumeric sender id, or whatsapp:+E164) or messaging_service_sid, and body or content_sid. For WhatsApp, prefix both numbers with whatsapp: (e.g. whatsapp:+4915112345678); outside the 24-hour window after the user last wrote, WhatsApp only accepts approved templates (content_sid plus content_variables). Returns the message with sid and status (usually queued); read it later with twilio_get_message for the delivery status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient in E.164 (e.g. +4915112345678), or whatsapp:+E164 for WhatsApp."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender: a Twilio phone number in E.164, an alphanumeric sender id, a short code, or whatsapp:+E164. Leave out when messaging_service_sid is set."
+          },
+          "messaging_service_sid": {
+            "type": "string",
+            "description": "Messaging Service sid (MG...) to send through instead of from; required for scheduled messages."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text, up to 1600 characters. Leave out when content_sid sends a template."
+          },
+          "media_url": {
+            "type": "string",
+            "description": "Public URL of one image or file to attach (MMS in the US and Canada, or WhatsApp media)."
+          },
+          "content_sid": {
+            "type": "string",
+            "description": "Content template sid (HX...) to send, e.g. an approved WhatsApp template."
+          },
+          "content_variables": {
+            "type": "string",
+            "description": "Values for the template placeholders as a JSON string, e.g. {\"1\":\"Anna\",\"2\":\"12:30\"}."
+          },
+          "status_callback": {
+            "type": "string",
+            "description": "URL Twilio calls with every status change of the message."
+          },
+          "schedule_type": {
+            "type": "string",
+            "description": "\"fixed\" to schedule the message for send_at (needs messaging_service_sid).",
+            "enum": [
+              "fixed"
+            ]
+          },
+          "send_at": {
+            "type": "string",
+            "description": "When to send a scheduled message, ISO 8601, 15 minutes to 35 days ahead (e.g. 2026-10-12T09:00:00Z)."
+          },
+          "validity_period": {
+            "type": "integer",
+            "description": "Seconds the message may wait in the queue before Twilio gives up, 1 to 36000."
+          },
+          "shorten_urls": {
+            "type": "boolean",
+            "description": "true to shorten links in the body (needs a Messaging Service with a verified link domain)."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages.json",
+        "bodyMapping": {
+          "To": "$to",
+          "From": "$from",
+          "MessagingServiceSid": "$messaging_service_sid",
+          "Body": "$body",
+          "MediaUrl": "$media_url",
+          "ContentSid": "$content_sid",
+          "ContentVariables": "$content_variables",
+          "StatusCallback": "$status_callback",
+          "ScheduleType": "$schedule_type",
+          "SendAt": "$send_at",
+          "ValidityPeriod": "$validity_period",
+          "ShortenUrls": "$shorten_urls"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "twilio_cancel_scheduled_message",
+      "description": "Cancel a message that was scheduled with schedule_type fixed and has not been sent yet; its status becomes canceled. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_sid": {
+            "type": "string",
+            "description": "The sid of the scheduled message (SM...)."
+          }
+        },
+        "required": [
+          "message_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages/{message_sid}.json",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "Status": "canceled"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "twilio_list_message_media",
+      "description": "List the media (images, files) attached to an MMS or WhatsApp message, with each item's sid and content_type. The file itself is at https://api.twilio.com plus the item's uri without the .json ending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_sid": {
+            "type": "string",
+            "description": "The message sid (SM... or MM...)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        },
+        "required": [
+          "message_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages/{message_sid}/Media.json",
+        "encodePathParams": true,
+        "queryParams": {
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_delete_message",
+      "description": "Delete a message record from the account for good, including its body. Only possible once the message is no longer queued or sending. Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_sid": {
+            "type": "string",
+            "description": "The message sid (SM... or MM...)."
+          }
+        },
+        "required": [
+          "message_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages/{message_sid}.json",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "twilio_list_calls",
+      "description": "List phone calls of the account, newest first, with sid, from, to, status, direction, duration (seconds), price, start_time and end_time. Filter by number, status and start day. The answer has calls[] and next_page_uri; calls is empty on an account without calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Only calls to this number, E.164."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only calls from this number, E.164."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only calls with this status.",
+            "enum": [
+              "queued",
+              "ringing",
+              "in-progress",
+              "canceled",
+              "completed",
+              "failed",
+              "busy",
+              "no-answer"
+            ]
+          },
+          "start_time_after": {
+            "type": "string",
+            "description": "Only calls started on or after this day, YYYY-MM-DD."
+          },
+          "start_time_before": {
+            "type": "string",
+            "description": "Only calls started on or before this day, YYYY-MM-DD."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Calls.json",
+        "queryParams": {
+          "To": "$to",
+          "From": "$from",
+          "Status": "$status",
+          "StartTime>": "$start_time_after",
+          "StartTime<": "$start_time_before",
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_get_call",
+      "description": "Read one call by its sid (CA...): status, direction, from and to, duration, price, answered_by, parent_call_sid and the start and end times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_sid": {
+            "type": "string",
+            "description": "The call sid, e.g. CA1234567890abcdef1234567890abcdef."
+          }
+        },
+        "required": [
+          "call_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Calls/{call_sid}.json",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "twilio_list_phone_numbers",
+      "description": "List the phone numbers the account owns, with sid (PN...), phone_number, friendly_name, capabilities (voice, sms, mms, fax), the voice and SMS webhook URLs and the date bought. Use them as from in twilio_send_message. The answer has incoming_phone_numbers[] (empty when the account owns none).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "Only numbers that contain these digits, e.g. +4930 or 555."
+          },
+          "friendly_name": {
+            "type": "string",
+            "description": "Only numbers with exactly this friendly name."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/IncomingPhoneNumbers.json",
+        "queryParams": {
+          "PhoneNumber": "$phone_number",
+          "FriendlyName": "$friendly_name",
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_get_phone_number",
+      "description": "Read one owned phone number by its sid (PN...): number, capabilities, webhooks, emergency address status and bundle.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number_sid": {
+            "type": "string",
+            "description": "The phone number sid, e.g. PN1234567890abcdef1234567890abcdef."
+          }
+        },
+        "required": [
+          "phone_number_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/IncomingPhoneNumbers/{phone_number_sid}.json",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "twilio_list_messaging_services",
+      "description": "List the Messaging Services of the account (Messaging API v1), with sid (MG...), friendly_name, use case and settings. A Messaging Service sends from a pool of numbers and is required for scheduled messages. The answer has services[] and meta with the next page URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, up to 1000 (default 50).",
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from meta.next_page_url of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://messaging.twilio.com/v1/Services",
+        "queryParams": {
+          "PageSize": "$page_size",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_lookup_phone_number",
+      "description": "Look up a phone number with Lookup v2. Without fields it is free and checks the format, returning valid, validation_errors, country_code, calling_country_code, national_format and phone_number in E.164. Data packages in fields are billed per lookup: line_type_intelligence (mobile, landline, VoIP and carrier, about 0.008 USD), caller_name (US only), sms_pumping_risk, line_status, reassigned_number (US only), identity_match (needs more arguments, not offered here), sim_swap and call_forwarding (private beta). Ask before requesting a paid package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number, ideally in E.164 (e.g. +4915112345678); a national number needs country_code."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated data packages to add, e.g. line_type_intelligence or line_type_intelligence,sms_pumping_risk. Leave out for the free basic check."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO country code to read a national-format number with, e.g. DE (Twilio assumes US otherwise)."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://lookups.twilio.com/v2/PhoneNumbers/{phone_number}",
+        "encodePathParams": true,
+        "queryParams": {
+          "Fields": "$fields",
+          "CountryCode": "$country_code"
+        }
+      }
+    },
+    {
+      "name": "twilio_list_verify_services",
+      "description": "List the Verify services of the account (sid VA..., friendly_name, code_length, enabled channels). A Verify service is needed to send and check one-time codes; create one in the Twilio Console under Verify, Services. The answer has services[] (empty when there is none).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, up to 1000 (default 50).",
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from meta.next_page_url of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://verify.twilio.com/v2/Services",
+        "queryParams": {
+          "PageSize": "$page_size",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_send_verification",
+      "description": "Send a one-time code through a Verify service by SMS, voice call, WhatsApp or email. This contacts a real person and each verification is billed, so confirm the recipient and channel with the user first. Returns the verification with sid (VE...) and status pending. Check the code the person received with twilio_check_verification within 10 minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_sid": {
+            "type": "string",
+            "description": "The Verify service sid (VA...), from twilio_list_verify_services."
+          },
+          "to": {
+            "type": "string",
+            "description": "Phone number in E.164 (e.g. +4915112345678), or an email address for the email channel."
+          },
+          "channel": {
+            "type": "string",
+            "description": "How to send the code.",
+            "enum": [
+              "sms",
+              "call",
+              "whatsapp",
+              "email",
+              "auto"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the message, e.g. de, en, it, fr. Defaults to the language of the recipient's country."
+          },
+          "custom_friendly_name": {
+            "type": "string",
+            "description": "Name shown in the message instead of the service's friendly name."
+          }
+        },
+        "required": [
+          "service_sid",
+          "to",
+          "channel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://verify.twilio.com/v2/Services/{service_sid}/Verifications",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "To": "$to",
+          "Channel": "$channel",
+          "Locale": "$locale",
+          "CustomFriendlyName": "$custom_friendly_name"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "twilio_check_verification",
+      "description": "Check the code a person received from twilio_send_verification. Returns status approved when the code is right, pending when it is wrong (the person may try again), and valid true or false. Once approved, or after 10 minutes, the verification is closed and a new one is needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_sid": {
+            "type": "string",
+            "description": "The Verify service sid (VA...)."
+          },
+          "to": {
+            "type": "string",
+            "description": "The phone number or email the code was sent to, exactly as in the verification."
+          },
+          "verification_sid": {
+            "type": "string",
+            "description": "The verification sid (VE...) instead of to."
+          },
+          "code": {
+            "type": "string",
+            "description": "The code the person entered, 4 to 10 characters."
+          }
+        },
+        "required": [
+          "service_sid",
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://verify.twilio.com/v2/Services/{service_sid}/VerificationCheck",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "To": "$to",
+          "VerificationSid": "$verification_sid",
+          "Code": "$code"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "twilio_get_verification",
+      "description": "Read a verification by its sid (VE...): to, channel, status (pending, approved, canceled, max_attempts_reached, deleted, failed, expired), the send attempts and when it was created. Only verifications of the last 10 minutes or so can be read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_sid": {
+            "type": "string",
+            "description": "The Verify service sid (VA...)."
+          },
+          "verification_sid": {
+            "type": "string",
+            "description": "The verification sid (VE...)."
+          }
+        },
+        "required": [
+          "service_sid",
+          "verification_sid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://verify.twilio.com/v2/Services/{service_sid}/Verifications/{verification_sid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "twilio_list_usage_records",
+      "description": "List usage and cost per category for a date range: category, description, count with count_unit, usage with usage_unit, price and price_unit. Without dates Twilio covers the whole account history. Category totalprice gives the total spend. The answer has usage_records[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Only this usage category, e.g. sms, sms-outbound, calls, calls-inbound, phonenumbers, lookups, verify-totp-attempts, totalprice."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, or a relative value like -30days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, or a relative value like +0days."
+          },
+          "include_subaccounts": {
+            "type": "boolean",
+            "description": "false to leave out the usage of subaccounts (default true)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Usage/Records.json",
+        "queryParams": {
+          "Category": "$category",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "IncludeSubaccounts": "$include_subaccounts",
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "twilio_list_usage_records_by_period",
+      "description": "List usage and cost per category split into periods (one record per category and day, month or year), or for a fixed window: Today, Yesterday, ThisMonth, LastMonth, AllTime. Each record has start_date, end_date, count, usage and price. Pass category to keep the answer short (e.g. totalprice for spend per day).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "How to split or which window.",
+            "enum": [
+              "Daily",
+              "Monthly",
+              "Yearly",
+              "Today",
+              "Yesterday",
+              "ThisMonth",
+              "LastMonth",
+              "AllTime"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "Only this usage category, e.g. sms, sms-outbound, calls, calls-inbound, phonenumbers, lookups, verify-totp-attempts, totalprice."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, or a relative value like -30days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, or a relative value like +0days."
+          },
+          "include_subaccounts": {
+            "type": "boolean",
+            "description": "false to leave out the usage of subaccounts (default true)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 1000 (default 50).",
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Pass it together with page_token from the previous answer's next_page_uri."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "PageToken from the previous answer's next_page_uri, for the next page."
+          }
+        },
+        "required": [
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Usage/Records/{period}.json",
+        "encodePathParams": true,
+        "queryParams": {
+          "Category": "$category",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date",
+          "IncludeSubaccounts": "$include_subaccounts",
+          "PageSize": "$page_size",
+          "Page": "$page",
+          "PageToken": "$page_token"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,854 @@
+{
+  "slug": "meta-ads",
+  "name": "Meta Ads",
+  "description": "Let your AI analyse your Facebook and Instagram ads: spend, reach, clicks and conversions by campaign, ad set, ad, age, country or placement, plus campaigns, creatives, audiences and change history. Can pause or activate ads and change budgets after confirmation.",
+  "instructions": "## Meta Ads\nThis connector reads Facebook and Instagram advertising through the **Meta Marketing API** (Graph API `https://graph.facebook.com/v26.0`): ad accounts, campaigns, ad sets, ads, creatives, custom audiences, change history and **insights** (spend, reach, clicks, conversions) at every level with periods and breakdowns. It can also pause or activate campaigns, ad sets and ads and change budgets. It creates nothing.\n\n**Setup (about 10 minutes)**\n1. Open https://developers.facebook.com/apps/creation/ and create an app with the use case **Create & manage ads with Marketing API** (connect it to your business portfolio). This adds the permissions `ads_read`, `ads_management` and `business_management`.\n2. Recommended, a token that does not expire: in **Business Settings** (https://business.facebook.com/settings) open **Users → System users**, add a system user (role Admin, or Employee for read-only), then **Assign assets** → your ad account (Manage campaigns, or View performance for read-only). Click **Generate token**, pick the app, choose **Never** as expiry and tick `ads_read` (plus `ads_management` for status and budget changes; `business_management` helps to list the business's accounts).\n3. Quicker alternative for a test: the Graph API Explorer (https://developers.facebook.com/tools/explorer/), your app, **User Token** with `ads_read` and `ads_management`. That token lasts one or two hours; exchange it for a 60-day token, or use the system user token for real use.\n4. Paste the token into `META_ADS_ACCESS_TOKEN`. Put the ad account id into `META_ADS_ACCOUNT_ID` with the `act_` prefix (`act_1234567890`); Ads Manager shows the number in the address bar (`act=1234567890`), and `meta_ads_list_ad_accounts` lists every account the token can reach.\n5. Install and run `meta_ads_list_ad_accounts`.\n\n**Access level**: a new app has **Limited access** (formerly Standard), enough for ad accounts of your own business but heavily rate limited. Ad accounts of other businesses need **Full access** (formerly Advanced) through App Review. Tokens can be checked at https://developers.facebook.com/tools/debug/accesstoken. If the app has **Require App Secret** switched on (App settings → Advanced), calls without an appsecret_proof are refused; leave it off for this connector.\n\n**Changes spend money: confirm first.** `meta_ads_update_status` (ACTIVE starts spending, PAUSED stops delivery) and `meta_ads_update_budget` act at once. State the object (name and id), the current and the new value, and wait for the user's yes. An ad delivers only when the ad, its ad set and its campaign are all ACTIVE.\n\n**Money**: budgets, bids, `amount_spent`, `balance` and `spend_cap` are integers in the minor unit of the account currency (`2000` = 20.00 EUR); JPY, KRW, HUF, CLP, COP, CRC, IDR, ISK, PYG, TWD and VND have none. In insights, `spend`, `cpc` and `cpm` are already decimal amounts.\n\n**Insights**\n- `meta_ads_get_account_insights` for the whole account, `meta_ads_get_insights` for one campaign, ad set or ad.\n- Period: `date_preset` (default `last_30d`; also `yesterday`, `last_7d`, `this_month`, `last_month`, `maximum` and more) or `since` + `until` (YYYY-MM-DD, at most 37 months back).\n- `level` gives one row per campaign, ad set or ad (add `campaign_name`, `adset_name` or `ad_name` to `fields`); `time_increment` 1 gives daily rows; `breakdowns` splits by `age`, `gender`, `country`, `region`, `publisher_platform`, `platform_position`, `device_platform` (only some combinations work).\n- `actions` and `cost_per_action_type` list conversions by `action_type` (e.g. `link_click`, `purchase`, `lead`, `offsite_conversion.fb_pixel_purchase`).\n- Attribution defaults to 7-day click and 1-day view; `use_unified_attribution_setting` true matches Ads Manager. Large requests can fail with code 100, subcode 1487534: shorten the period or drop breakdowns.\n\n**Lists and ids**: lists return `data[]` and `paging.cursors.after`; pass it as `after` for the next page (no `paging.next` means the last page). Without `effective_status`, deleted and archived objects are left out. Ids are long numbers: pass them as strings. Every list and read returns only the fields in `fields` (each tool has a useful default).\n\n**Common errors** (in `error.code`)\n- 190: the token is invalid or expired; create a new one.\n- 10, 200 to 299: a permission is missing (294 means `ads_management`) or the token has no access to this ad account.\n- 100: a parameter or field is wrong; `error.message` names it.\n- 4, 17, 613, 80000, 80004: rate limits; wait a few minutes. Limited access is throttled hardest.\n\n**Out of scope here**: creating or editing campaigns, ad sets, ads, creatives and audiences, uploading media, lead forms, pixels and the Conversions API.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "meta-ads",
+  "docsUrl": "https://developers.facebook.com/docs/marketing-api/",
+  "requiredEnvVars": [
+    "META_ADS_ACCESS_TOKEN",
+    "META_ADS_ACCOUNT_ID"
+  ],
+  "appRegistrationUrl": "https://developers.facebook.com/apps/creation/",
+  "envVarMeta": {
+    "META_ADS_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "A system user token from Business Settings → Users → System users → Generate token (expiry Never, permissions ads_read and ads_management), or a long-lived user token.",
+      "link": "https://business.facebook.com/settings/system-users",
+      "pattern": "^EA[A-Za-z0-9]+$",
+      "patternMessage": "Meta access tokens start with EA and contain only letters and digits. Paste the token without the word Bearer."
+    },
+    "META_ADS_ACCOUNT_ID": {
+      "label": "Ad account ID",
+      "kind": "setting",
+      "help": "The ad account id with the act_ prefix. Ads Manager shows the number in the address bar (act=1234567890); meta_ads_list_ad_accounts lists all accounts of the token.",
+      "example": "act_1234567890",
+      "pattern": "^act_[0-9]+$",
+      "patternMessage": "Write the id as act_ followed by the account number, e.g. act_1234567890."
+    }
+  },
+  "verifyHints": {
+    "400": "Meta refused the request. If the message mentions an access token, the token is invalid or expired (code 190); create a new one. Otherwise check META_ADS_ACCOUNT_ID (act_ followed by the number).",
+    "401": "Meta refused the access token. Create a new token (a system user token does not expire) and paste it without the word Bearer.",
+    "403": "The token lacks a permission (ads_read, ads_management) or has no access to this ad account. Assign the ad account to the system user and generate the token again.",
+    "rate_limited": "Meta is rate limiting this app or ad account. Wait a few minutes; apps with Limited access are throttled hardest."
+  },
+  "probe": {
+    "tool": "meta_ads_list_ad_accounts",
+    "params": {
+      "limit": 5
+    }
+  },
+  "prerequisites": "A Meta business portfolio with an ad account, and a Meta app with the Marketing API use case whose system user token (or a long-lived user token) has ads_read, plus ads_management for status and budget changes. About 10 minutes.",
+  "unlisted": true,
+  "connector": {
+    "name": "Meta Marketing API",
+    "type": "REST",
+    "baseUrl": "https://graph.facebook.com/v26.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{META_ADS_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me?fields=id,name"
+  },
+  "tools": [
+    {
+      "name": "meta_ads_list_ad_accounts",
+      "description": "List the ad accounts the token can reach, with id (act_...), name, account_status (1 active, 2 disabled, 3 unsettled, 7 pending risk review, 9 in grace period, 101 closed), currency, timezone and amount_spent. Use it to find META_ADS_ACCOUNT_ID. The answer has data[] and paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad account fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,account_id,name,account_status,currency,timezone_name,amount_spent,balance,spend_cap,min_daily_budget,business.",
+            "default": "id,account_id,name,account_status,currency,timezone_name,amount_spent,balance,spend_cap,min_daily_budget,business"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/adaccounts",
+        "queryParams": {
+          "fields": "$fields",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_ad_account",
+      "description": "Read the ad account in META_ADS_ACCOUNT_ID: name, status, currency, time zone, amount spent, balance, spend cap and minimum daily budget. Money values are strings in the currency's minor unit (cents for EUR and USD).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad account fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,account_id,name,account_status,currency,timezone_name,amount_spent,balance,spend_cap,min_daily_budget,business.",
+            "default": "id,account_id,name,account_status,currency,timezone_name,amount_spent,balance,spend_cap,min_daily_budget,business"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_campaigns",
+      "description": "List the campaigns of the ad account with name, status and effective_status, objective, daily or lifetime budget (minor currency unit), bid strategy and schedule. Filter by effective_status. The answer has data[] (empty when there are none) and paging.cursors.after for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated campaign fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,budget_remaining,bid_strategy,special_ad_categories,start_time,stop_time,created_time,updated_time.",
+            "default": "id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,budget_remaining,bid_strategy,special_ad_categories,start_time,stop_time,created_time,updated_time"
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "JSON array of effective statuses to include, e.g. [\"ACTIVE\",\"PAUSED\"]. Values: ACTIVE, PAUSED, DELETED, ARCHIVED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED, PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES. Default: everything except deleted and archived."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/campaigns",
+        "queryParams": {
+          "fields": "$fields",
+          "effective_status": "$effective_status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_campaign",
+      "description": "Read one campaign by id: name, status, effective_status, objective, budgets, bid strategy, special ad categories and schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "The campaign id, a long number as a string."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated campaign fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,budget_remaining,bid_strategy,special_ad_categories,start_time,stop_time,created_time,updated_time.",
+            "default": "id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,budget_remaining,bid_strategy,special_ad_categories,start_time,stop_time,created_time,updated_time"
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{campaign_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_ad_sets",
+      "description": "List the ad sets of the ad account with campaign_id, status, budgets, bid strategy, billing event, optimization goal, targeting and schedule. Filter by effective_status. Use meta_ads_list_campaign_ad_sets for the ad sets of one campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad set fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time.",
+            "default": "id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time"
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "JSON array of effective statuses to include, e.g. [\"ACTIVE\",\"PAUSED\"]. Values: ACTIVE, PAUSED, DELETED, ARCHIVED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED, PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES. Default: everything except deleted and archived."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/adsets",
+        "queryParams": {
+          "fields": "$fields",
+          "effective_status": "$effective_status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_campaign_ad_sets",
+      "description": "List the ad sets of one campaign with status, budgets, optimization goal, targeting and schedule. Filter by effective_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad set fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time.",
+            "default": "id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time"
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "The campaign id."
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "JSON array of effective statuses to include, e.g. [\"ACTIVE\",\"PAUSED\"]. Values: ACTIVE, PAUSED, DELETED, ARCHIVED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED, PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES. Default: everything except deleted and archived."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{campaign_id}/adsets",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "effective_status": "$effective_status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_ad_set",
+      "description": "Read one ad set by id: campaign, status, budgets, bid strategy and amount, billing event, optimization goal, full targeting spec and schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "description": "The ad set id, a long number as a string."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad set fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time.",
+            "default": "id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,billing_event,optimization_goal,targeting,start_time,end_time,created_time,updated_time"
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ad_set_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_ads",
+      "description": "List the ads of the ad account with ad set, campaign, status, effective_status, creative id and issues_info (why an ad does not deliver). Filter by effective_status. Use meta_ads_list_ad_set_ads for the ads of one ad set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time.",
+            "default": "id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time"
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "JSON array of effective statuses to include, e.g. [\"ACTIVE\",\"PAUSED\"]. Values: ACTIVE, PAUSED, DELETED, ARCHIVED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED, PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES. Default: everything except deleted and archived."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/ads",
+        "queryParams": {
+          "fields": "$fields",
+          "effective_status": "$effective_status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_ad_set_ads",
+      "description": "List the ads of one ad set with status, effective_status, creative and issues_info. Filter by effective_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time.",
+            "default": "id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time"
+          },
+          "ad_set_id": {
+            "type": "string",
+            "description": "The ad set id."
+          },
+          "effective_status": {
+            "type": "string",
+            "description": "JSON array of effective statuses to include, e.g. [\"ACTIVE\",\"PAUSED\"]. Values: ACTIVE, PAUSED, DELETED, ARCHIVED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED, PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES. Default: everything except deleted and archived."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ad_set_id}/ads",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "effective_status": "$effective_status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_ad",
+      "description": "Read one ad by id: name, ad set, campaign, status, effective_status, creative and issues_info. Add ad_review_feedback or preview_shareable_link to fields for review results or a preview link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_id": {
+            "type": "string",
+            "description": "The ad id, a long number as a string."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated ad fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time.",
+            "default": "id,name,adset_id,campaign_id,status,effective_status,creative{id,name},issues_info,created_time,updated_time"
+          }
+        },
+        "required": [
+          "ad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ad_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_account_insights",
+      "description": "Performance of the whole ad account for a period: impressions, reach, frequency, clicks, CTR, CPC, CPM, spend, actions (conversions by action_type) and cost per action, in the account currency (spend is in major units here, e.g. 12.34). Use level to get one row per campaign, ad set or ad, breakdowns for age, gender, country or placement, and time_increment for daily rows. Without a period the last 30 days are used. data is empty when nothing was delivered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated metrics. Default: impressions,reach,frequency,clicks,ctr,cpc,cpm,spend,actions,cost_per_action_type,purchase_roas,account_currency,date_start,date_stop. Others: unique_clicks, inline_link_clicks, inline_link_click_ctr, cost_per_inline_link_click, action_values, conversions, cost_per_conversion, video_p100_watched_actions, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name.",
+            "default": "impressions,reach,frequency,clicks,ctr,cpc,cpm,spend,actions,cost_per_action_type,purchase_roas,account_currency,date_start,date_stop"
+          },
+          "date_preset": {
+            "type": "string",
+            "description": "Relative period (default last_30d). Leave out when since and until are set.",
+            "enum": [
+              "today",
+              "yesterday",
+              "this_week_mon_today",
+              "this_week_sun_today",
+              "last_week_mon_sun",
+              "last_week_sun_sat",
+              "last_3d",
+              "last_7d",
+              "last_14d",
+              "last_28d",
+              "last_30d",
+              "last_90d",
+              "this_month",
+              "last_month",
+              "this_quarter",
+              "last_quarter",
+              "this_year",
+              "last_year",
+              "maximum",
+              "data_maximum"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "description": "First day of a custom range, YYYY-MM-DD (with until). Not more than 37 months back."
+          },
+          "until": {
+            "type": "string",
+            "description": "Last day of a custom range, YYYY-MM-DD (with since)."
+          },
+          "time_increment": {
+            "type": "string",
+            "description": "Split the period: 1 for daily rows, 7 for weekly, a number of days up to 90, monthly, or all_days (default, one row)."
+          },
+          "level": {
+            "type": "string",
+            "description": "Row level: account, campaign, adset or ad. With campaign, adset or ad, add the matching *_name field to fields.",
+            "enum": [
+              "account",
+              "campaign",
+              "adset",
+              "ad"
+            ]
+          },
+          "breakdowns": {
+            "type": "string",
+            "description": "Comma-separated breakdowns, e.g. age,gender or country or publisher_platform,platform_position or device_platform. Only some combinations are allowed."
+          },
+          "action_breakdowns": {
+            "type": "string",
+            "description": "How actions are split, e.g. action_type (default) or action_type,action_device."
+          },
+          "action_attribution_windows": {
+            "type": "string",
+            "description": "JSON array of attribution windows, e.g. [\"7d_click\",\"1d_view\"] (the default) or [\"1d_click\"]. 7d_view and 28d_view no longer return data."
+          },
+          "filtering": {
+            "type": "string",
+            "description": "JSON array of filters, e.g. [{\"field\":\"campaign.name\",\"operator\":\"CONTAIN\",\"value\":\"Summer\"}] or [{\"field\":\"spend\",\"operator\":\"GREATER_THAN\",\"value\":0}]."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by a field, e.g. spend_descending or impressions_ascending."
+          },
+          "use_unified_attribution_setting": {
+            "type": "boolean",
+            "description": "true to count conversions with each ad set's own attribution setting, as Ads Manager does."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 50).",
+            "default": 50
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/insights",
+        "queryParams": {
+          "fields": "$fields",
+          "date_preset": "$date_preset",
+          "time_range": "{\"since\":\"${since}\",\"until\":\"${until}\"}",
+          "time_increment": "$time_increment",
+          "level": "$level",
+          "breakdowns": "$breakdowns",
+          "action_breakdowns": "$action_breakdowns",
+          "action_attribution_windows": "$action_attribution_windows",
+          "filtering": "$filtering",
+          "sort": "$sort",
+          "use_unified_attribution_setting": "$use_unified_attribution_setting",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_insights",
+      "description": "Performance of one campaign, ad set or ad for a period, with the same metrics, periods, breakdowns and levels as meta_ads_get_account_insights. Pass the object's id; level can split a campaign into its ad sets or ads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "Id of a campaign, ad set or ad."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated metrics. Default: impressions,reach,frequency,clicks,ctr,cpc,cpm,spend,actions,cost_per_action_type,purchase_roas,account_currency,date_start,date_stop. Others: unique_clicks, inline_link_clicks, inline_link_click_ctr, cost_per_inline_link_click, action_values, conversions, cost_per_conversion, video_p100_watched_actions, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name.",
+            "default": "impressions,reach,frequency,clicks,ctr,cpc,cpm,spend,actions,cost_per_action_type,purchase_roas,account_currency,date_start,date_stop"
+          },
+          "date_preset": {
+            "type": "string",
+            "description": "Relative period (default last_30d). Leave out when since and until are set.",
+            "enum": [
+              "today",
+              "yesterday",
+              "this_week_mon_today",
+              "this_week_sun_today",
+              "last_week_mon_sun",
+              "last_week_sun_sat",
+              "last_3d",
+              "last_7d",
+              "last_14d",
+              "last_28d",
+              "last_30d",
+              "last_90d",
+              "this_month",
+              "last_month",
+              "this_quarter",
+              "last_quarter",
+              "this_year",
+              "last_year",
+              "maximum",
+              "data_maximum"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "description": "First day of a custom range, YYYY-MM-DD (with until). Not more than 37 months back."
+          },
+          "until": {
+            "type": "string",
+            "description": "Last day of a custom range, YYYY-MM-DD (with since)."
+          },
+          "time_increment": {
+            "type": "string",
+            "description": "Split the period: 1 for daily rows, 7 for weekly, a number of days up to 90, monthly, or all_days (default, one row)."
+          },
+          "level": {
+            "type": "string",
+            "description": "Row level: account, campaign, adset or ad. With campaign, adset or ad, add the matching *_name field to fields.",
+            "enum": [
+              "account",
+              "campaign",
+              "adset",
+              "ad"
+            ]
+          },
+          "breakdowns": {
+            "type": "string",
+            "description": "Comma-separated breakdowns, e.g. age,gender or country or publisher_platform,platform_position or device_platform. Only some combinations are allowed."
+          },
+          "action_breakdowns": {
+            "type": "string",
+            "description": "How actions are split, e.g. action_type (default) or action_type,action_device."
+          },
+          "action_attribution_windows": {
+            "type": "string",
+            "description": "JSON array of attribution windows, e.g. [\"7d_click\",\"1d_view\"] (the default) or [\"1d_click\"]. 7d_view and 28d_view no longer return data."
+          },
+          "filtering": {
+            "type": "string",
+            "description": "JSON array of filters, e.g. [{\"field\":\"campaign.name\",\"operator\":\"CONTAIN\",\"value\":\"Summer\"}] or [{\"field\":\"spend\",\"operator\":\"GREATER_THAN\",\"value\":0}]."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by a field, e.g. spend_descending or impressions_ascending."
+          },
+          "use_unified_attribution_setting": {
+            "type": "boolean",
+            "description": "true to count conversions with each ad set's own attribution setting, as Ads Manager does."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 50).",
+            "default": 50
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        },
+        "required": [
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{object_id}/insights",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "date_preset": "$date_preset",
+          "time_range": "{\"since\":\"${since}\",\"until\":\"${until}\"}",
+          "time_increment": "$time_increment",
+          "level": "$level",
+          "breakdowns": "$breakdowns",
+          "action_breakdowns": "$action_breakdowns",
+          "action_attribution_windows": "$action_attribution_windows",
+          "filtering": "$filtering",
+          "sort": "$sort",
+          "use_unified_attribution_setting": "$use_unified_attribution_setting",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_ad_creatives",
+      "description": "List the ad creatives of the ad account with name, title, body, call to action, link, image and thumbnail URLs, video id and the object story spec. Creatives cannot be changed once used; this connector only reads them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated creative fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,status,title,body,object_type,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_story_spec,effective_object_story_id.",
+            "default": "id,name,status,title,body,object_type,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_story_spec,effective_object_story_id"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/adcreatives",
+        "queryParams": {
+          "fields": "$fields",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_get_ad_creative",
+      "description": "Read one ad creative by id (meta_ads_get_ad shows the creative id of an ad): texts, call to action, link, image and thumbnail, video and the full object story spec or asset feed spec.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creative_id": {
+            "type": "string",
+            "description": "The creative id."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated creative fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,status,title,body,object_type,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_story_spec,effective_object_story_id,asset_feed_spec.",
+            "default": "id,name,status,title,body,object_type,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_story_spec,effective_object_story_id,asset_feed_spec"
+          }
+        },
+        "required": [
+          "creative_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{creative_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_custom_audiences",
+      "description": "List the custom and lookalike audiences of the ad account with subtype (CUSTOM, WEBSITE, LOOKALIKE, ENGAGEMENT and others), approximate size range, delivery_status and operation_status (whether the audience is ready or has a problem) and retention. Read only; members are never shown. data is empty when the account has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated audience fields to return; nested fields use braces, e.g. creative{id,name}. Default: id,name,subtype,description,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,retention_days,time_created,time_updated.",
+            "default": "id,name,subtype,description,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,retention_days,time_created,time_updated"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/customaudiences",
+        "queryParams": {
+          "fields": "$fields",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_list_account_activities",
+      "description": "Change history of the ad account: who changed what and when (event_type such as update_campaign_run_status or update_ad_set_budget, actor_name, object_name, date_time_in_timezone and the old and new values in extra_data). Useful after a sudden change in spend or delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields. Default: event_type,translated_event_type,event_time,date_time_in_timezone,actor_name,object_id,object_name,object_type,extra_data.",
+            "default": "event_type,translated_event_type,event_time,date_time_in_timezone,actor_name,object_id,object_name,object_type,extra_data"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only changes from this day on, YYYY-MM-DD."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only changes up to this day, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 25).",
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{META_ADS_ACCOUNT_ID}}/activities",
+        "queryParams": {
+          "fields": "$fields",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "meta_ads_update_status",
+      "description": "Pause or activate a campaign, ad set or ad. Activating starts spending money and pausing stops delivery at once, so always confirm the object (name and id) and the new status with the user first. An ad only delivers when it, its ad set and its campaign are all ACTIVE. Returns {\"success\": true}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "Id of the campaign, ad set or ad."
+          },
+          "status": {
+            "type": "string",
+            "description": "The new status.",
+            "enum": [
+              "ACTIVE",
+              "PAUSED"
+            ]
+          }
+        },
+        "required": [
+          "object_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{object_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "$status"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "meta_ads_update_budget",
+      "description": "Change the daily or lifetime budget of a campaign (with campaign budget) or of an ad set (with ad set budgets). Amounts are integers in the minor unit of the account currency: 2000 is 20.00 EUR or USD; JPY, KRW, HUF, CLP, COP, IDR, TWD and a few others have no minor unit. This changes how much money is spent, so state the object, old and new budget and wait for the user's yes. Set the kind of budget the object already has (daily or lifetime); the budget sits either on the campaign or on its ad sets, not both. Returns {\"success\": true}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "Id of the campaign or ad set."
+          },
+          "daily_budget": {
+            "type": "integer",
+            "description": "New daily budget in minor units, e.g. 2000 for 20.00."
+          },
+          "lifetime_budget": {
+            "type": "integer",
+            "description": "New lifetime budget in minor units, for objects with a lifetime budget."
+          }
+        },
+        "required": [
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{object_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "daily_budget": "$daily_budget",
+          "lifetime_budget": "$lifetime_budget"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}
