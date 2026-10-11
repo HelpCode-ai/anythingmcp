@@ -133,8 +133,8 @@ const NOTIFYING = [
 describe('zoom adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in with the authorization code flow at zoom.us, HTTP Basic at the token endpoint and the app scopes', () => {

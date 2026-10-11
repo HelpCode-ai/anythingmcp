@@ -69,7 +69,8 @@
     "403": "The service account has no access to this project or its role is too low. Grant it the project (Consumer or higher; Analyst for annotation changes) and check MIXPANEL_PROJECT_ID. The Query API also needs a Growth or Enterprise plan.",
     "400": "Mixpanel did not accept the request. Check that MIXPANEL_PROJECT_ID is the numeric project id and that MIXPANEL_API_HOST matches the project's data residency (US, EU or India).",
     "404": "Nothing found at this host. Check MIXPANEL_API_HOST: https://mixpanel.com (US), https://eu.mixpanel.com (EU) or https://in.mixpanel.com (India).",
-    "rate_limited": "The project used up the Query API allowance (60 queries per hour, 5 at a time, shared with other integrations). Wait and try again later."
+    "rate_limited": "The project used up the Query API allowance (60 queries per hour, 5 at a time, shared with other integrations). Wait and try again later.",
+    "402": "Mixpanel accepted the service account but the project's plan has no Query API access. The Free plan cannot run reports through the API; upgrade the project to Growth or Enterprise (a trial works), then try again."
   },
   "probe": {
     "tool": "mixpanel_list_event_names",

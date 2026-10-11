@@ -54,7 +54,6 @@
     }
   },
   "prerequisites": "A Twilio account (a free trial works) with its Account SID, plus an API key and secret or the Auth Token from the Twilio Console. About 3 minutes.",
-  "unlisted": true,
   "connector": {
     "name": "Twilio REST API",
     "type": "REST",

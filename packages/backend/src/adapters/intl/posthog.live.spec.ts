@@ -114,8 +114,8 @@ const OFF = ['posthog_delete_annotation', 'posthog_delete_feature_flag', 'postho
 const DESTRUCTIVE = [...OFF, 'posthog_update_feature_flag', 'posthog_update_insight'].sort();
 
 describe('posthog adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 11 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the personal API key as Bearer to the configured app host', () => {
