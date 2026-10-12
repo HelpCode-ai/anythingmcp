@@ -30,7 +30,12 @@ export interface OAuthMetadata {
 }
 
 export interface PendingOAuthFlow {
-  codeVerifier: string;
+  /**
+   * The PKCE verifier (RFC 7636). Absent when the connector turned PKCE off
+   * (`authConfig.pkce: false`): the authorization URL then carried no
+   * challenge and the code exchange sends no verifier.
+   */
+  codeVerifier?: string;
   connectorId: string;
   userId: string;
   redirectUri: string;
@@ -374,13 +379,15 @@ export class McpOAuthService {
   }
 
   /**
-   * Build the authorization URL with PKCE S256 challenge.
+   * Build the authorization URL with PKCE S256 challenge. Without a
+   * `codeChallenge` (the connector set `pkce: false`) the URL carries neither
+   * `code_challenge` nor `code_challenge_method`.
    */
   buildAuthorizationUrl(params: {
     authorizationEndpoint: string;
     clientId: string;
     redirectUri: string;
-    codeChallenge: string;
+    codeChallenge?: string;
     state: string;
     scope?: string;
     /** RFC 8707 resource indicator (MCP servers). */
@@ -397,8 +404,10 @@ export class McpOAuthService {
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', params.clientId);
     url.searchParams.set('redirect_uri', params.redirectUri);
-    url.searchParams.set('code_challenge', params.codeChallenge);
-    url.searchParams.set('code_challenge_method', 'S256');
+    if (params.codeChallenge) {
+      url.searchParams.set('code_challenge', params.codeChallenge);
+      url.searchParams.set('code_challenge_method', 'S256');
+    }
     url.searchParams.set('state', params.state);
     if (params.scope) {
       url.searchParams.set('scope', params.scope);
@@ -410,7 +419,8 @@ export class McpOAuthService {
   }
 
   /**
-   * Exchange an authorization code for tokens (with PKCE verifier).
+   * Exchange an authorization code for tokens, with the PKCE verifier when
+   * the flow used one.
    */
   async exchangeCodeForTokens(params: {
     tokenUrl: string;
@@ -418,7 +428,12 @@ export class McpOAuthService {
     redirectUri: string;
     clientId: string;
     clientSecret?: string;
-    codeVerifier: string;
+    /**
+     * Omitted when the flow ran without PKCE. LinkedIn's standard
+     * (confidential client) flow answers 401 invalid_client to a token
+     * request that carries a code_verifier.
+     */
+    codeVerifier?: string;
     tokenAuthMethod?: string;
     clientAssertion?: ClientAssertionSettings;
     /** Sent as User-Agent; Reddit throttles generic agents at its token endpoint. */
@@ -440,8 +455,8 @@ export class McpOAuthService {
       code: params.code,
       redirect_uri: params.redirectUri,
       client_id: params.clientId,
-      code_verifier: params.codeVerifier,
     };
+    if (params.codeVerifier) body.code_verifier = params.codeVerifier;
     if (params.resource) body.resource = params.resource;
 
     const headers: Record<string, string> = {

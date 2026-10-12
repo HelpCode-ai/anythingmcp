@@ -13,6 +13,7 @@ type Tool = {
   };
 };
 const a = adapter as unknown as {
+  unlisted?: boolean;
   probe: { tool: string };
   envVarMeta: Record<string, { pattern?: string }>;
   connector: { baseUrl: string; authType: string; authConfig: Record<string, string>; headers: Record<string, string> };
@@ -22,6 +23,10 @@ const tool = (name: string) => a.tools.find((t) => t.name === name)!;
 const matches = (v: string, s: string) => new RegExp(a.envVarMeta[v].pattern!).test(s);
 
 describe('amazon-ads adapter: static spec conformance', () => {
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
+  });
+
   it('LWA OAuth2 with the campaign management scope and the client id header', () => {
     expect(a.connector.authType).toBe('OAUTH2');
     expect(a.connector.authConfig.scopes).toBe('advertising::campaign_management');

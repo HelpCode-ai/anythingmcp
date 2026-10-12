@@ -45,7 +45,6 @@
   "probe": {
     "tool": "linkedin_ads_list_my_ad_accounts"
   },
-  "unlisted": true,
   "connector": {
     "name": "LinkedIn Marketing API (Ads)",
     "type": "REST",
@@ -58,6 +57,7 @@
       "authorizationUrl": "https://www.linkedin.com/oauth/v2/authorization",
       "tokenUrl": "https://www.linkedin.com/oauth/v2/accessToken",
       "tokenAuthMethod": "client_secret_post",
+      "pkce": false,
       "scopes": "r_ads r_ads_reporting"
     }
   },

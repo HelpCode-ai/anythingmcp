@@ -1,8 +1,8 @@
 {
   "slug": "atera",
   "name": "Atera",
-  "description": "Atera RMM and help desk: customers, contacts, monitored agents with hardware and patches, agentless devices, alerts, tickets with comments and work hours, contracts and knowledge base. Atera REST API v3 with an API key.",
-  "instructions": "## Atera\nThis connector uses the Atera REST API v3 (`https://app.atera.com/api/v3`). Atera is a remote monitoring and management (RMM) and help desk (PSA) platform for IT departments and managed service providers.\n\n## Setup\nIn Atera open **Admin > Data management > API** (only Atera admins see it) and copy the API key into `ATERA_API_KEY`. The key is sent as the `X-API-KEY` header. It has the rights of the whole Atera account: anyone with this connector can read every customer, device and ticket. Regenerating the key in Atera invalidates the old one.\n\n## Start here\n- `atera_list_customers` gives the `CustomerID` used by most other tools.\n- `atera_list_tickets` (filter by `customer_id` or `ticket_status`) and `atera_get_ticket` for the help desk; `atera_list_ticket_comments` for the conversation.\n- `atera_list_customer_agents` or `atera_find_agents_by_machine` for devices; `atera_get_agent` for the full hardware inventory.\n- `atera_list_alerts` with `alert_status` Open for what needs attention now.\n\n## Ids\nCustomerID, EndUserID (contacts), AgentID, TicketID, AlertID and ContractID are integers. Patch tools take the agent's `DeviceGuid` (a GUID), not the AgentID. Agentless devices (ping, SNMP, HTTP, TCP) are separate from agents and use their own DeviceID with `atera_list_devices`. A technician is identified by `TechnicianContactID` (shown on tickets) or by email.\n\n## Pagination\nList answers have `items`, `totalItemCount`, `page`, `itemsInPage`, `totalPages` and `nextLink`. Pass `page` (from 1) and `items_in_page` (default 20; at most 50 for tickets and agents, 500 for contacts and devices) and stop when `page` equals `totalPages`. For changes since a date use `atera_list_modified_tickets` rather than paging all tickets.\n\n## Rate limit\nAtera allows about 700 requests per minute per account. Large accounts can have thousands of agents; page with a filter instead of listing everything.\n\n## Writes\n`atera_create_ticket`, `atera_update_ticket`, the two comment tools and `atera_resolve_alert` change data. A technician comment with `is_internal` false is emailed to the end user, so confirm the text first. Ticket status names are free text in Atera (Open, Pending, Resolved, Closed and any custom ones); read them from existing tickets. Deleting customers, contacts, agents or tickets is not offered.",
+  "description": "Atera RMM and help desk: customers, contacts, monitored agents with hardware and patches, agentless devices, alerts, tickets with comments and work hours, contracts and knowledge base. Atera REST API v3 with an API token.",
+  "instructions": "## Atera\nThis connector uses the Atera REST API v3 (`https://app.atera.com/api/v3`). Atera is a remote monitoring and management (RMM) and help desk (PSA) platform for IT departments and managed service providers.\n\n## Setup\nIn Atera open **Admin > Data management > API** (only Atera admins see it), click **New token** and copy the token into `ATERA_API_KEY`; Atera shows it only once. The token is sent as `Authorization: Bearer <token>`. When you create it you choose:\n- an expiration date (at most one year; Atera notifies admins 7 days and 1 day before it expires, then paste a new token here);\n- the IP addresses allowed to use it: keep **Allow all**, or add the outbound address of your AnythingMCP server;\n- the permissions: **Full access**, or **Custom access** with Read on the domains you want the agent to see (plus Write on Tickets and Alerts for the write tools).\n\nOlder accounts may still hold a legacy static API key (a short key, not starting with `eyJ`). Atera is replacing those with tokens; create a new token instead, because this connector sends the Bearer form.\n\nWith Full access the token has the rights of the whole Atera account: anyone with this connector can read every customer, device and ticket.\n\n## Start here\n- `atera_list_customers` gives the `CustomerID` used by most other tools.\n- `atera_list_tickets` (filter by `customer_id` or `ticket_status`) and `atera_get_ticket` for the help desk; `atera_list_ticket_comments` for the conversation.\n- `atera_list_customer_agents` or `atera_find_agents_by_machine` for devices; `atera_get_agent` for the full hardware inventory.\n- `atera_list_alerts` with `alert_status` Open for what needs attention now.\n\n## Ids\nCustomerID, EndUserID (contacts), AgentID, TicketID, AlertID and ContractID are integers. Patch tools take the agent's `DeviceGuid` (a GUID), not the AgentID. Agentless devices (ping, SNMP, HTTP, TCP) are separate from agents and use their own DeviceID with `atera_list_devices`. A technician is identified by `TechnicianContactID` (shown on tickets) or by email.\n\n## Pagination\nList answers have `items`, `totalItemCount`, `page`, `itemsInPage`, `totalPages` and `nextLink`. Pass `page` (from 1) and `items_in_page` (default 20, at most 50) and stop when `page` equals `totalPages`. For changes since a date use `atera_list_modified_tickets` rather than paging all tickets.\n\n## Rate limit\nAtera allows about 700 requests per minute per account. Large accounts can have thousands of agents; page with a filter instead of listing everything.\n\n## Writes\n`atera_create_ticket`, `atera_update_ticket`, the two comment tools and `atera_resolve_alert` change data. A technician comment with `is_internal` false is emailed to the end user, so confirm the text first. Ticket status names are free text in Atera (Open, Pending, Resolved, Closed and any custom ones); read them from existing tickets. Deleting customers, contacts, agents or tickets is not offered.",
   "region": "intl",
   "category": "itsm",
   "icon": "atera",
@@ -12,15 +12,15 @@
   ],
   "envVarMeta": {
     "ATERA_API_KEY": {
-      "label": "API key",
+      "label": "API token",
       "kind": "credential",
-      "help": "Atera → Admin → Data management → API. Only Atera admins see this page. Copy the key shown there.",
+      "help": "Atera → Admin → Data management → API → New token. Only Atera admins see this page. Copy the token when it is shown; Atera does not show it again.",
       "link": "https://support.atera.com/hc/en-us/articles/219083397"
     }
   },
   "verifyHints": {
-    "401": "Atera refused the API key. Copy it again from Admin → Data management → API; a regenerated key replaces the old one.",
-    "403": "The key has no access to this resource. Check that it was created by an Atera admin.",
+    "401": "Atera refused the token. Create a new token under Admin → Data management → API (legacy static API keys and expired tokens are refused), and check the token's IP restriction.",
+    "403": "The token has no permission for this domain. Edit it in Admin → Data management → API and give it Read access (Write for ticket and alert changes), or use Full access.",
     "rate_limited": "Atera allows about 700 requests per minute. Wait a minute and try again."
   },
   "probe": {
@@ -29,15 +29,13 @@
       "items_in_page": 1
     }
   },
-  "unlisted": true,
   "connector": {
     "name": "Atera",
     "type": "REST",
     "baseUrl": "https://app.atera.com/api/v3",
-    "authType": "API_KEY",
+    "authType": "BEARER_TOKEN",
     "authConfig": {
-      "headerName": "X-API-KEY",
-      "apiKey": "{{ATERA_API_KEY}}"
+      "token": "{{ATERA_API_KEY}}"
     },
     "headers": {
       "Accept": "application/json"
@@ -56,7 +54,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           }
         }
       },
@@ -91,7 +89,7 @@
     },
     {
       "name": "atera_list_contacts",
-      "description": "List end-user contacts with EndUserID, customer, name, email, phone, job title and department. Filter by exact email or phone to find who opened a ticket.",
+      "description": "List end-user contacts with EndUserID, customer, name, email, phone, job title and department. Filter by a whole or partial email or phone to find who opened a ticket.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -101,15 +99,15 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "email": {
             "type": "string",
-            "description": "Return only the contact with this email address."
+            "description": "Return contacts whose email contains this text (a whole address finds that contact)."
           },
           "phone": {
             "type": "string",
-            "description": "Return only contacts with this phone number."
+            "description": "Return contacts whose phone number contains this text."
           }
         }
       },
@@ -119,8 +117,8 @@
         "queryParams": {
           "page": "$page",
           "itemsInPage": "$items_in_page",
-          "searchOptions.email": "$email",
-          "searchOptions.phone": "$phone"
+          "Email": "$email",
+          "Phone": "$phone"
         }
       }
     },
@@ -156,7 +154,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           }
         }
       },
@@ -181,7 +179,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "customer_id": {
             "type": "integer",
@@ -233,7 +231,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "machine_name": {
             "type": "string",
@@ -306,7 +304,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "device_type": {
             "type": "string",
@@ -385,7 +383,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "alert_status": {
             "type": "string",
@@ -460,7 +458,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "customer_id": {
             "type": "integer",
@@ -527,7 +525,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "date": {
             "type": "string",
@@ -567,7 +565,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "include_comments": {
             "type": "boolean",
@@ -602,7 +600,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "ticket_id": {
             "type": "integer",
@@ -634,7 +632,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "ticket_id": {
             "type": "integer",
@@ -686,7 +684,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           }
         }
       },
@@ -711,7 +709,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           },
           "customer_id": {
             "type": "integer",
@@ -763,7 +761,7 @@
           },
           "items_in_page": {
             "type": "integer",
-            "description": "Items per page. Default 20; the maximum is 50 for tickets and agents, 500 for contacts and devices."
+            "description": "Items per page. Default 20, at most 50."
           }
         }
       },

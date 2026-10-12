@@ -48,7 +48,6 @@
     "403": "The API user has no permission for this entity. Grant it in Role-Based Permissions (Employee Central API, User Search, and the entity's read permission).",
     "not_found": "No SuccessFactors OData API at this address. Use the API server of your data center (e.g. https://api4.successfactors.com), not the login or UI host."
   },
-  "unlisted": true,
   "connector": {
     "name": "SAP SuccessFactors",
     "type": "ODATA",
@@ -562,7 +561,7 @@
     },
     {
       "name": "sap_successfactors_get_entity_metadata",
-      "description": "The $metadata of one entity (e.g. EmpEmployment, PerPersonal, TimeAccount, FOLocation): its fields with types, labels and whether they are filterable, plus navigation properties. Much lighter than describe_service, which loads the whole tenant model.",
+      "description": "The metadata of one entity (e.g. EmpEmployment, PerPersonal, TimeAccount, FOLocation) as JSON: its fields with types, labels, required, filterable and sortable flags, plus its navigation properties. Much lighter than describe_service, which loads the whole tenant model.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -577,7 +576,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/{entity}/$metadata"
+        "path": "/Entity('{entity}')"
       }
     }
   ]

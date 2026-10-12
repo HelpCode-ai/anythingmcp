@@ -52,7 +52,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
-import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
+import { resolvePkce, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
 import {
   DYNAMIC_CLIENT_KEY,
@@ -300,6 +300,18 @@ class UpdateOAuthConfigDto {
   @IsString()
   @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post', 'private_key_jwt'])
   tokenAuthMethod?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether "Authorize with Provider" uses PKCE (RFC 7636): a ' +
+      '`code_challenge` on the authorization URL and a `code_verifier` on the ' +
+      'code exchange. On by default. Turn it off for providers that refuse ' +
+      "it, such as LinkedIn's standard web flow (401 invalid_client). " +
+      'REST and GraphQL connectors only; MCP servers always use PKCE.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  pkce?: boolean;
 }
 
 class UpdateOAuth1ConfigDto {
@@ -1021,6 +1033,7 @@ export class ConnectorsController {
       }
     }
     const str = (v: unknown) => (typeof v === 'string' ? v : '');
+    const adapterSlug = (connector.config as { adapterSlug?: string } | null)?.adapterSlug;
     return {
       clientId: str(cfg.clientId),
       authorizationUrl: str(cfg.authorizationUrl),
@@ -1034,6 +1047,12 @@ export class ConnectorsController {
         (cfg.grant === 'client_credentials'
           ? 'client_secret_basic'
           : 'client_secret_post'),
+      // What the authorization will do: the row's own setting, else the
+      // catalog adapter's (see resolvePkce).
+      pkce: resolvePkce(
+        cfg,
+        adapterSlug ? getAdapter(adapterSlug)?.connector.authConfig : undefined,
+      ),
       hasClientSecret: !!cfg.clientSecret,
       hasAccessToken: !!cfg.accessToken,
       hasRefreshToken: !!cfg.refreshToken,
@@ -1087,6 +1106,11 @@ export class ConnectorsController {
         (this.readOAuthGrant(connector.authConfig) === 'client_credentials'
           ? 'client_secret_post'
           : undefined);
+    }
+    if (dto.pkce !== undefined) {
+      // Stored either way: an explicit `true` must also beat a catalog
+      // adapter's `pkce: false` (see resolvePkce).
+      patch.pkce = dto.pkce;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -1244,6 +1268,9 @@ export class ConnectorsController {
       // from dynamic registration.
       let resource: string | undefined;
       let dynamicClient = false;
+      // PKCE (RFC 7636) is on unless a REST/GraphQL connector turned it off.
+      // MCP authorization always requires it.
+      let pkce = true;
 
       if (connector.type === 'MCP') {
         // MCP: discover OAuth metadata from the remote server, then pick the
@@ -1339,6 +1366,7 @@ export class ConnectorsController {
         scope = settings.scope;
         tokenAuthMethod = settings.tokenAuthMethod;
         clientAssertion = settings.clientAssertion;
+        pkce = settings.pkce;
         // The client id/secret stay as stored (placeholders included, so a
         // later env var edit still reaches them); only what was taken from
         // the catalog is added.
@@ -1359,14 +1387,16 @@ export class ConnectorsController {
         interpolateDeep(connector.headers ?? undefined, flowVars),
       );
 
-      // Generate PKCE challenge
-      const codeVerifier = this.mcpOAuthService.generateCodeVerifier();
-      const codeChallenge = this.mcpOAuthService.generateCodeChallenge(codeVerifier);
+      // Generate the PKCE challenge, unless the connector turned PKCE off.
+      const codeVerifier = pkce ? this.mcpOAuthService.generateCodeVerifier() : undefined;
+      const codeChallenge = codeVerifier
+        ? this.mcpOAuthService.generateCodeChallenge(codeVerifier)
+        : undefined;
       const state = this.mcpOAuthService.generateState();
 
       // Store pending flow
       await this.mcpOAuthService.storePendingFlow(state, {
-        codeVerifier,
+        ...(codeVerifier ? { codeVerifier } : {}),
         connectorId: connector.id,
         userId: req.user.sub,
         redirectUri: callbackUrl,

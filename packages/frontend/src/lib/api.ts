@@ -351,6 +351,8 @@ export const connectors = {
       tokenUrl: string;
       scopes: string;
       tokenAuthMethod: string;
+      /** Whether "Authorize with Provider" sends PKCE (on unless turned off). */
+      pkce: boolean;
       hasClientSecret: boolean;
       hasAccessToken: boolean;
       hasRefreshToken: boolean;
@@ -368,6 +370,7 @@ export const connectors = {
       tokenUrl?: string;
       scopes?: string;
       tokenAuthMethod?: string;
+      pkce?: boolean;
     },
     token: string,
   ) =>
