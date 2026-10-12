@@ -109,7 +109,8 @@ export default function LogsPage() {
 
   const handleCopyCurl = async (log: any) => {
     const serverId = log.mcpServer?.id || log.mcpServerId;
-    const toolName = log.tool?.name || log.toolId;
+    // Only the tool's name can be replayed; toolId is a database id.
+    const toolName = log.tool?.name;
     if (!serverId || !toolName) return;
 
     const origin = getApiOrigin();
@@ -438,15 +439,13 @@ export default function LogsPage() {
                     {(() => {
                       const isSharedEndpoint = !log.mcpServer;
                       const isTruncated = Boolean(
-                        log.input &&
-                        typeof log.input === 'object' &&
-                        (log.input._amcp_truncated || '_amcp_truncated' in log.input)
+                        log.input && typeof log.input === 'object' && '_amcp_truncated' in log.input
                       );
                       const cannotCopyReason = isSharedEndpoint
                         ? 'Replay unavailable: call ran through the shared /mcp endpoint'
                         : isTruncated
                         ? 'Replay unavailable: stored input parameters were truncated'
-                        : !(log.tool?.name || log.toolId)
+                        : !log.tool?.name
                         ? 'Replay unavailable: tool name is missing'
                         : null;
                       const canCopy = !cannotCopyReason;

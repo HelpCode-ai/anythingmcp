@@ -3,7 +3,10 @@
  * Follows the project's established redaction model from security-event.service.
  */
 const REDACTED_KEY_PATTERN =
-  /secret|password|passwd|token|assertion|credential|code_verifier|code_challenge|authorization|cookie|private_key|api[-_]?key/i;
+  /secret|password|passwd|pwd|token|jwt|bearer|assertion|credential|code_verifier|code_challenge|authorization|cookie|private_key|api[-_]?key|access[-_]?key|session[-_]?(id|key)/i;
+
+/** Deeper than this, a whole subtree is replaced rather than walked. */
+const MAX_REDACT_DEPTH = 10;
 
 export const REDACTED_PLACEHOLDER = '[REDACTED]';
 
@@ -11,7 +14,8 @@ export const REDACTED_PLACEHOLDER = '[REDACTED]';
  * Recursively redacts sensitive values matching credential field names.
  */
 export function redactSensitiveArgs(val: unknown, depth = 0): unknown {
-  if (depth > 10 || val === null || val === undefined) return val;
+  if (val === null || val === undefined) return val;
+  if (depth > MAX_REDACT_DEPTH) return REDACTED_PLACEHOLDER;
   if (Array.isArray(val)) {
     return val.map((item) => redactSensitiveArgs(item, depth + 1));
   }
@@ -62,7 +66,9 @@ export function buildToolCallCurl({
   authMode,
 }: BuildToolCallCurlOptions): string {
   const cleanOrigin = origin.replace(/\/+$/, '');
-  const url = `${cleanOrigin}/mcp/${encodeURI(serverId)}`;
+  // Single quotes stop the shell from expanding anything in the URL; the
+  // encoded server id and an http(s) origin cannot contain one.
+  const url = `${cleanOrigin}/mcp/${encodeURIComponent(serverId)}`.replace(/'/g, '%27');
 
   const authHeader =
     authMode === 'oauth2'
@@ -84,6 +90,7 @@ export function buildToolCallCurl({
 
   // Redact any sensitive keys in arguments as defense-in-depth
   const safeArguments = redactSensitiveArgs(argumentsObj);
+  const redacted = JSON.stringify(safeArguments).includes(JSON.stringify(REDACTED_PLACEHOLDER));
 
   const payload = JSON.stringify({
     jsonrpc: '2.0',
@@ -95,8 +102,13 @@ export function buildToolCallCurl({
     },
   });
 
+  // JSON.stringify escapes newlines, so the payload is one line and can never
+  // be a bare `JSON` line that ends the heredoc early.
   return [
-    `curl -sS -X POST "${url}" \\`,
+    ...(redacted
+      ? [`# Some arguments were replaced with ${REDACTED_PLACEHOLDER}: fill them in before running.`]
+      : []),
+    `curl -sS -X POST '${url}' \\`,
     '  -H "Content-Type: application/json" \\',
     '  -H "Accept: application/json, text/event-stream" \\',
     '  -H "MCP-Protocol-Version: 2025-06-18" \\',

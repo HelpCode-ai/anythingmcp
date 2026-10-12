@@ -101,7 +101,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       authMode: 'both',
     });
 
-    expect(cmd).toContain('curl -sS -X POST "http://localhost:4000/mcp/srv-123" \\');
+    expect(cmd).toContain("curl -sS -X POST 'http://localhost:4000/mcp/srv-123' \\");
     expect(cmd).toContain('-H "Content-Type: application/json" \\');
     expect(cmd).toContain('-H "Accept: application/json, text/event-stream" \\');
     expect(cmd).toContain('-H "MCP-Protocol-Version: 2025-06-18" \\');
@@ -120,7 +120,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       authMode: 'oauth2',
     });
 
-    expect(cmd).toContain('curl -sS -X POST "https://cloud.anythingmcp.com/mcp/srv-abc" \\');
+    expect(cmd).toContain("curl -sS -X POST 'https://cloud.anythingmcp.com/mcp/srv-abc' \\");
     expect(cmd).toContain('-H "Authorization: Bearer $AMCP_ACCESS_TOKEN" \\');
     expect(cmd).not.toContain('$AMCP_MCP_API_KEY');
     expect(cmd).not.toContain('test-token');
@@ -134,7 +134,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       args: {},
     });
 
-    expect(cmd).toContain('"http://localhost:4000/mcp/srv-1"');
+    expect(cmd).toContain("'http://localhost:4000/mcp/srv-1'");
   });
 
   test('preserves single quotes, double quotes, dollar signs, backticks, and newlines in args', () => {
@@ -187,6 +187,48 @@ test.describe('buildToolCallCurl builder unit tests', () => {
     expect(cmd).not.toContain('bearer_token_xyz');
     expect(cmd).not.toContain('secret999');
     expect(cmd).toContain('[REDACTED]');
+    expect(cmd.split('\n')[0]).toMatch(/^# Some arguments were replaced with \[REDACTED\]/);
+  });
+
+  test('adds no note when nothing was redacted', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'plain',
+      args: { q: 'x' },
+    });
+    expect(cmd.startsWith('curl ')).toBe(true);
+  });
+
+  test('a value cannot end the heredoc early', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'breakout',
+      args: { note: "x\nJSON\nrm -rf ~\n", other: 'JSON' },
+    });
+    const lines = cmd.split('\n');
+    // The only bare JSON line is the closing delimiter, and nothing follows it.
+    expect(lines.filter((l) => l === 'JSON')).toHaveLength(1);
+    expect(lines[lines.length - 1]).toBe('JSON');
+    expect(lines.some((l) => l.startsWith('rm '))).toBe(false);
+  });
+
+  test('keeps shell characters in the server id out of the shell', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: "a'$(id)`x`",
+      toolName: 't',
+      args: {},
+    });
+    const urlLine = cmd.split('\n').find((l) => l.startsWith('curl '))!;
+    expect(urlLine).toBe("curl -sS -X POST 'http://localhost:4000/mcp/a%27%24(id)%60x%60' \\");
+  });
+
+  test('replaces values nested deeper than the walk instead of passing them through', () => {
+    let deep: Record<string, unknown> = { password: 'deep-secret' };
+    for (let i = 0; i < 15; i++) deep = { level: deep };
+    expect(JSON.stringify(redactSensitiveArgs(deep))).not.toContain('deep-secret');
   });
 
   test('handles null, undefined, string, or empty args safely', () => {

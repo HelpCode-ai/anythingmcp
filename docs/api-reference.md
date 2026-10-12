@@ -256,7 +256,7 @@ Response:
 When viewing an audit log entry in the dashboard (`/logs`), click **Copy as cURL** in the expanded row to copy a command that replays the recorded MCP `tools/call` against the server's endpoint:
 
 ```bash
-curl -sS -X POST "http://localhost:4000/mcp/<serverId>" \
+curl -sS -X POST 'http://localhost:4000/mcp/<serverId>' \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "MCP-Protocol-Version: 2025-06-18" \
@@ -266,7 +266,7 @@ curl -sS -X POST "http://localhost:4000/mcp/<serverId>" \
 JSON
 ```
 
-Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server operates in OAuth2 mode) to run the command directly from your terminal.
+Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server operates in OAuth2 mode) to run the command directly from your terminal. Arguments whose names look like credentials (passwords, tokens, keys) are replaced with `[REDACTED]`, and the command then starts with a comment saying so: fill them in before running it.
 
 ---
 
