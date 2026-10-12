@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildToolCallCurl, redactSensitiveArgs } from '../../src/lib/curl';
+import {
+  buildToolCallCurl,
+  redactSensitiveArgs,
+  REDACTED_PLACEHOLDER,
+  TRUNCATED_DEPTH_PLACEHOLDER,
+} from '../../src/lib/curl';
 
 const USER = {
   id: 'u1',
@@ -42,8 +47,8 @@ async function fakeSession(page: Page, authMode = 'both') {
     if (url.includes('/api/license/status')) return json({ plan: 'community', status: 'active' });
     if (url.includes('/api/connectors')) return json([]);
     if (url.includes('/api/mcp-servers')) return json([{ id: 'srv-1', name: 'Test Server', slug: 'test-server' }]);
-    if (url.includes('/api/audit/stats')) return json({ invocations24h: 3, errors24h: 0 });
-    if (url.includes('/api/audit/analytics')) return json({ daily: [], topTools: [], totalInvocations: 3, successRate: 100, avgDuration: 10 });
+    if (url.includes('/api/audit/stats')) return json({ invocations24h: 4, errors24h: 0 });
+    if (url.includes('/api/audit/analytics')) return json({ daily: [], topTools: [], totalInvocations: 4, successRate: 100, avgDuration: 10 });
     if (url.includes('/api/audit/invocations')) {
       return json([
         {
@@ -85,6 +90,19 @@ async function fakeSession(page: Page, authMode = 'both') {
           output: { count: 100 },
           clientInfo: null,
         },
+        {
+          id: 'log-4',
+          createdAt: new Date().toISOString(),
+          status: 'SUCCESS',
+          durationMs: 12,
+          mcpServerId: 'srv-1',
+          mcpServer: { id: 'srv-1', name: 'Test Server', slug: 'test-server' },
+          toolId: 't-missing-name',
+          tool: null,
+          input: { test: 'val' },
+          output: { ok: true },
+          clientInfo: null,
+        },
       ]);
     }
     return json({});
@@ -92,7 +110,7 @@ async function fakeSession(page: Page, authMode = 'both') {
 }
 
 test.describe('buildToolCallCurl builder unit tests', () => {
-  test('generates expected cURL command for legacy/both auth mode', () => {
+  test('generates expected cURL command with single-quoted URL and placeholders for legacy/both auth mode', () => {
     const cmd = buildToolCallCurl({
       origin: 'http://localhost:4000',
       serverId: 'srv-123',
@@ -101,7 +119,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       authMode: 'both',
     });
 
-    expect(cmd).toContain('curl -sS -X POST "http://localhost:4000/mcp/srv-123" \\');
+    expect(cmd).toContain("curl -sS -X POST 'http://localhost:4000/mcp/srv-123' \\");
     expect(cmd).toContain('-H "Content-Type: application/json" \\');
     expect(cmd).toContain('-H "Accept: application/json, text/event-stream" \\');
     expect(cmd).toContain('-H "MCP-Protocol-Version: 2025-06-18" \\');
@@ -120,10 +138,70 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       authMode: 'oauth2',
     });
 
-    expect(cmd).toContain('curl -sS -X POST "https://cloud.anythingmcp.com/mcp/srv-abc" \\');
+    expect(cmd).toContain("curl -sS -X POST 'https://cloud.anythingmcp.com/mcp/srv-abc' \\");
     expect(cmd).toContain('-H "Authorization: Bearer $AMCP_ACCESS_TOKEN" \\');
     expect(cmd).not.toContain('$AMCP_MCP_API_KEY');
     expect(cmd).not.toContain('test-token');
+  });
+
+  test('supports authMethod parameter from clientInfo (jwt, static_bearer, mcp_api_key, none)', () => {
+    const cmdJwt = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'tool1',
+      args: {},
+      authMode: 'both',
+      authMethod: 'jwt',
+    });
+    expect(cmdJwt).toContain('-H "Authorization: Bearer $AMCP_ACCESS_TOKEN" \\');
+    expect(cmdJwt).not.toContain('$AMCP_MCP_API_KEY');
+
+    const cmdStaticBearer = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'tool1',
+      args: {},
+      authMode: 'both',
+      authMethod: 'static_bearer',
+    });
+    expect(cmdStaticBearer).toContain('-H "Authorization: Bearer $AMCP_ACCESS_TOKEN" \\');
+
+    const cmdApiKey = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'tool1',
+      args: {},
+      authMode: 'oauth2',
+      authMethod: 'mcp_api_key',
+    });
+    expect(cmdApiKey).toContain('-H "X-API-Key: $AMCP_MCP_API_KEY" \\');
+
+    const cmdNone = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'tool1',
+      args: {},
+      authMode: 'both',
+      authMethod: 'none',
+    });
+    expect(cmdNone).not.toContain('$AMCP_MCP_API_KEY');
+    expect(cmdNone).not.toContain('$AMCP_ACCESS_TOKEN');
+  });
+
+  test('encodes serverId with encodeURIComponent and quotes URL with single quotes for shell safety', () => {
+    const trickyServerId = "srv$123 `rm -rf` 'quoted' space/slash";
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: trickyServerId,
+      toolName: 'ping',
+      args: {},
+    });
+
+    // Should encode the special characters into percent-encoding
+    const expectedEncoded = encodeURIComponent(trickyServerId).replace(/'/g, "'\\''");
+    expect(cmd).toContain(`'http://localhost:4000/mcp/${expectedEncoded}'`);
+    expect(cmd).not.toContain('$123');
+    expect(cmd).not.toContain('`rm -rf`');
   });
 
   test('normalizes trailing slashes on origin', () => {
@@ -134,7 +212,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       args: {},
     });
 
-    expect(cmd).toContain('"http://localhost:4000/mcp/srv-1"');
+    expect(cmd).toContain("'http://localhost:4000/mcp/srv-1'");
   });
 
   test('preserves single quotes, double quotes, dollar signs, backticks, and newlines in args', () => {
@@ -156,37 +234,119 @@ test.describe('buildToolCallCurl builder unit tests', () => {
     expect(parsed.params.arguments).toEqual(trickyArgs);
   });
 
-  test('redacts sensitive keys in arguments', () => {
+  test('handles heredoc collision when payload contains delimiter lines', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'breakout_tool',
+      args: { test: 'line1\nJSON\nline2' },
+    });
+
+    // When payload contains \nJSON, the delimiter switches away from JSON to avoid collision
+    expect(cmd).toContain("<<'EOF_AMCP_JSON'");
+    expect(cmd.endsWith('EOF_AMCP_JSON')).toBe(true);
+  });
+
+  test('emits warning comments when sensitive arguments are redacted', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'secret_tool',
+      args: { password: 'my-password' },
+    });
+
+    expect(cmd).toContain('# WARNING: Sensitive arguments were redacted ([REDACTED]).');
+    expect(cmd).toContain('# Replace placeholder values with valid credentials before replaying.');
+    expect(cmd).toContain('[REDACTED]');
+    expect(cmd).not.toContain('my-password');
+  });
+
+  test('emits warning comment and strips truncation marker when args contain _amcp_truncated', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'cut_tool',
+      args: { _amcp_truncated: true, validKey: 'value' },
+    });
+
+    expect(cmd).toContain('# WARNING: Stored input arguments were truncated in the audit log; replay may be incomplete.');
+    expect(cmd).not.toContain('_amcp_truncated');
+    expect(cmd).toContain('"validKey":"value"');
+  });
+
+  test('redacts sensitive keys including auth, pwd, jwt, session, bearer, access_key without false positives', () => {
     const sensitiveArgs = {
-      user: 'alice',
-      password: 'super-secret-password',
-      apiKey: 'real_api_key_123',
+      author: 'alice', // must NOT be redacted
+      authority: 'gov', // must NOT be redacted
+      auth: 'secret-auth', // must be redacted
+      authHeader: 'auth-header-val', // must be redacted
+      client_auth: 'client-auth-val', // must be redacted
+      user_pwd: 'secret-pwd', // must be redacted
+      id_jwt: 'jwt-val', // must be redacted
+      session_id: 'session-val', // must be redacted
+      bearer_token: 'bearer-val', // must be redacted
+      access_key: 'access-key-val', // must be redacted
+      apiKey: 'api-key-val', // must be redacted
       nested: {
-        accessToken: 'bearer_token_xyz',
-        auth: { client_secret: 'secret999' },
         safe: 'normal_val',
+        private_key: 'priv-key-val',
       },
     };
 
     const redacted = redactSensitiveArgs(sensitiveArgs) as any;
-    expect(redacted.password).toBe('[REDACTED]');
-    expect(redacted.apiKey).toBe('[REDACTED]');
-    expect(redacted.nested.accessToken).toBe('[REDACTED]');
-    expect(redacted.nested.auth.client_secret).toBe('[REDACTED]');
+    expect(redacted.author).toBe('alice');
+    expect(redacted.authority).toBe('gov');
+    expect(redacted.auth).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.authHeader).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.client_auth).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.user_pwd).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.id_jwt).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.session_id).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.bearer_token).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.access_key).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.apiKey).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.nested.safe).toBe('normal_val');
-    expect(redacted.user).toBe('alice');
+    expect(redacted.nested.private_key).toBe(REDACTED_PLACEHOLDER);
+  });
 
-    const cmd = buildToolCallCurl({
-      origin: 'http://localhost:4000',
-      serverId: 'srv-1',
-      toolName: 'auth_tool',
-      args: sensitiveArgs,
-    });
-    expect(cmd).not.toContain('super-secret-password');
-    expect(cmd).not.toContain('real_api_key_123');
-    expect(cmd).not.toContain('bearer_token_xyz');
-    expect(cmd).not.toContain('secret999');
-    expect(cmd).toContain('[REDACTED]');
+  test('redacts sensitive values including JWTs, private keys, Bearer headers, and known API token prefixes', () => {
+    const sensitiveValues = {
+      rawJwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      rawPrivateKey: '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----',
+      bearerHeader: 'Bearer my-bearer-token-1234567890',
+      openAiKey: 'sk-proj-1234567890abcdef1234567890',
+      githubToken: 'ghp_1234567890abcdef12345678901234567890',
+      slackToken: 'xoxb-1234567890-abcdef123456',
+      urlWithAuth: 'https://admin:supersecret@example.com/api',
+      normalVal: 'hello world',
+    };
+
+    const redacted = redactSensitiveArgs(sensitiveValues) as any;
+    expect(redacted.rawJwt).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.rawPrivateKey).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.bearerHeader).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.openAiKey).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.githubToken).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.slackToken).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.urlWithAuth).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.normalVal).toBe('hello world');
+  });
+
+  test('truncates overly nested structures at MAX_REDACTION_DEPTH to prevent bypass', () => {
+    // Construct an object nested 12 levels deep
+    let deep: any = { secret_leaf: 'unredacted_payload' };
+    for (let i = 0; i < 12; i++) {
+      deep = { level: deep };
+    }
+
+    const redacted = redactSensitiveArgs(deep) as any;
+    // Walk down 10 levels
+    let current = redacted;
+    for (let i = 0; i < 10; i++) {
+      current = current.level;
+    }
+    // At depth 10, the nested object should be replaced with TRUNCATED_DEPTH_PLACEHOLDER
+    expect(current).toBe(TRUNCATED_DEPTH_PLACEHOLDER);
   });
 
   test('handles null, undefined, string, or empty args safely', () => {
@@ -213,9 +373,8 @@ test.describe('Audit log "Copy as cURL" UI interaction', () => {
     permissions: ['clipboard-read', 'clipboard-write'],
   });
 
-  test('copies valid tool call command and shows proper disabled states for shared and truncated rows', async ({
+  test('copies valid tool call command and shows proper disabled states for shared, truncated, and missing-name rows', async ({
     page,
-    context,
   }) => {
     await fakeSession(page, 'both');
     await page.goto('/logs');
@@ -263,5 +422,12 @@ test.describe('Audit log "Copy as cURL" UI interaction', () => {
     await expect(truncatedRowDisabled).toBeVisible();
     const truncatedBtn = truncatedRowDisabled.getByRole('button', { name: 'Copy as cURL' });
     await expect(truncatedBtn).toBeDisabled();
+
+    // 4. Expand fourth row (missing tool name: tool is null)
+    await page.getByTitle('t-missing-name').click();
+    const missingNameRowDisabled = page.locator('span[title="Replay unavailable: tool name is missing"]');
+    await expect(missingNameRowDisabled).toBeVisible();
+    const missingNameBtn = missingNameRowDisabled.getByRole('button', { name: 'Copy as cURL' });
+    await expect(missingNameBtn).toBeDisabled();
   });
 });

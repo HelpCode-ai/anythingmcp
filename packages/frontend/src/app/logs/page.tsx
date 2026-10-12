@@ -96,7 +96,7 @@ export default function LogsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [authMode, setAuthMode] = useState<string>('both');
+  const [authMode, setAuthMode] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyErrorId, setCopyErrorId] = useState<string | null>(null);
 
@@ -109,16 +109,29 @@ export default function LogsPage() {
 
   const handleCopyCurl = async (log: any) => {
     const serverId = log.mcpServer?.id || log.mcpServerId;
-    const toolName = log.tool?.name || log.toolId;
+    const toolName = log.tool?.name;
     if (!serverId || !toolName) return;
 
+    let currentAuthMode = authMode;
+    if (!currentAuthMode) {
+      try {
+        const info = await server.info();
+        if (info?.mcpAuthMode) {
+          currentAuthMode = info.mcpAuthMode;
+          setAuthMode(currentAuthMode);
+        }
+      } catch {}
+    }
+
+    const ci = parseClientInfo(log.clientInfo);
     const origin = getApiOrigin();
     const command = buildToolCallCurl({
       origin,
       serverId,
       toolName,
       args: log.input,
-      authMode,
+      authMode: currentAuthMode || 'both',
+      authMethod: ci?.authMethod,
     });
 
     const ok = await copyText(command);
@@ -439,14 +452,14 @@ export default function LogsPage() {
                       const isSharedEndpoint = !log.mcpServer;
                       const isTruncated = Boolean(
                         log.input &&
-                        typeof log.input === 'object' &&
-                        (log.input._amcp_truncated || '_amcp_truncated' in log.input)
-                      );
+                          typeof log.input === 'object' &&
+                          '_amcp_truncated' in log.input,
+                      ) || (typeof log.input === 'string' && log.input.includes('_amcp_truncated'));
                       const cannotCopyReason = isSharedEndpoint
                         ? 'Replay unavailable: call ran through the shared /mcp endpoint'
                         : isTruncated
                         ? 'Replay unavailable: stored input parameters were truncated'
-                        : !(log.tool?.name || log.toolId)
+                        : !log.tool?.name
                         ? 'Replay unavailable: tool name is missing'
                         : null;
                       const canCopy = !cannotCopyReason;
