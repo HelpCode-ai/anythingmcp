@@ -123,9 +123,7 @@ const WRITES = ['netsuite_create_customer', 'netsuite_create_sales_order', 'nets
 describe('netsuite adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
-  });
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
 
   it('signs in with OAuth 2.0 authorization code at the account hosts, HTTP Basic at the token endpoint', () => {
     expect(a.connector.authType).toBe('OAUTH2');

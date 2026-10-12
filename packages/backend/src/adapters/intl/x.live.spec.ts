@@ -114,8 +114,9 @@ const SCOPES = [
 describe('x adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
+
+  it('names the product and its prerequisites', () => {
     expect(a.name).toBe('X (Twitter)');
     expect(a.prerequisites).toMatch(/credits/);
   });
@@ -255,7 +256,7 @@ describe('x adapter: static spec conformance', () => {
     expect(sent().params).toEqual({
       query: 'from:XDevelopers -is:retweet',
       max_results: 10,
-      'tweet.fields': 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings',
+      'tweet.fields': 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings,note_tweet',
       'user.fields': 'created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected',
     });
     mockedAxios.mockClear();

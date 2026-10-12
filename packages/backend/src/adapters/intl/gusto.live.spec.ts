@@ -117,9 +117,7 @@ const WRITES = ['gusto_create_department', 'gusto_update_department'];
 describe('gusto adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
-  });
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
 
   it('signs in with Gusto OAuth on the configured host, client credentials in the body, no scope parameter', () => {
     expect(a.connector.authType).toBe('OAUTH2');
@@ -258,12 +256,15 @@ describe('gusto adapter: static spec conformance', () => {
       end_date: '2026-06-30',
       include: 'totals,taxes',
     });
+    // Payrolls always come in pages since 2026-06-15; ask for the maximum.
     expect(sent().params).toEqual({
       processing_statuses: 'processed,unprocessed',
       payroll_types: 'regular,off_cycle',
       start_date: '2026-01-01',
       end_date: '2026-06-30',
       include: 'totals,taxes',
+      page: 1,
+      per: 100,
     });
   });
 

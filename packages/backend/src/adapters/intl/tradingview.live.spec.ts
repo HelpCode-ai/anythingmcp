@@ -29,8 +29,11 @@ const a = adapter as unknown as {
 const tool = (method: string) => a.tools.find((t) => t.endpointMapping.method === method)!;
 
 describe('tradingview adapter: static spec conformance', () => {
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
+  });
+
+  it('is named TradingView in finance', () => {
     expect(a.name).toBe('TradingView');
     expect(a.category).toBe('finance');
   });

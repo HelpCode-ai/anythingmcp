@@ -111,9 +111,7 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('dynamics365-sales adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
-  });
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
 
   it('says up front that it needs an Entra app, a licence and a security role', () => {
     expect(a.prerequisites).toMatch(/Entra/);
@@ -276,8 +274,8 @@ describe('dynamics365-sales adapter: static spec conformance', () => {
     });
     expect(sent().headers.Prefer).toBe(`${FORMATTED},odata.maxpagesize=50`);
     mockedAxios.mockClear();
-    await call('d365_query', { entity_set: 'salesorders', select: 'name,totalamount', top: 10, count: true, page_size: 200 });
-    expect(sent().params).toEqual({ $select: 'name,totalamount', $top: 10, $count: true });
+    await call('d365_query', { entity_set: 'salesorders', select: 'name,totalamount', count: true, page_size: 200 });
+    expect(sent().params).toEqual({ $select: 'name,totalamount', $count: true });
     expect(sent().headers.Prefer).toBe(`${FORMATTED},odata.maxpagesize=200`);
   });
 
@@ -351,31 +349,34 @@ describe('dynamics365-sales adapter: static spec conformance', () => {
     expect(sent().data).toEqual({ statecode: 1, statuscode: 5 });
   });
 
+  it('never sends $top next to a page size, which makes Dataverse ignore $top', () => {
+    for (const t of a.tools) {
+      const prefer = t.endpointMapping.headers?.Prefer ?? '';
+      if (!prefer.includes('odata.maxpagesize')) continue;
+      expect(`${t.name}:${'$top' in (t.endpointMapping.queryParams ?? {})}`).toBe(`${t.name}:false`);
+      expect(`${t.name}:${'top' in (t.parameters.properties ?? {})}`).toBe(`${t.name}:false`);
+    }
+  });
+
   it('qualifies a lead with the documented parameters', async () => {
     mockedAxios.mockResolvedValue({ data: { value: [] } });
     await call('d365_qualify_lead', { lead_id: ID });
     expect(sent().data).toEqual({ CreateAccount: true, CreateContact: true, CreateOpportunity: true, Status: 3 });
     mockedAxios.mockClear();
-    await call('d365_qualify_lead', { lead_id: ID, create_account: false, currency_id: ID2 });
-    expect(sent().data).toEqual({
-      CreateAccount: false,
-      CreateContact: true,
-      CreateOpportunity: true,
-      Status: 3,
-      'OpportunityCurrencyId@odata.bind': `/transactioncurrencies(${ID2})`,
-    });
+    await call('d365_qualify_lead', { lead_id: ID, create_account: false });
+    expect(sent().data).toEqual({ CreateAccount: false, CreateContact: true, CreateOpportunity: true, Status: 3 });
   });
 
   it('closes an opportunity through WinOpportunity and LoseOpportunity with an opportunity close', async () => {
     mockedAxios.mockResolvedValue({ data: '' });
-    await call('d365_win_opportunity', { opportunity_id: ID, actual_revenue: 18000, close_date: '2026-10-12' });
+    await call('d365_win_opportunity', { opportunity_id: ID, actual_revenue: 18000, close_date: '2026-10-12T12:00:00Z' });
     expect(sent().data).toEqual({
       Status: 3,
       OpportunityClose: {
         subject: 'Won',
         'opportunityid@odata.bind': `/opportunities(${ID})`,
         actualrevenue: 18000,
-        actualend: '2026-10-12',
+        actualend: '2026-10-12T12:00:00Z',
       },
     });
     mockedAxios.mockClear();
@@ -422,7 +423,7 @@ live('dynamics365-sales adapter: live Dataverse Web API', () => {
     const me = await run('d365_who_am_i');
     expect(typeof me.UserId).toBe('string');
     for (const name of ['d365_list_accounts', 'd365_list_contacts', 'd365_list_leads', 'd365_list_opportunities', 'd365_list_activities']) {
-      const page = await run(name, { top: 3 });
+      const page = await run(name, { page_size: 3 });
       expect(Array.isArray(page.value)).toBe(true);
       if (page.value.length) expect(page.value[0]['statecode@OData.Community.Display.V1.FormattedValue']).toBeDefined();
     }

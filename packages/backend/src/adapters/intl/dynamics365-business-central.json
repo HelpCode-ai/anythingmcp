@@ -2,8 +2,7 @@
   "slug": "dynamics365-business-central",
   "name": "Microsoft Dynamics 365 Business Central",
   "description": "Let your AI work in Business Central: look up customers, vendors and items, read sales quotes, orders and invoices, purchase invoices, the general ledger, chart of accounts and dimensions, and create customers and draft quotes and orders. Business Central online through the standard API v2.0, signed in with your Microsoft account.",
-  "unlisted": true,
-  "instructions": "## Microsoft Dynamics 365 Business Central\nThis connector works with **Business Central online** through its standard **API v2.0** (`https://api.businesscentral.dynamics.com/v2.0/<tenant>/<environment>/api/v2.0`): companies, customers, vendors, items, sales quotes and orders, sales and purchase invoices, the general ledger, the chart of accounts, dimensions and employees. Every call runs as the user who authorized the connector, with that user's Business Central licence and permission sets: the AI sees and changes exactly what that user may. Business Central on-premises is not covered (it signs in differently); for older NAV installations use the Dynamics NAV connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com → **Applications → App registrations → New registration** (or reuse the app of the Outlook, OneDrive or SharePoint connector).\n2. Supported account types: *Accounts in this organizational directory only* is the usual choice.\n3. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Dynamics 365 Business Central → Delegated permissions**: tick `Financials.ReadWrite.All` (and `user_impersonation`). Then **Grant admin consent** if your organisation does not let users consent themselves.\n5. **Certificates & secrets → New client secret**; copy the secret **Value** (shown once).\n6. Fill in `MICROSOFT_CLIENT_ID` (Application ID), `MICROSOFT_CLIENT_SECRET` (secret value), `MICROSOFT_TENANT_ID` (the **Directory (tenant) ID** GUID, or your domain such as `contoso.onmicrosoft.com`) and `BC_ENVIRONMENT`, then install.\n7. On the connector page click **Authorize with Provider** and sign in with a Business Central user. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Tenant and environment are part of every URL.** `MICROSOFT_TENANT_ID` cannot be `common` or `organizations` here, because Business Central needs the real tenant in the address. `BC_ENVIRONMENT` is the environment name exactly as the Business Central admin center lists it: `Production` for most live tenants, `Sandbox` or a custom name such as `SANDBOX-TEST` for sandboxes. A wrong name answers 404; `bc_list_environments` shows the names (some tenants show it only to administrators). Start with a sandbox when you try the connector: writes in Production create real customers and documents.\n\n**Scope**: `https://api.businesscentral.dynamics.com/Financials.ReadWrite.All offline_access`. `offline_access` makes Microsoft issue a refresh token. Do not add Microsoft Graph scopes to this connector: one token serves one API.\n\n**Companies first.** Business data lives in a company. Call `bc_list_companies` and pass its `id` (a GUID) as `company_id` to every other tool. Records are addressed by their `id` GUID too, not by their number: find the id with a list tool and a filter such as `number eq '10000'`.\n\n**Filtering (OData v4)**\n- `filter`: `displayName eq 'Adatum Corporation'`, `contains(displayName,'Adatum')`, `startswith(number,'10')`, `balanceDue gt 0`, `postingDate ge 2026-01-01 and postingDate le 2026-01-31`. Text in single quotes (double a quote inside: `'O''Neil'`), dates and GUIDs bare, enum values as text: `status eq 'Open'`.\n- `select` keeps answers small (`id,number,displayName`); `orderby` sorts (`postingDate desc`); `expand` adds related data, e.g. `salesOrderLines` on an order.\n- Paging: list tools return `top` records (default 50, up to 1000). For the next page call again with `skip` raised by the records already read. Business Central also returns `@odata.nextLink` past 20,000 rows; use `skip` instead.\n\n**Writing**\n- `bc_create_customer`, `bc_create_sales_quote` and `bc_create_sales_order` create records; the documents stay open drafts and nothing is released, shipped, invoiced or posted by this connector. A document can take its lines in the same call (`lines`), or line by line with `bc_add_sales_quote_line` / `bc_add_sales_order_line`. A line needs `lineType` (`Item`, `Account`, `Resource`, `Comment`), `lineObjectNumber` (the item number) and `quantity`; Business Central fills price, description and unit from the item and the customer's price lists unless given.\n- `bc_update_customer` changes only the fields given. Updates carry `If-Match`: pass the record's `@odata.etag` from the last read to refuse the change when someone else edited the record meanwhile (412), or leave the default `*`.\n- Confirm customer, items, quantities and prices with the user before creating a document, and every change before updating.\n\n**Switched off at install**: `bc_delete_customer`, `bc_make_order_from_quote`, `bc_delete_sales_quote`, `bc_delete_sales_order`. Deleting and converting documents cannot be undone from here; turn these on per tool only if the AI should do that.\n\n**Other data**: `bc_query` reads any other API v2.0 resource of a company (contacts, purchase orders, credit memos, shipments, item ledger entries, aged receivables and payables, trial balance, bank accounts, payment terms, currencies, projects) or a nested path such as `salesOrders(<id>)/salesOrderLines`. Custom APIs published by extensions (`/api/<publisher>/<group>/<version>`) are not reached by this connector.\n\n**Limits**: Business Central allows about 6,000 API calls per user in 5 minutes and a few calls at the same time; beyond that it answers 429 with Retry-After. Read with `select` and filters rather than paging through whole tables.\n\n**Common errors**\n- 401: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 or `Authorization_InsufficientPermissions`: the user lacks a Business Central licence or a permission set for that data, or admin consent for the app is missing.\n- 404 `NoEnvironment` or `Not Found`: `BC_ENVIRONMENT` or `MICROSOFT_TENANT_ID` is wrong, or an id does not exist in that company.\n- 400 `BadRequest_ResourceNotFound`: the resource name in `bc_query` is misspelled (camelCase plural, e.g. `purchaseOrders`).\n- 412 `Request_EntityChanged`: the record changed since the etag was read; read it again and retry.\n- 400 `Internal_RecordNotFound` or a validation message: Business Central refused a value (unknown item number, blocked customer, missing posting group in the template).\n\n**Microsoft's own MCP server**: Business Central also offers an MCP server that exposes API pages chosen by an administrator. This connector uses the standard API v2.0 instead, so it works in every environment without that configuration.",
+  "instructions": "## Microsoft Dynamics 365 Business Central\nThis connector works with **Business Central online** through its standard **API v2.0** (`https://api.businesscentral.dynamics.com/v2.0/<tenant>/<environment>/api/v2.0`): companies, customers, vendors, items, sales quotes and orders, sales and purchase invoices, the general ledger, the chart of accounts, dimensions and employees. Every call runs as the user who authorized the connector, with that user's Business Central licence and permission sets: the AI sees and changes exactly what that user may. Business Central on-premises is not covered (it signs in differently); for older NAV installations use the Dynamics NAV connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com → **Applications → App registrations → New registration** (or reuse the app of the Outlook, OneDrive or SharePoint connector).\n2. Supported account types: *Accounts in this organizational directory only* is the usual choice.\n3. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Dynamics 365 Business Central → Delegated permissions**: tick `Financials.ReadWrite.All` (and `user_impersonation`). Then **Grant admin consent** if your organisation does not let users consent themselves.\n5. **Certificates & secrets → New client secret**; copy the secret **Value** (shown once).\n6. Fill in `MICROSOFT_CLIENT_ID` (Application ID), `MICROSOFT_CLIENT_SECRET` (secret value), `MICROSOFT_TENANT_ID` (the **Directory (tenant) ID** GUID, or your domain such as `contoso.onmicrosoft.com`) and `BC_ENVIRONMENT`, then install.\n7. On the connector page click **Authorize with Provider** and sign in with a Business Central user. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Tenant and environment are part of every URL.** `MICROSOFT_TENANT_ID` cannot be `common` or `organizations` here, because Business Central needs the real tenant in the address. `BC_ENVIRONMENT` is the environment name exactly as the Business Central admin center lists it: `Production` for most live tenants, `Sandbox` or a custom name such as `SANDBOX-TEST` for sandboxes. A wrong name answers 404; `bc_list_environments` shows the names (some tenants show it only to administrators). Start with a sandbox when you try the connector: writes in Production create real customers and documents.\n\n**Scope**: `https://api.businesscentral.dynamics.com/Financials.ReadWrite.All offline_access`. `offline_access` makes Microsoft issue a refresh token. Do not add Microsoft Graph scopes to this connector: one token serves one API.\n\n**Companies first.** Business data lives in a company. Call `bc_list_companies` and pass its `id` (a GUID) as `company_id` to every other tool. Records are addressed by their `id` GUID too, not by their number: find the id with a list tool and a filter such as `number eq '10000'`.\n\n**Filtering (OData v4)**\n- `filter`: `displayName eq 'Adatum Corporation'`, `contains(displayName,'Adatum')`, `startswith(number,'10')`, `balanceDue gt 0`, `postingDate ge 2026-01-01 and postingDate le 2026-01-31`. Text in single quotes (double a quote inside: `'O''Neil'`), dates and GUIDs bare, enum values as text: `status eq 'Open'`. An enum value with a space is written with `_x0020_` in place of the space, as the answers show it: `status eq 'In_x0020_Review'`, `category eq 'Cost_x0020_of_x0020_Goods_x0020_Sold'`.\n- `select` keeps answers small (`id,number,displayName`); `orderby` sorts (`postingDate desc`); `expand` adds related data, e.g. `salesOrderLines` on an order.\n- Paging: list tools return `top` records (default 50, up to 1000). For the next page call again with `skip` raised by the records already read. Business Central also returns `@odata.nextLink` past 20,000 rows; use `skip` instead.\n\n**Writing**\n- `bc_create_customer`, `bc_create_sales_quote` and `bc_create_sales_order` create records; the documents stay open drafts and nothing is released, shipped, invoiced or posted by this connector. A document can take its lines in the same call (`lines`), or line by line with `bc_add_sales_quote_line` / `bc_add_sales_order_line`. A line needs `lineType` (`Item`, `Account`, `Resource`, `Comment`), `lineObjectNumber` (the item number) and `quantity`; Business Central fills price, description and unit from the item and the customer's price lists unless given.\n- `bc_update_customer` changes only the fields given. Updates carry `If-Match`: pass the record's `@odata.etag` from the last read to refuse the change when someone else edited the record meanwhile (412), or leave the default `*`.\n- Confirm customer, items, quantities and prices with the user before creating a document, and every change before updating.\n\n**Switched off at install**: `bc_delete_customer`, `bc_make_order_from_quote`, `bc_delete_sales_quote`, `bc_delete_sales_order`. Deleting and converting documents cannot be undone from here; turn these on per tool only if the AI should do that.\n\n**Other data**: `bc_query` reads any other API v2.0 resource of a company (contacts, purchase orders, credit memos, shipments, item ledger entries, aged receivables and payables, trial balance, bank accounts, payment terms, currencies, projects) or a nested path such as `salesOrders(<id>)/salesOrderLines`. Custom APIs published by extensions (`/api/<publisher>/<group>/<version>`) are not reached by this connector.\n\n**Limits**: Business Central allows about 6,000 API calls per user in 5 minutes and a few calls at the same time; beyond that it answers 429 with Retry-After. Read with `select` and filters rather than paging through whole tables.\n\n**Common errors**\n- 401: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 or `Authorization_InsufficientPermissions`: the user lacks a Business Central licence or a permission set for that data, or admin consent for the app is missing.\n- 404 `NoEnvironment` or `Not Found`: `BC_ENVIRONMENT` or `MICROSOFT_TENANT_ID` is wrong, or an id does not exist in that company.\n- 400 `BadRequest_ResourceNotFound`: the resource name in `bc_query` is misspelled (camelCase plural, e.g. `purchaseOrders`).\n- 412 `Request_EntityChanged`: the record changed since the etag was read; read it again and retry.\n- 400 `Internal_RecordNotFound` or a validation message: Business Central refused a value (unknown item number, blocked customer, missing posting group in the template).\n\n**Microsoft's own MCP server**: Business Central also offers an MCP server that exposes API pages chosen by an administrator. This connector uses the standard API v2.0 instead, so it works in every environment without that configuration.",
   "region": "intl",
   "category": "erp",
   "icon": "dynamics365-business-central",
@@ -674,7 +673,7 @@
               "properties": {
                 "lineType": {
                   "type": "string",
-                  "description": "Item (default), Account, Resource, Comment, Fixed Asset or Charge."
+                  "description": "Item (default), Account, Resource, Comment or Charge."
                 },
                 "lineObjectNumber": {
                   "type": "string",
@@ -751,7 +750,7 @@
           "lineType": {
             "type": "string",
             "default": "Item",
-            "description": "Item (default), Account, Resource, Comment, Fixed Asset or Charge."
+            "description": "Item (default), Account, Resource, Comment or Charge."
           },
           "lineObjectNumber": {
             "type": "string",
@@ -867,7 +866,7 @@
     },
     {
       "name": "bc_list_sales_orders",
-      "description": "List sales orders: number, customer, order and delivery dates, status (Draft, In Review, Open, Released), fully shipped flag, amounts. Use expand=salesOrderLines to include the lines.",
+      "description": "List sales orders: number, customer, order and delivery dates, status (Draft, In Review, Open), fully shipped flag, amounts. Use expand=salesOrderLines to include the lines.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -877,7 +876,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "OData $filter on the order fields, e.g. \"customerNumber eq '10000'\", \"status eq 'Open'\", \"orderDate ge 2026-01-01\", \"fullyShipped eq false\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+            "description": "OData $filter on the order fields, e.g. \"customerNumber eq '10000'\", \"status eq 'Open'\", \"status eq 'In_x0020_Review'\", \"orderDate ge 2026-01-01\", \"fullyShipped eq false\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
           },
           "select": {
             "type": "string",
@@ -978,9 +977,9 @@
             "type": "string",
             "description": "Customer id (GUID), instead of customerNumber."
           },
-          "documentDate": {
+          "orderDate": {
             "type": "string",
-            "description": "Document date, YYYY-MM-DD. Defaults to today (the work date)."
+            "description": "Order date, YYYY-MM-DD. Defaults to today (the work date)."
           },
           "externalDocumentNumber": {
             "type": "string",
@@ -998,7 +997,7 @@
               "properties": {
                 "lineType": {
                   "type": "string",
-                  "description": "Item (default), Account, Resource, Comment, Fixed Asset or Charge."
+                  "description": "Item (default), Account, Resource, Comment or Charge."
                 },
                 "lineObjectNumber": {
                   "type": "string",
@@ -1050,7 +1049,7 @@
         "bodyMapping": {
           "customerNumber": "$customerNumber",
           "customerId": "$customerId",
-          "documentDate": "$documentDate",
+          "orderDate": "$orderDate",
           "externalDocumentNumber": "$externalDocumentNumber",
           "currencyCode": "$currencyCode",
           "salesOrderLines": "$lines",
@@ -1075,7 +1074,7 @@
           "lineType": {
             "type": "string",
             "default": "Item",
-            "description": "Item (default), Account, Resource, Comment, Fixed Asset or Charge."
+            "description": "Item (default), Account, Resource, Comment or Charge."
           },
           "lineObjectNumber": {
             "type": "string",
@@ -1159,7 +1158,7 @@
     },
     {
       "name": "bc_list_sales_invoices",
-      "description": "List sales invoices: number, customer, invoice and due dates, status (Draft, Open, Paid, Canceled, Corrective), total and remaining amount. Open with remainingAmount gt 0 are the unpaid ones.",
+      "description": "List sales invoices: number, customer, invoice and due dates, status (Draft, In Review, Open, Paid, Canceled, Corrective), total and remaining amount. Open with remainingAmount gt 0 are the unpaid ones.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1254,7 +1253,7 @@
     },
     {
       "name": "bc_list_purchase_invoices",
-      "description": "List purchase invoices (vendor bills): number, vendor, vendor invoice number, invoice and due dates, status (Draft, Open, Paid, Canceled), amounts.",
+      "description": "List purchase invoices (vendor bills): number, vendor, vendor invoice number, invoice and due dates, status (Draft, In Review, Open, Paid, Canceled, Corrective), amounts.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1401,7 +1400,7 @@
     },
     {
       "name": "bc_list_accounts",
-      "description": "List the chart of accounts (G/L accounts): number, name, category (Assets, Liabilities, Equity, Income, CostOfGoodsSold, Expense), sub-category, account type (Posting, Heading, Total), blocked state, direct posting.",
+      "description": "List the chart of accounts (G/L accounts): number, name, category (Assets, Liabilities, Equity, Income, Cost of Goods Sold, Expense), sub-category, account type (Posting, Heading, Total, Begin Total, End Total), blocked state, direct posting.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1411,7 +1410,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "OData $filter on the accounts, e.g. \"category eq 'Expense'\", \"startswith(number,'61')\", \"accountType eq 'Posting'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
+            "description": "OData $filter on the accounts, e.g. \"category eq 'Expense'\", \"startswith(number,'61')\", \"accountType eq 'Posting'\", \"category eq 'Cost_x0020_of_x0020_Goods_x0020_Sold'\". Text values in single quotes, dates bare (2026-01-31), GUIDs bare."
           },
           "select": {
             "type": "string",
@@ -1593,7 +1592,7 @@
     },
     {
       "name": "bc_query",
-      "description": "Read any other API v2.0 resource of a company that has no dedicated tool, e.g. contacts, purchaseOrders, salesCreditMemos, salesShipments, itemLedgerEntries, agedAccountsReceivables, agedAccountsPayables, trialBalance, bankAccounts, paymentTerms, currencies, locations, projects, timeRegistrationEntries, or a nested path such as salesOrders(<id>)/salesOrderLines. Read-only.",
+      "description": "Read any other API v2.0 resource of a company that has no dedicated tool, e.g. contacts, purchaseOrders, salesCreditMemos, salesShipments, itemLedgerEntries, agedAccountsReceivables, agedAccountsPayables, trialBalances, bankAccounts, paymentTerms, currencies, locations, projects, timeRegistrationEntries, or a nested path such as salesOrders(<id>)/salesOrderLines. Read-only.",
       "parameters": {
         "type": "object",
         "properties": {

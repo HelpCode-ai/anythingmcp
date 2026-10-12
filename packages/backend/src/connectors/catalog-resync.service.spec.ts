@@ -476,3 +476,61 @@ describe('CatalogResyncService.computeDiff for an MCP adapter', () => {
     expect(diff!.isUpToDate).toBe(true);
   });
 });
+
+describe('CatalogResyncService.resync for an MCP adapter', () => {
+  // An instructions update is offered for a bridge too; applying it must not
+  // write the snapshot over the tools the server listed (a gateway's remote
+  // names, its descriptions) or retire the tools the snapshot lacks.
+  it('updates the instructions and leaves the tools alone, in full mode too', async () => {
+    const adapter = getAdapter('tradingview')!;
+    const connector = {
+      id: 'c1',
+      name: adapter.connector.name,
+      baseUrl: adapter.connector.baseUrl,
+      instructions: 'older catalog instructions',
+      createdAt: new Date('2026-10-01T00:00:00Z'),
+      config: {
+        adapterSlug: 'tradingview',
+        adapterVersion: 'old-version',
+        instructionsBaseline: hashInstructions('older catalog instructions'),
+        baseUrlBaseline: adapter.connector.baseUrl,
+      },
+      tools: [
+        {
+          id: 't1',
+          name: 'tradingview_get_ohlcv',
+          description: 'what the server says',
+          parameters: { type: 'object', properties: {} },
+          endpointMapping: { method: 'mcp-tv-get-ohlcv', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+          isEnabled: true,
+        },
+        {
+          id: 't2',
+          name: 'tradingview_mcp_tv_brand_new_tool',
+          description: 'a tool the snapshot lacks',
+          parameters: {},
+          endpointMapping: { method: 'mcp-tv-brand-new-tool', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+          isEnabled: true,
+        },
+      ],
+    };
+    const tx = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector), update: jest.fn().mockResolvedValue({}) },
+      mcpTool: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const { applied, diff } = await new CatalogResyncService(prisma).resync('c1', 'full');
+    expect(diff.instructionsRefreshable).toBe(true);
+    expect(applied).toBe(true);
+    expect(tx.mcpTool.update).not.toHaveBeenCalled();
+    expect(tx.mcpTool.create).not.toHaveBeenCalled();
+    expect(tx.connector.update.mock.calls[0][0].data.instructions).toBe(adapter.instructions);
+  });
+});

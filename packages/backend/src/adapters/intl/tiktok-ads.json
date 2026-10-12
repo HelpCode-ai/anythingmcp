@@ -1,8 +1,8 @@
 {
   "slug": "tiktok-ads",
   "name": "TikTok Ads",
-  "description": "Let your AI analyse your TikTok ads: spend, impressions, clicks and conversions by campaign, ad group, ad, day or audience, plus campaigns, Smart+ campaigns, audiences, pixels and the creative library. Can pause or turn on ads and change budgets once you switch those tools on and confirm.",
-  "instructions": "## TikTok Ads\nThis connector reads and manages a TikTok advertising account through the **TikTok API for Business** (Marketing API v1.3, `https://business-api.tiktok.com/open_api/v1.3`): the ad account, campaigns (also Smart+), ad groups, ads, performance reports, custom and saved audiences, pixels, the video and image library and identities. It can pause or turn on campaigns, ad groups and ads and change budgets; those tools are installed switched off. It creates nothing.\n\n**Setup (about 15 minutes, plus TikTok's app review)**\n1. Sign in at the TikTok API for Business developer portal (https://business-api.tiktok.com/portal) with a TikTok for Business account that has access to the ad account, and click **Become a Developer** (fill in the company details).\n2. **My Apps → Create an app**: name, description, an **Advertiser redirect URL** (any https page of yours; the connector does not use it, you only copy a code from its address) and the permission scopes: at least **Ad Account Management**, **Ads Management**, **Reporting** and **Audience Management**, plus **Pixel Management** and **Creative Management** for those tools. TikTok reviews new apps, usually within two or three business days.\n3. When the app is approved, open it under **My Apps**: copy the **App ID** and **Secret** into `TIKTOK_ADS_APP_ID` and `TIKTOK_ADS_APP_SECRET` (used only to list the authorized ad accounts). Open the **Advertiser authorization URL** shown there, sign in, tick the ad accounts and confirm. The browser lands on your redirect URL with `auth_code=...` in the address bar; the code works once and expires after an hour.\n4. Exchange the code for the access token right away:\n   `curl -X POST https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/ -H \"Content-Type: application/json\" -d '{\"app_id\":\"<App ID>\",\"secret\":\"<Secret>\",\"auth_code\":\"<auth_code>\"}'`\n   The answer holds `data.access_token` and `data.advertiser_ids`. Paste the token into `TIKTOK_ADS_ACCESS_TOKEN` and one of the ids into `TIKTOK_ADS_ADVERTISER_ID`. This long-term token does not expire; it stops working when the authorization is revoked or the secret is reset.\n5. Set `TIKTOK_ADS_API_HOST` to `https://business-api.tiktok.com`, install and run `tiktok_ads_get_advertiser_info`.\n\n**Sandbox**: for tests without real spend, open the app in the developer portal → **Sandbox**, create a sandbox ad account and generate its access token there (no review needed). Use that token and sandbox advertiser id, and set `TIKTOK_ADS_API_HOST` to `https://sandbox-ads.tiktok.com`. Sandbox accounts deliver nothing and report no real data.\n\n**One ad account per connector**: every tool works on `TIKTOK_ADS_ADVERTISER_ID`. A token often covers several accounts (`tiktok_ads_list_authorized_advertisers` lists them); install the connector again for another account.\n\n**Changes spend money: confirm first.** `tiktok_ads_update_campaign_status`, `tiktok_ads_update_ad_group_status` and `tiktok_ads_update_ad_status` (ENABLE starts spending, DISABLE pauses) and `tiktok_ads_update_campaign_budget` and `tiktok_ads_update_ad_group_budget` act at once. They are installed switched off; once switched on, state the object (name and id), the current and the new value, and wait for the user's yes. An ad delivers only when the ad, its ad group and its campaign are all on. Budgets are decimal amounts in the account currency (`50` = 50.00), not cents; TikTok refuses budgets below its minimum and frequent budget changes.\n\n**JSON in parameters**: TikTok takes lists and filters as JSON text in the query, so `fields`, `filtering`, `dimensions`, `metrics`, `pixel_ids`, `video_ids`, `image_ids` and `custom_audience_ids` are strings holding JSON, e.g. `[\"spend\",\"clicks\"]` or `{\"campaign_ids\":[\"1800...\"]}`.\n\n**Reports** (`tiktok_ads_get_report`)\n- Pick the level with `data_level` and the matching ID dimension: AUCTION_CAMPAIGN with `campaign_id`, AUCTION_ADGROUP with `adgroup_id`, AUCTION_AD with `ad_id`, AUCTION_ADVERTISER with `advertiser_id`. Add `stat_time_day` for daily rows (at most 30 days per request; split longer periods) or `stat_time_hour` (one day).\n- Names come as metrics: add `campaign_name`, `adgroup_name` or `ad_name` to `metrics`.\n- Audience breakdowns need `report_type` AUDIENCE with dimensions such as `age`, `gender`, `country_code` or `placement`; not every metric is available there.\n- Dates are in the ad account's timezone; `spend` and costs are in the account currency. Metrics come back as strings.\n- Not every combination of dimensions and metrics is allowed; the error message names the one that is not.\n\n**Lists** return `data.list[]` and `data.page_info` (`page`, `page_size`, `total_number`, `total_page`); ask for the next `page` while `page` < `total_page`. Ids are long numbers: pass them as strings.\n\n**Errors arrive with HTTP 200**: TikTok puts the result in `code` (0 = success) and `message`; the connector turns other codes into errors.\n- 40001: the app or token has no permission for this ad account or action (scope missing in the app, account not authorized). Authorize the ad account again with the needed scopes.\n- 40100: too many requests; wait a moment and try again.\n- 40101 to 40199 (except 40100): the access token is missing, invalid, expired or revoked; generate a new one.\n- 40002 and other 4xxxx codes: a parameter is wrong or missing; `message` names it.\n- 5xxxx: a TikTok server error; try again later.\n\n**Out of scope here**: creating or editing campaigns, ad groups, ads and audiences, uploading creatives, asynchronous report tasks, Business Center management, the Events API and TikTok Shop (GMV Max).",
+  "description": "Let your AI analyse your TikTok ads: spend, impressions, clicks and conversions by campaign, ad group, ad, day or audience, plus campaigns, Smart+ campaigns, audiences, pixels and the creative library. Can pause or turn on campaigns, ad groups and ads and change campaign budgets once you switch those tools on and confirm.",
+  "instructions": "## TikTok Ads\nThis connector reads and manages a TikTok advertising account through the **TikTok API for Business** (Marketing API v1.3, `https://business-api.tiktok.com/open_api/v1.3`): the ad account, campaigns (also Smart+), ad groups, ads, performance reports, custom and saved audiences, pixels, the video and image library and identities. It can pause or turn on campaigns, ad groups and ads and change campaign budgets; those tools are installed switched off. It creates nothing.\n\n**Setup (about 15 minutes, plus TikTok's app review)**\n1. Sign in at the TikTok API for Business developer portal (https://business-api.tiktok.com/portal) with a TikTok for Business account that has access to the ad account, and click **Become a Developer** (fill in the company details).\n2. **My Apps → Create an app**: name, description, an **Advertiser redirect URL** (any https page of yours; the connector does not use it, you only copy a code from its address) and the permission scopes: at least **Ad Account Management**, **Ads Management**, **Reporting** and **Audience Management**, plus **Pixel Management** and **Creative Management** for those tools. TikTok reviews new apps, usually within two or three business days.\n3. When the app is approved, open it under **My Apps**: copy the **App ID** and **Secret** into `TIKTOK_ADS_APP_ID` and `TIKTOK_ADS_APP_SECRET` (used only to list the authorized ad accounts). Open the **Advertiser authorization URL** shown there, sign in, tick the ad accounts and confirm. The browser lands on your redirect URL with `auth_code=...` in the address bar; the code works once and expires after an hour.\n4. Exchange the code for the access token right away:\n   `curl -X POST https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/ -H \"Content-Type: application/json\" -d '{\"app_id\":\"<App ID>\",\"secret\":\"<Secret>\",\"auth_code\":\"<auth_code>\"}'`\n   The answer holds `data.access_token` and `data.advertiser_ids`. Paste the token into `TIKTOK_ADS_ACCESS_TOKEN` and one of the ids into `TIKTOK_ADS_ADVERTISER_ID`. This long-term token does not expire; it stops working when the authorization is revoked or the secret is reset.\n5. Set `TIKTOK_ADS_API_HOST` to `https://business-api.tiktok.com`, install and run `tiktok_ads_get_advertiser_info`.\n\n**Sandbox**: for tests without real spend, open the app in the developer portal → **Sandbox**, create a sandbox ad account and generate its access token there (no review needed). Use that token and sandbox advertiser id, and set `TIKTOK_ADS_API_HOST` to `https://sandbox-ads.tiktok.com`. Sandbox accounts deliver nothing and report no real data.\n\n**One ad account per connector**: every tool works on `TIKTOK_ADS_ADVERTISER_ID`. A token often covers several accounts (`tiktok_ads_list_authorized_advertisers` lists them); install the connector again for another account.\n\n**Changes spend money: confirm first.** `tiktok_ads_update_campaign_status`, `tiktok_ads_update_ad_group_status` and `tiktok_ads_update_ad_status` (ENABLE starts spending, DISABLE pauses) and `tiktok_ads_update_campaign_budget` act at once. They are installed switched off; once switched on, state the object (name and id), the current and the new value, and wait for the user's yes. An ad delivers only when the ad, its ad group and its campaign are all on. Budgets are decimal amounts in the account currency (`50` = 50.00), not cents; TikTok refuses a budget below its minimum or below 105% of what has already been spent. Ad group budgets are not offered: TikTok's ad group update replaces the whole ad group.\n\n**JSON in parameters**: TikTok takes lists and filters as JSON text in the query, so `fields`, `filtering`, `dimensions`, `metrics`, `pixel_ids`, `video_ids`, `image_ids` and `custom_audience_ids` are strings holding JSON, e.g. `[\"spend\",\"clicks\"]` or `{\"campaign_ids\":[\"1800...\"]}`.\n\n**Reports** (`tiktok_ads_get_report`)\n- Pick the level with `data_level` and the matching ID dimension: AUCTION_CAMPAIGN with `campaign_id`, AUCTION_ADGROUP with `adgroup_id`, AUCTION_AD with `ad_id`, AUCTION_ADVERTISER with `advertiser_id`. Use one ID dimension and at most one time dimension: `stat_time_day` for daily rows (at most 30 days per request; split longer periods) or `stat_time_hour` (one day). Without a time dimension a request may span up to 365 days.\n- Names come as metrics: add `campaign_name`, `adgroup_name` or `ad_name` to `metrics`.\n- Audience breakdowns need `report_type` AUDIENCE with dimensions such as `age`, `gender`, `country_code` or `placement`; not every metric is available there.\n- Dates are in the ad account's timezone; `spend` and costs are in the account currency. Metrics come back as strings.\n- Not every combination of dimensions and metrics is allowed; the error message names the one that is not.\n\n**Lists** return their items in `data.list[]` (`data.pixels[]`, `data.saved_audiences[]` and `data.identity_list[]` for pixels, saved audiences and identities) and `data.page_info` (`page`, `page_size`, `total_number`, `total_page`); ask for the next `page` while `page` < `total_page`. Ids are long numbers: pass them as strings.\n\n**Errors arrive with HTTP 200**: TikTok puts the result in `code` (0 = success) and `message`; the connector turns other codes into errors.\n- 40001: the app or token has no permission for this ad account or action (scope missing in the app, account not authorized). Authorize the ad account again with the needed scopes.\n- 40100, 40016, 40133: too many requests; wait a moment and try again.\n- 40104, 40105, 40102, 40106: the access token is missing, invalid, expired or revoked, or does not belong to this ad account; generate a new one.\n- 40118 to 40125: the app or ad account is not allowed this feature or permission.\n- 40300, 40301: TikTok does not know the advertiser id.\n- 40002 and other 4xxxx codes: a parameter is wrong or missing; `message` names it.\n- 5xxxx, 60001: a TikTok server error or maintenance; try again later.\n\n**Out of scope here**: creating or editing campaigns, ad groups, ads and audiences, uploading creatives, asynchronous report tasks, Business Center management, the Events API and TikTok Shop (GMV Max).",
   "region": "intl",
   "category": "advertising",
   "icon": "tiktok-ads",
@@ -62,16 +62,15 @@
     }
   },
   "verifyHints": {
-    "400": "TikTok refused the request. Check TIKTOK_ADS_ADVERTISER_ID (digits only) and that TIKTOK_ADS_API_HOST matches the token: a sandbox token only works on https://sandbox-ads.tiktok.com.",
-    "401": "TikTok refused the access token (codes 40101 to 40199): it is wrong, was revoked, or belongs to the other environment. Generate a new one and check TIKTOK_ADS_API_HOST.",
-    "403": "The token has no permission for this ad account or action (code 40001). Tick the scopes in the app, then authorize the ad account again and exchange a new token.",
-    "rate_limited": "TikTok is rate limiting this app (code 40100). Wait a moment and try again."
+    "400": "TikTok refused the request. Check TIKTOK_ADS_ADVERTISER_ID (digits only; codes 40300 and 40301 mean TikTok does not know it) and that TIKTOK_ADS_API_HOST matches the token: a sandbox token only works on https://sandbox-ads.tiktok.com.",
+    "401": "TikTok refused the access token (codes 40102 to 40106): it is wrong, was revoked, or belongs to the other environment. Generate a new one and check TIKTOK_ADS_API_HOST.",
+    "403": "The token has no permission for this ad account or action (code 40001, or 40118 to 40125). Tick the scopes in the app, then authorize the ad account again and exchange a new token.",
+    "rate_limited": "TikTok is rate limiting this app or ad account (code 40100, 40016 or 40133). Wait a moment and try again."
   },
   "probe": {
     "tool": "tiktok_ads_get_advertiser_info"
   },
   "prerequisites": "A TikTok for Business account with access to the ad account, and an approved developer app in the TikTok API for Business portal (review takes a few business days) whose advertiser authorization gives the long-term access token. A sandbox ad account and token work without review. About 15 minutes.",
-  "unlisted": true,
   "connector": {
     "name": "TikTok API for Business",
     "type": "REST",
@@ -89,7 +88,12 @@
       "errorWhen": [
         {
           "path": "code",
-          "equals": 40100,
+          "in": [
+            40016,
+            40100,
+            40132,
+            40133
+          ],
           "messagePath": [
             "code",
             "message"
@@ -98,7 +102,23 @@
         },
         {
           "path": "code",
-          "matches": "^401[0-9]{2}$",
+          "in": [
+            40101,
+            40102,
+            40103,
+            40104,
+            40105,
+            40106,
+            40107,
+            40108,
+            40109,
+            40110,
+            40112,
+            40113,
+            40115,
+            40116,
+            40131
+          ],
           "messagePath": [
             "code",
             "message"
@@ -107,7 +127,13 @@
         },
         {
           "path": "code",
-          "matches": "^(40001|403[0-9]{2})$",
+          "in": [
+            40001,
+            40118,
+            40119,
+            40124,
+            40125
+          ],
           "messagePath": [
             "code",
             "message"
@@ -116,12 +142,25 @@
         },
         {
           "path": "code",
-          "matches": "^404[0-9]{2}$",
+          "in": [
+            40007
+          ],
           "messagePath": [
             "code",
             "message"
           ],
           "status": 404
+        },
+        {
+          "path": "code",
+          "in": [
+            60001
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 503
         },
         {
           "path": "code",
@@ -134,7 +173,7 @@
         },
         {
           "path": "code",
-          "matches": "^[1-9][0-9]*$",
+          "matches": "^(?!20001$)[1-9][0-9]*$",
           "messagePath": [
             "code",
             "message"
@@ -225,13 +264,13 @@
     },
     {
       "name": "tiktok_ads_list_smart_plus_campaigns",
-      "description": "List the Smart+ campaigns of the ad account (TikTok's automated campaign type), which tiktok_ads_list_campaigns may not show in full.",
+      "description": "List the Upgraded Smart+ campaigns of the ad account (TikTok's automated campaign type), which tiktok_ads_list_campaigns may not show in full. Not available on the sandbox host.",
       "parameters": {
         "type": "object",
         "properties": {
           "filtering": {
             "type": "string",
-            "description": "Optional JSON object to filter by, e.g. {\"campaign_ids\":[\"1800...\"]} or {\"operation_status\":\"ENABLE\"}."
+            "description": "Optional JSON object to filter by, e.g. {\"campaign_ids\":[\"1800...\"]}, {\"primary_status\":\"STATUS_DELIVERY_OK\"}, {\"objective_type\":\"WEB_CONVERSIONS\"}, {\"campaign_name\":\"spring\"}."
           },
           "fields": {
             "type": "string",
@@ -245,10 +284,10 @@
           },
           "page_size": {
             "type": "integer",
-            "description": "Results per page, 1 to 100 (default 50).",
+            "description": "Results per page, 1 to 1000 (default 50).",
             "default": 50,
             "minimum": 1,
-            "maximum": 100
+            "maximum": 1000
           }
         }
       },
@@ -276,7 +315,7 @@
           },
           "fields": {
             "type": "string",
-            "description": "Optional JSON array of the fields to return, e.g. [\"campaign_id\",\"campaign_name\",\"budget\"]. Leave empty for all fields."
+            "description": "Optional JSON array of the fields to return, e.g. [\"adgroup_id\",\"adgroup_name\",\"campaign_id\",\"budget\"]. Leave empty for all fields."
           },
           "page": {
             "type": "integer",
@@ -317,7 +356,7 @@
           },
           "fields": {
             "type": "string",
-            "description": "Optional JSON array of the fields to return, e.g. [\"campaign_id\",\"campaign_name\",\"budget\"]. Leave empty for all fields."
+            "description": "Optional JSON array of the fields to return, e.g. [\"ad_id\",\"ad_name\",\"adgroup_id\",\"operation_status\"]. Leave empty for all fields."
           },
           "page": {
             "type": "integer",
@@ -358,11 +397,11 @@
           },
           "end_date": {
             "type": "string",
-            "description": "Last day, YYYY-MM-DD. With the stat_time_day dimension the range may span at most 30 days, with stat_time_hour one day."
+            "description": "Last day, YYYY-MM-DD. The range may span at most 365 days, 30 with the stat_time_day dimension and one day with stat_time_hour."
           },
           "dimensions": {
             "type": "string",
-            "description": "JSON array of 1 to 4 dimensions (default [\"campaign_id\"]). IDs: advertiser_id, campaign_id, adgroup_id, ad_id. Time: stat_time_day, stat_time_hour. With report_type AUDIENCE: age, gender, country_code, platform, ac, language, placement and more.",
+            "description": "JSON array of dimensions (default [\"campaign_id\"]): at most one ID dimension (advertiser_id, campaign_id, adgroup_id, ad_id) and at most one time dimension (stat_time_day, stat_time_hour); BASIC also takes country_code. With report_type AUDIENCE: age, gender, country_code, platform, ac, language, placement and more.",
             "default": "[\"campaign_id\"]"
           },
           "metrics": {
@@ -452,13 +491,13 @@
     },
     {
       "name": "tiktok_ads_list_custom_audiences",
-      "description": "List the custom and lookalike audiences of the ad account: id, name, type, size (cover_num), status and whether it can be used in ads.",
+      "description": "List the custom and lookalike audiences of the ad account: id, name, type, size (cover_num), whether it is valid for ads and when it expires.",
       "parameters": {
         "type": "object",
         "properties": {
           "custom_audience_ids": {
             "type": "string",
-            "description": "Optional JSON array of audience ids to restrict the list to."
+            "description": "Optional JSON array of up to 100 audience ids to restrict the list to."
           },
           "page": {
             "type": "integer",
@@ -548,7 +587,7 @@
     },
     {
       "name": "tiktok_ads_list_pixels",
-      "description": "List the TikTok Pixels of the ad account with their code, setup mode, status and events.",
+      "description": "List the TikTok Pixels of the ad account with their code, setup mode and events.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -589,13 +628,13 @@
     },
     {
       "name": "tiktok_ads_get_pixel_event_stats",
-      "description": "Count the events a pixel received per event type over a date range: a quick check that tracking works.",
+      "description": "Count the events pixels received per event type over a date range of at most 30 days (UTC): a quick check that tracking works.",
       "parameters": {
         "type": "object",
         "properties": {
           "pixel_ids": {
             "type": "string",
-            "description": "JSON array of pixel ids, e.g. [\"C1234567890\"]."
+            "description": "JSON array of up to 10 pixel ids, e.g. [\"C1234567890\"]."
           },
           "start_date": {
             "type": "string",
@@ -714,7 +753,7 @@
         "properties": {
           "identity_type": {
             "type": "string",
-            "description": "Optional: CUSTOMIZED_USER, AUTH_CODE, TT_USER or BC_AUTH_TT. Leave empty for all but BC_AUTH_TT.",
+            "description": "Optional: CUSTOMIZED_USER, AUTH_CODE, TT_USER or BC_AUTH_TT. Leave empty for all identities.",
             "enum": [
               "CUSTOMIZED_USER",
               "AUTH_CODE",
@@ -884,7 +923,7 @@
     },
     {
       "name": "tiktok_ads_update_campaign_budget",
-      "description": "Change the budget of a campaign that has its own budget (budget_mode BUDGET_MODE_DAY or BUDGET_MODE_TOTAL), in the account currency as a decimal amount (50 = 50.00). Acts at once: state the campaign, the current and the new budget and get a yes from the user first. Installed switched off.",
+      "description": "Change the budget of a campaign that has its own budget (budget_mode BUDGET_MODE_DAY, BUDGET_MODE_DYNAMIC_DAILY_BUDGET or BUDGET_MODE_TOTAL), in the account currency as a decimal amount (50 = 50.00). The new budget must be at least TikTok's minimum and at least 105% of what the campaign has already spent. Acts at once: state the campaign, the current and the new budget and get a yes from the user first. Installed switched off.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -908,42 +947,6 @@
         "bodyMapping": {
           "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
           "campaign_id": "$campaign_id",
-          "budget": "$budget"
-        }
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": true,
-        "idempotentHint": true
-      },
-      "enabled": false
-    },
-    {
-      "name": "tiktok_ads_update_ad_group_budget",
-      "description": "Change the budget of an ad group (when the campaign does not use campaign budget optimization), in the account currency as a decimal amount. Acts at once: state the ad group, the current and the new budget and get a yes from the user first. Installed switched off.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "adgroup_id": {
-            "type": "string",
-            "description": "The ad group id."
-          },
-          "budget": {
-            "type": "number",
-            "description": "The new budget in the account currency, e.g. 20 for 20.00."
-          }
-        },
-        "required": [
-          "adgroup_id",
-          "budget"
-        ]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/adgroup/update/",
-        "bodyMapping": {
-          "advertiser_id": "{{TIKTOK_ADS_ADVERTISER_ID}}",
-          "adgroup_id": "$adgroup_id",
           "budget": "$budget"
         }
       },

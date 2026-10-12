@@ -109,9 +109,7 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('dynamics365-business-central adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
-  });
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
 
   it('says up front that it needs an Entra app and a licensed Business Central user', () => {
     expect(a.prerequisites).toMatch(/Entra/);
@@ -299,8 +297,9 @@ describe('dynamics365-business-central adapter: static spec conformance', () => 
     });
     expect(sent().params).toEqual({ $expand: 'salesQuoteLines' });
     mockedAxios.mockClear();
-    await call('bc_create_sales_order', { company_id: COMPANY, customerId: RECORD });
-    expect(sent().data).toEqual({ customerId: RECORD });
+    await call('bc_create_sales_order', { company_id: COMPANY, customerId: RECORD, orderDate: '2026-10-12' });
+    // Sales orders carry orderDate; documentDate exists only on quotes and invoices.
+    expect(sent().data).toEqual({ customerId: RECORD, orderDate: '2026-10-12' });
     expect(sent().params).toEqual({ $expand: 'salesOrderLines' });
   });
 

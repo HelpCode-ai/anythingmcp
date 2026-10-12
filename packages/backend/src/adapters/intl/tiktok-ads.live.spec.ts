@@ -144,7 +144,6 @@ const execute = (name: string, env: Record<string, string>, params: Record<strin
 const call = (name: string, params: Record<string, unknown>) => execute(name, ENV, params);
 const sent = () => mockedAxios.mock.calls[0][0];
 const WRITES = [
-  'tiktok_ads_update_ad_group_budget',
   'tiktok_ads_update_ad_group_status',
   'tiktok_ads_update_ad_status',
   'tiktok_ads_update_campaign_budget',
@@ -154,8 +153,9 @@ const WRITES = [
 describe('tiktok-ads adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => { expect(a.unlisted).toBeUndefined(); });
+
+  it('names the product and its prerequisites', () => {
     expect(a.name).toBe('TikTok Ads');
     expect(a.prerequisites).toMatch(/sandbox/i);
   });
@@ -261,7 +261,6 @@ describe('tiktok-ads adapter: static spec conformance', () => {
     ['tiktok_ads_update_ad_group_status', { adgroup_ids: ['2'], operation_status: 'DISABLE' }, 'POST', '/adgroup/status/update/'],
     ['tiktok_ads_update_ad_status', { ad_ids: ['3'], operation_status: 'DISABLE' }, 'POST', '/ad/status/update/'],
     ['tiktok_ads_update_campaign_budget', { campaign_id: '1', budget: 50 }, 'POST', '/campaign/update/'],
-    ['tiktok_ads_update_ad_group_budget', { adgroup_id: '2', budget: 20 }, 'POST', '/adgroup/update/'],
   ];
 
   it('lists every tool in the URL table', () => {
@@ -339,8 +338,10 @@ describe('tiktok-ads adapter: static spec conformance', () => {
     await call('tiktok_ads_update_ad_status', { ad_ids: ['3'], operation_status: 'ENABLE' });
     expect(sent().data).toEqual({ advertiser_id: '7000000000000000001', ad_ids: ['3'], operation_status: 'ENABLE' });
     mockedAxios.mockClear();
-    await call('tiktok_ads_update_ad_group_budget', { adgroup_id: '2', budget: 20.5 });
-    expect(sent().data).toEqual({ advertiser_id: '7000000000000000001', adgroup_id: '2', budget: 20.5 });
+    await call('tiktok_ads_update_campaign_budget', { campaign_id: '1', budget: 20.5 });
+    expect(sent().data).toEqual({ advertiser_id: '7000000000000000001', campaign_id: '1', budget: 20.5 });
+    // /adgroup/update/ replaces the whole ad group, so no ad group budget tool.
+    expect(a.tools.some((t) => t.endpointMapping.path === '/adgroup/update/')).toBe(false);
     // Deleting is not offered: only ENABLE and DISABLE.
     for (const name of ['tiktok_ads_update_campaign_status', 'tiktok_ads_update_ad_group_status', 'tiktok_ads_update_ad_status']) {
       expect((tool(name).parameters.properties!.operation_status as { enum: string[] }).enum).toEqual(['ENABLE', 'DISABLE']);
@@ -358,9 +359,14 @@ describe('tiktok-ads adapter: static spec conformance', () => {
     expect(statusOf({ code: 40104, message: 'Access token is null' })).toBe(401);
     expect(statusOf({ code: 40105, message: 'Access token is incorrect or has been revoked' })).toBe(401);
     expect(statusOf({ code: 40001, message: 'No permission to operate advertiser' })).toBe(403);
-    expect(statusOf({ code: 40300, message: 'Permission error' })).toBe(403);
+    expect(statusOf({ code: 40133, message: 'Advertiser rate limit' })).toBe(429);
+    expect(statusOf({ code: 40016, message: 'Too many requests' })).toBe(429);
+    expect(statusOf({ code: 40125, message: 'The developer does not have the permission' })).toBe(403);
+    expect(statusOf({ code: 40300, message: 'The advertiser does not exist' })).toBe(400);
+    expect(statusOf({ code: 20001, message: 'Partially successful' })).toBeNull();
     expect(statusOf({ code: 40002, message: 'advertiser_id: Missing data for required field.' })).toBe(400);
-    expect(statusOf({ code: 40400, message: 'Not found' })).toBe(404);
+    expect(statusOf({ code: 40007, message: 'The object does not exist' })).toBe(404);
+    expect(statusOf({ code: 60001, message: 'System maintenance' })).toBe(503);
     expect(statusOf({ code: 50000, message: 'System error' })).toBe(502);
   });
 
