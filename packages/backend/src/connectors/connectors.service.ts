@@ -642,6 +642,13 @@ export class ConnectorsService {
      * the env vars, in the same order as a real MCP call.
      */
     parameters?: unknown,
+    /**
+     * `useProxy`: the tool asked for the outbound proxy (mcp_tools.use_proxy),
+     * as an MCP call honours it. Without this the setup check and "Run Test"
+     * went direct and failed for vendors that refuse our servers' address
+     * (Uzum Market, 12 Oct 2026) while real calls would have worked.
+     */
+    options: { useProxy?: boolean } = {},
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
@@ -724,6 +731,9 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
+        ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
+        : {}),
     };
 
     if (

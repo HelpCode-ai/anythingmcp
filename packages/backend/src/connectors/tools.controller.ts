@@ -869,6 +869,7 @@ export class ToolsController {
         inputs,
         tool.name,
         tool.parameters,
+        { useProxy: tool.useProxy === true },
       );
       const durationMs = Date.now() - startTime;
       const withNote = callerContextNote ? { note: callerContextNote } : {};
