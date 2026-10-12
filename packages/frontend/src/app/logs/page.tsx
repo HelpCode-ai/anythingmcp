@@ -17,8 +17,9 @@ const PAGE_SIZE = 50;
 
 const GRID_COLS = '90px 1.5fr 1.2fr 70px 90px 90px';
 
-function parseClientInfo(raw: string | null | undefined) {
+function parseClientInfo(raw: any) {
   if (!raw) return null;
+  if (typeof raw === 'object') return raw;
   try {
     return JSON.parse(raw);
   } catch {

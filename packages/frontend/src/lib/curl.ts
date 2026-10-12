@@ -5,7 +5,7 @@
  * private_key, and key variants (api_key, access_key, privkey, ssh_key, etc.).
  */
 const SENSITIVE_KEY_PATTERN =
-  /secret|password|passwd|pwd|token|jwt|assertion|credential|code_verifier|code_challenge|authorization|authentication|cookie|session|bearer|priv[-_]?key|private[-_]?key|(?:api|access|ssh|signing|encryption)[-_]?key/i;
+  /secret|password|passwd|pwd|passcode|token|jwt|assertion|credential|code_verifier|code_challenge|authorization|authenticat|cookie|session|bearer|priv[-_]?key|private[-_]?key|(?:api|access|ssh|signing|encryption)[-_]?key/i;
 
 /**
  * Checks whether an argument key name is sensitive.
@@ -15,7 +15,7 @@ const SENSITIVE_KEY_PATTERN =
 export function isSensitiveKey(key: string): boolean {
   if (SENSITIVE_KEY_PATTERN.test(key)) return true;
   return (
-    /(?:^|[_\-])auth(?:[_\-]|$)/i.test(key) ||
+    /(?:^|[_\-])(?:auth|pin)(?:[_\-]|$)/i.test(key) ||
     /^auth[A-Z]/.test(key) ||
     /[a-z]Auth(?:[A-Z]|$)/.test(key)
   );
@@ -37,12 +37,13 @@ const SENSITIVE_VALUE_PATTERNS: RegExp[] = [
   /-----BEGIN [A-Z0-9_\- ]*PRIVATE KEY-----/i,
   /^eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]+$/,
   /^Bearer\s+[a-zA-Z0-9_\-\.~+/]+=*$/i,
-  /^(?:gh[pousr]_[A-Za-z0-9_]{30,}|xox[baprs]-[0-9a-zA-Z-]{10,}|(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{20,}|sk-(?:live-|ant-)?[a-zA-Z0-9_-]{20,}|AKIA[0-9A-Z]{16}|amcp_[a-zA-Z0-9_-]{16,})$/,
+  /^(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{40,}|glpat-[A-Za-z0-9_-]{20,}|xox[abp]-[A-Za-z0-9-]{10,}|(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{16,}|sk-(?:live-|ant-)?[a-zA-Z0-9_-]{20,}|AKIA[0-9A-Z]{16}|amcp_[a-zA-Z0-9_-]{16,}|AIza[0-9A-Za-z_-]{35}|EAA[A-Za-z0-9]{60,}|shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}|\d{6,12}:[A-Za-z0-9_-]{30,64})$/,
 ];
 
 function redactSensitiveString(val: string): string {
+  const trimmed = val.trim();
   for (const pattern of SENSITIVE_VALUE_PATTERNS) {
-    if (pattern.test(val)) {
+    if (pattern.test(trimmed)) {
       return REDACTED_PLACEHOLDER;
     }
   }

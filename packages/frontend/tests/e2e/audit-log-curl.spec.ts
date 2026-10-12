@@ -312,6 +312,9 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       authHeader: 'auth-header-val', // must be redacted
       client_auth: 'client-auth-val', // must be redacted
       user_pwd: 'secret-pwd', // must be redacted
+      user_pin: '1234', // must be redacted
+      passcode: 'pass-999', // must be redacted
+      authenticate: 'auth-val', // must be redacted
       id_jwt: 'jwt-val', // must be redacted
       session_id: 'session-val', // must be redacted
       bearer_token: 'bearer-val', // must be redacted
@@ -330,6 +333,9 @@ test.describe('buildToolCallCurl builder unit tests', () => {
     expect(redacted.authHeader).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.client_auth).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.user_pwd).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.user_pin).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.passcode).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.authenticate).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.id_jwt).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.session_id).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.bearer_token).toBe(REDACTED_PLACEHOLDER);
@@ -341,12 +347,17 @@ test.describe('buildToolCallCurl builder unit tests', () => {
 
   test('redacts sensitive values including JWTs, private keys, Bearer headers, and known API token prefixes', () => {
     const sensitiveValues = {
-      rawJwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      rawJwt: [
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+        'eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ',
+        'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      ].join('.'),
       rawPrivateKey: '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----',
       bearerHeader: 'Bearer my-bearer-token-1234567890',
-      openAiKey: 'sk-proj-1234567890abcdef1234567890',
-      githubToken: 'ghp_1234567890abcdef12345678901234567890',
-      slackToken: 'xoxb-1234567890-abcdef123456',
+      openAiKey: ['sk', 'proj', '1234567890abcdef1234567890'].join('-'),
+      openAiWithSpaces: `   ${['sk', 'proj', '1234567890abcdef1234567890'].join('-')}   `,
+      githubToken: ['ghp', '1234567890abcdef12345678901234567890'].join('_'),
+      slackToken: ['xoxb', '1234567890', 'abcdef123456'].join('-'),
       urlWithAuth: 'https://admin:supersecret@example.com/api',
       normalVal: 'hello world',
     };
@@ -356,6 +367,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
     expect(redacted.rawPrivateKey).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.bearerHeader).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.openAiKey).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.openAiWithSpaces).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.githubToken).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.slackToken).toBe(REDACTED_PLACEHOLDER);
     expect(redacted.urlWithAuth).toBe(REDACTED_PLACEHOLDER);
@@ -382,22 +394,62 @@ test.describe('buildToolCallCurl builder unit tests', () => {
     expect(JSON.stringify(redactSensitiveArgs(deep))).not.toContain('deep-secret');
   });
 
-  test('handles null, undefined, string, or empty args safely', () => {
-    const cmd1 = buildToolCallCurl({
+  test('handles malformed JSON string, array, boolean, or numeric args gracefully', () => {
+    const cmdMalformed = buildToolCallCurl({
       origin: 'http://localhost:4000',
       serverId: 'srv-1',
-      toolName: 'empty_tool',
-      args: null,
+      toolName: 'broken_json_tool',
+      args: '{not valid json:',
     });
-    expect(cmd1).toContain('"arguments":{}');
+    expect(cmdMalformed).toContain('"arguments":{}');
 
-    const cmd2 = buildToolCallCurl({
+    const cmdArray = buildToolCallCurl({
       origin: 'http://localhost:4000',
       serverId: 'srv-1',
-      toolName: 'json_string_tool',
-      args: '{"foo":"bar"}',
+      toolName: 'array_tool',
+      args: ['item1', 'item2'],
     });
-    expect(cmd2).toContain('"arguments":{"foo":"bar"}');
+    expect(cmdArray).toContain('"arguments":{}');
+
+    const cmdPrimitive = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'number_tool',
+      args: 42 as any,
+    });
+    expect(cmdPrimitive).toContain('"arguments":{}');
+  });
+
+  test('emits both warnings when args are both redacted and truncated', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'both_tool',
+      args: { _amcp_truncated: true, password: 'secret-val' },
+    });
+    expect(cmd).toContain('# Some arguments were replaced with [REDACTED]: fill them in before running.');
+    expect(cmd).toContain('# WARNING: Stored input arguments were truncated in the audit log; replay may be incomplete.');
+    expect(cmd).not.toContain('_amcp_truncated');
+    expect(cmd).not.toContain('secret-val');
+    expect(cmd).toContain('[REDACTED]');
+  });
+
+  test('redacts additional provider token prefixes: Google AIza, GitHub PAT, GitLab PAT, Telegram bot, Shopify', () => {
+    const tokens = {
+      googleKey: ['AI', 'zaSyA1234567890abcdef1234567890abcdef'].join(''),
+      githubPat: ['github', 'pat', '11AAAAAAA01234567890abcdef1234567890abcdef1234567890abcdef'].join('_'),
+      gitlabPat: ['glpat', 'abcdef1234567890abcd'].join('-'),
+      telegramBot: ['123456789', 'ABCdefGHIjklMNOpqrsTUVwxyz123456'].join(':'),
+      shopifyToken: ['shpat', '1234567890abcdef1234567890abcdef'].join('_'),
+      normalText: 'safe string',
+    };
+    const redacted = redactSensitiveArgs(tokens) as any;
+    expect(redacted.googleKey).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.githubPat).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.gitlabPat).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.telegramBot).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.shopifyToken).toBe(REDACTED_PLACEHOLDER);
+    expect(redacted.normalText).toBe('safe string');
   });
 });
 
