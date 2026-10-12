@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
-import { matchesSearch } from '@/lib/marketplace-search';
+import { searchCatalog } from '@/lib/catalog-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
 
@@ -217,6 +217,8 @@ interface AdapterItem {
   slug: string;
   name: string;
   description: string;
+  /** Other names the search matches ("lexoffice", "Mercado Livre"); never shown. */
+  aliases?: string[];
   region: string;
   category: string;
   icon: string;
@@ -313,34 +315,34 @@ function AdapterStoreContent() {
 
   // Match what the card actually says, not just the stored slug: the card
   // reads "GERMANY" and "E-commerce", so those are the words people type.
-  const matchesQuery = (a: AdapterItem) =>
-    matchesSearch(
-      [
-        a.name,
-        a.description,
-        a.slug,
-        a.category ?? '',
-        categoryLabel(a.category ?? ''),
-        a.region ?? '',
-        REGION_LABELS[a.region] ?? '',
-      ],
-      search,
-    );
+  // Built once per catalog load; the search runs on every keystroke.
+  const searchEntries = useMemo(
+    () =>
+      list.map((a) => ({
+        ...a,
+        text: [
+          a.description,
+          a.category ?? '',
+          categoryLabel(a.category ?? ''),
+          a.region ?? '',
+          REGION_LABELS[a.region] ?? '',
+        ],
+      })),
+    [list],
+  );
+  // Ranked, typo-tolerant, and the same search the chat uses (catalog-search.ts).
+  const searchResult = useMemo(
+    () => (search.trim() ? searchCatalog(searchEntries, search) : null),
+    [searchEntries, search],
+  );
 
-  const filtered = list.filter((a) => {
-    if (activeCategory && a.category !== activeCategory) return false;
-    if (!search.trim()) return true;
-    return matchesQuery(a);
-  });
+  const filtered = (searchResult ? searchResult.hits.map((h) => h.entry) : list).filter(
+    (a) => !activeCategory || a.category === activeCategory,
+  );
 
   // Reported across the whole catalog, not the category chip: the question
   // is whether we have the app at all.
-  const reportPicked = useCatalogSearchReport(
-    token,
-    'store',
-    search,
-    loading || !search.trim() ? null : list.filter(matchesQuery).length,
-  );
+  const reportPicked = useCatalogSearchReport(token, 'store', search, loading ? null : searchResult);
 
   return (
     <AppShell
@@ -456,6 +458,8 @@ function AdapterStoreContent() {
                   ? `${list.length} adapters`
                   : `${filtered.length} of ${list.length} adapters`}
                 {activeCategory && ` · ${categoryLabel(activeCategory)}`}
+                {searchResult?.match === 'fuzzy' && ` · no exact match, showing similar names`}
+                {searchResult?.match === 'partial' && ` · matching some of the words`}
               </p>
             </div>
           )}

@@ -33,6 +33,14 @@ Connectors installed before the rename still hold the old name; saving their
 environment variables reads it when the current one is not set, instead of
 leaving an unresolved `{{IS24_CONSUMER_KEY}}` in the credentials.
 
+`aliases` lists other names people search the app by: a former name
+(`["lexoffice"]` for Lexware Office), a translation (`"Mercado Livre"`), a
+common short form (`"D365"`, `"SAP B1"`) or the vendor's umbrella brand
+(`"Facebook"` on Meta Ads, Instagram and WhatsApp). The catalog search in the
+store, on /welcome and in the chat matches them like the name; they are never
+displayed. Keep them to names that clearly mean this app, each at most 40
+characters; a misspelling needs no alias, the search tolerates typos.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -599,6 +607,34 @@ the API actually returned.
 | `fallbackToRaw` | On error, return the raw response instead of failing. Default `true` |
 | `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
+| `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
+
+### Images in the response (`images`)
+
+Image generation APIs return the picture as base64 inside the JSON (OpenAI's
+`data[].b64_json`, Gemini's `candidates[].content.parts[].inlineData.data`).
+As text that is megabytes the model cannot look at. `images` lists where those
+strings are, and each one is returned as an MCP `image` content block after the
+text of the result:
+
+```json
+{ "images": { "paths": ["data[*].b64_json"], "maxImages": 4, "maxBytes": 4194304 } }
+```
+
+- Paths use keys, `[n]` and `[*]`. A single path or a list of paths is accepted
+  as a shorthand for `{ "paths": [...] }`.
+- The text keeps a placeholder where each image was (`[image 1: image/png,
+  1.2 MB, attached to this result as an image]`), so a client that does not
+  show images still learns what was returned. A `transform` runs after the
+  images are taken out and sees the placeholders.
+- Only PNG, JPEG, GIF and WebP leave as images, recognised by their first
+  bytes rather than by what the API says. Anything else at those paths is
+  replaced by a placeholder, never passed on as text.
+- `maxImages` (default 4, at most 10) and `maxBytes` per image (decoded,
+  default 4 MiB, at most 8 MiB) are capped, and all images of one result
+  together at 12 MiB. An image over a limit is replaced by a placeholder that
+  says why.
+- Tools without `images` are not affected.
 
 ### `select` leaf syntax
 

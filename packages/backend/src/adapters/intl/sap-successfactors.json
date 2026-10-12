@@ -1,6 +1,7 @@
 {
   "slug": "sap-successfactors",
   "name": "SAP SuccessFactors",
+  "aliases": ["SFSF"],
   "description": "Read SAP SuccessFactors Employee Central through its OData API: employees, job information, persons, companies, departments, positions and time off, plus generic OData tools for any other entity. OAuth 2.0 SAML bearer, read-only.",
   "region": "intl",
   "category": "hr",

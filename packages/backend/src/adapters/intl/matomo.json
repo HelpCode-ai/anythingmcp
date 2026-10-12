@@ -1,6 +1,7 @@
 {
   "slug": "matomo",
   "name": "Matomo",
+  "aliases": ["Piwik"],
   "description": "Matomo web analytics: visits, page and entry-page reports, referrers, countries and devices, goal conversions and live visitor detail. Reporting API on Matomo Cloud or your own instance, token_auth.",
   "region": "intl",
   "category": "analytics",

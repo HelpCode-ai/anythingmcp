@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors } from '@/lib/api';
+import { connectors, withSecretsNotice } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
@@ -128,7 +128,7 @@ export default function ConnectorsPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(result.message);
+      setMsg(withSecretsNotice(result.message, result));
       const updated = await connectors.list(token);
       setList(updated);
     } catch (err: any) {
@@ -168,7 +168,12 @@ export default function ConnectorsPage() {
       const result = await connectors.importAll(data, token);
       // Per-connector failures (a trial limit, an invalid row) come back in
       // `errors` with a 201, so show them rather than only the counts.
-      setMsg(result.errors?.length ? `${result.message}. ${result.errors.join('; ')}` : result.message);
+      setMsg(
+        withSecretsNotice(
+          result.errors?.length ? `${result.message}. ${result.errors.join('; ')}` : result.message,
+          result,
+        ),
+      );
       setShowImportModal(false);
       setImportJson('');
       const updated = await connectors.list(token);

@@ -76,9 +76,11 @@ export const ProductEvents = {
   /**
    * A search of the connector catalog: metadata.query, metadata.results (how
    * many connectors matched), metadata.via (where: 'store', 'welcome', or
-   * 'mcp' when the model searched from a chat) and, from a chat,
-   * metadata.missing (the words no connector mentions). Answers: which apps people
-   * look for that we have no connector for (results = 0), and which we have
+   * 'mcp' when the model searched from a chat), metadata.missing (the words no
+   * connector matches) and, when there are results, metadata.match: 'direct',
+   * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
+   * (only some of the words matched). Answers: which apps people look for that
+   * we have no connector for (results = 0, or missing set), and which we have
    * but they did not take (read against catalog_search_picked).
    */
   CATALOG_SEARCH: 'catalog_search',
@@ -198,16 +200,19 @@ export class ProductEventService {
  */
 // `kind`: what a setup involved or why its check failed ('credentials',
 // 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
-// `query`, `results`, `missing`: a catalog search (see sanitizeSearchQuery);
-// `missing` = the query's words no connector mentions.
+// `query`, `results`, `missing`, `match`: a catalog search (see
+// sanitizeSearchQuery); `missing` = the query's words no connector matches,
+// `match` = how the results matched (see CATALOG_SEARCH).
 // `status`, `toolName`, `error`: why a setup check or sign-in failed (the
 // provider's message, passed through scrubProviderMessage by the server);
 // `verified`: whether a completed setup made a successful call.
 const METADATA_KEYS = [
-  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing',
+  'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered',
 ] as const;
 const MAX_QUERY_LENGTH = 100;
+/** The values of `match` (see catalog-search.ts). */
+const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -215,7 +220,12 @@ function boundMetadata(
   if (!metadata || typeof metadata !== 'object') return null;
   const entries: Array<[string, string | number | boolean]> = [];
   for (const key of METADATA_KEYS) {
-    const v = key === 'query' || key === 'missing' ? sanitizeSearchQuery(metadata[key]) : metadata[key];
+    const v =
+      key === 'query' || key === 'missing'
+        ? sanitizeSearchQuery(metadata[key])
+        : key === 'match'
+          ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+          : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }

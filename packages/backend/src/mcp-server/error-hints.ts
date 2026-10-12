@@ -173,6 +173,73 @@ const FIGMA_NO_DEV_MODE_HINT =
   'Starter or locked team, or a View or Collab seat, is refused. Retrying will not help: ' +
   'tell the user that dev resources are not available to them on this file.';
 
+// Generative AI APIs (gemini and openai adapters, and hand-built tools on the
+// same hosts). Every call is billed to the user's own key, so a retry loop
+// costs them money: these say when retrying cannot help.
+const GEMINI_KEY_HINT =
+  'Google refused the API key (API_KEY_INVALID): it is wrong, was deleted, or has extra ' +
+  'characters. Retrying will not help. Ask the user to create a key in Google AI Studio ' +
+  '(https://aistudio.google.com/apikey) and paste it into GEMINI_API_KEY.';
+
+const GEMINI_PERMISSION_HINT =
+  'Google refused the request (403). Usual causes: the key is restricted to other APIs or ' +
+  'apps (Google Cloud console, Credentials, the key, API restrictions: allow the Generative ' +
+  'Language API), the API is switched off in the key\'s project, or a file URL passed in the ' +
+  'request is not public. Retrying unchanged will not help.';
+
+const GEMINI_MODEL_HINT =
+  'That model name does not exist for this key or does not support this method. Do not guess ' +
+  'another name: list the models (gemini_list_models, or GET /v1beta/models) and use a `name` ' +
+  'it returns, without the `models/` prefix (for example gemini-3.1-flash-lite).';
+
+const GEMINI_QUOTA_HINT =
+  'Gemini quota or rate limit reached (429 RESOURCE_EXHAUSTED). The free tier limits requests ' +
+  'per minute and per day for each model, and image models have no free tier at all (limit 0). ' +
+  'Wait for the time in the RetryInfo detail before one retry, use a smaller model, or ask the ' +
+  'user to enable billing for the key\'s project in Google AI Studio. Do not retry in a loop.';
+
+const GEMINI_REGION_HINT =
+  'Gemini refused the request for this account or region (FAILED_PRECONDITION), for example ' +
+  'because the free tier is not available in the user\'s country or billing is required. ' +
+  'Retrying will not help: the user needs to enable billing for the key\'s project in Google AI Studio.';
+
+const GEMINI_SAFETY_HINT =
+  'Gemini blocked this prompt or its answer with its safety or content filters (block reason or ' +
+  'finish reason SAFETY, PROHIBITED_CONTENT, BLOCKLIST, SPII, RECITATION or IMAGE_SAFETY). ' +
+  'Retrying the same request will not help. Tell the user, and only rephrase if they want to ' +
+  'and the request is acceptable.';
+
+const OPENAI_KEY_HINT =
+  'OpenAI refused the API key (401): it is wrong, revoked, or belongs to another organization ' +
+  'or project than OPENAI_ORGANIZATION / OPENAI_PROJECT name. Retrying will not help. Ask the ' +
+  'user to create a key at https://platform.openai.com/api-keys and paste it into OPENAI_API_KEY, ' +
+  'and to clear or correct the organization and project settings.';
+
+const OPENAI_VERIFICATION_HINT =
+  'OpenAI requires a verified organization for this model or feature (the GPT image models ' +
+  'among them). Retrying will not help. The user has to verify the organization under ' +
+  'https://platform.openai.com/settings/organization/general (Verify Organization); access ' +
+  'can take a few minutes to arrive after verification.';
+
+const OPENAI_MODEL_HINT =
+  'That model does not exist or this key has no access to it. Do not guess another name: list ' +
+  'the models (openai_list_models, or GET /v1/models) and use an id it returns.';
+
+const OPENAI_QUOTA_HINT =
+  'The OpenAI account has no credit left or reached its spending limit (insufficient_quota). ' +
+  'Retrying will not help: the user has to add credit or raise the limit under ' +
+  'https://platform.openai.com/settings/organization/billing.';
+
+const OPENAI_RATE_HINT =
+  'OpenAI rate limit reached for this model (requests or tokens per minute). Wait the time ' +
+  'the error names before one retry, ask for less (fewer images, shorter output), or use a ' +
+  'smaller model. Do not retry in a loop.';
+
+const OPENAI_SAFETY_HINT =
+  'OpenAI\'s safety system refused this request or stopped the answer (moderation_blocked, ' +
+  'content_policy_violation or content_filter). Retrying the same request will not help. Tell ' +
+  'the user, and only rephrase if they want to and the request is acceptable.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -298,6 +365,38 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return TYPESAFE_INVALID_REQUEST_HINT;
   }
 
+  if (hostMatches(input.host, 'generativelanguage.googleapis.com')) {
+    const hint = geminiHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'api.openai.com')) {
+    const hint = openaiHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  return undefined;
+}
+
+function geminiHint(status: number | undefined, text: string): string | undefined {
+  if (/API_KEY_INVALID|API key not valid|API key expired/i.test(text)) return GEMINI_KEY_HINT;
+  if (/\b(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|IMAGE_PROHIBITED_CONTENT|IMAGE_RECITATION)\b/.test(text)) {
+    return GEMINI_SAFETY_HINT;
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED/.test(text)) return GEMINI_QUOTA_HINT;
+  if (status === 404 && /models\/|is not found for API version|not supported for/i.test(text)) return GEMINI_MODEL_HINT;
+  if (/User location is not supported|FAILED_PRECONDITION/i.test(text)) return GEMINI_REGION_HINT;
+  if (status === 403 || /PERMISSION_DENIED/.test(text)) return GEMINI_PERMISSION_HINT;
+  return undefined;
+}
+
+function openaiHint(status: number | undefined, text: string): string | undefined {
+  if (/moderation_blocked|content_policy_violation|safety system|content_filter/i.test(text)) return OPENAI_SAFETY_HINT;
+  if (/insufficient_quota|exceeded your current quota/i.test(text)) return OPENAI_QUOTA_HINT;
+  if (status === 429 || /rate_limit_exceeded/.test(text)) return OPENAI_RATE_HINT;
+  if (/must be verified|organization.{0,40}verif/i.test(text)) return OPENAI_VERIFICATION_HINT;
+  if (status === 401 || /invalid_api_key|Incorrect API key/i.test(text)) return OPENAI_KEY_HINT;
+  if (/model_not_found|The model `[^`]*` does not exist/i.test(text)) return OPENAI_MODEL_HINT;
   return undefined;
 }
 

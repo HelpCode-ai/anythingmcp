@@ -14,22 +14,27 @@
  * - console breadcrumbs dropped: a log line can quote anything.
  */
 import type { Breadcrumb, Event } from '@sentry/nestjs';
+import { redactSecretLiterals } from './secret-literals.util';
 
 const KEPT_HEADERS = new Set(['user-agent']);
 
-/** URL without query string or fragment. Unparseable input is cut at ? or #. */
+/**
+ * URL without query string or fragment. Unparseable input is cut at ? or #.
+ * A key in the path itself (Telegram's `/bot<token>/sendMessage`) is
+ * redacted too.
+ */
 export function stripQuery(url: string): string {
   try {
     const u = new URL(url);
-    return `${u.origin}${u.pathname}`;
+    return `${u.origin}${redactSecretLiterals(u.pathname)}`;
   } catch {
-    return url.split(/[?#]/)[0];
+    return redactSecretLiterals(url.split(/[?#]/)[0]);
   }
 }
 
-/** Removes every `?query` and `#fragment` from a free-text span name. */
+/** Removes every `?query` and `#fragment` (and keys in paths) from a free-text span name. */
 export function cutQueries(text: string): string {
-  return text.replace(/[?#][^\s]*/g, '');
+  return redactSecretLiterals(text.replace(/[?#][^\s]*/g, ''));
 }
 
 // Span attributes that hold a URL or its query, across the OpenTelemetry

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { ParsedTool } from './openapi.parser';
+import { pathForToolName } from './tool-name.util';
+import { findSecretInQueryParam } from '../../common/secret-literals.util';
 import { inferJsonSchema } from '../output-schema.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 
@@ -198,6 +200,13 @@ export class PostmanParser {
       for (const q of url.query) {
         if (q.disabled) continue;
         const paramName = q.key;
+        // A key written into the request (`?api_key=abc123`) is not something
+        // the AI client should be asked for: keep it as a fixed value, which
+        // the import then moves into an encrypted variable.
+        if (typeof q.value === 'string' && findSecretInQueryParam(paramName, q.value).length > 0) {
+          queryParams[paramName] = q.value;
+          continue;
+        }
         properties[paramName] = {
           type: 'string',
           description: q.description || `Query parameter: ${paramName}`,
@@ -428,7 +437,7 @@ export class PostmanParser {
     }
 
     // Fallback: method + path
-    const cleanPath = path
+    const cleanPath = pathForToolName(path)
       .replace(/\{[^{}]+\}/g, '')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .replace(/_+/g, '_')

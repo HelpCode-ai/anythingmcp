@@ -310,6 +310,30 @@ export interface CatalogDiff {
   isSafeClass?: boolean;
 }
 
+/**
+ * Added by the server to a connector, tool or import answer when a secret
+ * typed into a URL, header or tool was moved into an encrypted variable
+ * (and referenced as {{VAR}}). Never carries the secret itself.
+ */
+export interface SecretMoveSummary {
+  secretsMoved?: Array<{ variable: string; field: string; kind: string; pattern: string }>;
+  renamedTools?: string[];
+  secretsNotice?: string;
+}
+
+/** `message`, followed by the server's note about moved secrets, if any. */
+export function withSecretsNotice(message: string, res: unknown): string {
+  const summary = (res ?? {}) as SecretMoveSummary;
+  const parts = [message];
+  if (summary.secretsNotice) parts.push(summary.secretsNotice);
+  if (summary.renamedTools?.length) {
+    parts.push(
+      `Renamed ${summary.renamedTools.length === 1 ? 'a tool whose name contained it' : 'tools whose names contained it'}: ${summary.renamedTools.join(', ')}.`,
+    );
+  }
+  return parts.filter(Boolean).join(' ');
+}
+
 export const connectors = {
   list: (token: string) =>
     request<any[]>('/api/connectors', { token }),
@@ -321,7 +345,7 @@ export const connectors = {
    * the caller had to remember.
    */
   create: (data: unknown, token: string) =>
-    request<any & { attachedToServer: { id: string; name: string } | null }>(
+    request<any & { attachedToServer: { id: string; name: string } | null } & SecretMoveSummary>(
       '/api/connectors',
       { method: 'POST', body: data, token },
     ),
@@ -342,7 +366,7 @@ export const connectors = {
       { method: 'POST', token },
     ),
   update: (id: string, data: unknown, token: string) =>
-    request(`/api/connectors/${id}`, { method: 'PUT', body: data, token }),
+    request<SecretMoveSummary>(`/api/connectors/${id}`, { method: 'PUT', body: data, token }),
   /** Non-secret OAuth2 settings, for pre-filling the edit form. */
   getOAuthConfig: (id: string, token: string) =>
     request<{
@@ -415,9 +439,9 @@ export const connectors = {
       suggestedFix?: { action: string; hostname?: string; url?: string };
     }>(`/api/connectors/${id}/test`, { method: 'POST', token }),
   importSpec: (id: string, token: string) =>
-    request<{ message: string; tools: any[] }>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
+    request<{ message: string; tools: any[] } & SecretMoveSummary>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
   importTools: (id: string, data: { source: string; content?: string; url?: string }, token: string) =>
-    request<{ message: string; tools: any[]; skipped?: string[] }>(`/api/connectors/${id}/import`, { method: 'POST', body: data, token }),
+    request<{ message: string; tools: any[]; skipped?: string[] } & SecretMoveSummary>(`/api/connectors/${id}/import`, { method: 'POST', body: data, token }),
   // Secrets come back from the server empty and named in `maskedEnvVars`;
   // sending one back empty keeps its stored value.
   updateEnvVars: (id: string, envVars: Record<string, string>, token: string) =>
@@ -425,7 +449,7 @@ export const connectors = {
   exportAll: (token: string) =>
     request<{ version: string; exportedAt: string; secretsIncluded?: boolean; connectors: any[] }>('/api/connectors/export-all', { token }),
   importAll: (data: { connectors: any[] }, token: string) =>
-    request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
+    request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] } & SecretMoveSummary>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
   oauthAuthorize: (id: string, token: string, returnTo?: string) =>
@@ -442,7 +466,7 @@ export const connectors = {
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
-    request<{ message: string; tools: any[]; skipped?: string[]; error?: string }>(
+    request<{ message: string; tools: any[]; skipped?: string[]; error?: string } & SecretMoveSummary>(
       `/api/connectors/${id}/discover-tools`,
       { method: 'POST', token },
     ),
@@ -676,14 +700,14 @@ export const tools = {
   list: (connectorId: string, token: string) =>
     request<any[]>(`/api/connectors/${connectorId}/tools`, { token }),
   create: (connectorId: string, data: unknown, token: string) =>
-    request(`/api/connectors/${connectorId}/tools`, { method: 'POST', body: data, token }),
+    request<SecretMoveSummary>(`/api/connectors/${connectorId}/tools`, { method: 'POST', body: data, token }),
   bulkCreate: (connectorId: string, toolDefs: unknown[], token: string) =>
-    request<{ message: string; tools: any[]; skipped: string[] }>(
+    request<{ message: string; tools: any[]; skipped: string[] } & SecretMoveSummary>(
       `/api/connectors/${connectorId}/tools/bulk`,
       { method: 'POST', body: { tools: toolDefs }, token },
     ),
   update: (connectorId: string, toolId: string, data: unknown, token: string) =>
-    request(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'PUT', body: data, token }),
+    request<SecretMoveSummary>(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'PUT', body: data, token }),
   setProxy: (connectorId: string, toolId: string, useProxy: boolean, token: string) =>
     request<any>(`/api/connectors/${connectorId}/tools/${toolId}/proxy`, {
       method: 'PATCH',
