@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
-import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES } from './shared-toolset';
+import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES, sharedToolsetInstructions } from './shared-toolset';
 import type { RegisteredTool } from './tool-registry';
 
 /**
@@ -157,7 +157,7 @@ describe('shared /mcp in fixed mode', () => {
     const client = await build().connect({ ...orgB, azp: 'client-chatgpt' });
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...SHARED_TOOL_NAMES, ...CHATGPT_EXTRA_TOOL_NAMES].sort());
-    expect(client.getInstructions()).toMatch(/anythingmcp_run_read_steps/);
+    expect(client.getInstructions()).toBe(sharedToolsetInstructions('chatgpt'));
   });
 
   it('falls back to the reviewed set for an unknown client or an API key', async () => {
