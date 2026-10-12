@@ -16,6 +16,7 @@ import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-too
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
+import { searchCatalog } from './catalog-search';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -119,10 +120,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   // ── Find ──────────────────────────────────────────────────────────────
 
   async find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult> {
-    const words = String(args.query ?? '')
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 1);
+    const query = String(args.query ?? '');
     const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
     const installed = new Set(
       (
@@ -135,41 +133,37 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .filter((s): s is string => !!s),
     );
 
-    // Query words no connector mentions anywhere: the app that is missing.
-    const unmatched = new Set(words);
-    const scored = this.adapters
+    // The same search as the store and /welcome (catalog-search.ts), over the
+    // adapters this deployment offers: listAll() already leaves out unlisted
+    // ones and, on the cloud, self-host-only ones.
+    const offered = this.adapters
       .listAll()
       .filter((a) => !isExcludedAdapterSlug(a.slug))
-      .map((a) => {
-        const name = a.name.toLowerCase();
-        const text = `${a.slug} ${name} ${a.category} ${a.description}`.toLowerCase();
-        let score = 0;
-        for (const w of words) {
-          if (a.slug === w || name === w) score += 10;
-          else if (a.slug.startsWith(w) || name.split(/\s+/).some((n) => n.startsWith(w))) score += 5;
-          else if (text.includes(w)) score += 1;
-          if (text.includes(w)) unmatched.delete(w);
-        }
-        return { a, score: words.length ? score : (a.priority ?? 0) };
-      })
-      .filter((x) => !words.length || x.score > 0)
-      .sort((x, y) => y.score - x.score || (y.a.priority ?? 0) - (x.a.priority ?? 0))
-      .slice(0, limit);
+      .map((a) => ({ ...a, text: [a.description, a.category] }));
+    const search = searchCatalog(offered, query);
+    const scored = search.terms.length
+      ? search.hits.slice(0, limit).map((h) => ({ a: h.entry }))
+      : [...offered]
+          .sort((x, y) => (y.priority ?? 0) - (x.priority ?? 0))
+          .slice(0, limit)
+          .map((a) => ({ a }));
 
-    if (words.length) {
+    if (search.terms.length) {
       // `results` alone overstates coverage: "printify shop" returns every
       // connector whose description says "shop". `missing` keeps the words no
-      // connector mentions at all, here "printify".
+      // connector matches at all, here "printify"; `match` says whether the
+      // results matched the query as typed or only with a typo forgiven
+      // ('fuzzy') or some of its words left out ('partial').
       void this.productEvents.log({
         event: ProductEvents.CATALOG_SEARCH,
         userId: ctx.userId,
         organizationId: ctx.organizationId,
         metadata: {
-          query: String(args.query),
+          query,
           results: scored.length,
           via: 'mcp',
-          ...(unmatched.size ? { missing: [...unmatched].join(' ') } : {}),
-          ...(scored.length ? { adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
+          ...(search.missing.length ? { missing: search.missing.join(' ') } : {}),
+          ...(scored.length ? { match: search.match, adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
         },
       });
     }

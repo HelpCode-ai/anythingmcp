@@ -1,6 +1,7 @@
 {
   "slug": "znuny",
   "name": "Znuny",
+  "aliases": ["OTRS"],
   "description": "Znuny (the maintained OTRS fork, and the same API as OTOBO): search and read tickets with their articles, open tickets and add articles, over the GenericInterface REST web service on your own instance.",
   "region": "de",
   "category": "support",

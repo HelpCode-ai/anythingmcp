@@ -108,6 +108,23 @@ test('envVarAliases must be keyed by a current variable and list only previous n
   ]);
 });
 
+test('aliases are short names, each listed once', () => {
+  const ok = validateAdapter(adapter({ aliases: ['Old Good', 'GD'] }), 'good.json', 'de');
+  assert.deepEqual(ok.errors, []);
+
+  for (const aliases of ['Old Good', [''], [42], ['x'.repeat(41)]]) {
+    const bad = validateAdapter(adapter({ aliases }), 'good.json', 'de');
+    assert.deepEqual(bad.errors.map(({ rule, path }) => [rule, path]), [['aliases-shape', 'aliases']]);
+  }
+
+  const twice = validateAdapter(adapter({ aliases: ['GD', 'gd'] }), 'good.json', 'de');
+  assert.deepEqual(twice.errors.map(({ rule, path }) => [rule, path]), [['aliases-duplicate', 'aliases[1]']]);
+
+  const own = validateAdapter(adapter({ aliases: ['good'] }), 'good.json', 'de');
+  assert.deepEqual(own.errors, []);
+  assert.ok(own.warnings.some(({ rule, path }) => rule === 'aliases-redundant' && path === 'aliases[0]'));
+});
+
 test('required-env warning preserves the explanatory operator guidance', () => {
   const result = validateAdapter(adapter(), 'good.json', 'de');
   assert.equal(result.warnings[0].message, 'requiredEnvVars contains "GOOD_KEY" but it\'s not auto-injected via {{GOOD_KEY}} (operator must set it for documentation, agent passes it as a tool param)');

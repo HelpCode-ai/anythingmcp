@@ -1,6 +1,7 @@
 {
   "slug": "dynamics-nav",
   "name": "Microsoft Dynamics NAV",
+  "aliases": ["Navision"],
   "description": "Microsoft Dynamics NAV on-premises over OData v4: query and update any published page or query web service — customers, items, sales orders, vendors — in one company. NavUserPassword or Windows basic auth against your own NAV service tier.",
   "region": "de",
   "category": "erp",
