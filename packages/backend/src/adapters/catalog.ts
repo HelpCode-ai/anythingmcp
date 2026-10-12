@@ -127,6 +127,8 @@ import * as docusign from './intl/docusign.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
+import * as dynamics365BusinessCentral from './intl/dynamics365-business-central.json';
+import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as easypost from './intl/easypost.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
@@ -704,6 +706,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
   dropboxSign as unknown as AdapterDefinition,
+  dynamics365BusinessCentral as unknown as AdapterDefinition,
+  dynamics365Sales as unknown as AdapterDefinition,
   easypost as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
