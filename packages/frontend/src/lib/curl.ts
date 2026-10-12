@@ -23,6 +23,7 @@ export function isSensitiveKey(key: string): boolean {
 
 export const REDACTED_PLACEHOLDER = '[REDACTED]';
 export const TRUNCATED_DEPTH_PLACEHOLDER = '[TRUNCATED:depth]';
+/** Deeper than this, a whole subtree is replaced rather than walked. */
 export const MAX_REDACTION_DEPTH = 10;
 
 /**
@@ -145,9 +146,9 @@ export function buildToolCallCurl({
   authMethod,
 }: BuildToolCallCurlOptions): string {
   const cleanOrigin = origin.replace(/\/+$/, '');
-  const encodedServerId = encodeURIComponent(serverId);
-  const url = `${cleanOrigin}/mcp/${encodedServerId}`;
-  const safeUrl = url.replace(/'/g, "'\\''");
+  // Single quotes stop the shell from expanding anything in the URL; the
+  // encoded server id and an http(s) origin cannot contain one.
+  const url = `${cleanOrigin}/mcp/${encodeURIComponent(serverId)}`.replace(/'/g, '%27');
 
   let authHeader: string | null = null;
   if (authMethod === 'jwt' || authMethod === 'static_bearer') {
@@ -215,8 +216,7 @@ export function buildToolCallCurl({
 
   const lines: string[] = [];
   if (tracker.redactedCount > 0) {
-    lines.push('# WARNING: Sensitive arguments were redacted ([REDACTED]).');
-    lines.push('# Replace placeholder values with valid credentials before replaying.');
+    lines.push(`# Some arguments were replaced with ${REDACTED_PLACEHOLDER}: fill them in before running.`);
   }
   if (wasTruncated) {
     lines.push('# WARNING: Stored input arguments were truncated in the audit log; replay may be incomplete.');
@@ -232,7 +232,7 @@ export function buildToolCallCurl({
   }
 
   lines.push(
-    `curl -sS -X POST '${safeUrl}' \\`,
+    `curl -sS -X POST '${url}' \\`,
     ...headers,
     `  --data-binary @- <<'${delimiter}'`,
     payload,

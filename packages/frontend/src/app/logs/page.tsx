@@ -109,6 +109,7 @@ export default function LogsPage() {
 
   const handleCopyCurl = async (log: any) => {
     const serverId = log.mcpServer?.id || log.mcpServerId;
+    // Only the tool's name can be replayed; toolId is a database id.
     const toolName = log.tool?.name;
     if (!serverId || !toolName) return;
 

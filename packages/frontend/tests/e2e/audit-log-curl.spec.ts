@@ -197,11 +197,21 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       args: {},
     });
 
-    // Should encode the special characters into percent-encoding
-    const expectedEncoded = encodeURIComponent(trickyServerId).replace(/'/g, "'\\''");
+    const expectedEncoded = encodeURIComponent(trickyServerId).replace(/'/g, '%27');
     expect(cmd).toContain(`'http://localhost:4000/mcp/${expectedEncoded}'`);
     expect(cmd).not.toContain('$123');
     expect(cmd).not.toContain('`rm -rf`');
+  });
+
+  test('keeps shell characters in the server id out of the shell', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: "a'$(id)`x`",
+      toolName: 't',
+      args: {},
+    });
+    const urlLine = cmd.split('\n').find((l) => l.startsWith('curl '))!;
+    expect(urlLine).toBe("curl -sS -X POST 'http://localhost:4000/mcp/a%27%24(id)%60x%60' \\");
   });
 
   test('normalizes trailing slashes on origin', () => {
@@ -242,9 +252,30 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       args: { test: 'line1\nJSON\nline2' },
     });
 
-    // When payload contains \nJSON, the delimiter switches away from JSON to avoid collision
     expect(cmd).toContain("<<'EOF_AMCP_JSON'");
     expect(cmd.endsWith('EOF_AMCP_JSON')).toBe(true);
+  });
+
+  test('a value cannot end the heredoc early', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'breakout',
+      args: { note: "x\nJSON\nrm -rf ~\n", other: 'JSON' },
+    });
+    const lines = cmd.split('\n');
+    expect(lines.filter((l) => l === 'EOF_AMCP_JSON' || l === 'JSON')).toHaveLength(1);
+    expect(lines.some((l) => l.startsWith('rm '))).toBe(false);
+  });
+
+  test('adds no note when nothing was redacted', () => {
+    const cmd = buildToolCallCurl({
+      origin: 'http://localhost:4000',
+      serverId: 'srv-1',
+      toolName: 'plain',
+      args: { q: 'x' },
+    });
+    expect(cmd.startsWith('curl ')).toBe(true);
   });
 
   test('emits warning comments when sensitive arguments are redacted', () => {
@@ -255,8 +286,7 @@ test.describe('buildToolCallCurl builder unit tests', () => {
       args: { password: 'my-password' },
     });
 
-    expect(cmd).toContain('# WARNING: Sensitive arguments were redacted ([REDACTED]).');
-    expect(cmd).toContain('# Replace placeholder values with valid credentials before replaying.');
+    expect(cmd.split('\n')[0]).toMatch(/^# Some arguments were replaced with \[REDACTED\]/);
     expect(cmd).toContain('[REDACTED]');
     expect(cmd).not.toContain('my-password');
   });
@@ -333,20 +363,23 @@ test.describe('buildToolCallCurl builder unit tests', () => {
   });
 
   test('truncates overly nested structures at MAX_REDACTION_DEPTH to prevent bypass', () => {
-    // Construct an object nested 12 levels deep
     let deep: any = { secret_leaf: 'unredacted_payload' };
     for (let i = 0; i < 12; i++) {
       deep = { level: deep };
     }
 
     const redacted = redactSensitiveArgs(deep) as any;
-    // Walk down 10 levels
     let current = redacted;
     for (let i = 0; i < 10; i++) {
       current = current.level;
     }
-    // At depth 10, the nested object should be replaced with TRUNCATED_DEPTH_PLACEHOLDER
     expect(current).toBe(TRUNCATED_DEPTH_PLACEHOLDER);
+  });
+
+  test('replaces values nested deeper than the walk instead of passing them through', () => {
+    let deep: Record<string, unknown> = { password: 'deep-secret' };
+    for (let i = 0; i < 15; i++) deep = { level: deep };
+    expect(JSON.stringify(redactSensitiveArgs(deep))).not.toContain('deep-secret');
   });
 
   test('handles null, undefined, string, or empty args safely', () => {
