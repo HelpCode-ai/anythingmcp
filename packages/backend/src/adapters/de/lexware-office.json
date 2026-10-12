@@ -1,6 +1,7 @@
 {
   "slug": "lexware-office",
   "name": "Lexware Office",
+  "aliases": ["lexoffice"],
   "description": "Lexware Office (formerly lexoffice) — Germany's most-used SMB bookkeeping app. Read and create contacts, invoices, quotations, credit notes, vouchers and articles, and pull the voucher list that drives the Buchhaltung. Public REST API v1, bearer token.",
   "region": "de",
   "category": "accounting",

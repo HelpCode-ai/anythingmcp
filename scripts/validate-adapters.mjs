@@ -316,6 +316,22 @@ export function validateAdapter(adapter, file, region) {
   if (adapter.previousOAuthScopes !== undefined && (!Array.isArray(adapter.previousOAuthScopes) || adapter.previousOAuthScopes.some((v) => typeof v !== 'string' || !v.trim()))) {
     errors.push(error('previous-oauth-scopes', 'previousOAuthScopes', 'previousOAuthScopes must be an array of scope strings', 'List the scope strings earlier versions of this adapter asked for.', 'adapter-fields'));
   }
+  if (adapter.aliases !== undefined) {
+    // Other names the catalog search matches (a former name, a translation, a
+    // short form). Matched like the name, so each must be a short name.
+    if (!Array.isArray(adapter.aliases) || adapter.aliases.some((v) => typeof v !== 'string' || !v.trim() || v.trim().length > 40)) {
+      errors.push(error('aliases-shape', 'aliases', 'aliases must be an array of names of up to 40 characters', 'List other names people search the app by, e.g. ["lexoffice"], or remove the field.', 'adapter-fields'));
+    } else {
+      const seen = new Set();
+      const own = new Set([adapter.slug, adapter.name].map((v) => String(v).toLowerCase()));
+      for (const [i, alias] of adapter.aliases.entries()) {
+        const key = alias.trim().toLowerCase();
+        if (seen.has(key)) errors.push(error('aliases-duplicate', `aliases[${i}]`, `alias "${alias}" is listed twice`, 'Keep each alias once.', 'adapter-fields'));
+        else if (own.has(key)) warnings.push(warning('aliases-redundant', `aliases[${i}]`, `alias "${alias}" repeats the slug or name, which the search matches anyway`));
+        seen.add(key);
+      }
+    }
+  }
   if (adapter.verifyHints !== undefined) {
     const hints = adapter.verifyHints;
     if (!hints || typeof hints !== 'object' || Array.isArray(hints)) {

@@ -33,6 +33,14 @@ Connectors installed before the rename still hold the old name; saving their
 environment variables reads it when the current one is not set, instead of
 leaving an unresolved `{{IS24_CONSUMER_KEY}}` in the credentials.
 
+`aliases` lists other names people search the app by: a former name
+(`["lexoffice"]` for Lexware Office), a translation (`"Mercado Livre"`), a
+common short form (`"D365"`, `"SAP B1"`) or the vendor's umbrella brand
+(`"Facebook"` on Meta Ads, Instagram and WhatsApp). The catalog search in the
+store, on /welcome and in the chat matches them like the name; they are never
+displayed. Keep them to names that clearly mean this app, each at most 40
+characters; a misspelling needs no alias, the search tolerates typos.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
