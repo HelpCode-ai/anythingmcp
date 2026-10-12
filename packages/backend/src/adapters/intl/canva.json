@@ -40,7 +40,6 @@
     "tool": "canva_get_me"
   },
   "prerequisites": "A Canva account with multi-factor authentication turned on and an app in the Canva Developer Portal with the redirect URL below and the scopes listed in the setup. A private app needs Canva Enterprise; a public one works for its developer before review. About 10 minutes.",
-  "unlisted": true,
   "connector": {
     "name": "Canva REST API",
     "type": "REST",
@@ -549,7 +548,7 @@
     },
     {
       "name": "canva_upload_asset_from_url",
-      "description": "Start uploading an image or video from a public URL into the user's Uploads. Returns job.id with status in_progress; read it with canva_get_asset_upload until status is success, which carries the new asset and its id (scope asset:write). This is a Canva preview API: it can change without notice.",
+      "description": "Start uploading an image or video from a public URL into the user's Uploads. Returns job.id with status in_progress; read it with canva_get_asset_upload until status is success, which carries the new asset and its id (scope asset:write). This is a Canva preview API: it can change without notice. Canva downloads the file itself, so the URL must answer 200 to an automated request; sites that refuse such downloads make the job fail with fetch_failed.",
       "parameters": {
         "type": "object",
         "properties": {
