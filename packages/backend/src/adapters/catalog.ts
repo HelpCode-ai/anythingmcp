@@ -225,6 +225,7 @@ import * as microsoftOutlook from './intl/microsoft-outlook.json';
 import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
+import * as mirakl from './intl/mirakl.json';
 import * as miro from './intl/miro.json';
 import * as mixpanel from './intl/mixpanel.json';
 import * as mollie from './intl/mollie.json';
@@ -321,6 +322,7 @@ import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
 import * as tradingview from './intl/tradingview.json';
 import * as trello from './intl/trello.json';
+import * as trendyol from './intl/trendyol.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as twelveData from './intl/twelve-data.json';
 import * as twilio from './intl/twilio.json';
@@ -809,6 +811,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
+  mirakl as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
   mixpanel as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
@@ -905,6 +908,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   togglTrack as unknown as AdapterDefinition,
   tradingview as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
+  trendyol as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
   twilio as unknown as AdapterDefinition,
