@@ -155,6 +155,7 @@ import * as front from './intl/front.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
 import * as gelato from './intl/gelato.json';
+import * as gemini from './intl/gemini.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
@@ -247,6 +248,7 @@ import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
 import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as omnisend from './intl/omnisend.json';
+import * as openai from './intl/openai.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
 import * as oracle from './intl/oracle.json';
@@ -740,6 +742,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
   gelato as unknown as AdapterDefinition,
+  gemini as unknown as AdapterDefinition,
   georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
@@ -832,6 +835,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   odoo as unknown as AdapterDefinition,
   odooJsonrpc as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
+  openai as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
   oracle as unknown as AdapterDefinition,

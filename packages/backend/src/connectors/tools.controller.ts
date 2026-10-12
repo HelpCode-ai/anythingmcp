@@ -38,6 +38,7 @@ import {
   validateTransform,
 } from './response-transform.util';
 import { validateDecode } from './mime-decode.util';
+import { validateImages } from './response-images.util';
 import {
   ToolAnnotations,
   deriveToolAnnotations,
@@ -341,6 +342,10 @@ export class ToolsController {
     const decodeError = validateDecode((responseMapping as Record<string, unknown>).decode);
     if (decodeError) {
       throw new BadRequestException(`Invalid response mapping: ${decodeError}`);
+    }
+    const imagesError = validateImages((responseMapping as Record<string, unknown>).images);
+    if (imagesError) {
+      throw new BadRequestException(`Invalid response mapping: ${imagesError}`);
     }
     const transform = (responseMapping as Record<string, unknown>).transform;
     if (transform === undefined || transform === null) return;

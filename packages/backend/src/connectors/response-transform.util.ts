@@ -27,6 +27,7 @@ import {
 } from '@jmespath-community/jmespath';
 import type { ResponseMapping } from './engines/engine-types';
 import { applyDecode, readDecode, type DecodeConfig } from './mime-decode.util';
+import { extractResponseImages, readImages, type ExtractedImage } from './response-images.util';
 
 /* ------------------------------------------------------------------ */
 /*  Public contract                                                    */
@@ -64,6 +65,11 @@ export interface TransformOutcome {
   fatal?: boolean;
   /** True when `maxBytes` kicked in. */
   truncated?: boolean;
+  /**
+   * Images taken out of the response by `responseMapping.images`, to be
+   * returned as MCP image content next to `value` (which holds placeholders).
+   */
+  images?: ExtractedImage[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -627,25 +633,51 @@ export function applyResponseTransform(
   responseMapping: ResponseMapping | Record<string, unknown> | null | undefined,
 ): TransformOutcome {
   const transform = readTransform(responseMapping);
-  // `decode` (mime-decode.util) is a separate opt-in key, read only when the
-  // mapping has one, so every other tool keeps the single check above.
+  // `decode` (mime-decode.util) and `images` (response-images.util) are
+  // separate opt-in keys, read only when the mapping has them, so every other
+  // tool keeps the single check above.
   const hasDecode =
     isPlainObject(responseMapping) &&
     responseMapping.decode !== undefined &&
     responseMapping.decode !== null;
-  if (!transform && !hasDecode) return { value: raw, applied: false };
+  const hasImages =
+    isPlainObject(responseMapping) &&
+    responseMapping.images !== undefined &&
+    responseMapping.images !== null;
+  if (!transform && !hasDecode && !hasImages) return { value: raw, applied: false };
+
+  let images: ExtractedImage[] | undefined;
+  let source: unknown = raw;
+  if (hasImages) {
+    // Taken out before anything else, and not undone by a fallback below: a
+    // broken transform must not put megabytes of base64 back into the text.
+    try {
+      const out = extractResponseImages(raw, readImages(responseMapping)!);
+      source = out.value;
+      images = out.images;
+    } catch (err: any) {
+      return {
+        value: raw,
+        applied: false,
+        error: err?.message ? String(err.message) : 'Image extraction failed',
+        fatal: true,
+      };
+    }
+  }
+  const withImages = (outcome: TransformOutcome): TransformOutcome =>
+    hasImages ? { ...outcome, images, applied: outcome.applied || source !== raw } : outcome;
 
   const fallbackToRaw = transform?.fallbackToRaw !== false;
 
   try {
-    let work: unknown = raw;
+    let work: unknown = source;
 
     if (hasDecode) {
       // Decoded first, so a transform can select from the decoded fields.
       work = applyDecode(work, readDecode(responseMapping) as DecodeConfig);
-      if (!transform) return { value: work, applied: work !== raw };
+      if (!transform) return withImages({ value: work, applied: work !== source });
     }
-    if (!transform) return { value: raw, applied: false };
+    if (!transform) return withImages({ value: source, applied: false });
 
     if (transform.exclude !== undefined) {
       work = omitPaths(work, assertPathList(transform.exclude, 'exclude'));
@@ -681,14 +713,14 @@ export function applyResponseTransform(
       truncated = capped.truncated;
     }
 
-    return { value: work, applied: true, truncated };
+    return withImages({ value: work, applied: true, truncated });
   } catch (err: any) {
     const message = err?.message ? String(err.message) : 'Response mapping failed';
-    return {
-      value: raw,
+    return withImages({
+      value: source,
       applied: false,
       error: message,
       fatal: !fallbackToRaw,
-    };
+    });
   }
 }
