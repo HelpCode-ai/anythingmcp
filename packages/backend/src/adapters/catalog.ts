@@ -311,6 +311,7 @@ import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
+import * as tiktokAds from './intl/tiktok-ads.json';
 import * as timetastic from './intl/timetastic.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
@@ -337,6 +338,7 @@ import * as workable from './intl/workable.json';
 import * as worksection from './intl/worksection.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
+import * as x from './intl/x.json';
 import * as xero from './intl/xero.json';
 import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
@@ -888,6 +890,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   telegramBot as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
+  tiktokAds as unknown as AdapterDefinition,
   timetastic as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
@@ -914,6 +917,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   worksection as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  x as unknown as AdapterDefinition,
   xero as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,

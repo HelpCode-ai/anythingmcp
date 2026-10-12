@@ -1,0 +1,1785 @@
+{
+  "slug": "x",
+  "name": "X (Twitter)",
+  "description": "Let your AI work with X (formerly Twitter): read and search posts, your timeline, mentions, bookmarks, Lists and direct messages, look up accounts and followers, and publish posts, replies and quotes, like, repost and send DMs after your confirmation.",
+  "instructions": "## X (Twitter)\nThis connector works with an X account through the **X API v2** (`https://api.x.com/2`), as the user who authorizes it: accounts, posts (read, search, count, publish, reply, quote, delete), the home timeline, mentions, likes, reposts, bookmarks, followers and following, Lists and direct messages.\n\n**Pricing: X API access is paid.** The X API is billed per use with prepaid credits; new developers get no free plan (the old Free, Basic and Pro subscriptions are closed to them). Reading a post, an account or a message costs credits, publishing a post costs more, and a post with a link much more; reads of your own data are cheaper, and the same object read twice in one UTC day is billed once. When the balance runs out, X refuses every call until credits are added. Buy credits and set a spending limit in the Developer Console (https://console.x.com); check current prices at https://docs.x.com/x-api/getting-started/pricing. Keep `max_results` small and use expansions only when needed: each object returned is billed.\n\n**Setup (one-time, about 10 minutes)**\n1. Open the X Developer Console at https://console.x.com, sign in with the X account that owns the app, and **Create App** (name, description, use case). Add credits under billing, or calls are refused.\n2. Open the app's **User authentication settings** and click **Set up**: App permissions **Read and write and Direct message** (Read and write is enough without the DM tools); Type of App **Web App, Automated App or Bot** (a confidential client, which gets a client secret); **Callback URI** `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (X compares it exactly, trailing slash included; for a local test use `http://127.0.0.1:<port>/...`, not `localhost`); a **Website URL**. Save.\n3. Copy the **OAuth 2.0 Client ID** and **Client Secret** (shown once) into `X_CLIENT_ID` and `X_CLIENT_SECRET`. The API Key and Secret and the Bearer Token of the app are for other sign-in methods and are not used here.\n4. Install the connector, click **Authorize with Provider** and allow access on X. The connector asks for `tweet.read`, `tweet.write`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `bookmark.read`, `bookmark.write`, `list.read`, `dm.read`, `dm.write` and `offline.access`. Access tokens last two hours and are renewed automatically with the refresh token (`offline.access`); each refresh token works once.\n\n**Read-only or no DMs**: remove the `.write` scopes (or the `dm.` scopes) in the connector's OAuth settings, authorize again and switch off the tools that need them.\n\n**Your user id first**: tools that act on your own account (home timeline, likes, reposts, bookmarks, follows) take `user_id`, which is the numeric id from `x_get_me`, not the @username. `x_get_user_by_username` turns any @username into its id.\n\n**Confirm first**: `x_create_post`, `x_reply_to_post`, `x_quote_post`, `x_repost`, `x_send_dm` and `x_send_dm_to_conversation` publish or deliver at once and cannot be taken back quietly. Show the user the exact text and the target, and wait for a yes. `x_follow_user` and `x_unfollow_user` notify or affect other people; confirm them too. `x_delete_post` and `x_delete_dm` are installed switched off.\n\n**Replies**: X refuses API replies to posts whose author did not mention or quote the replying account (403), to keep automated replies out. Replying in your own threads and to mentions works.\n\n**Fields and expansions**: X returns only `id` and `text` unless fields are asked for; every post tool asks for a useful default set (`tweet_fields`). Expansions (`author_id`, `referenced_tweets.id`, ...) put the related accounts and posts in `includes`, billed as extra reads. Long posts carry their full text in `note_tweet`. Lists use `meta.next_token`: pass it as `pagination_token` (`next_token` for searches) for the next page.\n\n**Partial answers**: lookups by several ids or usernames answer 200 with `data` for what was found and `errors` (e.g. resource-not-found, not-authorized-for-resource) for the rest.\n\n**Search** covers the last 7 days (`x_search_recent_posts`, `x_count_recent_posts`). Operators: `from:`, `to:`, `@mention`, `#hashtag`, `\"exact phrase\"`, `-term`, `lang:en`, `is:retweet`, `is:reply`, `has:links`, `has:media`, `url:`, `conversation_id:`.\n\n**Direct messages** cover the last 30 days of regular DMs; encrypted conversations are not available through the API.\n\n**Common errors**\n- 401: the token was revoked or the app's secret changed; authorize again.\n- 403 with `client-forbidden` or `client-not-enrolled`: the app has no API access (no credits, or the app is not attached to an active plan); add credits in the Developer Console. 403 on a write: a missing scope or app permission (authorize again after changing it), a reply X does not allow, a duplicate post, or a DM the recipient does not accept.\n- An error about depleted credits (HTTP 402 or 403): the credit balance or the spending limit is used up; add credits or raise the limit.\n- 429: rate limit per 15 minutes (per user and per app) or the monthly read cap; `x-rate-limit-reset` says when it resets. Wait and try again.\n\n**Out of scope here**: media upload (posts are text or polls), the full-archive search, streams, Spaces, Communities, List and account management (create Lists, mute, block) and ads.",
+  "region": "intl",
+  "category": "social",
+  "icon": "x",
+  "docsUrl": "https://docs.x.com/x-api/introduction",
+  "requiredEnvVars": [
+    "X_CLIENT_ID",
+    "X_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.x.com",
+  "envVarMeta": {
+    "X_CLIENT_ID": {
+      "label": "OAuth 2.0 Client ID",
+      "kind": "credential",
+      "help": "X Developer Console → your app → Keys and tokens → OAuth 2.0 Client ID and Client Secret: Client ID. Not the API Key.",
+      "link": "https://console.x.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client ID without spaces."
+    },
+    "X_CLIENT_SECRET": {
+      "label": "OAuth 2.0 Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same place: Client Secret. Shown once; regenerate it if lost (the connector then needs a new authorization).",
+      "link": "https://console.x.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "X refused the access token. Click Authorize with Provider again; if the Client Secret was regenerated, update X_CLIENT_SECRET first.",
+    "402": "The X API credit balance or spending limit is used up. Add credits or raise the limit in the X Developer Console, then try again.",
+    "403": "X refused the call. client-forbidden or client-not-enrolled means the app has no paid API access: add credits in the X Developer Console (https://console.x.com). On a write it can also mean a missing scope or app permission (set Read and write, authorize again).",
+    "rate_limited": "X is rate limiting this user or app (limits reset every 15 minutes), or the monthly read cap is reached. Wait and try again."
+  },
+  "probe": {
+    "tool": "x_get_me"
+  },
+  "prerequisites": "An X account with an app in the X Developer Console (https://console.x.com) that has prepaid API credits, User authentication set up as a Web App with the callback URL below, and Read and write (plus Direct message) permission. X bills every read and post. About 10 minutes.",
+  "unlisted": true,
+  "connector": {
+    "name": "X API v2",
+    "type": "REST",
+    "baseUrl": "https://api.x.com/2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{X_CLIENT_ID}}",
+      "clientSecret": "{{X_CLIENT_SECRET}}",
+      "authorizationUrl": "https://x.com/i/oauth2/authorize",
+      "tokenUrl": "https://api.x.com/2/oauth2/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "tweet.read tweet.write users.read follows.read follows.write like.read like.write bookmark.read bookmark.write list.read dm.read dm.write offline.access"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "tools": [
+    {
+      "name": "x_get_me",
+      "description": "Read the X account that authorized the connector: id, name, @username and the user fields asked for. Call it first: the id is needed by the tools that act on your own account (home timeline, bookmarks, likes, reposts, follows).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me",
+        "queryParams": {
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_user_by_username",
+      "description": "Look up one X account by its @username (without the @): id, name, bio, follower and post counts and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "The @username without the @, e.g. XDevelopers."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/by/username/{username}",
+        "encodePathParams": true,
+        "queryParams": {
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_users_by_usernames",
+      "description": "Look up up to 100 X accounts by @username in one call. Names that do not exist come back in errors, the others in data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "usernames": {
+            "type": "string",
+            "description": "Comma-separated @usernames without the @, up to 100, e.g. XDevelopers,XData."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "usernames"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/by",
+        "queryParams": {
+          "usernames": "$usernames",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_user",
+      "description": "Look up one X account by its numeric user id: name, @username, bio, counts and the user fields asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_search_users",
+      "description": "Find X accounts by name or @username keywords. Letters, digits, underscores, apostrophes and spaces only, up to 50 characters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to look for in names and @usernames."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 1000 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "next_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/search",
+        "queryParams": {
+          "query": "$query",
+          "max_results": "$max_results",
+          "next_token": "$next_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_post",
+      "description": "Read one post by id: text, author_id, time, metrics and the fields asked for. The id is the number at the end of a post link (x.com/<user>/status/<id>).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The post id."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/{post_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_posts",
+      "description": "Read up to 100 posts by id in one call. Deleted or protected posts come back in errors, the others in data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated post ids, up to 100."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets",
+        "queryParams": {
+          "ids": "$ids",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_user_posts",
+      "description": "List the most recent posts of an account (up to the last 3,200), newest first. Use exclude to leave out replies or reposts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id (x_get_user_by_username gives it)."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Optional: replies, retweets or replies,retweets."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Oldest UTC time to include, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Newest UTC time to include, ISO 8601."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only posts newer than this post id."
+          },
+          "until_id": {
+            "type": "string",
+            "description": "Only posts older than this post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 5 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 5,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/tweets",
+        "encodePathParams": true,
+        "queryParams": {
+          "exclude": "$exclude",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "since_id": "$since_id",
+          "until_id": "$until_id",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_user_mentions",
+      "description": "List the most recent posts that mention an account (up to the last 800), newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id; your own from x_get_me for your mentions."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Oldest UTC time to include, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Newest UTC time to include, ISO 8601."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only posts newer than this post id."
+          },
+          "until_id": {
+            "type": "string",
+            "description": "Only posts older than this post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 5 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 5,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/mentions",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "since_id": "$since_id",
+          "until_id": "$until_id",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_home_timeline",
+      "description": "Read your home timeline in reverse chronological order: posts and reposts from you and the accounts you follow. Only works for your own user id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Optional: replies, retweets or replies,retweets."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Oldest UTC time to include, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Newest UTC time to include, ISO 8601."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only posts newer than this post id."
+          },
+          "until_id": {
+            "type": "string",
+            "description": "Only posts older than this post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 1 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/timelines/reverse_chronological",
+        "encodePathParams": true,
+        "queryParams": {
+          "exclude": "$exclude",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "since_id": "$since_id",
+          "until_id": "$until_id",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_search_recent_posts",
+      "description": "Search posts from the last 7 days with X search operators, e.g. \"anythingmcp lang:en -is:retweet\", from:username, to:username, #hashtag, \"exact phrase\", has:links, is:reply. Up to 512 characters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query with operators."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "recency (default) or relevancy.",
+            "enum": [
+              "recency",
+              "relevancy"
+            ]
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Oldest UTC time, ISO 8601, within the last 7 days."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Newest UTC time to include, ISO 8601."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only posts newer than this post id."
+          },
+          "until_id": {
+            "type": "string",
+            "description": "Only posts older than this post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 10 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 10,
+            "maximum": 100
+          },
+          "next_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/search/recent",
+        "queryParams": {
+          "query": "$query",
+          "sort_order": "$sort_order",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "since_id": "$since_id",
+          "until_id": "$until_id",
+          "max_results": "$max_results",
+          "next_token": "$next_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_count_recent_posts",
+      "description": "Count the posts of the last 7 days that match a search query, per minute, hour or day, without reading them. Same operators as x_search_recent_posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query with operators."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "minute, hour (default) or day.",
+            "enum": [
+              "minute",
+              "hour",
+              "day"
+            ],
+            "default": "hour"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Oldest UTC time, ISO 8601, within the last 7 days."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Newest UTC time to include, ISO 8601."
+          },
+          "next_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/counts/recent",
+        "queryParams": {
+          "query": "$query",
+          "granularity": "$granularity",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "next_token": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "x_list_quote_posts",
+      "description": "List the posts that quote a given post, newest first, with the quoting text and author_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The quoted post id."
+          },
+          "exclude": {
+            "type": "string",
+            "description": "Optional: replies, retweets or replies,retweets."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 10 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 10,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/{post_id}/quote_tweets",
+        "encodePathParams": true,
+        "queryParams": {
+          "exclude": "$exclude",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_reposted_by",
+      "description": "List the accounts that reposted a post, with the user fields asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 100 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/{post_id}/retweeted_by",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_liking_users",
+      "description": "List the accounts that liked a post. X only shows this for your own posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The post id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 100 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tweets/{post_id}/liking_users",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_create_post",
+      "description": "Publish a new post on the authorized account, visible to everyone at once. Show the user the exact text and get a yes first. Up to 280 characters (more with X Premium); a post with a link costs more credits than one without. Returns the new post id. Optional poll: {\"options\": [\"Yes\", \"No\"], \"duration_minutes\": 1440}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text of the post."
+          },
+          "reply_settings": {
+            "type": "string",
+            "description": "Who may reply: following, mentionedUsers, subscribers or verified. Leave empty for everyone.",
+            "enum": [
+              "following",
+              "mentionedUsers",
+              "subscribers",
+              "verified"
+            ]
+          },
+          "poll": {
+            "type": "object",
+            "description": "Optional poll instead of media: options (2 to 4 strings, 25 characters each) and duration_minutes (5 to 10080).",
+            "properties": {
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duration_minutes": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tweets",
+        "bodyMapping": {
+          "text": "$text",
+          "reply_settings": "$reply_settings",
+          "poll": "$poll"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_reply_to_post",
+      "description": "Publish a reply to a post, visible to everyone at once. Show the user the exact text and get a yes first. X only accepts replies from the API when the author of the post mentioned or quoted the account, or when the reply is in your own thread; other replies come back 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post to reply to."
+          },
+          "text": {
+            "type": "string",
+            "description": "The text of the reply."
+          }
+        },
+        "required": [
+          "post_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tweets",
+        "bodyMapping": {
+          "text": "$text",
+          "reply": {
+            "in_reply_to_tweet_id": "$post_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_quote_post",
+      "description": "Publish a post that quotes another post with your comment, visible to everyone at once. Show the user the exact text and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post to quote."
+          },
+          "text": {
+            "type": "string",
+            "description": "Your comment above the quoted post."
+          }
+        },
+        "required": [
+          "post_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tweets",
+        "bodyMapping": {
+          "text": "$text",
+          "quote_tweet_id": "$post_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_delete_post",
+      "description": "Delete one of your own posts for good. Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The id of your post."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tweets/{post_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "x_list_liked_posts",
+      "description": "List the posts an account liked, newest like first. Likes are private on X: this works for your own user id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 5 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 5,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/liked_tweets",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_like_post",
+      "description": "Like a post as the authorized account. Likes are private on X. Answers liked: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post to like."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/likes",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "tweet_id": "$post_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "x_unlike_post",
+      "description": "Remove your like from a post you liked before. Answers liked: false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/{user_id}/likes/{post_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "x_repost",
+      "description": "Repost a post to your followers, visible to everyone at once. Confirm with the user first. Answers retweeted: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post to repost."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/retweets",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "tweet_id": "$post_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_undo_repost",
+      "description": "Take back your repost of a post; the original post stays. Answers retweeted: false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the original post (not of your repost)."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/{user_id}/retweets/{post_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "x_list_bookmarks",
+      "description": "List your bookmarked posts, most recently bookmarked first (up to the last 800).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 1 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/bookmarks",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_add_bookmark",
+      "description": "Bookmark a post. Bookmarks are private. Answers bookmarked: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the post to bookmark."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/bookmarks",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "tweet_id": "$post_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "x_remove_bookmark",
+      "description": "Remove a post from your bookmarks. Answers bookmarked: false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "The id of the bookmarked post."
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/{user_id}/bookmarks/{post_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "x_list_followers",
+      "description": "List the accounts that follow an account, newest follower first. Each account returned is billed as a read: keep max_results small for large accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 1000 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/followers",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_following",
+      "description": "List the accounts an account follows, most recently followed first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 1000 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/following",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_follow_user",
+      "description": "Follow an account as the authorized account; the other account is notified. Confirm with the user first. For a protected account this sends a follow request (pending_follow: true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "target_user_id": {
+            "type": "string",
+            "description": "The numeric id of the account to follow."
+          }
+        },
+        "required": [
+          "user_id",
+          "target_user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/following",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "target_user_id": "$target_user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "x_unfollow_user",
+      "description": "Stop following an account as the authorized account. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id (the id from x_get_me, not the @username)."
+          },
+          "target_user_id": {
+            "type": "string",
+            "description": "The numeric id of the account to unfollow."
+          }
+        },
+        "required": [
+          "user_id",
+          "target_user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/{user_id}/following/{target_user_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "x_list_owned_lists",
+      "description": "List the X Lists an account owns: id, name, description, member and follower counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id; your own from x_get_me for your Lists."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Lists per page, 1 to 100 (default 20). Every list returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "list_fields": {
+            "type": "string",
+            "description": "Comma-separated list fields to return. Values: created_at, description, follower_count, id, member_count, name, owner_id, private. Default: created_at,description,follower_count,member_count,owner_id,private.",
+            "default": "created_at,description,follower_count,member_count,owner_id,private"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/owned_lists",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "list.fields": "$list_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_followed_lists",
+      "description": "List the X Lists an account follows: id, name, description, member and follower counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The numeric user id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Lists per page, 1 to 100 (default 20). Every list returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "list_fields": {
+            "type": "string",
+            "description": "Comma-separated list fields to return. Values: created_at, description, follower_count, id, member_count, name, owner_id, private. Default: created_at,description,follower_count,member_count,owner_id,private.",
+            "default": "created_at,description,follower_count,member_count,owner_id,private"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/followed_lists",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "list.fields": "$list_fields"
+        }
+      }
+    },
+    {
+      "name": "x_get_list",
+      "description": "Read one X List: name, description, owner, member and follower counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "The List id (the number in x.com/i/lists/<id>)."
+          },
+          "list_fields": {
+            "type": "string",
+            "description": "Comma-separated list fields to return. Values: created_at, description, follower_count, id, member_count, name, owner_id, private. Default: created_at,description,follower_count,member_count,owner_id,private.",
+            "default": "created_at,description,follower_count,member_count,owner_id,private"
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "list.fields": "$list_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_list_posts",
+      "description": "Read the latest posts from the members of an X List, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "The List id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Posts per page, 1 to 100 (default 10). Every post returned is billed as a read, so ask for what you need.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "tweet_fields": {
+            "type": "string",
+            "description": "Comma-separated post fields to return. Values: attachments, author_id, context_annotations, conversation_id, created_at, edit_controls, entities, geo, id, in_reply_to_user_id, lang, note_tweet (full text of long posts), possibly_sensitive, public_metrics, referenced_tweets, reply_settings, source, text, withheld; non_public_metrics and organic_metrics only for your own posts of the last 30 days. Default: created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings.",
+            "default": "created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,public_metrics,lang,entities,reply_settings"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Optional comma-separated expansions; the expanded objects come back in includes and are billed as extra reads. Values: author_id, referenced_tweets.id, in_reply_to_user_id, attachments.media_keys, attachments.poll_ids, entities.mentions.username, geo.place_id. Leave empty to keep the call cheap."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for expanded users (with expansions author_id and similar). Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/tweets",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "tweet.fields": "$tweet_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_list_members",
+      "description": "List the accounts that are members of an X List, with the user fields asked for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "The List id."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Accounts per page, 1 to 100 (default 20). Every account returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{list_id}/members",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_dm_events",
+      "description": "List your recent direct messages across all conversations (the last 30 days), newest first. Needs the app permission Read, write and Direct messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_types": {
+            "type": "string",
+            "description": "Comma-separated event types: MessageCreate, ParticipantsJoin, ParticipantsLeave. Default: MessageCreate (messages only).",
+            "default": "MessageCreate"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Messages per page, 1 to 100 (default 20). Every message returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "dm_event_fields": {
+            "type": "string",
+            "description": "Comma-separated message fields. Values: attachments, created_at, dm_conversation_id, entities, event_type, id, text. Default: id,text,event_type,created_at,dm_conversation_id,attachments.",
+            "default": "id,text,event_type,created_at,dm_conversation_id,attachments"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Comma-separated expansions. sender_id (default) adds the sender to each message and the sender accounts to includes.users; also participant_ids, attachments.media_keys, referenced_tweets.id.",
+            "default": "sender_id"
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for the expanded senders. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dm_events",
+        "queryParams": {
+          "event_types": "$event_types",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "dm_event.fields": "$dm_event_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_list_dm_conversation_with_user",
+      "description": "Read your one-to-one direct message conversation with another account (the last 30 days), newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "description": "The numeric user id of the other account."
+          },
+          "event_types": {
+            "type": "string",
+            "description": "Comma-separated event types: MessageCreate, ParticipantsJoin, ParticipantsLeave. Default: MessageCreate (messages only).",
+            "default": "MessageCreate"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Messages per page, 1 to 100 (default 20). Every message returned is billed as a read, so ask for what you need.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "meta.next_token of the previous page, for the next one."
+          },
+          "dm_event_fields": {
+            "type": "string",
+            "description": "Comma-separated message fields. Values: attachments, created_at, dm_conversation_id, entities, event_type, id, text. Default: id,text,event_type,created_at,dm_conversation_id,attachments.",
+            "default": "id,text,event_type,created_at,dm_conversation_id,attachments"
+          },
+          "expansions": {
+            "type": "string",
+            "description": "Comma-separated expansions. sender_id (default) adds the sender to each message and the sender accounts to includes.users; also participant_ids, attachments.media_keys, referenced_tweets.id.",
+            "default": "sender_id"
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Comma-separated user fields to return for the expanded senders. Values: created_at, description, entities, id, location, name, pinned_tweet_id, profile_image_url, protected, public_metrics, url, username, verified, verified_type, withheld. Default: created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected.",
+            "default": "created_at,description,location,public_metrics,verified,verified_type,profile_image_url,url,protected"
+          }
+        },
+        "required": [
+          "participant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dm_conversations/with/{participant_id}/dm_events",
+        "encodePathParams": true,
+        "queryParams": {
+          "event_types": "$event_types",
+          "max_results": "$max_results",
+          "pagination_token": "$pagination_token",
+          "dm_event.fields": "$dm_event_fields",
+          "expansions": "$expansions",
+          "user.fields": "$user_fields"
+        }
+      }
+    },
+    {
+      "name": "x_send_dm",
+      "description": "Send a direct message to an account, in your one-to-one conversation with it (created when needed). The recipient sees it at once: show the user the exact text and get a yes first. Fails with 403 when the recipient does not accept messages from you.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "description": "The numeric user id of the recipient."
+          },
+          "text": {
+            "type": "string",
+            "description": "The message text."
+          }
+        },
+        "required": [
+          "participant_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dm_conversations/with/{participant_id}/messages",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_send_dm_to_conversation",
+      "description": "Send a direct message into an existing conversation (one-to-one or group) by its dm_conversation_id from x_list_dm_events. Everyone in it sees it at once: show the user the exact text and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dm_conversation_id": {
+            "type": "string",
+            "description": "The conversation id, e.g. 123-456 for one-to-one or a number for a group."
+          },
+          "text": {
+            "type": "string",
+            "description": "The message text."
+          }
+        },
+        "required": [
+          "dm_conversation_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dm_conversations/{dm_conversation_id}/messages",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "x_delete_dm",
+      "description": "Delete one of your direct messages, for you only (the other side keeps it). Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "The id of the message event."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/dm_events/{event_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}
