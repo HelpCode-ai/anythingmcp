@@ -125,6 +125,31 @@ curl -X POST https://api.example.com/users \
 
 This generates a tool with `token`, `name`, and `email` as parameters.
 
+### From a HAR file
+
+When an API has no OpenAPI spec, no Postman collection and no docs — just a web app
+that calls it — capture the traffic instead: in your browser's DevTools, open the
+Network tab, use the app for the flow you want, then right-click → "Save all as
+HAR". Import that file from the connector's **Import Tools** panel (source "HAR
+file (browser capture)"); the UI only accepts a file here, not pasted text.
+
+Only requests to the connector's own base URL are kept; everything else (other
+origins, stylesheets, scripts, images, fonts, WebSocket upgrades) is skipped.
+Repeated requests to the same path with a different id (`/orders/123`,
+`/orders/456`) collapse into one tool with an `{id}` path parameter. Query
+parameters and JSON or form bodies become tool parameters.
+
+A HAR carries your browser's session: cookies, bearer tokens and API keys. None
+of that is ever uploaded. The browser strips response bodies, cookies and
+credential-looking headers before the file leaves it, and the backend parser
+drops `Cookie`, `Authorization` and any header, query parameter or body field
+named like a credential (`token`, `secret`, `password`, `api_key`, `session`,
+and similar) on top of that — the connector's own configured auth, not
+anything recorded in the capture, is what actually authenticates the tool's
+calls. A credential-named body field (e.g. a login form's `password`) still
+becomes a parameter, just with no captured default, since the call needs that
+value supplied at call time.
+
 ### Custom JSON Definition
 
 Define tools directly as JSON:

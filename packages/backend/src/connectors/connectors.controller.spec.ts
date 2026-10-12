@@ -51,6 +51,7 @@ function buildController(overrides: {
     {} as any, // graphqlParser
     {} as any, // postmanParser
     {} as any, // curlParser
+    {} as any, // harParser
     {} as any, // mcpClientEngine
     (overrides.mcpOAuthService ?? {}) as any, // mcpOAuthService
     {} as any, // catalogResync

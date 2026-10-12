@@ -38,6 +38,7 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { HarParser } from './parsers/har.parser';
 import { describeSpecError, readRemoteSpec } from './parsers/spec-read-error';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
@@ -352,12 +353,12 @@ class UpdateOAuth1ConfigDto {
 
 class ImportToolsDto {
   @ApiProperty({
-    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp', 'odata'],
+    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'har', 'json', 'mcp', 'odata'],
     description: 'Which parser to run on the supplied content/url.',
     example: 'openapi',
   })
   @IsString()
-  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp' | 'odata';
+  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'har' | 'json' | 'mcp' | 'odata';
 
   @ApiPropertyOptional({
     description: 'Inline spec content (JSON or YAML). Mutually exclusive with `url`.',
@@ -580,6 +581,7 @@ export class ConnectorsController {
     private readonly graphqlParser: GraphqlParser,
     private readonly postmanParser: PostmanParser,
     private readonly curlParser: CurlParser,
+    private readonly harParser: HarParser,
     private readonly mcpClientEngine: McpClientEngine,
     private readonly mcpOAuthService: McpOAuthService,
     private readonly catalogResync: CatalogResyncService,
@@ -1723,7 +1725,7 @@ export class ConnectorsController {
 
   @Post(':id/import')
   @ApiOperation({
-    summary: 'Import tools from any source: OpenAPI, Postman, cURL, WSDL, GraphQL',
+    summary: 'Import tools from any source: OpenAPI, Postman, cURL, HAR, WSDL, GraphQL',
   })
   async importTools(
     @Req() req: any,
@@ -1739,6 +1741,7 @@ export class ConnectorsController {
     let odataScope: string | undefined;
 
     let detectedHealthcheckPath: string | undefined;
+    let harSkipped: { otherOrigin: number; staticAsset: number; duplicate: number } | undefined;
 
     try {
       switch (dto.source) {
@@ -1784,6 +1787,16 @@ export class ConnectorsController {
             return { error: 'Provide the cURL command(s) in content field' };
           }
           parsedTools = this.curlParser.parse(dto.content);
+          break;
+        }
+        case 'har': {
+          if (!dto.content) {
+            return { error: 'Provide the HAR file content in the content field' };
+          }
+          const { baseUrl } = this.resolvedAddress(connector);
+          const result = this.harParser.parse(dto.content, { baseUrl });
+          parsedTools = result.tools;
+          harSkipped = result.skipped;
           break;
         }
         case 'json': {
@@ -1888,8 +1901,8 @@ export class ConnectorsController {
     // Retiring everything else is what a full spec import (OpenAPI, WSDL…)
     // means; for a handful of hand-written tools it disabled every other tool
     // of the connector, catalog tools included.
-    const additive = dto.source === 'json' || dto.source === 'curl';
-    return this.createToolsFromParsed(
+    const additive = dto.source === 'json' || dto.source === 'curl' || dto.source === 'har';
+    const result = await this.createToolsFromParsed(
       connector,
       parsedTools,
       additive
@@ -1901,6 +1914,14 @@ export class ConnectorsController {
             }
           : undefined,
     );
+    if (harSkipped) {
+      return {
+        ...result,
+        message: `${result.message} (skipped ${harSkipped.otherOrigin} other-origin, ${harSkipped.staticAsset} static/socket, ${harSkipped.duplicate} duplicate entries)`,
+        harSkipped,
+      };
+    }
+    return result;
   }
 
   @Put(':id/env-vars')

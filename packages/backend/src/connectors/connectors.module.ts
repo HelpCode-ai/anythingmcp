@@ -16,6 +16,7 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { HarParser } from './parsers/har.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { CatalogResyncService } from './catalog-resync.service';
@@ -32,7 +33,7 @@ const ENGINES = [
   ODataEngine,
 ];
 
-const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];
+const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser, HarParser];
 
 // OAuth2TokenService comes from McpServerModule: one instance for the whole
 // app. A second one here had its own token cache and refresh mutex, so a

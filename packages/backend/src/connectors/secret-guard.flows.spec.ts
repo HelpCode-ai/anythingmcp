@@ -71,6 +71,7 @@ function buildConnectors(stored: Record<string, any> = {}) {
     {} as any,
     new PostmanParser(),
     new CurlParser(),
+    {} as any, // harParser
     {} as any,
     {} as any,
     {} as any,

@@ -89,6 +89,7 @@ function buildController(over: { prisma?: any; licenseGuard?: any } = {}) {
     {} as any, // graphqlParser
     {} as any, // postmanParser
     {} as any, // curlParser
+    {} as any, // harParser
     {} as any, // mcpClientEngine
     {} as any, // mcpOAuthService
     {} as any, // catalogResync

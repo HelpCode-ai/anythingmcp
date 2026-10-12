@@ -146,6 +146,14 @@ curl -s http://localhost:4000/api/connectors/$ID/import \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"source": "json", "content": "[{\"name\":\"tool\",\"description\":\"desc\",...}]"}'
+
+# From a HAR file (browser network capture) — the UI slims the file (strips
+# response bodies, cookies and credential headers) before upload; do the same
+# before sending one by hand.
+curl -s http://localhost:4000/api/connectors/$ID/import \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "har", "content": "{\"log\":{\"version\":\"1.2\",\"entries\":[...]}}"}'
 ```
 
 ### Set Environment Variables

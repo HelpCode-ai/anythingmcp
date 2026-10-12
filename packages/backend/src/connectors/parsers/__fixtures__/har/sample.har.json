@@ -1,0 +1,138 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": { "name": "Fixture", "version": "1.0" },
+    "entries": [
+      {
+        "startedDateTime": "2026-10-12T10:00:00.000Z",
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.com/v2/orders/123?status=open&access_token=abc123",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "Cookie", "value": "session=deadbeef" },
+            { "name": "Authorization", "value": "Bearer eyJsupersecret" },
+            { "name": "X-Api-Key", "value": "sk_live_abcdef123456" },
+            { "name": "User-Agent", "value": "Mozilla/5.0" },
+            { "name": "Accept", "value": "application/json" },
+            { "name": "X-Org-Id", "value": "org_42" }
+          ],
+          "queryString": [
+            { "name": "status", "value": "open" },
+            { "name": "access_token", "value": "abc123" }
+          ],
+          "cookies": [{ "name": "session", "value": "deadbeef" }],
+          "postData": null
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "headers": [{ "name": "Content-Type", "value": "application/json" }],
+          "content": { "mimeType": "application/json", "size": 42, "text": "{\"id\":123}" },
+          "cookies": []
+        }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:01.000Z",
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.com/v2/orders/456",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "Cookie", "value": "session=deadbeef" },
+            { "name": "Authorization", "value": "Bearer eyJsupersecret" }
+          ],
+          "queryString": [],
+          "cookies": [{ "name": "session", "value": "deadbeef" }],
+          "postData": null
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "headers": [],
+          "content": { "mimeType": "application/json", "size": 42, "text": "{\"id\":456}" },
+          "cookies": []
+        }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:02.000Z",
+        "request": {
+          "method": "POST",
+          "url": "https://api.example.com/v2/login",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Cookie", "value": "session=deadbeef" }
+          ],
+          "queryString": [],
+          "cookies": [{ "name": "session", "value": "deadbeef" }],
+          "postData": {
+            "mimeType": "application/json",
+            "text": "{\"username\":\"bob\",\"password\":\"hunter2\"}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "headers": [],
+          "content": { "mimeType": "application/json", "size": 2, "text": "{}" },
+          "cookies": []
+        }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:03.000Z",
+        "request": {
+          "method": "GET",
+          "url": "https://other.example.com/track?x=1",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [{ "name": "x", "value": "1" }],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 200, "statusText": "OK", "headers": [], "content": {}, "cookies": [] }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:04.000Z",
+        "_resourceType": "script",
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.com/v2/static/app.js",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 200, "statusText": "OK", "headers": [], "content": {}, "cookies": [] }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:05.000Z",
+        "request": {
+          "method": "OPTIONS",
+          "url": "https://api.example.com/v2/orders/123",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 204, "statusText": "No Content", "headers": [], "content": {}, "cookies": [] }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:06.000Z",
+        "_resourceType": "websocket",
+        "request": {
+          "method": "GET",
+          "url": "wss://api.example.com/v2/socket",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 101, "statusText": "Switching Protocols", "headers": [], "content": {}, "cookies": [] }
+      }
+    ]
+  }
+}

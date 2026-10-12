@@ -24,6 +24,7 @@ const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
   { id: 'postman', label: 'Postman Collection', placeholder: 'Paste Postman Collection JSON or enter URL...' },
   { id: 'curl', label: 'cURL Command', placeholder: 'curl -X GET https://api.example.com/users -H "Authorization: Bearer {{token}}"' },
+  { id: 'har', label: 'HAR file (browser capture)', placeholder: '' },
   { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
@@ -42,6 +43,64 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Field names a HAR entry carries that hold a credential by themselves. */
+const HAR_CREDENTIAL_HEADER_RE = /(token|secret|password|passwd|api[-_]?key|session|csrf|xsrf|auth|signature|sig)/i;
+const HAR_EXPLICIT_CREDENTIAL_HEADERS = new Set(['cookie', 'set-cookie', 'authorization', 'proxy-authorization']);
+const HAR_MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+
+function isHarCredentialHeader(name: string): boolean {
+  const n = name.toLowerCase();
+  return HAR_EXPLICIT_CREDENTIAL_HEADERS.has(n) || n.startsWith(':') || HAR_CREDENTIAL_HEADER_RE.test(n);
+}
+
+function slimHarHeaders(headers: unknown): any[] {
+  if (!Array.isArray(headers)) return [];
+  return headers.filter((h: any) => h && typeof h.name === 'string' && !isHarCredentialHeader(h.name));
+}
+
+/**
+ * Strips response bodies, cookies and credential headers from a HAR before
+ * it ever leaves the browser — a raw capture carries full response bodies
+ * and session cookies that must never be uploaded at all, on top of the
+ * credential headers/query/body fields the backend parser also scrubs.
+ */
+function slimHarForUpload(rawText: string): { json: string; byteLength: number } {
+  const har = JSON.parse(rawText);
+  const entries = har?.log?.entries;
+  if (!Array.isArray(entries)) {
+    throw new Error('Not a valid HAR file (expected a log.entries array)');
+  }
+  const slimmed = {
+    log: {
+      version: har.log.version,
+      entries: entries.map((entry: any) => ({
+        _resourceType: entry?._resourceType,
+        request: entry?.request
+          ? {
+              method: entry.request.method,
+              url: entry.request.url,
+              httpVersion: entry.request.httpVersion,
+              headers: slimHarHeaders(entry.request.headers),
+              queryString: entry.request.queryString,
+              postData: entry.request.postData,
+            }
+          : undefined,
+        response: entry?.response
+          ? {
+              status: entry.response.status,
+              headers: slimHarHeaders(entry.response.headers),
+              content: entry.response.content
+                ? { mimeType: entry.response.content.mimeType, size: entry.response.content.size }
+                : undefined,
+            }
+          : undefined,
+      })),
+    },
+  };
+  const json = JSON.stringify(slimmed);
+  return { json, byteLength: new TextEncoder().encode(json).length };
 }
 
 export default function ConnectorDetailPage() {
@@ -151,6 +210,11 @@ export default function ConnectorDetailPage() {
   const [importContent, setImportContent] = useState('');
   const [importUrl, setImportUrl] = useState('');
   const [importing, setImporting] = useState(false);
+
+  // HAR import: the file is slimmed (response bodies, cookies, credential
+  // headers stripped) in the browser before its JSON lands in importContent.
+  const [harFileName, setHarFileName] = useState('');
+  const [harError, setHarError] = useState('');
 
   // MCP assign modal — shown when tools are added and connector is not yet assigned
   const [showMcpAssign, setShowMcpAssign] = useState(false);
@@ -482,6 +546,27 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  const handleHarFileChange = async (file: File | null) => {
+    setHarError('');
+    setImportContent('');
+    setHarFileName('');
+    if (!file) return;
+    setHarFileName(file.name);
+    try {
+      const text = await file.text();
+      const { json, byteLength } = slimHarForUpload(text);
+      if (byteLength > HAR_MAX_UPLOAD_BYTES) {
+        setHarError(
+          `This capture is still ${formatBytes(byteLength)} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.`,
+        );
+        return;
+      }
+      setImportContent(json);
+    } catch (err: any) {
+      setHarError(`Could not read this file: ${err.message}`);
+    }
+  };
+
   const handleImportTools = async () => {
     if (!token) return;
     setImporting(true);
@@ -494,7 +579,7 @@ export default function ConnectorDetailPage() {
         if (importContent.trim()) data.content = importContent;
         const sets = importEntitySets.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
         if (sets.length) data.entitySets = sets;
-      } else if (importSource === 'curl' || importSource === 'json') {
+      } else if (importSource === 'curl' || importSource === 'json' || importSource === 'har') {
         data.content = importContent;
       } else if (importUrl) {
         data.url = importUrl;
@@ -509,6 +594,8 @@ export default function ConnectorDetailPage() {
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
+        setHarFileName('');
+        setHarError('');
         fetchConnector();
         promptMcpAssignIfNeeded();
       }
@@ -1606,7 +1693,7 @@ export default function ConnectorDetailPage() {
                 {IMPORT_SOURCES.filter((src) => src.id !== 'odata' || hasOData(connector)).map((src) => (
                   <button
                     key={src.id}
-                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); }}
+                    onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); setHarFileName(''); setHarError(''); }}
                     className={`px-3 py-1.5 rounded-[8px] text-xs border transition-colors ${
                       importSource === src.id
                         ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] font-semibold'
@@ -1650,7 +1737,7 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && (
+              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && importSource !== 'har' && (
                 <div>
                   <label className="block text-xs font-medium mb-1">URL (fetch spec from URL)</label>
                   <input
@@ -1663,18 +1750,41 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium mb-1">
-                  {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
-                </label>
-                <textarea
-                  value={importContent}
-                  onChange={(e) => setImportContent(e.target.value)}
-                  rows={6}
-                  placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
-                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
-                />
-              </div>
+              {importSource === 'har' ? (
+                <div>
+                  <label className="block text-xs font-medium mb-1">HAR file</label>
+                  <input
+                    type="file"
+                    accept=".har,application/json"
+                    onChange={(e) => handleHarFileChange(e.target.files?.[0] ?? null)}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                  <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                    From your browser&apos;s DevTools: Network tab → right-click → &quot;Save all as HAR&quot;. HAR files contain
+                    session cookies and tokens — response bodies, cookies and credential headers are removed in your
+                    browser before anything is uploaded.
+                  </p>
+                  {harFileName && !harError && (
+                    <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                      {importContent ? `${harFileName} — ready to import.` : `Reading ${harFileName}...`}
+                    </p>
+                  )}
+                  {harError && <p className="text-[11.5px] text-[var(--danger)] mt-1">{harError}</p>}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium mb-1">
+                    {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
+                  </label>
+                  <textarea
+                    value={importContent}
+                    onChange={(e) => setImportContent(e.target.value)}
+                    rows={6}
+                    placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                </div>
+              )}
 
               <Button
                 variant="primary"

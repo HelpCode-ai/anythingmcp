@@ -33,6 +33,7 @@ describe('import-spec: an unreadable specification is a 422, not a 500', () => {
       {} as any, // graphqlParser
       {} as any, // postmanParser
       {} as any, // curlParser
+      {} as any, // harParser
       {} as any, // mcpClientEngine
       {} as any, // mcpOAuthService
       {} as any, // catalogResync
