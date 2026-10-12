@@ -11,6 +11,7 @@ import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ConnectionCheck } from '@/components/connection-check';
 import { copyText } from '@/lib/clipboard';
+import { getApiOrigin } from '@/lib/origin';
 import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
@@ -98,11 +99,7 @@ export default function McpServerDetailPage() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
 
-  const apiUrl = typeof window !== 'undefined'
-    ? window.location.hostname === 'localhost'
-      ? `${window.location.protocol}//${window.location.hostname}:4000`
-      : window.location.origin
-    : 'http://localhost:4000';
+  const apiUrl = getApiOrigin();
 
   const handleSave = async () => {
     if (!token || !id) return;

@@ -8,6 +8,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
+import { getApiOrigin } from '@/lib/origin';
 
 type HealthResult = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -85,11 +86,7 @@ export default function DashboardPage() {
 
   if (isLoading) return null;
 
-  const apiUrl = typeof window !== 'undefined'
-    ? window.location.hostname === 'localhost'
-      ? `${window.location.protocol}//${window.location.hostname}:4000`
-      : window.location.origin
-    : 'http://localhost:4000';
+  const apiUrl = getApiOrigin();
 
   const maxTotal = analytics?.daily?.length
     ? Math.max(...analytics.daily.map((d) => d.success + d.error + d.timeout), 1)
