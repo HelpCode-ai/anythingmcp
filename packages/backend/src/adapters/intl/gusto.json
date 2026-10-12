@@ -1,0 +1,965 @@
+{
+  "slug": "gusto",
+  "name": "Gusto",
+  "unlisted": true,
+  "description": "Let your AI read your Gusto payroll and HR data: the company, its locations and admins, employees with their jobs and pay rates, contractors, departments, pay schedules and pay periods, processed payrolls with totals, contractor payments, time off policies and requests, earning types and benefits. Read-only for payroll; it can only create and rename departments. Gusto OAuth sign-in, demo or production.",
+  "instructions": "## Gusto\nThis connector reads one Gusto company through the **Gusto API for app integrations** (`https://api.gusto.com`, or `https://api.gusto-demo.com` for demo companies), version **2026-06-15**: the company with its locations and admins, employees (with jobs, compensations and employment history), contractors, departments, pay schedules and pay periods, payrolls and contractor payments, time off policies and requests, earning types and company benefits. It runs as the Gusto admin who authorized it, on the one company chosen at sign-in.\n\n**Payroll is read-only here.** No tool prepares, calculates, submits or cancels a payroll, and none creates or funds a contractor payment, an employee, a compensation or a termination. The only writes are `gusto_create_department` and `gusto_update_department` (the second is installed switched off).\n\n**Setup (one-time, about 15 minutes)**\n1. Create a free account on the Gusto Developer Portal at https://dev.gusto.com and create an application there. A new application starts in the **demo** environment, where everything runs against test companies.\n2. In the application's settings add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Gusto accepts no wildcards. Demo redirect URIs can be edited in the portal; for a production application Gusto changes them on request (developer@gusto.com).\n3. Copy the application's **Client ID** and **Secret** into `GUSTO_CLIENT_ID` and `GUSTO_CLIENT_SECRET`.\n4. Set `GUSTO_API_URL` to `https://api.gusto-demo.com` for a demo application or `https://api.gusto.com` once Gusto has approved the application for production. The keys only work on their own environment.\n5. For a test, create a **demo company** in the Developer Portal; it comes with sample employees, contractors and payrolls.\n6. Install, click **Authorize with Provider** and sign in to Gusto as a primary or full-access admin. Gusto asks which company to connect: one authorization covers exactly one company. Install the connector again for a second company.\n7. Run `gusto_get_token_info`. `resource.uuid` is the company UUID that every company tool takes as `company_uuid`; `scope` lists what the application may read.\n\n**Scopes** are not requested at sign-in: Gusto assigns them to the application (in the demo environment broadly, in production after its review). A call outside them answers 403. Pay rates and compensations (`rate`, `payment_unit`, `compensations`) appear only with the `compensations:read` scope; benefits with health information need the `:phi` scopes.\n\n**API version**: every call sends `X-Gusto-API-Version: 2026-06-15`. Gusto answers 406 when that is older than the application's minimum API version (shown in the Developer Portal) or newer than the versions it knows.\n\n**Tokens**: access tokens last two hours and are renewed automatically. Gusto issues a new refresh token on every renewal and the old one stops working; AnythingMCP stores each new one. Do not use the same authorization in another tool at the same time, or one of the two ends up with a used refresh token and has to authorize again.\n\n**Workflow**\n- People: `gusto_list_employees` (filter by `terminated`, `onboarded`, `search_term`; jobs are included in each employee), then `gusto_get_employee`, `gusto_get_employment_history`, `gusto_list_job_compensations` with a job `uuid` from `jobs[]`.\n- Contractors: `gusto_list_contractors`, `gusto_get_contractor`, `gusto_list_contractor_payments` (needs `start_date` and `end_date`).\n- Payroll: `gusto_list_pay_schedules`, `gusto_list_pay_periods`, `gusto_list_payrolls` (by default processed regular payrolls of the last six months; at most one year between `start_date` and `end_date`), then `gusto_get_payroll` with `include` = `totals,taxes,deductions,benefits` for the breakdown per employee.\n- Organisation: `gusto_get_company`, `gusto_list_locations`, `gusto_list_company_admins`, `gusto_list_departments`, `gusto_list_earning_types`, `gusto_list_company_benefits`.\n- Time off: `gusto_list_time_off_policies`, `gusto_get_time_off_policy` (balances per employee), `gusto_list_time_off_requests`.\n\n**Reading the data**: money is a decimal string (`\"1234.56\"`) and hours have three decimals. Dates are `YYYY-MM-DD`. Ids are UUIDs. Lists with `page` and `per` return the totals in the `x-total-count` and `x-total-pages` headers; without them Gusto returns every record.\n\n**Confirm first**: `gusto_create_department` and `gusto_update_department` change what every admin sees in Gusto. Department updates need the current `version` from `gusto_get_department`; a stale version answers 409.\n\n**Common errors**\n- 401: the authorization was revoked or not renewed; click **Authorize with Provider** again.\n- 403: the application lacks the scope for this call, or the token belongs to another company than `company_uuid`.\n- 404: wrong UUID, or a resource of another company.\n- 406: `X-Gusto-API-Version` is outside the versions your application allows.\n- 429: more than 200 requests in a minute for this authorization; wait a minute.\n\n**Out of scope here**: running, calculating or submitting payrolls, paying contractors, onboarding or terminating people, changing pay, benefits enrollment, tax forms and documents, webhooks. Gusto Embedded (partner-managed companies) is a different product and is not covered.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "gusto",
+  "docsUrl": "https://docs.gusto.com/app-integrations/docs/introduction",
+  "requiredEnvVars": [
+    "GUSTO_CLIENT_ID",
+    "GUSTO_CLIENT_SECRET",
+    "GUSTO_API_URL"
+  ],
+  "appRegistrationUrl": "https://dev.gusto.com",
+  "envVarMeta": {
+    "GUSTO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Gusto Developer Portal (dev.gusto.com) → your application: Client ID.",
+      "link": "https://dev.gusto.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the Client ID without spaces."
+    },
+    "GUSTO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: Secret. Use the one of the same environment (demo or production) as GUSTO_API_URL.",
+      "link": "https://dev.gusto.com",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret without spaces."
+    },
+    "GUSTO_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "https://api.gusto-demo.com for a demo application and demo companies, https://api.gusto.com for a production application approved by Gusto.",
+      "example": "https://api.gusto-demo.com",
+      "link": "https://docs.gusto.com/app-integrations/docs/authentication",
+      "pattern": "^https://api\\.gusto(-demo)?\\.com$",
+      "patternMessage": "Use https://api.gusto-demo.com or https://api.gusto.com, without a path or trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Gusto refused the access token. Check that GUSTO_API_URL is the environment of your application (demo or production), then click Authorize with Provider again.",
+    "403": "The application lacks the scope for this call, or the company UUID is not the company this authorization belongs to. gusto_get_token_info shows both.",
+    "406": "Gusto refused the API version 2026-06-15: it is older than your application's minimum API version. Check the minimum in the Developer Portal.",
+    "rate_limited": "Gusto allows 200 requests per minute per authorization. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "gusto_get_token_info"
+  },
+  "prerequisites": "A free Gusto Developer Portal account with an application whose redirect URI is the one below, and a Gusto admin login for the company (a demo company from the portal for testing). Production companies need an application approved by Gusto. About 15 minutes.",
+  "connector": {
+    "name": "Gusto API (app integrations)",
+    "type": "REST",
+    "baseUrl": "{{GUSTO_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GUSTO_CLIENT_ID}}",
+      "clientSecret": "{{GUSTO_CLIENT_SECRET}}",
+      "authorizationUrl": "{{GUSTO_API_URL}}/oauth/authorize",
+      "tokenUrl": "{{GUSTO_API_URL}}/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "X-Gusto-API-Version": "2026-06-15",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/token_info"
+  },
+  "tools": [
+    {
+      "name": "gusto_get_token_info",
+      "description": "Read what this authorization reaches: resource.type and resource.uuid (the company UUID every company tool needs as company_uuid), resource_owner (the admin who signed in) and scope (the API scopes Gusto granted the application). Call it first.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/token_info"
+      }
+    },
+    {
+      "name": "gusto_get_company",
+      "description": "Read the company: name, trade_name, ein, entity_type, company_status, tier, is_suspended, pay_schedule_type, join_date, funding_type, locations and its compensation types. primary_payroll_admin needs the company_admin:read scope, primary_signatory signatories:read (scope companies:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_locations",
+      "description": "List the company's addresses: street, city, state, zip, phone_number and whether each is a mailing address, filing address or active work location (scope companies:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Without page and per Gusto returns every location."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page (Gusto's default is 25)."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/locations",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_list_company_admins",
+      "description": "List the company's Gusto admins with uuid, first_name, last_name and email (scope company_admin:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Without page and per Gusto returns every admin."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page (Gusto's default is 25)."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/admins",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_list_employees",
+      "description": "List the company's employees (onboarding, active and terminated) with uuid, name, email, department, onboarding status, terminated, terminations and jobs[] (title, location, hire_date; rate, payment_unit and compensations only with the compensations:read scope). 100 per page by default; the x-total-count header has the total (scope employees:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Text to look for in the employees' names."
+          },
+          "terminated": {
+            "type": "boolean",
+            "description": "true for employees who left or are scheduled to leave, false for the others."
+          },
+          "terminated_today": {
+            "type": "boolean",
+            "description": "true for employees whose termination is in effect today."
+          },
+          "onboarded": {
+            "type": "boolean",
+            "description": "true for employees who finished onboarding, false for those still onboarding."
+          },
+          "onboarded_active": {
+            "type": "boolean",
+            "description": "true for employees who are onboarded and active today (ready to work)."
+          },
+          "location_uuid": {
+            "type": "string",
+            "description": "Only employees whose primary work location is this location (uuid from gusto_list_locations)."
+          },
+          "payroll_uuid": {
+            "type": "string",
+            "description": "Only the employees of this payroll."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field, optionally with :asc or :desc, e.g. name:desc. Cannot be combined with search_term."
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma separated: all_compensations (needs compensations:read), all_home_addresses, current_home_address, company_name, custom_fields, portal_invitations."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "default": 1
+          },
+          "per": {
+            "type": "integer",
+            "description": "Employees per page (default 100).",
+            "default": 100
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/employees",
+        "encodePathParams": true,
+        "queryParams": {
+          "search_term": "$search_term",
+          "terminated": "$terminated",
+          "terminated_today": "$terminated_today",
+          "onboarded": "$onboarded",
+          "onboarded_active": "$onboarded_active",
+          "location_uuid": "$location_uuid",
+          "payroll_uuid": "$payroll_uuid",
+          "sort_by": "$sort_by",
+          "include": "$include",
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_get_employee",
+      "description": "Read one employee by UUID: name, email, work_email, phone, date_of_birth, title, department, manager_uuid, hired_at, current_employment_status, flsa_status, onboarding status, terminations, eligible paid time off and jobs[] with their job uuids (pay data only with compensations:read) (scope employees:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_uuid": {
+            "type": "string",
+            "description": "The employee's uuid from gusto_list_employees."
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma separated: all_compensations, all_home_addresses, current_home_address, company_name, custom_fields, portal_invitations."
+          }
+        },
+        "required": [
+          "employee_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/employees/{employee_uuid}",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "gusto_get_employment_history",
+      "description": "Read an employee's employment history: every hire, termination and rehire with its dates and employment status (scope employments:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_uuid": {
+            "type": "string",
+            "description": "The employee's uuid from gusto_list_employees."
+          }
+        },
+        "required": [
+          "employee_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/employees/{employee_uuid}/employment_history",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_job_compensations",
+      "description": "List the compensations of one job: rate, payment_unit (Hour, Week, Month, Year, Paycheck), flsa_status and effective_date. By default only the current one; include=all_compensations returns the full pay history (scope compensations:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_uuid": {
+            "type": "string",
+            "description": "The job's uuid, from jobs[] of gusto_get_employee or gusto_list_employees."
+          },
+          "include": {
+            "type": "string",
+            "description": "all_compensations for every effective-dated compensation instead of only the current one.",
+            "enum": [
+              "all_compensations"
+            ]
+          }
+        },
+        "required": [
+          "job_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/jobs/{job_uuid}/compensations",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "gusto_list_contractors",
+      "description": "List the company's contractors, individual and business, active and inactive: uuid, type, name or business_name, email, wage_type (Fixed or Hourly), hourly_rate, start_date, onboarding status and department. 100 per page by default (scope contractors:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Text to look for in the contractors' names."
+          },
+          "terminated": {
+            "type": "boolean",
+            "description": "true for dismissed contractors (or scheduled to be), false for the others."
+          },
+          "onboarded": {
+            "type": "boolean",
+            "description": "true for contractors who finished onboarding."
+          },
+          "onboarded_active": {
+            "type": "boolean",
+            "description": "true for contractors who are onboarded and active today."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort by created_at, type, onboarding_status or name, optionally with :asc or :desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "default": 1
+          },
+          "per": {
+            "type": "integer",
+            "description": "Contractors per page (default 100).",
+            "default": 100
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/contractors",
+        "encodePathParams": true,
+        "queryParams": {
+          "search_term": "$search_term",
+          "terminated": "$terminated",
+          "onboarded": "$onboarded",
+          "onboarded_active": "$onboarded_active",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_get_contractor",
+      "description": "Read one contractor by UUID: type, names or business name, email, wage_type, hourly_rate, start_date, is_active, address and department (scope contractors:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_uuid": {
+            "type": "string",
+            "description": "The contractor's uuid from gusto_list_contractors."
+          }
+        },
+        "required": [
+          "contractor_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contractors/{contractor_uuid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_departments",
+      "description": "List the company's departments with uuid, title, version and the employees and contractors assigned to each (scope departments:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/departments",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_get_department",
+      "description": "Read one department by UUID: title, its current version (needed by gusto_update_department) and its employees and contractors (scope departments:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_uuid": {
+            "type": "string",
+            "description": "The department's uuid from gusto_list_departments."
+          }
+        },
+        "required": [
+          "department_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/departments/{department_uuid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_create_department",
+      "description": "Create a department in the company. Every admin sees it in Gusto: confirm the title with the user first. Returns the new department with its uuid and version (scope departments:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "title": {
+            "type": "string",
+            "description": "Name of the department, e.g. \"Customer Success\"."
+          }
+        },
+        "required": [
+          "company_uuid",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/companies/{company_uuid}/departments",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "gusto_update_department",
+      "description": "Rename a department. Needs the department's current version from gusto_get_department; Gusto answers 409 when someone changed it in the meantime. Confirm with the user first. Installed switched off (scope departments:write).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_uuid": {
+            "type": "string",
+            "description": "The department's uuid from gusto_list_departments."
+          },
+          "title": {
+            "type": "string",
+            "description": "The new name of the department."
+          },
+          "version": {
+            "type": "string",
+            "description": "The department's current version, from gusto_get_department."
+          }
+        },
+        "required": [
+          "department_uuid",
+          "title",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/departments/{department_uuid}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "version": "$version"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "gusto_list_pay_schedules",
+      "description": "List the company's pay schedules: uuid, frequency (Every week, Every other week, Twice per month, Monthly...), anchor_pay_date, anchor_end_of_pay_period, day_1, day_2, name, custom_name, auto_payroll and active (scope pay_schedules:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Without page and per Gusto returns every pay schedule."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Records per page (Gusto's default is 25)."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/pay_schedules",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_list_pay_periods",
+      "description": "List pay periods with start_date, end_date, pay_schedule_uuid and the payroll of each (check date, processed or not). Defaults to the last six months; end_date can be at most three months ahead (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. Default: six months ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, at most three months in the future. Default: today."
+          },
+          "payroll_types": {
+            "type": "string",
+            "description": "regular (default), transition, or regular,transition.",
+            "enum": [
+              "regular",
+              "transition",
+              "regular,transition"
+            ]
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/pay_periods",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "payroll_types": "$payroll_types"
+        }
+      }
+    },
+    {
+      "name": "gusto_list_payrolls",
+      "description": "List the company's payrolls: payroll_uuid, pay_period, check_date, processed, off_cycle, off_cycle_reason, external and, with include=totals, gross_pay, net_pay, employer_taxes, employee_taxes and company_debit. By default processed regular payrolls of the last six months. Read-only (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "processing_statuses": {
+            "type": "string",
+            "description": "processed (default), unprocessed, or processed,unprocessed."
+          },
+          "payroll_types": {
+            "type": "string",
+            "description": "regular (default), off_cycle, external, comma separated for several, e.g. regular,off_cycle."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Payrolls whose pay period is after this date, YYYY-MM-DD. At most one year before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Payrolls whose pay period is before this date, YYYY-MM-DD, at most three months ahead. Default: today."
+          },
+          "date_filter_by": {
+            "type": "string",
+            "description": "check_date to filter processed regular payrolls by check date instead of pay period.",
+            "enum": [
+              "check_date"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma separated: totals, taxes, payroll_status_meta, risk_blockers, reversals."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "asc (default) or desc, by date.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Without page and per Gusto returns every payroll in the range."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Payrolls per page."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/payrolls",
+        "encodePathParams": true,
+        "queryParams": {
+          "processing_statuses": "$processing_statuses",
+          "payroll_types": "$payroll_types",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_filter_by": "$date_filter_by",
+          "include": "$include",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_get_payroll",
+      "description": "Read one payroll: pay period, check_date, processed, totals and, once calculated or processed, employee_compensations[] per employee (gross_pay, net_pay, check_amount, fixed and hourly compensations, paid time off, reimbursements; taxes, deductions and benefits with include). Up to 100 employee_compensations per page. Read-only (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "payroll_uuid": {
+            "type": "string",
+            "description": "The payroll_uuid from gusto_list_payrolls."
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma separated: benefits, deductions, taxes, payroll_taxes, totals, payroll_status_meta, risk_blockers, reversals."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Order of employee_compensations: first_name or last_name, optionally with :asc or :desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of employee_compensations, from 1."
+          },
+          "per": {
+            "type": "integer",
+            "description": "employee_compensations per page, up to 100."
+          }
+        },
+        "required": [
+          "company_uuid",
+          "payroll_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/payrolls/{payroll_uuid}",
+        "encodePathParams": true,
+        "queryParams": {
+          "include": "$include",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per": "$per"
+        }
+      }
+    },
+    {
+      "name": "gusto_list_contractor_payments",
+      "description": "List contractor payments between two dates, newest first, with totals: per payment the contractor_uuid, date, wage, hours, bonus, reimbursement, wage_total, payment_method and status. Read-only (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "contractor_uuid": {
+            "type": "string",
+            "description": "Only the payments of this contractor."
+          },
+          "group_by_date": {
+            "type": "boolean",
+            "description": "true to group the payments by check date."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "per": {
+            "type": "integer",
+            "description": "Payments per page."
+          }
+        },
+        "required": [
+          "company_uuid",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/contractor_payments",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "contractor_uuid": "$contractor_uuid",
+          "group_by_date": "$group_by_date",
+          "page": "$page",
+          "per": "$per"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages"
+        ]
+      }
+    },
+    {
+      "name": "gusto_get_contractor_payment",
+      "description": "Read one contractor payment by UUID: contractor_uuid, date, wage, hours, hourly_rate, bonus, reimbursement, wage_total, payment_method, status and may_cancel (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "contractor_payment_uuid": {
+            "type": "string",
+            "description": "The payment's uuid from gusto_list_contractor_payments."
+          }
+        },
+        "required": [
+          "company_uuid",
+          "contractor_payment_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/contractor_payments/{contractor_payment_uuid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_time_off_policies",
+      "description": "List the company's time off policies (vacation, sick and custom): uuid, name, policy_type, accrual_method, accrual rate and limits, carryover, is_active and the employees on each (scope time_off_policies:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/time_off_policies",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_get_time_off_policy",
+      "description": "Read one time off policy by UUID, with its accrual rules and employees[] carrying each employee's current balance (scope time_off_policies:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_off_policy_uuid": {
+            "type": "string",
+            "description": "The policy's uuid from gusto_list_time_off_policies."
+          }
+        },
+        "required": [
+          "time_off_policy_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/time_off_policies/{time_off_policy_uuid}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_time_off_requests",
+      "description": "List time off requests of the company, past and future: employee, request_type, policy_type and policy_uuid, status (pending, approved, declined), days (the hours taken per date), employee_note, employer_note and approver. Narrow it with start_date and/or end_date (scope time_off_requests:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Requests starting on or after this date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Requests ending on or before this date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/time_off_requests",
+        "encodePathParams": true,
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "gusto_list_earning_types",
+      "description": "List the company's earning types, split into default (regular wages, overtime, bonus, commission and others with their own tax treatment) and custom, each with uuid, name, category, active and included_in_overtime_pay (scope payrolls:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/earning_types",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gusto_list_company_benefits",
+      "description": "List the benefits the company offers: uuid, benefit_type, description, active, deductible and, with enrollment_count=true, how many employees are enrolled. Health benefits with PHI need the company_benefits:read:phi scope (scope company_benefits:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "The company UUID, resource.uuid from gusto_get_token_info."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active benefits only, false for inactive ones."
+          },
+          "enrollment_count": {
+            "type": "boolean",
+            "description": "true to add the number of enrolled employees to each benefit."
+          },
+          "benefit_type": {
+            "type": "string",
+            "description": "Only these benefit type ids, comma separated, e.g. 5,105."
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies/{company_uuid}/company_benefits",
+        "encodePathParams": true,
+        "queryParams": {
+          "active": "$active",
+          "enrollment_count": "$enrollment_count",
+          "benefit_type": "$benefit_type"
+        }
+      }
+    }
+  ]
+}
