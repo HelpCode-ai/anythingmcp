@@ -39,7 +39,7 @@ What leaves the process is an allowlist (`packages/backend/src/common/sentry-scr
 |---|---|---|
 | `SENTRY_DSN` | unset | enables reporting for the process that reads it |
 | `SENTRY_ENVIRONMENT` | `NODE_ENV` | environment tag |
-| `SENTRY_RELEASE` | image build | release tag; the published image sets it to the commit |
+| `SENTRY_RELEASE` | image build | release tag; the published image sets it to the commit. Unset, the backend reports `APP_VERSION` |
 | `SENTRY_TRACES_SAMPLE_RATE` | 0 | backend (or Next.js server) transactions |
 | `SENTRY_PROFILES_SAMPLE_RATE` | 0 | backend CPU profiling |
 | `SENTRY_BROWSER_TRACES_SAMPLE_RATE` | 0 | browser transactions (frontend container) |
@@ -64,8 +64,10 @@ Service identity:
 | Env | Default |
 |---|---|
 | `OTEL_SERVICE_NAME` | `anythingmcp-backend` |
-| `OTEL_SERVICE_VERSION` | `npm_package_version` |
+| `OTEL_SERVICE_VERSION` | `APP_VERSION` |
 | `OTEL_DEPLOYMENT_ENVIRONMENT` | `NODE_ENV` |
+
+`service.version` is `OTEL_SERVICE_VERSION` when that is set, and otherwise `APP_VERSION` (the version in the backend `package.json`). Inside the image `npm_package_version` is unset, because the backend starts with `node dist/src/main.js`.
 
 Auth: standard `OTEL_EXPORTER_OTLP_HEADERS` (e.g. `authorization=Bearer …`).
 

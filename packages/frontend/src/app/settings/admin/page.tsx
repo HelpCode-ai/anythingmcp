@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { adminSettings, type AlertWebhookInput } from '@/lib/api';
+import { adminSettings, versionApi, type AlertWebhookInput, type InstanceVersion } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AppSelect } from '@/components/ui/select';
 import { copyText } from '@/lib/clipboard';
+import { commitUrl, shortCommit, versionInfoText } from '@/lib/instance-version';
 
 const ALERT_WEBHOOK_TYPE_OPTIONS = [
   { value: 'json', label: 'Generic JSON webhook' },
@@ -50,6 +51,10 @@ export default function SettingsAdminPage() {
   // The URL the backend has, so a test is never sent to an unsaved edit.
   const [savedAlertUrl, setSavedAlertUrl] = useState('');
 
+  const [versionInfo, setVersionInfo] = useState<InstanceVersion | null>(null);
+  const [versionUnavailable, setVersionUnavailable] = useState(false);
+  const [versionCopied, setVersionCopied] = useState(false);
+
   useEffect(() => {
     if (!token) return;
 
@@ -63,6 +68,14 @@ export default function SettingsAdminPage() {
     }).catch(() => {});
 
     adminSettings.getFooterLinks(token).then(setFooterLinks).catch(() => {});
+
+    versionApi.get(token).then((info) => {
+      setVersionInfo(info);
+      setVersionUnavailable(false);
+    }).catch(() => {
+      setVersionInfo(null);
+      setVersionUnavailable(true);
+    });
 
     adminSettings.getAlertWebhook(token).then((data) => {
       if (!('url' in data)) return;
@@ -203,6 +216,15 @@ export default function SettingsAdminPage() {
     }
   };
 
+  const handleCopyVersion = async () => {
+    if (!versionInfo) return;
+    const ok = await copyText(versionInfoText(versionInfo));
+    if (ok) {
+      setVersionCopied(true);
+      setTimeout(() => setVersionCopied(false), 2000);
+    }
+  };
+
   const handleSaveFooterLinks = async () => {
     if (!token) return;
     try {
@@ -230,8 +252,48 @@ export default function SettingsAdminPage() {
     'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]';
   const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)] mb-1';
 
+  const shaUrl = versionInfo ? commitUrl(versionInfo.commit) : null;
+
   return (
     <div className="space-y-6">
+      <Card className="p-[22px]">
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">About this instance</h3>
+        <p className="text-sm text-[var(--text-2)] mb-4">
+          Version and commit to quote in a bug report. The same values appear in the footer and in the backend startup log.
+        </p>
+        {versionUnavailable && (
+          <p className="text-sm text-[var(--text-2)]">Version info unavailable</p>
+        )}
+        {!versionInfo && !versionUnavailable && (
+          <p className="text-sm text-[var(--text-3)]">Loading…</p>
+        )}
+        {versionInfo && (
+          <div className="space-y-3 max-w-lg">
+            <dl className="grid grid-cols-[6.5rem_1fr] gap-y-1.5 text-sm">
+              <dt className="text-[var(--text-3)]">Version</dt>
+              <dd className="text-[var(--text)]">v{versionInfo.version}</dd>
+              <dt className="text-[var(--text-3)]">Commit</dt>
+              <dd className="text-[var(--text)] font-mono">
+                {shaUrl ? (
+                  <a href={shaUrl} target="_blank" rel="noopener noreferrer" className="hover:underline" title={versionInfo.commit}>
+                    {shortCommit(versionInfo.commit)}
+                  </a>
+                ) : (
+                  shortCommit(versionInfo.commit)
+                )}
+              </dd>
+              <dt className="text-[var(--text-3)]">Built</dt>
+              <dd className="text-[var(--text)]">{versionInfo.buildDate || 'unknown'}</dd>
+              <dt className="text-[var(--text-3)]">Mode</dt>
+              <dd className="text-[var(--text)]">{versionInfo.deploymentMode}</dd>
+            </dl>
+            <Button variant="secondary" onClick={handleCopyVersion}>
+              {versionCopied ? 'Copied' : 'Copy version info'}
+            </Button>
+          </div>
+        )}
+      </Card>
+
       {/* SMTP Configuration */}
       <Card className="p-[22px]">
         <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Email / SMTP Configuration</h3>

@@ -178,6 +178,21 @@ curl http://localhost:4000/health
 
 The container runs `prisma migrate deploy` on startup, then launches both backend and frontend.
 
+### Build provenance
+
+The running process reads its version from `packages/backend/package.json`. The git commit and the build date come from image build arguments. A local `docker compose build` passes neither, so the footer and the startup log show commit `dev` and `built unknown`.
+
+Self-hosted and Cloud both show the same values. Cloud runs the published image, so the commit is the one that image was built from. Either way, signed-in users see them in the footer and admins can copy them from Settings → Administration. `GET /api/version` requires a JWT. The public `/health/server-info` route does not include the version.
+
+```bash
+docker build \
+  --build-arg APP_COMMIT=$(git rev-parse HEAD) \
+  --build-arg APP_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  .
+```
+
+`APP_COMMIT` has to be the full 40-character SHA. The footer links that SHA to the commit and shows the first seven characters; `dev` stays plain text. `APP_VERSION` is optional and only fills the `org.opencontainers.image.version` label. The publish workflow sets `APP_COMMIT` and `APP_BUILD_DATE`.
+
 ### Without Docker
 
 ```bash

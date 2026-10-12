@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/theme-context';
-import { siteSettings } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { siteSettings, versionApi, type InstanceVersion } from '@/lib/api';
+import { commitUrl, shortCommit } from '@/lib/instance-version';
 
 function SunIcon({ size = 16 }: { size?: number }) {
   return (
@@ -37,19 +39,49 @@ interface FooterLink {
   url: string;
 }
 
+// One request per session. A failed call is not cached, so the next mount
+// retries (a token that expires at that moment should not hide the version).
+let versionPromise: Promise<InstanceVersion> | null = null;
+
+function getVersionOnce(token: string): Promise<InstanceVersion> {
+  if (!versionPromise) {
+    versionPromise = versionApi.get(token).catch((err) => {
+      versionPromise = null;
+      throw err;
+    });
+  }
+  return versionPromise;
+}
+
 export function Footer() {
   const { theme, setTheme } = useTheme();
+  const { token } = useAuth();
   const [links, setLinks] = useState<FooterLink[]>([]);
+  const [version, setVersion] = useState<InstanceVersion | null>(null);
 
   useEffect(() => {
     siteSettings.footerLinks().then(setLinks).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    getVersionOnce(token)
+      .then((info) => {
+        if (!cancelled) setVersion(info);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: SunIcon },
     { value: 'dark' as const, label: 'Dark', icon: MoonIcon },
     { value: 'system' as const, label: 'System', icon: MonitorIcon },
   ];
+  const shaUrl = version ? commitUrl(version.commit) : null;
 
   return (
     <footer className="border-t border-[var(--border)] bg-[var(--surface)]">
@@ -74,6 +106,26 @@ export function Footer() {
                     {link.label}
                   </a>
                 ))}
+              </>
+            )}
+            {version && (
+              <>
+                <span>·</span>
+                <span>v{version.version}</span>
+                <span>·</span>
+                {shaUrl ? (
+                  <a
+                    href={shaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono hover:text-[var(--text)] hover:underline"
+                    title={version.commit}
+                  >
+                    {shortCommit(version.commit)}
+                  </a>
+                ) : (
+                  <span className="font-mono">{shortCommit(version.commit)}</span>
+                )}
               </>
             )}
           </div>

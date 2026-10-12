@@ -28,6 +28,13 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
+import {
+  APP_BUILD_DATE,
+  APP_COMMIT,
+  APP_VERSION,
+  formatVersionLogLine,
+} from './common/app-version';
+import { DeploymentService } from './common/deployment.service';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
 
 async function bootstrap() {
@@ -206,6 +213,14 @@ async function bootstrap() {
     });
   }
 
+  logger.log(
+    formatVersionLogLine({
+      version: APP_VERSION,
+      commit: APP_COMMIT,
+      buildDate: APP_BUILD_DATE,
+      deploymentMode: app.get(DeploymentService).mode,
+    }),
+  );
   logger.log(`AnythingMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);

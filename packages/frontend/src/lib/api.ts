@@ -1,4 +1,7 @@
 import type { ClickIds, SignupAttribution } from './attribution';
+import type { InstanceVersion } from './instance-version';
+
+export type { InstanceVersion };
 
 // Use relative paths so requests go to the same origin.
 // In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
@@ -977,6 +980,13 @@ export interface KgSkill {
   evidenceCount: number;
   status: string;
 }
+
+// Build identity. Signed-in only: `/api/version` answers 401 without a JWT.
+// A 401 here must not log the user out; the footer treats it as "try again".
+export const versionApi = {
+  get: (token: string) =>
+    request<InstanceVersion>('/api/version', { token, skipAutoLogout: true }),
+};
 
 // Server settings (public)
 export const server = {

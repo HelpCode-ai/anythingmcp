@@ -27,6 +27,11 @@ export class HealthController {
     private readonly deployment: DeploymentService,
   ) {}
 
+  /**
+   * Public. Version and commit are intentionally absent: a scanner should
+   * not learn the build from an unauthenticated probe. Signed-in clients
+   * use `GET /api/version`.
+   */
   @Get('server-info')
   async getServerInfo() {
     const authMode = this.configService.get<string>('MCP_AUTH_MODE') || 'none';

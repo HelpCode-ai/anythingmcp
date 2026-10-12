@@ -69,6 +69,8 @@ jobs:
           push: true
           build-args: |
             SENTRY_RELEASE=${{ github.sha }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           # Only the source map upload uses it; nothing Sentry-related that
           # decides where an instance reports is baked into the public image.
           secrets: |

@@ -43,7 +43,7 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
       // showing the entry there would lead an admin to a page that 404s.
       { href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', icon: FingerprintIcon, adminOnly: true, selfHostedOnly: true },
       { href: '/settings/license', label: 'License', description: 'Plan, billing, subscription', icon: KeyIcon, adminOnly: true },
-      { href: '/settings/admin', label: 'Administration', description: 'SMTP, alerts, footer links', icon: WrenchIcon, adminOnly: true },
+      { href: '/settings/admin', label: 'Administration', description: 'Version, SMTP, alerts, links', icon: WrenchIcon, adminOnly: true },
     ],
   },
 ];

@@ -16,6 +16,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
+import { APP_VERSION } from './common/app-version';
 // Use string keys directly so we don't need the /incubating subpath, which
 // requires nodenext module resolution. These constants are stable in the
 // OTel semantic conventions and aren't going to be renamed.
@@ -30,10 +31,7 @@ export function startTracing(): void {
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'anythingmcp-backend',
-      [ATTR_SERVICE_VERSION]:
-        process.env.OTEL_SERVICE_VERSION ||
-        process.env.npm_package_version ||
-        '0.0.0',
+      [ATTR_SERVICE_VERSION]: process.env.OTEL_SERVICE_VERSION || APP_VERSION,
       [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]:
         process.env.OTEL_DEPLOYMENT_ENVIRONMENT ||
         process.env.NODE_ENV ||
