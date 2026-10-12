@@ -104,6 +104,33 @@ export class SiteSettingsPublicController {
   }
 }
 
+// ── Member endpoints ────────────────────────────────────────────────────────
+
+/**
+ * The footer of a signed-in member shows their workspace's links. Admins save
+ * them per workspace (PUT /api/admin/settings/footer-links), but the footer
+ * used to read only the instance-wide list from the public route above, so on
+ * Cloud a workspace's own links never appeared. Any member may read them: they
+ * are shown to everyone in the workspace anyway.
+ */
+@ApiTags('Site Settings')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'))
+@Controller('api/settings')
+export class SiteSettingsMemberController {
+  constructor(private readonly orgSettings: OrgSettingsService) {}
+
+  @Get('footer-links')
+  @ApiOperation({
+    summary: "Footer links of the caller's workspace, falling back to the instance-wide links",
+  })
+  async getFooterLinks(@Req() req: any) {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return [];
+    return (await this.orgSettings.getFooterLinks(orgId)) || [];
+  }
+}
+
 // ── Admin endpoints ─────────────────────────────────────────────────────────
 
 @ApiTags('Site Settings')

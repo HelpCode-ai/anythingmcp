@@ -1014,7 +1014,13 @@ export const publicStats = {
 export const siteSettings = {
   footerLinks: () =>
     request<Array<{ label: string; url: string }>>('/api/site-settings/footer-links'),
+  /** The signed-in member's workspace links (instance-wide ones as fallback). */
+  workspaceFooterLinks: (token: string) =>
+    request<Array<{ label: string; url: string }>>('/api/settings/footer-links', { token }),
 };
+
+/** Fired after an admin saves the footer links, so the footer reloads them. */
+export const FOOTER_LINKS_CHANGED = 'amcp:footer-links-changed';
 
 // Admin Settings
 export const adminSettings = {
