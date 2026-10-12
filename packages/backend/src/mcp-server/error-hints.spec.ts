@@ -287,7 +287,7 @@ describe('deriveErrorHint: generative AI APIs', () => {
         status: 400,
         body: { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT', details: [{ reason: 'API_KEY_INVALID' }] } },
       }),
-    ).toMatch(/aistudio\.google\.com\/apikey/);
+    ).toContain('aistudio.google.com/apikey');
     expect(
       deriveErrorHint({ host: gemini, status: 429, body: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota' } } }),
     ).toMatch(/free tier.*image models have no free tier/);
@@ -317,7 +317,7 @@ describe('deriveErrorHint: generative AI APIs', () => {
   it('explains the OpenAI failures a retry cannot fix', () => {
     expect(
       deriveErrorHint({ host: openai, status: 401, body: { error: { message: 'Incorrect API key provided: sk-abc***', code: 'invalid_api_key' } } }),
-    ).toMatch(/platform\.openai\.com\/api-keys/);
+    ).toContain('platform.openai.com/api-keys');
     expect(
       deriveErrorHint({ host: openai, status: 429, body: { error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } } }),
     ).toMatch(/add credit/);

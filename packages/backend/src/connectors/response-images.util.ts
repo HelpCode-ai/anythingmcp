@@ -279,6 +279,7 @@ function replaceAt(node: unknown, tokens: Token[], i: number, fn: (leaf: unknown
   if (isPlainObject(node)) {
     let copy: Record<string, unknown> | null = null;
     for (const [k, child] of Object.entries(node)) {
+      if (UNSAFE_KEYS.has(k)) continue;
       const next = replaceAt(child, tokens, i + 1, fn);
       if (next !== child) {
         copy ??= { ...node };
