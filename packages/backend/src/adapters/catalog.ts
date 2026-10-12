@@ -111,6 +111,7 @@ import * as clickup from './intl/clickup.json';
 import * as clockify from './intl/clockify.json';
 import * as close from './intl/close.json';
 import * as cloudflare from './intl/cloudflare.json';
+import * as cloudinary from './intl/cloudinary.json';
 import * as coda from './intl/coda.json';
 import * as coingecko from './intl/coingecko.json';
 import * as contentful from './intl/contentful.json';
@@ -136,6 +137,7 @@ import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
 import * as exerciseCom from './intl/exercise-com.json';
+import * as facebookPages from './intl/facebook-pages.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
@@ -154,6 +156,7 @@ import * as front from './intl/front.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
 import * as gelato from './intl/gelato.json';
+import * as gemini from './intl/gemini.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
@@ -225,6 +228,7 @@ import * as microsoftOutlook from './intl/microsoft-outlook.json';
 import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
+import * as mirakl from './intl/mirakl.json';
 import * as miro from './intl/miro.json';
 import * as mixpanel from './intl/mixpanel.json';
 import * as mollie from './intl/mollie.json';
@@ -246,6 +250,7 @@ import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
 import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as omnisend from './intl/omnisend.json';
+import * as openai from './intl/openai.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
 import * as oracle from './intl/oracle.json';
@@ -312,6 +317,7 @@ import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
 import * as tally from './intl/tally.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
+import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
@@ -321,6 +327,7 @@ import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
 import * as tradingview from './intl/tradingview.json';
 import * as trello from './intl/trello.json';
+import * as trendyol from './intl/trendyol.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as twelveData from './intl/twelve-data.json';
 import * as twilio from './intl/twilio.json';
@@ -396,6 +403,11 @@ export type VerifyHint = string | { hint: string; suggest?: string };
 export interface AdapterMeta {
   slug: string;
   name: string;
+  /** Other names people search the app by: a former name ("lexoffice"), a
+   *  translation ("Mercado Livre"), a short form ("D365"), or the vendor's
+   *  umbrella brand ("Facebook" for Meta Ads). Matched by the catalog search
+   *  (catalog-search.ts) like the name, and never shown. */
+  aliases?: string[];
   description: string;
   instructions?: string;
   region: string;
@@ -695,6 +707,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   clockify as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   cloudflare as unknown as AdapterDefinition,
+  cloudinary as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
@@ -720,6 +733,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
+  facebookPages as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
@@ -738,6 +752,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
   gelato as unknown as AdapterDefinition,
+  gemini as unknown as AdapterDefinition,
   georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
@@ -809,6 +824,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
+  mirakl as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
   mixpanel as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
@@ -830,6 +846,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   odoo as unknown as AdapterDefinition,
   odooJsonrpc as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
+  openai as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
   oracle as unknown as AdapterDefinition,
@@ -896,6 +913,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   synology as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
+  ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
@@ -905,6 +923,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   togglTrack as unknown as AdapterDefinition,
   tradingview as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
+  trendyol as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
   twilio as unknown as AdapterDefinition,
@@ -981,6 +1000,7 @@ export function listAdapters(): AdapterMeta[] {
   return ALL_ADAPTERS.map((adapter) => ({
     slug: adapter.slug,
     name: adapter.name,
+    aliases: adapter.aliases,
     description: adapter.description,
     instructions: adapter.instructions,
     region: adapter.region,

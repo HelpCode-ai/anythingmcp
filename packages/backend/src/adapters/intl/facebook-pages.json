@@ -1,0 +1,466 @@
+{
+  "slug": "facebook-pages",
+  "name": "Facebook Pages",
+  "description": "Let your AI run a Facebook Page: read posts, comments and Page and post insights, publish, schedule and edit posts and photo posts, reply to, hide or delete comments, and read and answer Messenger conversations. Everything that publishes or sends asks for your confirmation first.",
+  "instructions": "## Facebook Pages\nThis connector works with one Facebook Page through the **Pages API** of Meta's Graph API (`https://graph.facebook.com/v26.0`), acting as the Page: Page details, posts (published, scheduled and unpublished), comments, Page and post insights, photo posts and Messenger conversations. Ads are not part of it.\n\n**Token.** Meta lets only a **Page access token** act as the Page: a user token can read some data but cannot post, comment or message as the Page. The connector therefore takes a ready Page token in `FACEBOOK_PAGE_ACCESS_TOKEN` plus the Page id in `FACEBOOK_PAGE_ID`. Facebook Login issues no refresh tokens, and a Page token taken straight from the Graph API Explorer expires within hours, so use one that never expires:\n1. Create an app at https://developers.facebook.com/apps/creation/ with the use case **Manage everything on your Page** and add the permissions `pages_show_list`, `pages_read_engagement`, `pages_read_user_content`, `pages_manage_posts`, `pages_manage_engagement` and `read_insights`. For Messenger also add the use case **Engage with customers on Messenger from Meta**, which brings `pages_manage_metadata` and `pages_messaging`. While you manage the Page yourself and have a role on the app, no App Review is needed.\n2. In the Graph API Explorer (https://developers.facebook.com/tools/explorer/) pick the app, click **Generate Access Token** for your user with those permissions and select the Page when Facebook asks.\n3. Paste that user token into the Access Token Debugger (https://developers.facebook.com/tools/debug/accesstoken/) and click **Extend Access Token**: you get a long-lived user token (about 60 days).\n4. Back in the Explorer, with the long-lived user token, run `GET me/accounts?fields=id,name,access_token`. The `access_token` next to your Page is a long-lived Page token with no expiry date, and `id` is the Page id. The Debugger shows it as type Page, expires Never.\n\nAlternative for a business portfolio: Business settings, Users, System users, add a system user, assign the Page to it, Generate token (expiry Never, same permissions), then run `GET {page-id}?fields=access_token` with that token in the Explorer and paste the returned Page token. A Page token stops working when the person who created it loses their role on the Page, changes their password or removes the app; generate a new one then.\n\n**Start with** `facebook_pages_get_page` to check the setup. Tools that act on the Page take its id from the connector, so you never pass it.\n\n**Ids.** Post ids look like `{page-id}_{post-id}` and come from `facebook_pages_list_posts`, `facebook_pages_list_feed` or `facebook_pages_list_scheduled_posts`; a photo post returns both a photo `id` and its `post_id`, use the `post_id`. Comment ids come from `facebook_pages_list_comments`; conversation ids start with `t_` and come from `facebook_pages_list_conversations`. Pass ids unchanged.\n\n**Fields and paging.** The Graph API returns only the fields you ask for. Read tools have a `fields` parameter with a useful default; nested fields go in braces, counts as `comments.limit(0).summary(true)`. List answers carry `paging.cursors.after`; call again with `after` set to it until `paging.next` is missing. `limit` is at most 100 for posts.\n\n**Posts.** `facebook_pages_list_posts` reads the Page's own posts; `facebook_pages_list_feed` reads everything on the Page, including posts by visitors and unpublished posts (`is_published` false); `facebook_pages_list_scheduled_posts` reads posts waiting to go live. `facebook_pages_create_post` publishes text or a link at once, `facebook_pages_schedule_post` sets a time between 10 minutes and 30 days ahead (Meta's reference allows up to 75 days), `facebook_pages_create_photo_post` posts an image from a public URL (JPEG, PNG, GIF, BMP or TIFF, at most 10 MB). `facebook_pages_update_post` edits the text of a post or publishes or reschedules a scheduled one; Meta only lets an app edit posts that were created through the same app.\n\n**Comments.** `facebook_pages_list_comments` reads the comments on a post, or the replies to a comment when you pass a comment id. `facebook_pages_comment_on_post` and `facebook_pages_reply_to_comment` answer as the Page, `facebook_pages_hide_comment` hides or shows a comment (a hidden comment stays visible to its author and their friends), `facebook_pages_send_private_reply` sends one Messenger message to the author of a comment (within 7 days of the comment).\n\n**Insights** (needs `read_insights` and at least 100 Page likes; data refreshes about once a day and goes back 2 years; a range covers at most 90 days). Meta removed many metrics in November 2025 and June 2026, and one invalid name fails the whole call, so use these names:\n- Page, `facebook_pages_get_page_insights` with `period` day, week or days_28: `page_media_view` (how often content was displayed; breakdown `is_from_ads` or `is_from_followers`), `page_total_media_view_unique` (unique viewers), `page_post_engagements`, `page_total_actions` (clicks on contact info and the action button), `page_views_total`, `page_video_views`, `page_video_view_time`, `page_daily_follows_unique`, `page_daily_unfollows_unique`; with `period` day only: `page_follows` (followers), `page_actions_post_reactions_total`.\n- Post, `facebook_pages_get_post_insights` (lifetime): `post_media_view` (same breakdowns), `post_total_media_view_unique`, `post_clicks`, `post_clicks_by_type`, `post_reactions_by_type_total`, `post_activity_by_action_type`; for video posts `post_video_views`, `post_video_avg_time_watched`, `post_video_view_time`.\n- Gone, do not use: `page_impressions` and its variants, `page_fans`, `page_fan_adds`, `page_fan_removes`, `page_engaged_users`, `page_consumptions`, every `page_posts_impressions*`, every `post_impressions*`, `page_video_views_unique`, `post_video_views_unique`.\n\n**Messenger** (needs `pages_messaging` and `pages_manage_metadata`). Meta only allows a Page to message a person who wrote first. A reply (`messaging_type` RESPONSE) is allowed within **24 hours** of the person's last message; after that only `messaging_type` MESSAGE_TAG with `tag` HUMAN_AGENT (a person answering by hand, within 7 days, needs the Human Agent permission from App Review). The other message tags were retired in April 2026. Error 1545041 or code 10 on a send means the window is closed. Without App Review, Meta limits an app to people who have a role on it; to message customers, request Advanced Access for `pages_messaging`. Only the 20 most recent messages of a conversation can be read in full.\n\n**Confirmation.** Publishing, scheduling, editing, commenting, replying and messaging are visible to the public or to a customer at once: state exactly what will be posted or sent and wait for the user's yes. Deleting posts and comments installs switched off; turn those tools on in the connector if you need them.\n\n**Errors.** Graph answers with an `error` object: code 190 means the token expired or was revoked (create a new Page token as above); 10, 200 or 283 mean a missing permission, and code 3 or a message such as \"must be posted to a page as the page itself\" means a user token was pasted instead of the Page token; 100 is an invalid parameter or metric name; 2500 is a malformed request; 368 means Meta has temporarily blocked the Page or app from this action as abusive (wait, and post less); 4, 17, 32, 613, 80001 and 80006 are rate limits (wait a few minutes); 551 means the person cannot be reached in Messenger.",
+  "region": "intl",
+  "category": "social",
+  "icon": "facebook",
+  "docsUrl": "https://developers.facebook.com/documentation/pages-api",
+  "appRegistrationUrl": "https://developers.facebook.com/apps/creation/",
+  "requiredEnvVars": ["FACEBOOK_PAGE_ACCESS_TOKEN", "FACEBOOK_PAGE_ID"],
+  "envVarMeta": {
+    "FACEBOOK_PAGE_ACCESS_TOKEN": {
+      "label": "Page access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "A Page access token that does not expire: in the Graph API Explorer generate a user token with the Pages permissions, extend it in the Access Token Debugger, then run me/accounts?fields=id,name,access_token and copy the access_token of your Page. A user or system user token cannot post as the Page.",
+      "link": "https://developers.facebook.com/tools/explorer/",
+      "pattern": "^EA[A-Za-z0-9]+$",
+      "patternMessage": "Meta access tokens start with EA and contain only letters and digits. Paste the token without the word Bearer."
+    },
+    "FACEBOOK_PAGE_ID": {
+      "label": "Page ID",
+      "kind": "setting",
+      "help": "The numeric id of the Page. me/accounts returns it next to the Page token; on Facebook it is under the Page's About, Page transparency.",
+      "example": "104512345678901",
+      "pattern": "^[0-9]{5,20}$",
+      "patternMessage": "The Page id is a number. It is not the Page's name or its username in the address bar."
+    }
+  },
+  "prerequisites": "A Facebook Page on which you can create content, moderate and see insights, and a Meta app with the use case Manage everything on your Page (plus Engage with customers on Messenger from Meta for Messenger). You paste a Page access token that does not expire; the setup explains how to get one in about 10 minutes.",
+  "verifyHints": {
+    "400": "Meta refused the request. Error 190 means the token is invalid or expired: create a new Page token from a long-lived user token (me/accounts). If the message says the object does not exist, check FACEBOOK_PAGE_ID (the numeric Page id) and that the token belongs to that Page.",
+    "401": "Meta refused the token (error 190). Create a new Page token from a long-lived user token and paste it without the word Bearer.",
+    "403": "The token lacks a permission or is not a Page token (error 10, 200 or 283). Generate it again with pages_show_list, pages_read_engagement, pages_manage_posts, pages_manage_engagement and read_insights, and copy the Page's own access_token from me/accounts.",
+    "rate_limited": "Meta is throttling this Page or app (error 4, 17, 32, 613 or 80001). Wait a few minutes and try again."
+  },
+  "probe": { "tool": "facebook_pages_get_page" },
+  "connector": {
+    "name": "Facebook Pages API",
+    "type": "REST",
+    "baseUrl": "https://graph.facebook.com/v26.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FACEBOOK_PAGE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me?fields=id,name"
+  },
+  "tools": [
+    {
+      "name": "facebook_pages_get_page",
+      "description": "Get the configured Facebook Page: name, username, link, category, about text, website, contact details, likes (fan_count) and followers_count, verification and whether it is published. Start here to check that the token and Page id work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated Page fields. Default: id,name,username,link,category,about,description,website,emails,phone,single_line_address,fan_count,followers_count,verification_status,is_published.", "default": "id,name,username,link,category,about,description,website,emails,phone,single_line_address,fan_count,followers_count,verification_status,is_published" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "facebook_pages_list_posts",
+      "description": "List the Page's own posts, newest first, with text, time, permalink, type, picture, shares and the number of comments and reactions. Posts by visitors and unpublished posts are in facebook_pages_list_feed. Page with `after`; filter by time with since/until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated post fields. Default: id,message,created_time,permalink_url,status_type,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true).", "default": "id,message,created_time,permalink_url,status_type,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)" },
+          "limit": { "type": "integer", "description": "Posts per page, 1 to 100 (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." },
+          "since": { "type": "string", "description": "Only posts created at or after this time: a Unix timestamp in seconds or a date such as 2026-09-01." },
+          "until": { "type": "string", "description": "Only posts created before this time: a Unix timestamp in seconds or a date." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}/posts",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after", "since": "$since", "until": "$until" }
+      }
+    },
+    {
+      "name": "facebook_pages_list_feed",
+      "description": "List everything on the Page's feed, newest first: the Page's own posts including unpublished ones (is_published false) and posts by visitors (see `from`). Use it to moderate visitor posts or to find unpublished posts; for the Page's own published posts facebook_pages_list_posts is enough.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated post fields. Default: id,message,created_time,from,permalink_url,status_type,is_published,full_picture,comments.limit(0).summary(true),reactions.limit(0).summary(true).", "default": "id,message,created_time,from,permalink_url,status_type,is_published,full_picture,comments.limit(0).summary(true),reactions.limit(0).summary(true)" },
+          "limit": { "type": "integer", "description": "Posts per page, 1 to 100 (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." },
+          "since": { "type": "string", "description": "Only posts created at or after this time: a Unix timestamp in seconds or a date such as 2026-09-01." },
+          "until": { "type": "string", "description": "Only posts created before this time: a Unix timestamp in seconds or a date." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}/feed",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after", "since": "$since", "until": "$until" }
+      }
+    },
+    {
+      "name": "facebook_pages_list_scheduled_posts",
+      "description": "List the Page's scheduled posts that have not gone live yet, with text, link and scheduled_publish_time (Unix seconds). Use it before scheduling more, or to find a post to reschedule or publish now with facebook_pages_update_post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated post fields. Default: id,message,created_time,scheduled_publish_time,permalink_url,full_picture.", "default": "id,message,created_time,scheduled_publish_time,permalink_url,full_picture" },
+          "limit": { "type": "integer", "description": "Posts per page, 1 to 100 (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}/scheduled_posts",
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "facebook_pages_get_post",
+      "description": "Get one Page post by id: text, time, permalink, type, author, attachments, whether it is published or hidden, its scheduled time, shares and the number of comments and reactions. Use it for the details or current counts of a single post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "string", "description": "Post id ({page-id}_{post-id}) from a list tool." },
+          "fields": { "type": "string", "description": "Comma-separated post fields. Default: id,message,created_time,updated_time,from,permalink_url,status_type,is_published,is_hidden,scheduled_publish_time,full_picture,attachments,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true).", "default": "id,message,created_time,updated_time,from,permalink_url,status_type,is_published,is_hidden,scheduled_publish_time,full_picture,attachments,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)" }
+        },
+        "required": ["post_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{post_id}",
+        "encodePathParams": true,
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "facebook_pages_create_post",
+      "description": "Publish a text or link post on the Page right away, as the Page. Needs message or link (or both); a link gets Facebook's preview. Visible to everyone at once, so show the user the exact text and link and wait for their confirmation. Returns the new post id. To post later use facebook_pages_schedule_post; for an image use facebook_pages_create_photo_post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "Text of the post. Mention another Page with @[page-id]." },
+          "link": { "type": "string", "format": "uri", "description": "URL to share; Facebook builds the preview from the page's Open Graph tags." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{FACEBOOK_PAGE_ID}}/feed",
+        "bodyMapping": { "message": "$message", "link": "$link" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_schedule_post",
+      "description": "Schedule a text or link post to go live on the Page at a set time, between 10 minutes and 30 days ahead. Needs message or link and scheduled_publish_time. Show the user the text, link and time (with time zone) and wait for their confirmation. Returns the post id; facebook_pages_list_scheduled_posts lists it until it goes live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "Text of the post." },
+          "link": { "type": "string", "format": "uri", "description": "URL to share." },
+          "scheduled_publish_time": { "type": "string", "description": "When the post goes live: a Unix timestamp in seconds (e.g. 1767261600) or an ISO 8601 time with offset (e.g. 2026-11-02T09:00:00+01:00)." }
+        },
+        "required": ["scheduled_publish_time"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{FACEBOOK_PAGE_ID}}/feed",
+        "bodyMapping": { "message": "$message", "link": "$link", "published": "false", "scheduled_publish_time": "$scheduled_publish_time" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_create_photo_post",
+      "description": "Post a photo from a public image URL on the Page, with an optional caption; set published false with scheduled_publish_time to schedule it. Facebook downloads the image (JPEG, PNG, GIF, BMP or TIFF, at most 10 MB). Show the user the image link, caption and time and wait for their confirmation. Returns the photo id and the post_id of the new post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri", "description": "Public URL of the image. It must be reachable without a login." },
+          "caption": { "type": "string", "description": "Text shown with the photo." },
+          "alt_text_custom": { "type": "string", "description": "Alternative text for screen readers." },
+          "published": { "type": "boolean", "description": "false together with scheduled_publish_time to schedule the post instead of publishing it now. Default true." },
+          "scheduled_publish_time": { "type": "string", "description": "With published false: when the post goes live, as a Unix timestamp in seconds or ISO 8601 time with offset, 10 minutes to 30 days ahead." }
+        },
+        "required": ["url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{FACEBOOK_PAGE_ID}}/photos",
+        "bodyMapping": { "url": "$url", "caption": "$caption", "alt_text_custom": "$alt_text_custom", "published": "$published", "scheduled_publish_time": "$scheduled_publish_time" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_update_post",
+      "description": "Change a Page post: replace its text, publish a scheduled or unpublished post now (is_published true), or move a scheduled post to another time. Meta only allows this for posts created through the same app. The old text is overwritten, so show the user the change and wait for their confirmation. Returns success true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "string", "description": "Post id ({page-id}_{post-id})." },
+          "message": { "type": "string", "description": "New text of the post." },
+          "is_published": { "type": "boolean", "description": "true publishes a scheduled or unpublished post now." },
+          "scheduled_publish_time": { "type": "string", "description": "New time for a scheduled post, as a Unix timestamp in seconds or ISO 8601 time with offset." }
+        },
+        "required": ["post_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{post_id}",
+        "encodePathParams": true,
+        "bodyMapping": { "message": "$message", "is_published": "$is_published", "scheduled_publish_time": "$scheduled_publish_time" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_delete_post",
+      "description": "Delete a Page post permanently, including its comments and reactions. This cannot be undone: name the post and wait for the user's confirmation. Meta may refuse this for some apps; deleting in Meta Business Suite always works. Installed switched off. Returns success true.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "string", "description": "Post id ({page-id}_{post-id})." }
+        },
+        "required": ["post_id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{post_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "facebook_pages_list_comments",
+      "description": "List the comments on a post, or the replies to a comment when you pass a comment id, with text, author, time, likes, reply count and whether the comment is hidden. Use filter stream to get replies inline in time order, summary true for the total count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": { "type": "string", "description": "A post id ({page-id}_{post-id}) for its comments, or a comment id for its replies." },
+          "fields": { "type": "string", "description": "Comma-separated comment fields. Default: id,message,from,created_time,like_count,comment_count,is_hidden,parent{id}.", "default": "id,message,from,created_time,like_count,comment_count,is_hidden,parent{id}" },
+          "filter": { "type": "string", "enum": ["toplevel", "stream"], "description": "toplevel (default): only comments made directly on the object. stream: all comments and replies in time order." },
+          "order": { "type": "string", "enum": ["chronological", "reverse_chronological"], "description": "chronological: oldest first. reverse_chronological: newest first." },
+          "summary": { "type": "boolean", "description": "true adds summary.total_count and the order used." },
+          "limit": { "type": "integer", "description": "Comments per page (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["object_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{object_id}/comments",
+        "encodePathParams": true,
+        "queryParams": { "fields": "$fields", "filter": "$filter", "order": "$order", "summary": "$summary", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "facebook_pages_comment_on_post",
+      "description": "Write a public comment on a post as the Page, optionally with an image from a URL. Visible to everyone at once, so show the user the exact text and wait for their confirmation. Returns the new comment id. To answer a comment use facebook_pages_reply_to_comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "string", "description": "Post id ({page-id}_{post-id})." },
+          "message": { "type": "string", "description": "Text of the comment. Mention a Page with @[page-id]." },
+          "attachment_url": { "type": "string", "format": "uri", "description": "Optional public image URL to attach as a photo comment." }
+        },
+        "required": ["post_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{post_id}/comments",
+        "encodePathParams": true,
+        "bodyMapping": { "message": "$message", "attachment_url": "$attachment_url" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_reply_to_comment",
+      "description": "Reply publicly to a comment as the Page, in the comment's thread. To address the commenter by name write @[their id] from the comment's `from`. Visible to everyone at once, so show the user the exact reply and wait for their confirmation. Returns the new comment id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment to answer, from facebook_pages_list_comments." },
+          "message": { "type": "string", "description": "Text of the reply." }
+        },
+        "required": ["comment_id", "message"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{comment_id}/comments",
+        "encodePathParams": true,
+        "bodyMapping": { "message": "$message" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_hide_comment",
+      "description": "Hide or unhide a comment on the Page's posts. A hidden comment stays visible to its author and their friends but to nobody else, so it is the gentle way to moderate; it can be shown again any time. Returns success true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment, from facebook_pages_list_comments." },
+          "is_hidden": { "type": "boolean", "description": "true to hide the comment, false to show it again." }
+        },
+        "required": ["comment_id", "is_hidden"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{comment_id}",
+        "encodePathParams": true,
+        "bodyMapping": { "is_hidden": "$is_hidden" },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true }
+    },
+    {
+      "name": "facebook_pages_delete_comment",
+      "description": "Delete a comment on the Page's posts permanently, with its replies. This cannot be undone and the author can notice; facebook_pages_hide_comment is usually enough. Name the comment and wait for the user's confirmation. Installed switched off. Returns success true.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment, from facebook_pages_list_comments." }
+        },
+        "required": ["comment_id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{comment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "facebook_pages_get_page_insights",
+      "description": "Get Page insights per day, week or 28 days: views of the Page's content (page_media_view), unique viewers, post engagements, followers, new follows and unfollows, Page views, action-button clicks, video views and reactions. Only current metric names work; the connector instructions list them. Pages below 100 likes return no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": { "type": "string", "description": "Comma-separated metrics. Default: page_media_view,page_total_media_view_unique,page_post_engagements,page_daily_follows_unique,page_daily_unfollows_unique,page_views_total.", "default": "page_media_view,page_total_media_view_unique,page_post_engagements,page_daily_follows_unique,page_daily_unfollows_unique,page_views_total" },
+          "period": { "type": "string", "enum": ["day", "week", "days_28", "month", "lifetime", "total_over_range"], "description": "Aggregation: day (default), week or days_28 for most metrics; page_follows and page_actions_post_reactions_total only support day.", "default": "day" },
+          "since": { "type": "string", "description": "Start of the range: a date such as 2026-09-01 or a Unix timestamp. since and until span at most 90 days." },
+          "until": { "type": "string", "description": "End of the range: a date or a Unix timestamp." },
+          "date_preset": { "type": "string", "enum": ["today", "yesterday", "this_month", "last_month", "this_quarter", "last_3d", "last_7d", "last_14d", "last_28d", "last_30d", "last_90d", "this_week_mon_today", "last_week_mon_sun", "last_year"], "description": "A named range instead of since and until." },
+          "breakdown": { "type": "string", "description": "Optional split for page_media_view: is_from_ads or is_from_followers." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}/insights",
+        "queryParams": { "metric": "$metric", "period": "$period", "since": "$since", "until": "$until", "date_preset": "$date_preset", "breakdown": "$breakdown" }
+      }
+    },
+    {
+      "name": "facebook_pages_get_post_insights",
+      "description": "Get lifetime insights for one Page post: how often it was displayed (post_media_view), unique viewers, clicks, reactions by type and, for videos, views and watch time. Use it to compare how posts performed. Only current metric names work; the connector instructions list them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "string", "description": "Post id ({page-id}_{post-id}); for a photo post its post_id, not the photo id." },
+          "metric": { "type": "string", "description": "Comma-separated metrics. Default: post_media_view,post_total_media_view_unique,post_clicks,post_reactions_by_type_total. Video posts also: post_video_views,post_video_avg_time_watched,post_video_view_time.", "default": "post_media_view,post_total_media_view_unique,post_clicks,post_reactions_by_type_total" },
+          "breakdown": { "type": "string", "description": "Optional split for post_media_view: is_from_ads or is_from_followers." }
+        },
+        "required": ["post_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{post_id}/insights",
+        "encodePathParams": true,
+        "queryParams": { "metric": "$metric", "breakdown": "$breakdown" }
+      }
+    },
+    {
+      "name": "facebook_pages_list_conversations",
+      "description": "List the Page's Messenger conversations, most recently active first, with the participants (name and Page-scoped id) and the last update time. Pass user_id to find the conversation with one person. Use the conversation id with facebook_pages_list_messages and the person's id with facebook_pages_send_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "string", "description": "Comma-separated conversation fields. Default: id,updated_time,participants.", "default": "id,updated_time,participants" },
+          "user_id": { "type": "string", "description": "Page-scoped id of a person, to return only the conversation with them." },
+          "limit": { "type": "integer", "description": "Conversations per page (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{{FACEBOOK_PAGE_ID}}/conversations",
+        "queryParams": { "platform": "messenger", "fields": "$fields", "user_id": "$user_id", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "facebook_pages_list_messages",
+      "description": "List the messages of one Messenger conversation, newest first, with text, sender, recipient and time. Meta returns full details only for the 20 most recent messages. Check the time of the person's last message: replies are only allowed within 24 hours of it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": { "type": "string", "description": "Conversation id (t_...) from facebook_pages_list_conversations." },
+          "fields": { "type": "string", "description": "Comma-separated message fields. Default: id,created_time,from,to,message.", "default": "id,created_time,from,to,message" },
+          "limit": { "type": "integer", "description": "Messages per page (default 25).", "minimum": 1, "maximum": 100 },
+          "after": { "type": "string", "description": "Cursor from paging.cursors.after of the previous answer." }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conversation_id}/messages",
+        "encodePathParams": true,
+        "queryParams": { "fields": "$fields", "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "facebook_pages_send_message",
+      "description": "Send a Messenger text message as the Page to a person who has written to the Page. Allowed within 24 hours of their last message (messaging_type RESPONSE); later only with messaging_type MESSAGE_TAG and tag HUMAN_AGENT, which needs Meta's approval. The person receives it at once, so show the user the exact text and wait for their confirmation. Returns recipient_id and message_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_id": { "type": "string", "description": "The person's Page-scoped id, from the participants of facebook_pages_list_conversations." },
+          "text": { "type": "string", "description": "Message text, up to 2000 characters." },
+          "messaging_type": { "type": "string", "enum": ["RESPONSE", "UPDATE", "MESSAGE_TAG"], "description": "RESPONSE (default) answers the person within 24 hours; UPDATE is a message the Page starts, also only within 24 hours; MESSAGE_TAG with tag after 24 hours.", "default": "RESPONSE" },
+          "tag": { "type": "string", "enum": ["HUMAN_AGENT"], "description": "Only with messaging_type MESSAGE_TAG: a person answering by hand up to 7 days after the last message. Needs the Human Agent permission." }
+        },
+        "required": ["recipient_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{FACEBOOK_PAGE_ID}}/messages",
+        "bodyMapping": {
+          "recipient": { "id": "$recipient_id" },
+          "messaging_type": "$messaging_type",
+          "message": { "text": "$text" },
+          "tag": "$tag"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    },
+    {
+      "name": "facebook_pages_send_private_reply",
+      "description": "Answer a comment privately: sends one Messenger message as the Page to the person who wrote the comment, with a link to it. Only one private reply per comment, within 7 days of the comment; if the person answers, the conversation continues in Messenger. The person receives it at once, so show the user the exact text and wait for their confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": { "type": "string", "description": "Id of the comment, from facebook_pages_list_comments." },
+          "text": { "type": "string", "description": "Message text, up to 2000 characters." }
+        },
+        "required": ["comment_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{{FACEBOOK_PAGE_ID}}/messages",
+        "bodyMapping": {
+          "recipient": { "comment_id": "$comment_id" },
+          "message": { "text": "$text" }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false }
+    }
+  ]
+}

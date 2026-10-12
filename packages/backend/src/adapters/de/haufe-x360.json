@@ -1,6 +1,7 @@
 {
   "slug": "haufe-x360",
   "name": "Haufe X360",
+  "aliases": ["lexbizz"],
   "description": "Haufe X360 cloud ERP (the German Acumatica edition): customers, vendors, stock items, sales orders, A/R invoices and shipments over the contract-based REST API. Session login with an X360 user. Read-only.",
   "region": "de",
   "category": "erp",

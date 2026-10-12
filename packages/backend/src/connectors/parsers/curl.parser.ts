@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
+import { pathForToolName } from './tool-name.util';
 
 /**
  * cURL Parser.
@@ -316,7 +317,7 @@ export class CurlParser {
   }
 
   private generateToolName(method: string, path: string): string {
-    const cleanPath = path
+    const cleanPath = pathForToolName(path)
       .replace(/\{\{[^{}]+\}\}/g, '')
       .replace(/\{[^{}]+\}/g, '')
       .replace(/[^a-zA-Z0-9]/g, '_')

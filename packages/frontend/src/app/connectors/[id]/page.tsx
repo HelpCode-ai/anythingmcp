@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, type ToolTestResult, type CatalogDiff } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, type ToolTestResult, type CatalogDiff } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -242,6 +242,17 @@ export default function ConnectorDetailPage() {
   };
 
   useEffect(() => {
+    // The new-connector form moved a secret typed into the URL or a header
+    // into a variable; say so the first time the connector is opened.
+    const noticeKey = `amcp:secretsNotice:${id}`;
+    const notice = typeof window !== 'undefined' ? window.sessionStorage.getItem(noticeKey) : null;
+    if (notice) {
+      window.sessionStorage.removeItem(noticeKey);
+      setMsg(notice);
+    }
+  }, [id]);
+
+  useEffect(() => {
     // Handle OAuth callback query params
     const oauthStatus = searchParams.get('oauth');
     if (oauthStatus === 'success') {
@@ -401,7 +412,7 @@ export default function ConnectorDetailPage() {
           deniedTables: deniedTables.length > 0 ? deniedTables : null,
         };
       }
-      await connectors.update(id, data, token);
+      const saved = await connectors.update(id, data, token);
 
       // OAuth2 credentials live in authConfig alongside the issued tokens, so
       // they are patched separately (a full write would discard the tokens and
@@ -426,7 +437,7 @@ export default function ConnectorDetailPage() {
         await connectors.updateOAuthConfig(id, oauthPatch, token);
       }
 
-      setMsg('Connector updated');
+      setMsg(withSecretsNotice('Connector updated.', saved));
       setEditing(false);
       fetchConnector();
     } catch (err: any) {
@@ -463,7 +474,7 @@ export default function ConnectorDetailPage() {
     setMsg('Importing specification...');
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(result.message);
+      setMsg(withSecretsNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
@@ -494,7 +505,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(result.message);
+        setMsg(withSecretsNotice(result.message, result));
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
@@ -630,9 +641,9 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setSavingTool(true);
     try {
-      await tools.create(id, data, token);
+      const created = await tools.create(id, data, token);
       setShowNewTool(false);
-      setMsg('Tool created successfully');
+      setMsg(withSecretsNotice('Tool created successfully.', created));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
@@ -655,9 +666,9 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setSavingTool(true);
     try {
-      await tools.update(id, toolId, data, token);
+      const updated = await tools.update(id, toolId, data, token);
       setEditingToolId(null);
-      setMsg('Tool updated successfully');
+      setMsg(withSecretsNotice('Tool updated successfully.', updated));
       fetchConnector();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
@@ -718,7 +729,7 @@ export default function ConnectorDetailPage() {
       if (result.error) {
         setMsg(result.error);
       } else {
-        setMsg(result.message);
+        setMsg(withSecretsNotice(result.message, result));
         fetchConnector();
       }
     } catch (err: any) {

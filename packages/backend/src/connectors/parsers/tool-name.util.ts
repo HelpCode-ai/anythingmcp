@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { findSecretLiterals } from '../../common/secret-literals.util';
 
 /**
  * The longest tool name an MCP client is guaranteed to accept. The Claude
@@ -34,4 +35,18 @@ export function capToolName(name: string): string {
   const boundary = head.lastIndexOf('_');
   if (boundary >= keep - 12) head = head.slice(0, boundary);
   return `${head}_${hash}`;
+}
+
+/**
+ * The path a generated tool name is built from, without secret literals. A
+ * hand-written URL may carry a key (`/bot<token>/sendMessage`); a name built
+ * from it would show the key to every AI client and in every log line.
+ */
+export function pathForToolName(path: string): string {
+  if (typeof path !== 'string') return path;
+  let out = path;
+  for (const f of findSecretLiterals(path).sort((a, b) => b.start - a.start)) {
+    out = `${out.slice(0, f.start)}${out.slice(f.end)}`;
+  }
+  return out;
 }

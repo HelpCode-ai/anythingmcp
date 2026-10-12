@@ -275,3 +275,68 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     ).toMatch(/one call with voucherStatus=overdue/);
   });
 });
+
+describe('deriveErrorHint: generative AI APIs', () => {
+  const gemini = 'generativelanguage.googleapis.com';
+  const openai = 'api.openai.com';
+
+  it('explains the Gemini failures a retry cannot fix', () => {
+    expect(
+      deriveErrorHint({
+        host: gemini,
+        status: 400,
+        body: { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT', details: [{ reason: 'API_KEY_INVALID' }] } },
+      }),
+    ).toContain('aistudio.google.com/apikey');
+    expect(
+      deriveErrorHint({ host: gemini, status: 429, body: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota' } } }),
+    ).toMatch(/free tier.*image models have no free tier/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 404, body: { error: { message: 'models/gemini-9-ultra is not found for API version v1beta, or is not supported for generateContent.' } } }),
+    ).toMatch(/gemini_list_models/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, body: { error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } } }),
+    ).toMatch(/billing/);
+    expect(deriveErrorHint({ host: gemini, status: 403, body: { error: { status: 'PERMISSION_DENIED', message: 'The caller does not have permission' } } })).toMatch(
+      /API restrictions/,
+    );
+  });
+
+  it('reads the safety blocks that the gemini adapter turns into errors', () => {
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, message: 'The API answered with an error in a successful response: SAFETY' }),
+    ).toMatch(/safety or content filters/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, message: 'The API answered with an error in a successful response: IMAGE_SAFETY Unable to show the generated image.' }),
+    ).toMatch(/Retrying the same request will not help/);
+    expect(
+      deriveErrorHint({ host: gemini, status: 400, body: { error: { message: "Invalid value at 'safety_settings[0].category'" } } }),
+    ).toBeUndefined();
+  });
+
+  it('explains the OpenAI failures a retry cannot fix', () => {
+    expect(
+      deriveErrorHint({ host: openai, status: 401, body: { error: { message: 'Incorrect API key provided: sk-abc***', code: 'invalid_api_key' } } }),
+    ).toContain('platform.openai.com/api-keys');
+    expect(
+      deriveErrorHint({ host: openai, status: 429, body: { error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } } }),
+    ).toMatch(/add credit/);
+    expect(
+      deriveErrorHint({ host: openai, status: 429, body: { error: { message: 'Rate limit reached for gpt-image-1-mini', code: 'rate_limit_exceeded' } } }),
+    ).toMatch(/Do not retry in a loop/);
+    expect(
+      deriveErrorHint({ host: openai, status: 403, body: { error: { message: 'Your organization must be verified to use the model `gpt-image-2`.' } } }),
+    ).toMatch(/Verify Organization/);
+    expect(
+      deriveErrorHint({ host: openai, status: 404, body: { error: { message: 'The model `gpt-9` does not exist or you do not have access to it.', code: 'model_not_found' } } }),
+    ).toMatch(/openai_list_models/);
+    expect(
+      deriveErrorHint({ host: openai, status: 400, body: { error: { message: 'Your request was rejected by the safety system.', code: 'moderation_blocked' } } }),
+    ).toMatch(/safety system refused/);
+  });
+
+  it('stays quiet for these phrases on other hosts', () => {
+    expect(deriveErrorHint({ host: 'api.example.com', status: 429, body: { error: 'insufficient_quota' } })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'api.example.com', status: 400, message: 'SAFETY' })).toBeUndefined();
+  });
+});
