@@ -74,7 +74,6 @@
   "probe": {
     "tool": "amazon_ads_list_profiles"
   },
-  "unlisted": true,
   "connector": {
     "name": "Amazon Ads API",
     "type": "REST",
@@ -119,8 +118,7 @@
               "billing",
               "store",
               "account",
-              "paymentMethod",
-              "posts"
+              "paymentMethod"
             ],
             "description": "Only profiles with permission for this API program (Amazon's default is campaign)."
           }
@@ -184,7 +182,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, portfolioIdFilter, nameFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, portfolioIdFilter, nameFilter (with queryTermMatchType BROAD_MATCH or EXACT_MATCH). Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",
@@ -253,7 +251,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, nameFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, nameFilter (with queryTermMatchType BROAD_MATCH or EXACT_MATCH). campaignTargetingTypeFilter takes AUTO or MANUAL. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",
@@ -322,7 +320,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, adIdFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, adIdFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",
@@ -391,7 +389,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, keywordIdFilter, keywordTextFilter, matchTypeFilter (an array such as [\"EXACT\",\"PHRASE\"]). Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, keywordIdFilter, keywordTextFilter (also needs queryTermMatchType BROAD_MATCH or EXACT_MATCH). matchTypeFilter is a plain array such as [\"EXACT\",\"PHRASE\"]. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",
@@ -460,7 +458,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, negativeKeywordIdFilter, negativeKeywordTextFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, negativeKeywordIdFilter, negativeKeywordTextFilter (also needs queryTermMatchType BROAD_MATCH or EXACT_MATCH). matchTypeFilter is a plain array such as [\"NEGATIVE_EXACT\"]. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",
@@ -529,7 +527,7 @@
           },
           "filters": {
             "type": "object",
-            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, targetIdFilter, asinFilter, expressionTypeFilter. Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}. nameFilter and text filters also take queryTermMatchType BROAD_MATCH or EXACT_MATCH."
+            "description": "Optional extra filters, each an object with an include list: campaignIdFilter, adGroupIdFilter, targetIdFilter, asinFilter (with queryTermMatchType BROAD_MATCH or EXACT_MATCH), expressionTypeFilter (MANUAL or AUTO). Example: {\"campaignIdFilter\": {\"include\": [\"123456789\"]}}."
           },
           "max_results": {
             "type": "integer",

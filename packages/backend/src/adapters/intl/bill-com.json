@@ -7,7 +7,7 @@
   "icon": "bill-com",
   "docsUrl": "https://developer.bill.com/reference/api-reference-overview",
   "prerequisites": "A BILL developer key and the organization id, both on Settings → Sync & Integrations → Manage Developer Keys in the BILL web app (an administrator generates the key), plus the e-mail and password of a BILL user of that organization.",
-  "instructions": "## BILL\nBILL (formerly Bill.com) runs accounts payable (vendors, bills, approvals, payments) and accounts receivable (customers, invoices, received payments) for US businesses. This connector uses the BILL v3 API, read-only by default.\n\n## Setup\n1. BILL API access needs a **developer key** (`devKey`). An administrator generates it in the BILL web app: **Settings → Sync & Integrations → Manage Developer Keys → Generate developer key** (production), or in a sandbox developer account from the BILL developer portal sign-up (https://developer.bill.com).\n2. `BILL_USERNAME` and `BILL_PASSWORD`: the e-mail and password of a BILL user of that organization. Use a dedicated API user; its role limits what the API can see and do.\n3. `BILL_ORGANIZATION_ID`: shown at the bottom of the same Manage Developer Keys page; it starts with `008`.\n4. `BILL_API_URL`: `https://gateway.prod.bill.com/connect` for production, `https://gateway.stage.bill.com/connect` for the sandbox. A sandbox devKey does not work on production and the reverse.\n\nThe connector signs in with `POST /v3/login` and sends the returned `sessionId` and the `devKey` as headers on every call. A session expires after 35 minutes without activity; the connector signs in again by itself. The login limit is 200 per developer key per hour.\n\n## Start here\n- `bill_com_get_session` checks the sign-in.\n- Payables: `bill_com_list_bills` with `filters=paymentStatus:in:\"UNPAID,PARTIAL\"` and `sort=dueDate:asc`; `bill_com_list_pending_approvals` for what waits for you.\n- Receivables: `bill_com_list_invoices` with `filters=status:in:\"OPEN,PARTIAL_PAYMENT\"`.\n\n## Filters, sort, pages\n`filters` is `field:operator:value`, several separated by commas (AND). Operators: eq, ne, gt, gte, lt, lte, in, nin, sw (starts with). Quote values that contain commas or times: `createdTime:gte:\"2026-09-01T00:00:00.000Z\"`, `paymentStatus:in:\"UNPAID,PARTIAL\"`. Not every field is filterable; common ones: vendors/customers `name` (eq, sw), `archived`, `createdTime`, `updatedTime`; bills `vendorId`, `dueDate`, `paymentStatus`; invoices `customerId`, `status`; payments `vendorId`, `processDate`, `status`. `sort` is `field:asc|desc`. `max` up to 100 (default 20). For the next page pass `page` = the `nextPage` value from the answer, without filters and sort.\n\n## Ids\nBILL ids have type prefixes: vendors `009`, bills `00n`, customers `0cu`, invoices `00e`, payments `stp`, organizations `008`.\n\n## Limits\n20,000 requests per developer key per hour and 3 concurrent requests per organization; errors BDC_1144 and BDC_1322 mean wait and retry.\n\n## Writes\nApproving or denying bills is included but installed switched off. Payments, bill and invoice creation are not part of this connector.",
+  "instructions": "## BILL\nBILL (formerly Bill.com) runs accounts payable (vendors, bills, approvals, payments) and accounts receivable (customers, invoices, received payments) for US businesses. This connector uses the BILL v3 API, read-only by default.\n\n## Setup\n1. BILL API access needs a **developer key** (`devKey`). An administrator generates it in the BILL web app: **Settings → Sync & Integrations → Manage Developer Keys → Generate developer key** (production), or in a sandbox developer account from the BILL developer portal sign-up (https://developer.bill.com).\n2. `BILL_USERNAME` and `BILL_PASSWORD`: the e-mail and password of a BILL user of that organization. Use a dedicated API user; its role limits what the API can see and do.\n3. `BILL_ORGANIZATION_ID`: shown at the bottom of the same Manage Developer Keys page; it starts with `008`.\n4. `BILL_API_URL`: `https://gateway.prod.bill.com/connect` for production, `https://gateway.stage.bill.com/connect` for the sandbox. A sandbox devKey does not work on production and the reverse.\n\nThe connector signs in with `POST /v3/login` and sends the returned `sessionId` and the `devKey` as headers on every call. A session expires after 35 minutes without activity; the connector signs in again by itself. The login limit is 200 per developer key per hour.\n\n## Start here\n- `bill_com_get_session` checks the sign-in.\n- Payables: `bill_com_list_bills` with `filters=paymentStatus:in:\"UNPAID,PARTIALLY_PAID\"` and `sort=dueDate:asc`; `bill_com_list_pending_approvals` for what waits for you.\n- Receivables: `bill_com_list_invoices` with `filters=status:in:\"OPEN,PARTIAL_PAYMENT\"`.\n\n## Filters, sort, pages\n`filters` is `field:operator:value`, several separated by commas (AND). Operators: eq, ne, gt, gte, lt, lte, in, nin, sw (starts with). Quote values that contain commas or times: `createdTime:gte:\"2026-09-01T00:00:00.000Z\"`, `paymentStatus:in:\"UNPAID,PARTIALLY_PAID\"`. Not every field is filterable; common ones: vendors/customers `name` (eq, sw), `archived`, `createdTime`, `updatedTime`; bills `vendorId`, `dueDate`, `paymentStatus`; invoices `customerId`, `status`; payments `vendorId`, `processDate`, `status`; received payments `customerId`, `paymentDate`, `status`; vendor credits and credit memos `creditDate`, `status` (NOT_APPLIED, PARTIALLY_APPLIED, FULLY_APPLIED). `sort` is `field:asc|desc`; recurring bills sort only by `archived`, received payments by `amount`, `createdTime` or `updatedTime`. `max` up to 100 (default 20). For the next page pass `page` = the `nextPage` value from the answer, without filters and sort.\n\n## Ids\nBILL ids have type prefixes: vendors `009`, bills `00n`, customers `0cu`, invoices `00e`, payments `stp`, organizations `008`.\n\n## Limits\n20,000 requests per developer key per hour and 3 concurrent requests per organization; errors BDC_1144 and BDC_1322 mean wait and retry.\n\n## Writes\nApproving or denying bills is included but installed switched off. Payments, bill and invoice creation are not part of this connector.",
   "requiredEnvVars": [
     "BILL_API_URL",
     "BILL_DEV_KEY",
@@ -63,7 +63,6 @@
   "probe": {
     "tool": "bill_com_get_session"
   },
-  "unlisted": true,
   "connector": {
     "name": "BILL v3 API",
     "type": "REST",
@@ -250,7 +249,7 @@
         "properties": {
           "filters": {
             "type": "string",
-            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\",paymentStatus:in:\"UNPAID,PARTIAL\",dueDate:lte:\"2026-10-31\". Quote values with commas or times."
+            "description": "Comma-separated field:operator:value conditions, e.g. vendorId:eq:\"009...\",paymentStatus:in:\"UNPAID,PARTIALLY_PAID\",dueDate:lte:\"2026-10-31\". Quote values with commas or times."
           },
           "sort": {
             "type": "string",
@@ -309,7 +308,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "field:asc or field:desc, comma-separated, e.g. createdTime:desc."
+            "description": "Only archived:asc or archived:desc; recurring bills sort by no other field."
           },
           "max": {
             "type": "integer",
@@ -430,7 +429,7 @@
         "properties": {
           "filters": {
             "type": "string",
-            "description": "Comma-separated field:operator:value conditions, e.g. customerId:eq:\"0cu...\",status:eq:\"OPEN\". Quote values with commas or times."
+            "description": "Comma-separated field:operator:value conditions, e.g. customerId:eq:\"0cu...\",status:in:\"NOT_APPLIED,PARTIALLY_APPLIED\". Quote values with commas or times."
           },
           "sort": {
             "type": "string",
@@ -524,7 +523,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "field:asc or field:desc, comma-separated, e.g. paymentDate:desc."
+            "description": "field:asc or field:desc on amount, createdTime or updatedTime, e.g. createdTime:desc."
           },
           "max": {
             "type": "integer",
@@ -602,7 +601,28 @@
             "type": "array",
             "description": "One entry per bill: [{\"billId\": \"00n...\", \"action\": \"APPROVE\" or \"DENY\", \"comment\": \"reason\"}].",
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "billId": {
+                  "type": "string",
+                  "description": "Bill id, starting with 00n."
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "APPROVE",
+                    "DENY"
+                  ]
+                },
+                "comment": {
+                  "type": "string",
+                  "description": "Optional reason for the decision."
+                }
+              },
+              "required": [
+                "billId",
+                "action"
+              ]
             }
           }
         },

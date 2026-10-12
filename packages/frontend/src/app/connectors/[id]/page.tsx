@@ -80,6 +80,11 @@ export default function ConnectorDetailPage() {
   const [editWsPasswordType, setEditWsPasswordType] = useState('PasswordText');
   // OAuth2 only: how client credentials reach the token endpoint.
   const [editTokenAuthMethod, setEditTokenAuthMethod] = useState('client_secret_post');
+  // OAuth2 only: PKCE on "Authorize with Provider". `loadedPkce` is what the
+  // server reported, so saving sends the switch only when the user changed it
+  // (an untouched form must not pin a catalog adapter's setting on the row).
+  const [editPkce, setEditPkce] = useState(true);
+  const [loadedPkce, setLoadedPkce] = useState(true);
   // OAuth2 endpoints. Editable because a connector switched to OAUTH2 after
   // creation has none, and could otherwise never be authorized
   // ("No authorization URL configured for this connector").
@@ -194,6 +199,8 @@ export default function ConnectorDetailPage() {
           .getOAuthConfig(id, token)
           .then((r) => {
             setEditTokenAuthMethod(normalizeTokenAuthMethod(r.tokenAuthMethod));
+            setEditPkce(r.pkce !== false);
+            setLoadedPkce(r.pkce !== false);
             setEditOauthAuthUrl(r.authorizationUrl || '');
             setEditOauthTokenUrl(r.tokenUrl || '');
             setEditOauthScopes(r.scopes || '');
@@ -400,7 +407,7 @@ export default function ConnectorDetailPage() {
       // they are patched separately (a full write would discard the tokens and
       // the endpoints captured during authorization).
       if (editAuthType === 'OAUTH2' && connector.type !== 'MCP') {
-        const oauthPatch: Record<string, string> = {
+        const oauthPatch: Record<string, string | boolean> = {
           // The default (body) is stored as ''. Anything else is sent as
           // chosen: a catalog adapter may use a method this form cannot set
           // up by itself (Revolut's private_key_jwt), and saving an unrelated
@@ -415,6 +422,7 @@ export default function ConnectorDetailPage() {
         oauthPatch.authorizationUrl = editOauthAuthUrl.trim();
         oauthPatch.tokenUrl = editOauthTokenUrl.trim();
         oauthPatch.scopes = editOauthScopes.trim();
+        if (editPkce !== loadedPkce) oauthPatch.pkce = editPkce;
         await connectors.updateOAuthConfig(id, oauthPatch, token);
       }
 
@@ -1272,6 +1280,15 @@ export default function ConnectorDetailPage() {
                       {editTokenAuthMethod === 'private_key_jwt'
                         ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
                         : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input type="checkbox" checked={editPkce} onChange={(e) => setEditPkce(e.target.checked)} />
+                      Use PKCE when authorizing
+                    </label>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      On by default. Turn it off only if the provider refuses PKCE: LinkedIn&apos;s standard web flow answers 401 invalid_client to it. Re-authorize after changing it.
                     </p>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">

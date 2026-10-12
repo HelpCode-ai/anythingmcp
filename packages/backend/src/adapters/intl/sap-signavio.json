@@ -6,14 +6,12 @@
   "category": "knowledge",
   "icon": "sap-signavio",
   "docsUrl": "https://help.sap.com/docs/signavio-process-manager",
-  "prerequisites": "A SAP Signavio user that can log in with email and password. With single sign-on, ask your administrator for a technical user with an **API Edition** licence.",
-  "instructions": "**What this connects to**: the SAP Signavio Process Manager API, the `/p/` interface of the Process Manager workspace host. It reads the process landscape: folders, process models and their revisions, model exports (Signavio JSON and BPMN 2.0 XML), full-text search and the dictionary. This first version only reads.\n\n**Start with `sap_signavio_list_root_directories`**, then `sap_signavio_get_directory` to walk folders, or `sap_signavio_search` to find a model by name or content. Read a model with `sap_signavio_get_model_info` and `sap_signavio_export_model_json`.\n\n**Host by region**: EU `https://editor.signavio.com`, US `https://app-us.signavio.com`, Australia `https://app-au.signavio.com`, Canada `https://app-ca.signavio.com`, Japan `https://app-jp.signavio.com`, Singapore `https://app-sgp.signavio.com`, South Korea `https://app-kr.signavio.com`. It is the host you see in the browser when you open Process Manager. The API gateway host `api.<region>.signavio.cloud.sap` serves other SAP Signavio APIs, not this one.\n\n**Authentication**: the API has no API keys. The connector logs in with `POST /p/login` (email, password, `tokenonly=true`, workspace id) and sends the returned token as `x-signavio-id` together with every cookie the login set (the `JSESSIONID` session cookie and the load-balancer cookie that keeps calls on the same node) on every call; it logs in again when the session ends. Use a technical user with an **API Edition** licence: it can log in with a password even when the workspace uses single sign-on. The user only sees what its folder permissions allow.\n\n**Ids**: every item comes as `{rel, href, rep}`. The id is the last segment of `href` (`/directory/<id>`, `/model/<id>`, `/revision/<id>`, `/glossary/<id>`). `rel` says what the item is: `dir` folder, `mod` model, `info` metadata, `rev` revision, `gitem` dictionary entry.\n\n**Paging**: search and dictionary lists take `limit` and `offset` (search returns at most 250 per call). Folder listings return the whole folder.\n\n**Pitfalls**: model JSON of large diagrams is big, so prefer `get_model_info` first and export only the models you need. A 401 means the login failed or the session ended twice in a row; a 403 means the user lacks access to that folder. Process Intelligence (SIGNAL OData) and Process Governance use separate APIs and tokens and are not covered.",
+  "prerequisites": "A SAP Signavio technical user that logs in with email and password, ideally with only the free **API Edition** licence (it bypasses single sign-on; a user with another licence consumes a paid seat), plus read access to the folders the agent should see. Ask SAP Support for API Edition licences if the workspace has none.",
+  "instructions": "**What this connects to**: the SAP Signavio Process Manager API, the `/p/` interface of the Process Manager workspace host. It reads the process landscape: folders, process models and their revisions, model exports (Signavio JSON and BPMN 2.0 XML), full-text search and the dictionary. This first version only reads.\n\n**Start with `sap_signavio_list_root_directories`**, then `sap_signavio_get_directory` to walk folders, or `sap_signavio_search` to find a model by name or content. Read a model with `sap_signavio_get_model_info` and `sap_signavio_export_model_json`.\n\n**Host by region**: EU `https://editor.signavio.com`, US `https://app-us.signavio.com`, Australia `https://app-au.signavio.com`, Canada `https://app-ca.signavio.com`, Japan `https://app-jp.signavio.com`, Singapore `https://app-sgp.signavio.com`, South Korea `https://app-kr.signavio.com`. It is the host you see in the browser when you open Process Manager. SAP's current API guide also publishes the same resources on the regional gateway (`https://api.<region>.signavio.cloud.sap/spm/v1`, login at `/auth/v1/token`); this connector uses the workspace host's `/p/` interface, which answers the same requests in every region.\n\n**Authentication**: the API has no API keys. The connector logs in with `POST /p/login` (email, password, `tokenonly=true`, workspace id) and sends the returned token as `x-signavio-id` together with every cookie the login set (the `JSESSIONID` session cookie and the load-balancer cookie that keeps calls on the same node) on every call; it logs in again when the session ends. Use a technical user with only the **API Edition** licence (free; ask SAP Support if the workspace has none): it logs in with its SAP Signavio password even when the workspace uses single sign-on, but cannot use the web interface. Any other licence consumes a paid seat. The workspace ID is required: Help menu > Workspace information. The user only sees what its folder permissions allow.\n\n**Ids**: every item comes as `{rel, href, rep}`. The id is the last segment of `href` (`/directory/<id>`, `/model/<id>`, `/revision/<id>`, `/glossary/<id>`). `rel` says what the item is: `dir` folder, `mod` model, `info` metadata, `rev` revision, `gitem` dictionary entry.\n\n**Paging**: search and dictionary lists take `limit` and `offset` (search returns at most 250 results per call, the dictionary at most 1,000). Folder listings return the whole folder.\n\n**Rate limit**: SAP allows 50 requests per 60 seconds and 5 parallel reads per workspace; walk large folder trees step by step.\n\n**Pitfalls**: model JSON of large diagrams is big, so prefer `get_model_info` first and export only the models you need. A 401 means the login failed or the session ended twice in a row; a 403 means the user lacks access to that folder. Process Intelligence (SIGNAL OData) and Process Governance use separate APIs and tokens and are not covered.",
   "requiredEnvVars": [
     "SIGNAVIO_URL",
     "SIGNAVIO_EMAIL",
-    "SIGNAVIO_PASSWORD"
-  ],
-  "optionalEnvVars": [
+    "SIGNAVIO_PASSWORD",
     "SIGNAVIO_WORKSPACE_ID"
   ],
   "envVarMeta": {
@@ -39,16 +37,15 @@
     "SIGNAVIO_WORKSPACE_ID": {
       "label": "Workspace ID",
       "kind": "setting",
-      "help": "Only needed when the user belongs to more than one workspace; leave empty otherwise. The 32-character workspace (tenant) id; a workspace administrator can look it up in the workspace administration.",
+      "help": "In Process Manager open the Help menu > Workspace information and copy the Workspace ID (32 characters). The login sends it as the workspace (tenant); an empty value is refused by SAP Signavio.",
       "example": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
     }
   },
   "verifyHints": {
-    "401": "SAP Signavio did not accept the login. Check email and password, that the user can log in without single sign-on (API Edition licence), and the workspace ID if the user is in several workspaces.",
+    "401": "SAP Signavio did not accept the login. Check email and password: use the technical user's own SAP Signavio password, not a single sign-on password (an API Edition user can log in with a password even under single sign-on).",
     "403": "The user has no access to this folder or model. Grant it read access in Process Manager.",
-    "not_found": "No SAP Signavio Process Manager at this address. Use the host you open Process Manager on, e.g. https://editor.signavio.com, not api.<region>.signavio.cloud.sap."
+    "not_found": "Either the workspace ID is unknown (copy it again from Process Manager: Help menu > Workspace information) or there is no Process Manager at this address. Use the host you open Process Manager on, e.g. https://editor.signavio.com, not the api.<region>.signavio.cloud.sap gateway."
   },
-  "unlisted": true,
   "connector": {
     "name": "SAP Signavio Process Manager",
     "type": "REST",
@@ -228,10 +225,6 @@
           "export_subprocesses": {
             "type": "boolean",
             "description": "Also export linked subprocesses (default false)."
-          },
-          "language": {
-            "type": "string",
-            "description": "Content language to export as primary language, e.g. en or de. Default: the workspace's default language."
           }
         },
         "required": [
@@ -242,8 +235,7 @@
         "method": "GET",
         "path": "/model/{model_id}/bpmn2_0_xml",
         "queryParams": {
-          "exportSubprocesses": "$export_subprocesses",
-          "language": "$language"
+          "exportSubprocesses": "$export_subprocesses"
         },
         "rawBody": true
       }
@@ -281,10 +273,6 @@
           "export_subprocesses": {
             "type": "boolean",
             "description": "Also export linked subprocesses (default false)."
-          },
-          "language": {
-            "type": "string",
-            "description": "Content language to export as primary language, e.g. en or de. Default: the workspace's default language."
           }
         },
         "required": [
@@ -295,8 +283,7 @@
         "method": "GET",
         "path": "/revision/{revision_id}/bpmn2_0_xml",
         "queryParams": {
-          "exportSubprocesses": "$export_subprocesses",
-          "language": "$language"
+          "exportSubprocesses": "$export_subprocesses"
         },
         "rawBody": true
       }
@@ -373,7 +360,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum number of entries to return."
+            "description": "Maximum number of entries to return, up to 1000."
           },
           "offset": {
             "type": "integer",

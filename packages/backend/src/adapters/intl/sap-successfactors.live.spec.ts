@@ -24,6 +24,7 @@ type Tool = {
   endpointMapping: Record<string, any>;
 };
 const adapter = adapterJson as unknown as {
+  unlisted?: boolean;
   slug: string;
   name: string;
   probe: { tool: string; params?: Record<string, unknown> };
@@ -68,6 +69,16 @@ describe('sap-successfactors adapter (static)', () => {
         expect({ tool: t.name, param: p, reaches: reaches(t, p) }).toEqual({ tool: t.name, param: p, reaches: true });
       }
     }
+  });
+
+  it('reads one entity\'s metadata as JSON through Entity(\'<name>\')', () => {
+    // /<Entity>/$metadata answers only application/atom+xml, while the OData
+    // engine asks plain HTTP tools for JSON; Entity('<name>') is the JSON form.
+    expect(tool('sap_successfactors_get_entity_metadata').endpointMapping).toEqual({ method: 'GET', path: "/Entity('{entity}')" });
+  });
+
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(adapter.unlisted).toBeUndefined();
   });
 
   it('probe is a read with no required parameters', () => {

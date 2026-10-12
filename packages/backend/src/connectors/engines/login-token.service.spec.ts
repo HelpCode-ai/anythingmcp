@@ -482,7 +482,7 @@ describe('LoginTokenService — cookieMode=all (SAP Signavio pattern)', () => {
     expect(signavioAuth.cookieMode).toBe('all');
     expect(signavioAuth.headerName).toBe('Cookie');
     expect(signavioAuth.headerTemplate).toBe('${token}');
-    expect((signavio as { unlisted?: boolean }).unlisted).toBe(true);
+    expect((signavio as { unlisted?: boolean }).unlisted).toBeUndefined();
   });
 
   it('sends back every cookie the login set, plus the token from the body', async () => {

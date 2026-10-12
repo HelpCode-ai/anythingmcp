@@ -24,6 +24,7 @@ type Tool = {
   enabled?: boolean;
 };
 const adapter = adapterJson as unknown as {
+  unlisted?: boolean;
   probe: { tool: string; params?: Record<string, unknown> };
   connector: { type: string; baseUrl: string; authType: string; authConfig: Record<string, any> };
   tools: Tool[];
@@ -54,12 +55,20 @@ describe('archer adapter (static)', () => {
     }
   });
 
-  it('only reads: GETs, and the one POST read is flagged read-only with the GET override', () => {
+  it('only reads: GETs, and the one POST read (fieldcontent) is flagged read-only', () => {
     for (const t of adapter.tools) {
       if (t.endpointMapping.method === 'GET') continue;
       expect(t.annotations?.readOnlyHint).toBe(true);
-      expect(t.endpointMapping.headers['X-Http-Method-Override']).toBe('GET');
+      expect(t.endpointMapping.path).toBe('/api/core/content/fieldcontent');
+      // fieldcontent is a real POST route: a GET override would turn it into
+      // a GET on /api/core/content/{id} with "fieldcontent" as the id.
+      expect(t.endpointMapping.headers?.['X-Http-Method-Override']).toBeUndefined();
+      expect(t.endpointMapping.bodyMapping).toEqual({ FieldIds: '$field_ids', ContentIds: '$content_ids' });
     }
+  });
+
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(adapter.unlisted).toBeUndefined();
   });
 
   it('probe needs no arguments', () => {

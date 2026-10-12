@@ -157,8 +157,8 @@ const READ_ONLY = [
 describe('mixpanel adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('signs in with the service account over HTTP Basic, on the data residency host', () => {

@@ -109,8 +109,8 @@ const MONEY = ['easypost_buy_shipment', 'easypost_insure_shipment', 'easypost_re
 describe('easypost adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.prerequisites).toMatch(/test key/i);
   });
 

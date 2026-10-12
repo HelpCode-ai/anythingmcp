@@ -26,8 +26,34 @@ describe('resolveRestAuthorizeSettings', () => {
       tokenUrl: 'https://sandbox-api.datev.de/token',
       scope: 'accounting:clients:read',
       tokenAuthMethod: 'basic',
+      pkce: true,
       adopted: {},
       missingVars: [],
+    });
+  });
+
+  describe('pkce', () => {
+    const own = {
+      clientId: 'cid',
+      authorizationUrl: 'https://x.example/auth',
+      tokenUrl: 'https://x.example/token',
+    };
+
+    it('is on by default, with or without a catalog adapter', () => {
+      expect(resolveRestAuthorizeSettings(own, null).pkce).toBe(true);
+      expect(resolveRestAuthorizeSettings(own, null, etsyCatalog).pkce).toBe(true);
+    });
+
+    it('is off when the row says so, as a boolean or its string form', () => {
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: false }, null).pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: 'false' }, null).pkce).toBe(false);
+    });
+
+    it("takes the catalog's value for a row that has none, and the row's over the catalog's", () => {
+      const linkedinAds = getAdapter('linkedin-ads')!.connector.authConfig!;
+      expect(linkedinAds.pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings(own, null, linkedinAds).pkce).toBe(false);
+      expect(resolveRestAuthorizeSettings({ ...own, pkce: true }, null, linkedinAds).pkce).toBe(true);
     });
   });
 

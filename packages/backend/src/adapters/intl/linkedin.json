@@ -1,19 +1,21 @@
 {
   "slug": "linkedin",
   "name": "LinkedIn",
-  "description": "Drive LinkedIn (profile + shared posts) for the authenticated user from any AI agent. Limited scope: most LinkedIn features require Marketing Developer Platform approval. 5 tools, OAuth2 Bearer auth.",
-  "instructions": "This connector uses the LinkedIn Marketing/Profile API v2 (learn.microsoft.com/en-us/linkedin/).\n\n**HEAVY GATING**: LinkedIn's API is one of the most restricted public APIs. Most useful endpoints (read posts, search profiles, fetch connections, manage company pages) require **Marketing Developer Platform approval** from LinkedIn — a partnership program with significant requirements (existing app + revenue commitments).\n\nWhat WORKS without partnership:\n  - 'Sign in with LinkedIn using OpenID Connect' product scopes: `openid`, `profile`, `email`, `w_member_social` (post on behalf of user).\n\n**Setup**:\n1. Register an app at https://www.linkedin.com/developers/apps.\n2. Add the **Sign In with LinkedIn using OpenID Connect** product.\n3. (Optional) Add **Share on LinkedIn** product for posting.\n4. Run OAuth2 authorization-code flow with scopes `openid profile email w_member_social`.\n5. Set `LINKEDIN_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${LINKEDIN_ACCESS_TOKEN}`.\n\n**LinkedIn-Version header**: required on most v2 endpoints: `LinkedIn-Version: 202405` (use the YYYYMM of the API version you're targeting). Without it many endpoints return 426 Upgrade Required.\n\n**Person URN**: shares are posted as `urn:li:person:{your_person_id}`. Get your person_id from the userinfo endpoint.\n\n**Out of scope here** (require Marketing Developer Platform): read other users' posts, search profiles, manage company pages, ad campaigns, analytics, posts inbox.",
+  "description": "Post to LinkedIn as the signed-in member and read their basic profile: create and delete posts, register image uploads. Uses a member access token from the LinkedIn developer portal. Reading posts and company pages needs LinkedIn's approval of the app. 5 tools.",
+  "instructions": "## LinkedIn\nThis connector posts to LinkedIn as the member whose access token you paste, and reads that member's basic profile. Posts and images go through LinkedIn's versioned API at `https://api.linkedin.com/rest` with the header `LinkedIn-Version: 202609`; the profile comes from the OpenID Connect endpoint `https://api.linkedin.com/v2/userinfo`, which is not versioned.\n\n**What LinkedIn allows.** LinkedIn's API is tightly gated. Without a review by LinkedIn an app gets two self-serve products: **Sign In with LinkedIn using OpenID Connect** (scopes `openid`, `profile`, `email`) and **Share on LinkedIn** (scope `w_member_social`: create and delete the member's own posts, upload images). Reading posts (`r_member_social`), posting for a company page (`w_organization_social`), and searching people or connections all need LinkedIn's approval of the app for the Community Management API. A token without those scopes cannot reach them, whatever the connector does.\n\n**Setup.**\n1. Create an app at https://www.linkedin.com/developers/apps. LinkedIn asks you to link it to a company page.\n2. On the app's **Products** tab, add **Sign In with LinkedIn using OpenID Connect** and **Share on LinkedIn**.\n3. Open https://www.linkedin.com/developers/tools/oauth, pick the app, tick `openid`, `profile`, `email` and `w_member_social`, and generate a token, signed in as the member you want to post as.\n4. Paste the token into `LINKEDIN_ACCESS_TOKEN` and install. Tokens last 60 days; then generate a new one and update the variable.\n\n**Posting.**\n1. Call `linkedin_userinfo`. Its `sub` is the member id; the author URN is `urn:li:person:<sub>`.\n2. Call `linkedin_create_post` with that `author` and the text in `commentary`. Visibility defaults to `PUBLIC` (or `CONNECTIONS` for the member's network only); the post goes to the main feed and is published at once, LinkedIn has no drafts here. LinkedIn answers 201 with an empty body: the new post's URN (`urn:li:share:...` or `urn:li:ugcPost:...`) is in the `x-restli-id` response header, which the tool returns with the result.\n3. `linkedin_delete_post` takes that URN as it is, for example `urn:li:share:7123456789012345678`; the connector encodes it for the address. Deleting is idempotent.\n\n**Images.** `linkedin_register_image_upload` with `{owner: 'urn:li:person:<sub>'}` returns an `uploadUrl` and an image URN (`urn:li:image:...`). The file itself has to be sent to `uploadUrl` with an HTTP PUT outside this connector. Then create the post with `content: {media: {id: '<image URN>'}}`.\n\n**Links.** LinkedIn does not fetch a preview from the address, so a link post needs the details itself: `content: {article: {source: '<URL>', title: '<title>', description: '<optional>'}}`, with an uploaded image URN as `thumbnail` if you want a picture.\n\n**Reading a post.** `linkedin_get_post` needs `r_member_social`, which LinkedIn grants to approved apps only. With the two self-serve products it answers 403, even for the member's own posts.\n\n**Errors.** 401: the token expired or was revoked; generate a new one. 403 `ACCESS_DENIED`: the token lacks the scope for that call (see above). 400 `MISSING_FIELD` or `INVALID_URN_TYPE`: check that `author` is `urn:li:person:<sub>` and that `commentary` is not empty. 426 or a version error: LinkedIn retired the `LinkedIn-Version` the tools send (each version is supported for at least a year); update the connector from the catalog. 429: the daily limit per member and app; try again later.",
   "region": "intl",
   "category": "social",
   "icon": "linkedin",
   "docsUrl": "https://learn.microsoft.com/en-us/linkedin/",
-  "requiredEnvVars": ["LINKEDIN_ACCESS_TOKEN"],
-  "prerequisites": "A LinkedIn developer app and an access token for it. Most organization and posting endpoints need LinkedIn's approval of the app for the relevant product (Community Management API or Marketing Developer Platform).",
+  "requiredEnvVars": [
+    "LINKEDIN_ACCESS_TOKEN"
+  ],
+  "prerequisites": "A LinkedIn developer app with the self-serve products **Sign In with LinkedIn using OpenID Connect** and **Share on LinkedIn**, and a member access token for it with the scopes `openid profile email w_member_social`. Reading posts and company pages needs LinkedIn's approval of the app (Community Management API).",
   "envVarMeta": {
     "LINKEDIN_ACCESS_TOKEN": {
       "label": "Access token",
       "kind": "credential",
-      "help": "LinkedIn developer portal → your app → Auth → OAuth 2.0 tools: generate a token with the scopes the app was granted. Tokens last 60 days.",
+      "help": "linkedin.com/developers/tools/oauth: pick your app, tick openid, profile, email and w_member_social, and generate a token. Tokens last 60 days.",
       "link": "https://www.linkedin.com/developers/tools/oauth"
     }
   },
@@ -29,110 +31,155 @@
   "tools": [
     {
       "name": "linkedin_userinfo",
-      "description": "Get the authenticated user's profile (OpenID Connect userinfo endpoint). Returns sub (person ID), name, given_name, family_name, picture, locale, email, email_verified.",
-      "parameters": { "type": "object", "properties": {} },
+      "description": "Get the signed-in member's profile from the OpenID Connect userinfo endpoint: sub (the member id, used as urn:li:person:<sub>), name, given_name, family_name, picture, locale, and email and email_verified when the token has the email scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "endpointMapping": {
         "method": "GET",
-        "path": "/userinfo",
-        "headers": { "LinkedIn-Version": "202405" }
+        "path": "/userinfo"
       }
     },
     {
       "name": "linkedin_create_post",
-      "description": "Share a text or article post on behalf of the user. Required: author (URN) + commentary (text). LinkedIn requires `LinkedIn-Version` and `X-Restli-Protocol-Version: 2.0.0` headers (pinned per-tool).",
+      "description": "Publish a post on the member's feed. Required: author (urn:li:person:<sub> from linkedin_userinfo) and commentary. Needs the w_member_social scope. The new post's URN comes back in the x-restli-id response header.",
       "parameters": {
         "type": "object",
         "properties": {
-          "author": { "type": "string", "description": "URN of the author, typically 'urn:li:person:YOUR_PERSON_ID' (get from userinfo's sub field)." },
-          "commentary": { "type": "string", "description": "Post body text. Max 3000 chars." },
-          "visibility": { "type": "string", "description": "PUBLIC (default) or CONNECTIONS." },
-          "lifecycleState": { "type": "string", "description": "PUBLISHED (default) or DRAFT." },
+          "author": {
+            "type": "string",
+            "description": "URN of the author: urn:li:person:<sub>, with sub from linkedin_userinfo."
+          },
+          "commentary": {
+            "type": "string",
+            "description": "The post text, up to 3000 characters. Mention or hashtag syntax follows LinkedIn's little text format."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "CONNECTIONS"
+            ],
+            "default": "PUBLIC",
+            "description": "PUBLIC (anyone) or CONNECTIONS (the member's network only)."
+          },
           "distribution": {
             "type": "object",
-            "description": "{feedDistribution:'MAIN_FEED'|'NONE', targetEntities:[], thirdPartyDistributionChannels:[]}."
+            "default": {
+              "feedDistribution": "MAIN_FEED",
+              "targetEntities": [],
+              "thirdPartyDistributionChannels": []
+            },
+            "description": "Where the post appears. Leave it out for the main feed: {feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: []}."
           },
-          "isReshareDisabledByAuthor": { "type": "boolean", "description": "Disable reshares." },
+          "isReshareDisabledByAuthor": {
+            "type": "boolean",
+            "default": false,
+            "description": "True to stop others from resharing the post."
+          },
           "content": {
             "type": "object",
-            "description": "Optional content: {article:{source:'URL'}} for link post OR {media:{id:'urn:li:image:...'}} for image post (image upload requires a separate registerUpload call out of scope here)."
+            "description": "Optional. An image: {media: {id: 'urn:li:image:...', altText: '...'}} after linkedin_register_image_upload and the PUT of the file. A link: {article: {source: 'https://...', title: '...', description: '...'}}; LinkedIn does not fetch the preview itself. Leave out for a text post."
           }
         },
-        "required": ["author", "commentary"]
+        "required": [
+          "author",
+          "commentary"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/posts",
+        "path": "https://api.linkedin.com/rest/posts",
         "headers": {
-          "LinkedIn-Version": "202405",
+          "LinkedIn-Version": "202609",
           "X-Restli-Protocol-Version": "2.0.0"
         },
         "bodyMapping": {
           "author": "$author",
           "commentary": "$commentary",
           "visibility": "$visibility",
-          "lifecycleState": "$lifecycleState",
           "distribution": "$distribution",
+          "lifecycleState": "PUBLISHED",
           "isReshareDisabledByAuthor": "$isReshareDisabledByAuthor",
           "content": "$content"
-        }
+        },
+        "exposeHeaders": [
+          "x-restli-id"
+        ]
       }
     },
     {
       "name": "linkedin_get_post",
-      "description": "Get a previously-created post by URN (you can only fetch posts you authored unless you have higher-tier scopes).",
+      "description": "Get a post by its URN. Needs the r_member_social scope, which LinkedIn grants to approved apps only: with the self-serve products this answers 403, even for the member's own posts.",
       "parameters": {
         "type": "object",
         "properties": {
-          "postUrn": { "type": "string", "description": "Post URN, URL-encoded. e.g. 'urn%3Ali%3Ashare%3A12345'." }
+          "postUrn": {
+            "type": "string",
+            "description": "The post URN as returned, e.g. urn:li:share:7123456789012345678 or urn:li:ugcPost:7123456789012345678. Not URL-encoded; the connector encodes it."
+          }
         },
-        "required": ["postUrn"]
+        "required": [
+          "postUrn"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/posts/{postUrn}",
+        "path": "https://api.linkedin.com/rest/posts/{postUrn}",
+        "encodePathParams": true,
         "headers": {
-          "LinkedIn-Version": "202405",
+          "LinkedIn-Version": "202609",
           "X-Restli-Protocol-Version": "2.0.0"
         }
       }
     },
     {
       "name": "linkedin_delete_post",
-      "description": "Delete a post you authored.",
+      "description": "Delete a post the member authored. Needs the w_member_social scope. Deleting an already deleted post also succeeds (204).",
       "parameters": {
         "type": "object",
         "properties": {
-          "postUrn": { "type": "string", "description": "Post URN URL-encoded." }
+          "postUrn": {
+            "type": "string",
+            "description": "The post URN as returned by linkedin_create_post, e.g. urn:li:share:7123456789012345678. Not URL-encoded; the connector encodes it."
+          }
         },
-        "required": ["postUrn"]
+        "required": [
+          "postUrn"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/posts/{postUrn}",
+        "path": "https://api.linkedin.com/rest/posts/{postUrn}",
+        "encodePathParams": true,
         "headers": {
-          "LinkedIn-Version": "202405",
-          "X-Restli-Protocol-Version": "2.0.0"
+          "LinkedIn-Version": "202609",
+          "X-Restli-Protocol-Version": "2.0.0",
+          "X-RestLi-Method": "DELETE"
         }
       }
     },
     {
       "name": "linkedin_register_image_upload",
-      "description": "Step 1 of image upload: register an upload. Returns an uploadUrl + image URN. You then PUT the binary to the uploadUrl out-of-band, then use the image URN in linkedin_create_post's content.media.",
+      "description": "Step 1 of an image post: register the upload. Returns value.uploadUrl and value.image (urn:li:image:...). Send the file to uploadUrl with an HTTP PUT outside this connector, then pass the image URN in linkedin_create_post's content.media.id. Needs the w_member_social scope.",
       "parameters": {
         "type": "object",
         "properties": {
           "initializeUploadRequest": {
             "type": "object",
-            "description": "{owner: 'urn:li:person:YOUR_PERSON_ID'}."
+            "description": "{owner: 'urn:li:person:<sub>'}, with sub from linkedin_userinfo."
           }
         },
-        "required": ["initializeUploadRequest"]
+        "required": [
+          "initializeUploadRequest"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/images?action=initializeUpload",
+        "path": "https://api.linkedin.com/rest/images?action=initializeUpload",
         "headers": {
-          "LinkedIn-Version": "202405",
+          "LinkedIn-Version": "202609",
           "X-Restli-Protocol-Version": "2.0.0"
         },
         "bodyMapping": {
