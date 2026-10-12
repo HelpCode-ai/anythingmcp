@@ -319,6 +319,7 @@ import * as tiktokAds from './intl/tiktok-ads.json';
 import * as timetastic from './intl/timetastic.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
+import * as tradingview from './intl/tradingview.json';
 import * as trello from './intl/trello.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as twelveData from './intl/twelve-data.json';
@@ -902,6 +903,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   timetastic as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
+  tradingview as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
