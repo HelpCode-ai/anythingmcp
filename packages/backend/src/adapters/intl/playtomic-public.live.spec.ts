@@ -2,6 +2,7 @@ import * as adapter from './playtomic-public.json';
 
 const a = adapter as unknown as {
   slug: string;
+  unlisted?: boolean;
   category: string;
   requiredEnvVars: string[];
   connector: { baseUrl: string; authType: string; authConfig: Record<string, unknown> };
@@ -12,6 +13,12 @@ const a = adapter as unknown as {
 };
 
 describe('playtomic-public adapter — static spec conformance', () => {
+  // Playtomic blocks the cloud's datacenter IP (403 HTML on login since
+  // Aug 2026), so the connector is not offered. Installed ones keep resolving.
+  it('is unlisted', () => {
+    expect(a.unlisted).toBe(true);
+  });
+
   it('is the read-only LOGIN_TOKEN lite variant in the sports category', () => {
     expect(a.slug).toBe('playtomic-public');
     expect(a.category).toBe('sports');

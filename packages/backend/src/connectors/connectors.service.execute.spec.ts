@@ -65,6 +65,41 @@ describe('ConnectorsService.executeConnectorCall placeholders', () => {
     );
   });
 
+  describe('outbound proxy', () => {
+    const before = process.env.CONNECTOR_PROXY_URL;
+    afterEach(() => {
+      if (before === undefined) delete process.env.CONNECTOR_PROXY_URL;
+      else process.env.CONNECTOR_PROXY_URL = before;
+    });
+    const call = (options?: { useProxy?: boolean }) =>
+      service.executeConnectorCall(
+        substack({ SUBSTACK_PUBLICATION_URL: 'https://example.substack.com' }),
+        { method: 'GET', path: '/api/v1/posts' },
+        {},
+        'substack_list_posts',
+        undefined,
+        options,
+      );
+
+    // 12 Oct 2026: Uzum Market answers 400 to every request from Cloud's
+    // address; the setup check went direct even though the tools asked for
+    // the proxy, so the setup failed where a real call would have worked.
+    it('goes through the proxy when the tool asks for it', async () => {
+      process.env.CONNECTOR_PROXY_URL = 'http://proxy.test:8011';
+      await call({ useProxy: true });
+      expect(restEngine.execute.mock.calls[0][0]).toMatchObject({ proxyUrl: 'http://proxy.test:8011' });
+    });
+
+    it('stays direct when the tool does not ask, or no proxy is configured', async () => {
+      process.env.CONNECTOR_PROXY_URL = 'http://proxy.test:8011';
+      await call();
+      expect(restEngine.execute.mock.calls[0][0]).not.toHaveProperty('proxyUrl');
+      delete process.env.CONNECTOR_PROXY_URL;
+      await call({ useProxy: true });
+      expect(restEngine.execute.mock.calls[1][0]).not.toHaveProperty('proxyUrl');
+    });
+  });
+
   it('names the variable when its value has no https://, instead of the SSRF error', async () => {
     // An install from before the save-time check: the bare host went straight
     // into the base URL, and every call failed with "SSRF guard: invalid URL".

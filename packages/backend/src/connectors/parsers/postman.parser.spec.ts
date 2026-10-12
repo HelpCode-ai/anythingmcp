@@ -54,6 +54,34 @@ describe('PostmanParser', () => {
     expect(tools[0].endpointMapping.path).toBe('/users');
   });
 
+  it('drops a host variable from a string URL and turns its query into parameters', async () => {
+    // Monet's published collection (11 Oct 2026): every URL is a string that
+    // starts with {{url}} and carries example query values.
+    const collection = {
+      ...minimalCollection,
+      item: [
+        {
+          name: 'GetCustBalance',
+          request: {
+            method: 'GET',
+            url: '{{url}}DesktopModules/MonetServices2/API/V2/GetCustBalance?_accountNum=0001&_search=',
+          },
+        },
+        {
+          name: 'Plain',
+          request: { method: 'GET', url: 'https://api.example.com/v1/items?page=2' },
+        },
+      ],
+    };
+    const [monet, plain] = await parser.parse(collection);
+    expect(monet.endpointMapping.path).toBe('/DesktopModules/MonetServices2/API/V2/GetCustBalance');
+    expect(monet.endpointMapping.queryParams).toEqual({ _accountNum: '$_accountNum', _search: '$_search' });
+    expect(monet.parameters.properties).not.toHaveProperty('url');
+    expect(monet.parameters.required).toEqual(['_search']);
+    expect(plain.endpointMapping.path).toBe('/v1/items');
+    expect(plain.endpointMapping.queryParams).toEqual({ page: '$page' });
+  });
+
   it('should handle query parameters', async () => {
     const collection = {
       ...minimalCollection,

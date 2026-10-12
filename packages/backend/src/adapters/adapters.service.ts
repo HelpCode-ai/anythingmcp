@@ -418,6 +418,7 @@ export class AdaptersService {
         call.params,
         call.toolName,
         tool.parameters,
+        { useProxy: tool.useProxy === true },
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
@@ -568,6 +569,7 @@ export class AdaptersService {
           params,
           tool.name,
           tool.parameters,
+          { useProxy: tool.useProxy === true },
         );
         const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
         results.push({ tool: tool.name, outcome: 'ok', durationMs: Date.now() - started, shape: describeShape(shaped) });
@@ -831,6 +833,7 @@ export class AdaptersService {
         call.params,
         call.toolName,
         tool.parameters,
+        { useProxy: tool.useProxy === true },
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
