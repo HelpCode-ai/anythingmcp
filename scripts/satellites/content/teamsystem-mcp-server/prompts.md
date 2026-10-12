@@ -1,0 +1,12 @@
+- Find customers whose name matches "Rossi".
+- Search customers by VAT number "IT12345678901".
+- Show the full customer record for customer ID "CUST-1001".
+- List suppliers matching "Office Supplies".
+- Show invoices dated between 2026-09-01 and 2026-09-30.
+- List invoices with the status value configured for our TeamSystem API for the period 2026-09-01 to 2026-09-30.
+- Show the full invoice record for invoice ID "INV-1001".
+- Find catalogue items matching "laptop".
+- List the first 25 customers, starting at page 0.
+- Show the next page of suppliers, with 50 records per page.
+- List items matching "printer", with 20 records per page.
+- Find invoices for a date range and summarise the statuses returned by the API.
