@@ -254,6 +254,7 @@ describe('imports', () => {
           name: 'Old bot',
           type: 'REST' as any,
           baseUrl: `https://api.telegram.org/bot${TG}`,
+          config: { adapterSlug: 'telegram-bot', baseUrlBaseline: `https://api.telegram.org/bot${TG}` },
           tools: [
             {
               name: `post_bot${TG.replace(':', '_')}_sendMessage`.slice(0, 64),
@@ -268,6 +269,8 @@ describe('imports', () => {
     const data = prisma.connector.create.mock.calls[0][0].data;
     expect(data.baseUrl).toBe('https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}');
     expect(data.envVars).toEqual({ TELEGRAM_BOT_TOKEN: TG });
+    expect(data.config.baseUrlBaseline).toBe('https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}');
+    noSecret(data.config);
     const tool = prisma.mcpTool.create.mock.calls[0][0].data;
     expect(tool.name).toBe('post_sendMessage');
     expect(out.secretsMoved[0].field).toBe('Old bot: baseUrl');

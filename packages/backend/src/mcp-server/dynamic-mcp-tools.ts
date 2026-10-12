@@ -444,8 +444,14 @@ export class DynamicMcpTools {
       // An API that echoes the request (a URL with the bot token in it) must
       // not hand the connector's own credentials to the client, the cache or
       // the log. Only those values are replaced, and the response is copied
-      // only when it mentions one.
-      const result = redactSecretsDeep(upstreamResult, secretValues, { patterns: false });
+      // only when it mentions one. An all-digit value (a PIN, a numeric key)
+      // is left alone here: it would also match inside the response's own
+      // ids and amounts and corrupt them. Errors still redact it.
+      const result = redactSecretsDeep(
+        upstreamResult,
+        secretValues.filter((value) => !/^\d+$/.test(value)),
+        { patterns: false },
+      );
 
       const durationMs = Date.now() - startTime;
 

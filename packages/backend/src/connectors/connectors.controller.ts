@@ -1583,6 +1583,14 @@ export class ConnectorsController {
       const fromCatalog = !!(c.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
       const headers =
         guarded && !fromCatalog ? secrets.extractHeaders(c.headers, 'headers') : c.headers;
+      // A catalog install's snapshot of its base URL holds the same token
+      // (and `config` is returned to every member of the workspace).
+      const rawConfig = c.config as Record<string, unknown> | undefined;
+      const baseline = rawConfig?.baseUrlBaseline;
+      const config =
+        guarded && typeof baseline === 'string'
+          ? { ...rawConfig, baseUrlBaseline: secrets.extractUrl(baseline, 'config.baseUrlBaseline') }
+          : c.config;
       const tools =
         guarded && Array.isArray(c.tools) ? c.tools.map((t) => secrets.extractTool(t)) : c.tools;
       const envVars =
@@ -1602,7 +1610,7 @@ export class ConnectorsController {
             authType: c.authType || 'NONE',
             specUrl: c.specUrl,
             headers: headers as any,
-            config: c.config as any,
+            config: config as any,
             envVars: envVars as any,
           },
         });

@@ -123,6 +123,52 @@ export function looksHighEntropy(token: string): boolean {
   return shannonEntropy(token) >= 4.2;
 }
 
+/**
+ * Path segments after which a random-looking segment is a resource id, not a
+ * key: `/spreadsheets/<id>`, `/document/d/<id>`, `/drive/v3/files/<id>`,
+ * `/drives/b!<id>`, `/me/messages/<id>`. Google and Microsoft document,
+ * file and message ids are 33–100 random base64url characters and pass the
+ * entropy test; moving one into a (masked) variable hid it in the editor and
+ * redacted every response that echoes it (the Sheets API returns its
+ * `spreadsheetId` on each call), which breaks the next call that uses it.
+ */
+const ID_COLLECTIONS = new Set([
+  'spreadsheets',
+  'd',
+  'document',
+  'documents',
+  'presentation',
+  'presentations',
+  'file',
+  'files',
+  'folders',
+  'drives',
+  'items',
+  'children',
+  'forms',
+  'playlists',
+  'videos',
+  'channels',
+  'messages',
+  'mailfolders',
+  'events',
+  'calendars',
+  'threads',
+  'drafts',
+  'attachments',
+  'sites',
+  'lists',
+]);
+
+/** True when the segment holding `start` comes right after one of ID_COLLECTIONS. */
+function followsIdCollection(path: string, start: number): boolean {
+  const segmentStart = path.lastIndexOf('/', start - 1);
+  if (segmentStart <= 0) return false;
+  const previousStart = path.lastIndexOf('/', segmentStart - 1);
+  const previous = path.slice(previousStart + 1, segmentStart).toLowerCase();
+  return ID_COLLECTIONS.has(previous);
+}
+
 function charClass(ch: string): number {
   if (ch >= 'A' && ch <= 'Z') return 1;
   if (ch >= 'a' && ch <= 'z') return 2;
@@ -305,6 +351,9 @@ export function findSecretLiterals(input: string, opts: FindOptions = {}): Secre
   const found: SecretFinding[] = [];
 
   for (const m of masked.matchAll(TELEGRAM)) {
+    // Without `bot` in front, `<digits>:<word>` is also an AWS ARN tail
+    // (`…:123456789012:my-long-topic-name`): require a random-looking secret.
+    if (!m[0].startsWith('bot') && !isMixed(m[1].slice(m[1].indexOf(':') + 1))) continue;
     const start = (m.index ?? 0) + m[0].length - m[1].length;
     found.push(finding('telegram_bot_token', text, start, start + m[1].length, 'bot'));
   }
@@ -344,6 +393,7 @@ export function findSecretLiterals(input: string, opts: FindOptions = {}): Secre
       const after = masked[start + m[0].length] ?? '';
       // Part of a dotted name (host, file) or of a longer token: not a segment.
       if (before === '.' || after === '.') continue;
+      if (followsIdCollection(masked, start)) continue;
       if (!looksHighEntropy(m[0])) continue;
       found.push(finding('high_entropy', text, start, start + m[0].length, 'high-entropy'));
     }
@@ -438,19 +488,27 @@ export function redactSecretsDeep<T>(
   opts: RedactOptions = {},
 ): T {
   const extras = [...extraValues].filter((v) => typeof v === 'string' && v.length >= 6);
+  // Only arrays and plain objects are walked: a Date, a Buffer or a Decimal
+  // (database rows) is passed through as it is, never flattened into `{}`.
+  const walkable = (v: unknown): v is Record<string, unknown> => {
+    if (v === null || typeof v !== 'object') return false;
+    if (Array.isArray(v)) return true;
+    const proto = Object.getPrototypeOf(v);
+    return proto === Object.prototype || proto === null;
+  };
   if (opts.patterns === false) {
     // A response is usually large and clean: look before copying it.
     if (extras.length === 0) return value;
     const mentions = (v: unknown, depth: number): boolean => {
       if (typeof v === 'string') return extras.some((s) => v.includes(s));
-      if (depth > 20 || v === null || typeof v !== 'object') return false;
-      return Object.values(v as Record<string, unknown>).some((x) => mentions(x, depth + 1));
+      if (depth > 20 || !walkable(v)) return false;
+      return Object.values(v).some((x) => mentions(x, depth + 1));
     };
     if (!mentions(value, 0)) return value;
   }
   const walk = (v: unknown, depth: number): unknown => {
     if (typeof v === 'string') return redactSecretLiterals(v, extras, opts);
-    if (depth > 20 || v === null || typeof v !== 'object') return v;
+    if (depth > 20 || !walkable(v)) return v;
     if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
     return Object.fromEntries(
       Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x, depth + 1)]),

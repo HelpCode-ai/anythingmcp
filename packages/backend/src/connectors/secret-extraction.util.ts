@@ -146,8 +146,13 @@ function deepReplace(value: unknown, pairs: Array<[string, string]>, depth = 0):
   }
   if (depth > 30 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((v) => deepReplace(v, pairs, depth + 1));
+  // Keys too: a hand-built tool can name a parameter or a query key after
+  // the secret itself, and `required` then lists the same string.
   return Object.fromEntries(
-    Object.entries(value as Json).map(([k, v]) => [k, deepReplace(v, pairs, depth + 1)]),
+    Object.entries(value as Json).map(([k, v]) => [
+      deepReplace(k, pairs, depth + 1) as string,
+      deepReplace(v, pairs, depth + 1),
+    ]),
   );
 }
 
@@ -359,8 +364,12 @@ export class SecretExtractor {
         isSecretQueryName(param) ||
         isCredentialHeaderName(param) ||
         slots.some((s) => s.credential);
+      // A random-looking default alone (a spreadsheet or folder id) is not
+      // a secret: only a known key shape, or any credential in a credential
+      // slot, is. Moving an id would also drop the parameter from the schema.
       const shaped = findSecretLiterals(value, { query: false })
-        .filter((f) => f.start === 0 && f.end === value.length);
+        .filter((f) => f.start === 0 && f.end === value.length)
+        .filter((f) => f.kind !== 'high_entropy' || credentialSlot);
       const isSecret = shaped.length > 0 || (credentialSlot && isCredentialLiteral(value));
       if (!isSecret) continue;
 

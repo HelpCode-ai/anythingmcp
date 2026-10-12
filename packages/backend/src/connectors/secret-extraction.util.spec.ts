@@ -162,6 +162,34 @@ describe('SecretExtractor', () => {
     expect(x.newEnvVars).toEqual({ WEATHER_API_KEY: 'w1w2w3w4w5w6' });
   });
 
+  it('keeps a random-looking id default (a spreadsheet) as a parameter', () => {
+    const SHEET = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms';
+    const x = new SecretExtractor('Sheets', {});
+    const draft = {
+      name: 'read_values',
+      parameters: {
+        type: 'object',
+        properties: { spreadsheetId: { type: 'string', default: SHEET } },
+      },
+      endpointMapping: { method: 'GET', path: '/v4/spreadsheets/{spreadsheetId}/values/A1:B2' },
+    };
+    expect(x.extractTool(draft)).toEqual(draft);
+    expect(x.changed).toBe(false);
+  });
+
+  it('replaces a secret used as a key as well, so the schema stays consistent', () => {
+    const x = new SecretExtractor('Bot', {});
+    const tool = x.extractTool({
+      name: 'send',
+      parameters: { type: 'object', properties: { [TG]: { type: 'string' } }, required: [TG] },
+      endpointMapping: { method: 'POST', path: `/bot${TG}/sendMessage`, queryParams: { [TG]: `$${TG}` } },
+    });
+    const text = JSON.stringify(tool);
+    expect(text).not.toContain(TG.split(':')[1]);
+    const params = tool.parameters as any;
+    expect(params.required).toEqual(Object.keys(params.properties));
+  });
+
   it('leaves a clean catalog-style tool untouched', () => {
     const x = new SecretExtractor('Telegram', { TELEGRAM_BOT_TOKEN: TG });
     const tool = {

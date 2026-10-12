@@ -1,4 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
@@ -10,6 +18,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
 import {
@@ -225,15 +234,43 @@ export class ConnectorsService {
    */
   async addEnvVars(id: string, vars: Record<string, string>): Promise<void> {
     if (Object.keys(vars).length === 0) return;
-    const row = await this.prisma.connector.findUnique({
-      where: { id },
-      select: { envVars: true },
-    });
-    const current = (row?.envVars as Record<string, string> | null) ?? {};
-    await this.prisma.connector.update({
-      where: { id },
-      data: { envVars: { ...current, ...vars } as any },
-    });
+    // The caller has already written `{{NAME}}` into the tool it is about to
+    // store, and the value exists nowhere else: losing it to a concurrent
+    // save (two tools created in parallel, an edit of the variables) would
+    // lose the secret. So the row is replaced only if it is unchanged since it
+    // was read, a variable holding another value is never overwritten, and
+    // variables that cannot be decrypted are never replaced by an empty set.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      // Raw on purpose: what is stored, before the at-rest extension.
+      const rows = await this.prisma.$queryRaw<Array<{ env_vars: unknown }>>`
+        SELECT env_vars FROM connectors WHERE id = ${id}`;
+      if (rows.length === 0) throw new NotFoundException(`Connector ${id} not found`);
+      const stored = rows[0].env_vars;
+      const current = openEnvVarsStrict(stored);
+      if (current === null) {
+        throw new InternalServerErrorException(
+          "The connector's variables cannot be read (check ENCRYPTION_KEY). Nothing was saved.",
+        );
+      }
+      for (const [name, value] of Object.entries(vars)) {
+        if (Object.prototype.hasOwnProperty.call(current, name) && current[name] !== value) {
+          throw new ConflictException(
+            `The variable ${name} of this connector was changed at the same time. Nothing was saved; try again.`,
+          );
+        }
+      }
+      const next = JSON.stringify(sealEnvVars({ ...current, ...vars }));
+      const updated =
+        stored === null || stored === undefined
+          ? await this.prisma.$executeRaw`
+              UPDATE connectors SET env_vars = ${next}::jsonb, updated_at = now()
+              WHERE id = ${id} AND (env_vars IS NULL OR env_vars = 'null'::jsonb)`
+          : await this.prisma.$executeRaw`
+              UPDATE connectors SET env_vars = ${next}::jsonb, updated_at = now()
+              WHERE id = ${id} AND env_vars = ${JSON.stringify(stored)}::jsonb`;
+      if (updated === 1) return;
+    }
+    throw new ConflictException('The connector was changed at the same time. Nothing was saved; try again.');
   }
 
   async remove(id: string): Promise<void> {

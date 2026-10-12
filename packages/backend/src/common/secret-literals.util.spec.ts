@@ -209,6 +209,39 @@ describe('redaction', () => {
     const out = redactSecretsDeep({ a: [`x ${STRIPE} y`], b: { c: 1 } });
     expect(out).toEqual({ a: ['x [REDACTED] y'], b: { c: 1 } });
   });
+  it('copies only plain objects and arrays: a Date or a Buffer in a row survives', () => {
+    const when = new Date(0);
+    const buf = Buffer.from('hello');
+    const out: any = redactSecretsDeep({ when, buf, note: 'pw hunter2-long' }, ['hunter2-long'], { patterns: false });
+    expect(out.note).toBe('pw [REDACTED]');
+    expect(out.when).toBe(when);
+    expect(out.buf).toBe(buf);
+  });
+});
+
+describe('resource ids that look random', () => {
+  // Shapes of real Google and Microsoft ids (generated, not real documents).
+  const SHEET = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms';
+  const DRIVE = '1Zx8Kq3Lm9Np2Rt5Vw7Yb4Dc6Fh8Jk0Mn';
+  const GRAPH_DRIVE = 'b!aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM';
+  const GRAPH_MESSAGE = 'AAMkADg3NTY5MDg4LWMzYmQtNDQzNi05OTRkLTdjNGQ2ZTA1ZWQ2YgBGAAAAAAB';
+  it.each([
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/Sheet1!A1:D5`,
+    `/v4/spreadsheets/${SHEET}:batchUpdate`,
+    `https://docs.google.com/spreadsheets/d/${SHEET}/edit`,
+    `https://docs.google.com/document/d/${SHEET}/edit`,
+    `https://www.googleapis.com/drive/v3/files/${DRIVE}`,
+    `https://graph.microsoft.com/v1.0/drives/${GRAPH_DRIVE}/items`,
+    `/v1.0/me/messages/${GRAPH_MESSAGE}`,
+    // an ARN tail is `<account>:<name>`, not a bot token
+    '/topics/arn:aws:sns:us-east-1:123456789012:my-very-long-topic-name-for-orders-processing',
+  ])('does not flag %s', (url) => {
+    expect(findSecretLiterals(url)).toEqual([]);
+  });
+
+  it('still flags a token after a non-collection segment', () => {
+    expect(findSecretLiterals(`/macros/s/${SHEET}/exec`)[0].kind).toBe('high_entropy');
+  });
 });
 
 /**
