@@ -136,6 +136,7 @@ import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
 import * as exerciseCom from './intl/exercise-com.json';
+import * as facebookPages from './intl/facebook-pages.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
@@ -720,6 +721,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
+  facebookPages as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
