@@ -10,6 +10,9 @@ import {
 } from '../common/secret-literals.util';
 import { capToolName } from './parsers/tool-name.util';
 
+/** Keys never written into a rebuilt map (prototype pollution). */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Moves secret literals out of a connector's base URL, headers and tools into
  * its (encrypted) variables, leaving a `{{VAR}}` reference behind.
@@ -290,6 +293,7 @@ export class SecretExtractor {
     if (isObject(em.queryParams)) {
       const query: Json = {};
       for (const [name, value] of Object.entries(em.queryParams)) {
+        if (UNSAFE_KEYS.has(name)) continue;
         if (typeof value !== 'string') {
           query[name] = value;
           continue;
@@ -356,6 +360,7 @@ export class SecretExtractor {
     let required = Array.isArray(parameters.required) ? [...parameters.required] : undefined;
 
     for (const [param, schema] of Object.entries(properties)) {
+      if (UNSAFE_KEYS.has(param)) continue;
       if (!isObject(schema) || typeof schema.default !== 'string') continue;
       const value = schema.default;
       const ref = `$${param}`;
@@ -408,7 +413,7 @@ export class SecretExtractor {
       const map = em[key];
       if (!isObject(map)) return;
       for (const [name, value] of Object.entries(map)) {
-        if (value !== ref) continue;
+        if (value !== ref || UNSAFE_KEYS.has(name)) continue;
         out.push({
           credential: credential(name),
           set: (v) => {
