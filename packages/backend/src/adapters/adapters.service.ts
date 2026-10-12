@@ -39,6 +39,7 @@ import {
   SetupKind,
 } from './env-var-meta';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
+import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
@@ -296,6 +297,10 @@ export class AdaptersService {
       adapter.connector.baseUrl,
       resolvedBaseUrl,
     );
+    // What the connector stores: a secret in the address (Telegram's bot
+    // token, a Bitrix24 webhook URL) stays `{{VAR}}` and is resolved per call
+    // from the encrypted variables, never written to the base URL in clear.
+    const storedBaseUrl = storableBaseUrl(adapter, credentials);
 
     // Resolve {{VAR}} placeholders in static connector headers (e.g. Harvest
     // requires a per-tenant Harvest-Account-Id header on every call).
@@ -317,6 +322,7 @@ export class AdaptersService {
       resolvedAuthConfig,
       encryptedAuth,
       resolvedBaseUrl,
+      storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     };
@@ -628,7 +634,7 @@ export class AdaptersService {
     const {
       resolvedAuthConfig,
       encryptedAuth,
-      resolvedBaseUrl,
+      storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     } = this.prepareConnector(adapter, credentials);
@@ -639,7 +645,7 @@ export class AdaptersService {
         organizationId,
         name: adapter.connector.name,
         type: adapter.connector.type as any,
-        baseUrl: resolvedBaseUrl,
+        baseUrl: storedBaseUrl,
         isActive: true,
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
@@ -664,7 +670,7 @@ export class AdaptersService {
           // catalog moves, this is the only way to tell "we fixed a wrong
           // hostname" from "the operator deliberately pointed this at their
           // own region or sandbox" — the two look identical without it.
-          baseUrlBaseline: resolvedBaseUrl,
+          baseUrlBaseline: storedBaseUrl,
         },
       },
     });

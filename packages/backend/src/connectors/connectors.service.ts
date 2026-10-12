@@ -218,6 +218,24 @@ export class ConnectorsService {
     return updated;
   }
 
+  /**
+   * Adds variables to a connector, keeping the ones it has. Used when a
+   * secret typed into a URL, header or tool is moved into a variable; the
+   * column is encrypted at rest (env-vars-at-rest.ts).
+   */
+  async addEnvVars(id: string, vars: Record<string, string>): Promise<void> {
+    if (Object.keys(vars).length === 0) return;
+    const row = await this.prisma.connector.findUnique({
+      where: { id },
+      select: { envVars: true },
+    });
+    const current = (row?.envVars as Record<string, string> | null) ?? {};
+    await this.prisma.connector.update({
+      where: { id },
+      data: { envVars: { ...current, ...vars } as any },
+    });
+  }
+
   async remove(id: string): Promise<void> {
     await this.findById(id);
     await this.prisma.connector.delete({ where: { id } });
@@ -314,10 +332,10 @@ export class ConnectorsService {
         case 'GRAPHQL':
           await this.graphqlEngine.execute(
             {
-              baseUrl: connector.baseUrl,
+              baseUrl,
               authType: connector.authType,
               authConfig,
-              headers: connector.headers as Record<string, string>,
+              headers,
               connectorId: connector.id,
             },
             { method: 'query', path: '{ __typename }' },
@@ -357,10 +375,10 @@ export class ConnectorsService {
           return await this.testSoapConnection(connector.specUrl || undefined, baseUrl);
         case 'MCP': {
           const tools = await this.mcpClientEngine.listTools({
-            baseUrl: connector.baseUrl,
+            baseUrl,
             authType: connector.authType,
             authConfig,
-            headers: connector.headers as Record<string, string>,
+            headers,
             connectorId: connector.id,
             mcpPath: mcpPathOf(connector.config),
           });

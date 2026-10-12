@@ -48,6 +48,12 @@ import {
   findUnknownCallerContextVars,
   usesCallerContextDeep,
 } from '../common/caller-context.util';
+import {
+  SECRET_GUARDED_TYPES,
+  SecretExtractor,
+  type SecretMoveSummary,
+  type ToolDraft,
+} from './secret-extraction.util';
 
 const RESPONSE_MAPPING_DESC =
   'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
@@ -411,6 +417,42 @@ export class ToolsController {
     });
   }
 
+  /**
+   * A key typed into a tool (`/bot<token>/sendMessage`, `?api_key=…`, an
+   * `X-Api-Key` header, a parameter default) moves into an encrypted variable
+   * of the connector and is referenced as {{VAR}}; a name that carried it is
+   * regenerated from the rewritten path. The variables are stored before the
+   * tool, so the registry reload that follows sees both.
+   */
+  private async guardToolSecrets<T extends ToolDraft>(
+    connector: {
+      id: string;
+      name: string;
+      type: string;
+      envVars: unknown;
+      tools?: Array<{ id: string; name: string }>;
+    },
+    tools: T[],
+    exceptToolId?: string,
+  ): Promise<{ tools: T[]; summary: SecretMoveSummary }> {
+    // A DATABASE tool's "path" is its SQL; a WEBHOOK has no outgoing request.
+    if (!SECRET_GUARDED_TYPES.has(connector.type)) return { tools, summary: {} };
+    const secrets = new SecretExtractor(
+      connector.name,
+      connector.envVars as Record<string, string> | null,
+      {
+        takenToolNames: (connector.tools ?? [])
+          .filter((t) => t.id !== exceptToolId)
+          .map((t) => t.name),
+      },
+    );
+    const guarded = tools.map((t) => secrets.extractTool(t));
+    if (Object.keys(secrets.newEnvVars).length > 0) {
+      await this.connectorsService.addEnvVars(connector.id, secrets.newEnvVars);
+    }
+    return { tools: guarded, summary: secrets.summary() };
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new MCP tool for a connector' })
   async create(
@@ -418,25 +460,29 @@ export class ToolsController {
     @Param('connectorId') connectorId: string,
     @Body() dto: CreateToolDto,
   ) {
-    await this.assertCanWriteConnector(connectorId, req);
+    const connector = await this.assertCanWriteConnector(connectorId, req);
     this.assertKnownCallerContextVars(dto.endpointMapping);
     this.assertValidResponseMapping(dto.responseMapping);
+    const {
+      tools: [guarded],
+      summary,
+    } = await this.guardToolSecrets(connector, [{ ...dto }]);
     const tool = await this.prisma.mcpTool
       .create({
         data: {
           connectorId,
-          name: dto.name,
-          description: dto.description,
-          parameters: dto.parameters as any,
-          endpointMapping: dto.endpointMapping as any,
-          responseMapping: dto.responseMapping as any,
+          name: guarded.name,
+          description: guarded.description,
+          parameters: guarded.parameters as any,
+          endpointMapping: guarded.endpointMapping as any,
+          responseMapping: guarded.responseMapping as any,
         },
       })
-      .catch((err) => ToolsController.duplicateNameAsConflict(err, dto.name));
+      .catch((err) => ToolsController.duplicateNameAsConflict(err, guarded.name));
 
     // Reload MCP tools for this connector
     await this.mcpServer.reloadConnectorTools(connectorId);
-    return tool;
+    return { ...tool, ...summary };
   }
 
   /**
@@ -464,17 +510,20 @@ export class ToolsController {
     @Param('connectorId') connectorId: string,
     @Body() body: BulkCreateToolsDto,
   ) {
-    await this.assertCanWriteConnector(connectorId, req);
-    const toolDefs = body.tools;
-    if (!Array.isArray(toolDefs) || toolDefs.length === 0) {
+    const connector = await this.assertCanWriteConnector(connectorId, req);
+    if (!Array.isArray(body.tools) || body.tools.length === 0) {
       return { error: 'Provide a "tools" array with at least one tool definition' };
     }
+    for (const dto of body.tools) this.assertValidResponseMapping(dto.responseMapping);
+    const { tools: toolDefs, summary } = await this.guardToolSecrets(
+      connector,
+      body.tools.map((t) => ({ ...t })),
+    );
 
     const created = [];
     const skipped: string[] = [];
 
     for (const dto of toolDefs) {
-      this.assertValidResponseMapping(dto.responseMapping);
       try {
         const tool = await this.prisma.mcpTool.create({
           data: {
@@ -502,6 +551,7 @@ export class ToolsController {
       message: `Created ${created.length} tools${skipped.length > 0 ? `, skipped ${skipped.length} duplicates` : ''}`,
       tools: created,
       skipped,
+      ...summary,
     };
   }
 
@@ -513,7 +563,7 @@ export class ToolsController {
     @Param('connectorId') connectorId: string,
     @Body() dto: UpdateToolDto,
   ) {
-    await this.assertCanWriteConnector(connectorId, req);
+    const connector = await this.assertCanWriteConnector(connectorId, req);
     if (dto.endpointMapping !== undefined) {
       this.assertKnownCallerContextVars(dto.endpointMapping);
     }
@@ -521,10 +571,33 @@ export class ToolsController {
       this.assertValidResponseMapping(dto.responseMapping);
     }
 
+    const data: Record<string, unknown> = { ...(dto as Record<string, unknown>) };
+
+    // Secrets: the tool as it will be after this edit is scanned, so a key
+    // left in it by an earlier save (or a name built from it) goes too.
+    const stored = await this.prisma.mcpTool.findFirst({
+      where: { id: toolId, connectorId },
+      select: { name: true, description: true, parameters: true, endpointMapping: true },
+    });
+    let summary: SecretMoveSummary = {};
+    if (stored) {
+      const draft = {
+        name: dto.name ?? stored.name,
+        description: dto.description ?? stored.description,
+        parameters: dto.parameters ?? stored.parameters,
+        endpointMapping: dto.endpointMapping ?? stored.endpointMapping,
+      };
+      const guarded = await this.guardToolSecrets(connector, [draft], toolId);
+      summary = guarded.summary;
+      const [after] = guarded.tools;
+      for (const key of Object.keys(draft) as Array<keyof typeof draft>) {
+        if (JSON.stringify(after[key]) !== JSON.stringify(draft[key])) data[key] = after[key];
+      }
+    }
+
     // A changed transform changes the shape clients receive, so the stored
     // outputSchema (inferred from the previous shape) no longer describes it.
     // Drop it and let the next successful test re-infer it.
-    const data: Record<string, unknown> = { ...(dto as Record<string, unknown>) };
     if (dto.responseMapping !== undefined) {
       const current = await this.prisma.mcpTool.findFirst({
         where: { id: toolId, connectorId },
@@ -545,13 +618,14 @@ export class ToolsController {
         where: { id: toolId, connectorId },
         data: data as any,
       })
-      .catch((err) => ToolsController.duplicateNameAsConflict(err, dto.name));
+      .catch((err) => ToolsController.duplicateNameAsConflict(err, data.name as string | undefined));
     if (result.count === 0) {
       throw new ForbiddenException('Tool not found');
     }
 
     await this.mcpServer.reloadConnectorTools(connectorId);
-    return this.prisma.mcpTool.findUnique({ where: { id: toolId } });
+    const tool = await this.prisma.mcpTool.findUnique({ where: { id: toolId } });
+    return tool ? { ...tool, ...summary } : tool;
   }
 
   @Get(':toolId/annotations')

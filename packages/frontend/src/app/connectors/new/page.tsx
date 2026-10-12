@@ -185,6 +185,10 @@ export default function NewConnectorPage() {
       }
 
       const created = await connectors.create(data, token);
+      // Shown on the connector's page: this form navigates away right after.
+      if (created.secretsNotice) {
+        window.sessionStorage.setItem(`amcp:secretsNotice:${created.id}`, created.secretsNotice);
+      }
 
       if (specUrl && (selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL')) {
         try {

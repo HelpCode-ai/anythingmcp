@@ -38,6 +38,8 @@ import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.e
 import { connectorPageUrl } from '../common/url.util';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
+import { isMaskedEnvVar, secretContext } from '../connectors/connector-secrets.util';
+import { redactSecretsDeep } from '../common/secret-literals.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -156,6 +158,27 @@ export class DynamicMcpTools {
     } else {
       this.logger.log(line);
     }
+  }
+
+  /**
+   * Values of the connector's secret variables (by name, by the slot the
+   * adapter uses them in, or by their shape), as `connector-secrets.util`
+   * decides which ones the dashboard withholds. Short values are skipped:
+   * replacing a 3-character string everywhere in a response would mangle it.
+   */
+  private connectorSecretValues(tool: RegisteredTool): string[] {
+    const envVars = tool.connectorConfig?.envVars;
+    if (!envVars || typeof envVars !== 'object') return [];
+    const ctx = secretContext({
+      config: tool.connectorConfig.config,
+      headers: tool.connectorConfig.headers,
+    });
+    return Object.entries(envVars)
+      .filter(
+        ([name, value]) =>
+          typeof value === 'string' && value.length >= 8 && isMaskedEnvVar(name, value, ctx),
+      )
+      .map(([, value]) => value as string);
   }
 
   private async getProxyLimit(organizationId: string): Promise<number> {
@@ -289,6 +312,10 @@ export class DynamicMcpTools {
 
     const startTime = Date.now();
     let usedProxy = false;
+    // The connector's credentials, as filled into the URL, headers and auth.
+    // An error message or an echoing API can quote them back (a URL with the
+    // bot token in its path); they never reach the client or the log.
+    const secretValues = this.connectorSecretValues(tool);
 
     try {
       const envVars = tool.connectorConfig.envVars || {};
@@ -413,7 +440,12 @@ export class DynamicMcpTools {
       } finally {
         processGauges.dec('toolCallsInFlight');
       }
-      const { body: result, meta } = engineOut;
+      const { body: upstreamResult, meta } = engineOut;
+      // An API that echoes the request (a URL with the bot token in it) must
+      // not hand the connector's own credentials to the client, the cache or
+      // the log. Only those values are replaced, and the response is copied
+      // only when it mentions one.
+      const result = redactSecretsDeep(upstreamResult, secretValues, { patterns: false });
 
       const durationMs = Date.now() - startTime;
 
@@ -468,7 +500,7 @@ export class DynamicMcpTools {
       return rendered;
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
-      const errorDetail = this.extractErrorDetail(error);
+      const errorDetail = redactSecretsDeep(this.extractErrorDetail(error), secretValues);
       this.logToolCall(
         tool,
         context,

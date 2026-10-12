@@ -1,5 +1,6 @@
 import { interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
+import { isSecretName } from './connector-secrets.util';
 
 /**
  * Re-resolve a catalog connector's credentials after its environment variables
@@ -35,11 +36,45 @@ export interface CatalogTemplate {
   connector: {
     baseUrl: string;
     authType: string;
+    type?: string;
     authConfig?: Record<string, unknown>;
     headers?: Record<string, string>;
   };
   /** New variable name → names it had in earlier versions of the adapter. */
   envVarAliases?: Record<string, string[]>;
+  envVarMeta?: Record<string, { secret?: boolean }>;
+}
+
+/**
+ * Secret variables in a catalog base URL (`https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}`,
+ * `{{BITRIX24_WEBHOOK_URL}}`). The stored base URL keeps them as `{{VAR}}`:
+ * resolved, the bot token sat in the connectors table in plain text and was
+ * returned with the connector to every member of the workspace. Calls resolve
+ * the variable each time, as they do for every other field.
+ *
+ * A DATABASE connection string is resolved as before: its engine reads the
+ * stored value directly.
+ */
+export function secretBaseUrlVariables(template: CatalogTemplate): Set<string> {
+  const out = new Set<string>();
+  if (template.connector.type === 'DATABASE') return out;
+  for (const name of placeholders(template.connector.baseUrl ?? '')) {
+    const meta = template.envVarMeta?.[name];
+    if (meta?.secret ?? isSecretName(name)) out.add(name);
+  }
+  return out;
+}
+
+/** The base URL to store: every variable resolved except the secret ones. */
+export function storableBaseUrl(
+  template: CatalogTemplate,
+  values: Record<string, string> | undefined,
+): string {
+  const keep = secretBaseUrlVariables(template);
+  const safe = Object.fromEntries(
+    Object.entries(values ?? {}).filter(([name]) => !keep.has(name)),
+  );
+  return interpolateString(template.connector.baseUrl, safe);
 }
 
 export interface RebuildInput {
@@ -117,6 +152,8 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
     template: string,
     stored: unknown,
     field: string,
+    /** Variables left as `{{VAR}}` (secrets in a base URL), when set under their own name. */
+    keepAsReference: Set<string> = new Set(),
   ): unknown => {
     const vars = placeholders(template);
     if (vars.length === 0) return stored !== undefined ? stored : template;
@@ -126,11 +163,22 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
     const storedIsBroken =
       typeof stored === 'string' &&
       placeholders(stored).some((name) => !input.nextEnvVars[name]);
+    // Call time resolves only the variable's own name, not an alias.
+    const keep = new Set([...keepAsReference].filter((name) => !!input.nextEnvVars[name]));
+    const values = Object.fromEntries(Object.entries(next).filter(([name]) => !keep.has(name)));
+    const resolved = interpolateString(template, values);
+    // A secret resolved into the stored value by an older install: the
+    // reference form sends the same request, so it replaces it. A value that
+    // differs (a base URL pointed elsewhere by hand) is left alone.
+    const storedHoldsSecret =
+      keep.size > 0 &&
+      typeof stored === 'string' &&
+      stored !== resolved &&
+      stored === interpolateString(template, next);
     const needsRebuild =
-      stored === undefined || storedIsBroken || vars.some(changed);
+      stored === undefined || storedIsBroken || vars.some(changed) || storedHoldsSecret;
 
-    const resolved = interpolateString(template, next);
-    const unresolved = placeholders(resolved);
+    const unresolved = placeholders(resolved).filter((name) => !keep.has(name));
     // Reported even when the field is left alone: someone editing
     // IS24_CLIENT_ID on an old install should learn that the connector reads
     // IS24_CONSUMER_KEY, not see the save succeed and nothing change.
@@ -200,7 +248,12 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
     }
   }
 
-  const baseUrl = resolveField(template.baseUrl, input.storedBaseUrl, 'baseUrl');
+  const baseUrl = resolveField(
+    template.baseUrl,
+    input.storedBaseUrl,
+    'baseUrl',
+    secretBaseUrlVariables(input.adapter),
+  );
   if (typeof baseUrl === 'string' && baseUrl !== input.storedBaseUrl) {
     result.baseUrl = baseUrl;
   }

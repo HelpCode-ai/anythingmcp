@@ -15,6 +15,7 @@ import {
 import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
+import { findSecretLiterals } from '../common/secret-literals.util';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -241,6 +242,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         };
       }
       const text = value !== undefined && value !== null ? String(value).trim() : '';
+      // A shop URL with `?access_token=…`, a tenant field holding a key: the
+      // chat is the wrong place for it, whatever the setting is called.
+      if (text && findSecretLiterals(text).length > 0) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' contains what looks like a password, API key or token. Secrets are never taken from the chat.`,
+            hint: 'Install without it, or with only the non-secret part (the address without the key). The user enters the secret on the page linked in the answer, where it is stored encrypted.',
+          },
+        };
+      }
       if (text && d.pattern && !matchesPattern(d.pattern, text)) {
         return {
           isError: true,
