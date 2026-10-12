@@ -293,16 +293,33 @@ export class PostmanParser {
     if (!url) return null;
 
     if (typeof url === 'string') {
-      try {
-        const parsed = new URL(url.replace(/\{\{[^{}]+\}\}/g, 'placeholder'));
-        return {
-          raw: url,
-          path: url.replace(/^https?:\/\/[^/]+/, ''),
-          query: [],
-        };
-      } catch {
-        return { raw: url, path: url, query: [] };
-      }
+      // A string URL starts with the host, written out or as a collection
+      // variable ("{{url}}DesktopModules/.../GetCustBalance?_accountNum=0001").
+      // Both go: the connector's base URL supplies the host. The query string
+      // becomes query parameters, as in the URL-object form. Before this, the
+      // variable and the query stayed in the path, so a Monet collection
+      // imported on 11 Oct 2026 produced 42 tools that all answered 404.
+      const rest = url
+        .trim()
+        .replace(/^https?:\/\/[^/?#]+/i, '')
+        .replace(/^\{\{[^{}]+\}\}/, '');
+      const at = rest.indexOf('?');
+      const pathPart = at === -1 ? rest : rest.slice(0, at);
+      const queryPart = at === -1 ? '' : rest.slice(at + 1);
+      const query = queryPart
+        .split('&')
+        .filter(Boolean)
+        .map((pair) => {
+          const eq = pair.indexOf('=');
+          const key = eq === -1 ? pair : pair.slice(0, eq);
+          const value = eq === -1 ? '' : pair.slice(eq + 1);
+          return { key: safeDecode(key), value: safeDecode(value) };
+        });
+      return {
+        raw: url,
+        path: pathPart.startsWith('/') ? pathPart : `/${pathPart}`,
+        query,
+      };
     }
 
     // Postman URL object
@@ -436,5 +453,13 @@ export class PostmanParser {
     if (Array.isArray(value)) return 'array';
     if (typeof value === 'object' && value !== null) return 'object';
     return 'string';
+  }
+}
+
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text.replace(/\+/g, ' '));
+  } catch {
+    return text;
   }
 }
