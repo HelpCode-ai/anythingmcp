@@ -1,4 +1,6 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { NotFoundException } from '@nestjs/common';
 import { SiteSettingsAdminController, SiteSettingsMemberController } from './site-settings.controller';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
@@ -53,5 +55,20 @@ describe('SiteSettingsMemberController footer links', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, SiteSettingsMemberController) ?? [];
     expect(guards).toHaveLength(1);
     expect(Reflect.getMetadata('roles', SiteSettingsMemberController)).toBeUndefined();
+  });
+});
+
+describe('footer link URLs', () => {
+  // The DTO class is not exported; reach it through the route's metadata.
+  const [, dtoType] = Reflect.getMetadata('design:paramtypes', SiteSettingsAdminController.prototype, 'updateFooterLinks');
+  const errors = (url: string) =>
+    validateSync(plainToInstance(dtoType, { links: [{ label: 'x', url }] }));
+
+  it.each(['https://acme.test/privacy', 'http://intranet.local/imprint', 'mailto:legal@acme.test'])('accepts %s', (url) => {
+    expect(errors(url)).toHaveLength(0);
+  });
+
+  it.each(['javascript:alert(1)', 'data:text/html,hi', 'JaVaScRiPt:alert(1)', '/relative', 'ftp://x'])('refuses %s', (url) => {
+    expect(errors(url).length).toBeGreaterThan(0);
   });
 });

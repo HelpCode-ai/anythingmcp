@@ -38,6 +38,11 @@ interface FooterLink {
   url: string;
 }
 
+/** Links saved before the server checked the scheme: only web and mail links render. */
+function isSafeLink(url: unknown): boolean {
+  return typeof url === 'string' && /^(https?:\/\/|mailto:)/i.test(url.trim());
+}
+
 export function Footer() {
   const { theme, setTheme } = useTheme();
   const { token } = useAuth();
@@ -51,7 +56,9 @@ export function Footer() {
       const req = token
         ? siteSettings.workspaceFooterLinks(token).catch(() => siteSettings.footerLinks())
         : siteSettings.footerLinks();
-      req.then((l) => live && setLinks(Array.isArray(l) ? l : [])).catch(() => {});
+      req
+        .then((l) => live && setLinks(Array.isArray(l) ? l.filter((x) => isSafeLink(x?.url)) : []))
+        .catch(() => {});
     };
     load();
     window.addEventListener(FOOTER_LINKS_CHANGED, load);

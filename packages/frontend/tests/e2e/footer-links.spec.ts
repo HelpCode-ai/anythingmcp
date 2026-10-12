@@ -41,7 +41,10 @@ async function session(page: Page, opts: { workspaceLinks: unknown; publicLinks:
 
 test('a signed-in member sees their workspace footer links', async ({ page }) => {
   await session(page, {
-    workspaceLinks: [{ label: 'Acme privacy', url: 'https://acme.test/privacy' }],
+    workspaceLinks: [
+      { label: 'Acme privacy', url: 'https://acme.test/privacy' },
+      { label: 'Sneaky', url: 'javascript:alert(1)' },
+    ],
     publicLinks: [{ label: 'Instance imprint', url: 'https://instance.test/imprint' }],
   });
   await page.goto('/connectors');
@@ -49,6 +52,8 @@ test('a signed-in member sees their workspace footer links', async ({ page }) =>
   await expect(link).toBeVisible({ timeout: 15_000 });
   await expect(link).toHaveAttribute('href', 'https://acme.test/privacy');
   await expect(page.getByRole('link', { name: 'Instance imprint' })).toHaveCount(0);
+  // A link saved before the server checked the scheme is not rendered.
+  await expect(page.getByRole('link', { name: 'Sneaky' })).toHaveCount(0);
 });
 
 test('falls back to the instance-wide links if the workspace call fails', async ({ page }) => {
