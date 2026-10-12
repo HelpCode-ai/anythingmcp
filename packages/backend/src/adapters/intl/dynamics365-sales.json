@@ -1,0 +1,1910 @@
+{
+  "slug": "dynamics365-sales",
+  "name": "Microsoft Dynamics 365 Sales (Dataverse)",
+  "description": "Let your AI work in Dynamics 365 Sales: find and update accounts, contacts, leads and opportunities, log tasks, calls and notes, qualify leads and close deals, and query any Dataverse table with OData or FetchXML. Signed in with your Microsoft account through the Dataverse Web API.",
+  "unlisted": true,
+  "instructions": "## Microsoft Dynamics 365 Sales (Dataverse)\nThis connector works with **Dynamics 365 Sales** and any other **Dataverse** environment (Customer Service, Power Apps, custom tables) through the **Dataverse Web API v9.2** (`https://<org>.crm<n>.dynamics.com/api/data/v9.2`): accounts, contacts, leads, opportunities, activities and notes, plus OData and FetchXML queries and table metadata for everything else. Every call runs as the user who authorized the connector, with that user's security roles: the AI sees and changes exactly what that user may.\n\n**Setup (one-time, about 10 minutes)**\n1. Find the environment's address: in Dynamics open **Settings (gear) → Advanced settings**, or the Power Platform admin center → **Environments → your environment → Environment URL**. It looks like `contoso.crm4.dynamics.com`. Put the host name, without `https://` and without a path, into `DYNAMICS_ORG_HOST`.\n2. Open https://entra.microsoft.com → **Applications → App registrations → New registration** (or reuse the app of the Outlook, OneDrive or SharePoint connector). Supported account types: *Accounts in this organizational directory only* is the usual choice.\n3. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Dynamics CRM → Delegated permissions → user_impersonation**. Grant admin consent if your organisation does not let users consent themselves.\n5. **Certificates & secrets → New client secret**; copy the secret **Value** (shown once).\n6. Fill in `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (the Directory (tenant) ID, your domain, or `organizations` for a multi-tenant app) and `DYNAMICS_ORG_HOST`, then install.\n7. On the connector page click **Authorize with Provider** and sign in with a user of that environment. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Region in the host name**: the number after `crm` is the datacenter region: `crm` North America, `crm2` South America, `crm3` Canada, `crm4` EMEA, `crm5` Asia Pacific, `crm6` Australia, `crm7` Japan, `crm8` India, `crm11` United Kingdom, `crm12` France, `crm14` South Africa, `crm15` UAE, `crm16` Germany, `crm17` Switzerland, `crm19` Norway, `crm20` Korea, `crm21` Sweden. Copy it from the environment URL rather than guessing. Government clouds use `crm9.dynamics.com`, `crm.microsoftdynamics.us` or `crm.appsplatform.us`.\n\n**Scope**: `https://<DYNAMICS_ORG_HOST>/user_impersonation offline_access`, built from the host. `offline_access` makes Microsoft issue a refresh token. Do not add Microsoft Graph scopes to this connector: one token serves one API. Changing `DYNAMICS_ORG_HOST` later needs a new authorization, because the token belongs to one environment.\n\n**Who can use it**: the signed-in user needs a Dynamics 365 or Power Apps licence in that environment and a security role (Salesperson, Sales Manager or System Customizer). Writes are limited by the same role.\n\n**Names**: tools take column **logical names** (`name`, `emailaddress1`, `estimatedvalue`), and the generic tools take the **entity set name**, the plural used in the URL (`accounts`, `opportunities`, `salesorders`, `cr123_projects`). `d365_list_tables` maps tables to entity sets, `d365_describe_table` lists the columns, `d365_list_lookups` the lookup navigation properties, `d365_get_choice_options` the numbers behind choice columns.\n\n**Reading**\n- Answers carry labels next to raw values: `statecode` is `0` and `statecode@OData.Community.Display.V1.FormattedValue` is `Open`; a lookup such as `_parentcustomerid_value` holds the id and its FormattedValue the name.\n- `filter`: `name eq 'Contoso'`, `contains(name,'Contoso')`, `startswith(fullname,'Mey')`, `estimatedvalue gt 10000`, `createdon ge 2026-10-01`, `_ownerid_value eq <user id>` (lookups as `_<column>_value`, GUIDs bare), `statecode eq 0` for active rows. Choice columns compare numbers.\n- `select` keeps answers small. The list tools have a short default; `d365_query` and the get tools return every column without one.\n- Paging: `page_size` rows per page (default 50). When more rows exist the answer has `@odata.nextLink`; call `d365_next_page` with the same entity set and the part of the link after `?`, unchanged. `top` instead returns at most that many rows and no next page. Dataverse has no `$skip`.\n- `d365_fetchxml_query` runs FetchXML for joins and aggregates; page it with `<fetch page=\"2\" count=\"50\">`. `d365_query` takes `apply` for simple OData aggregates.\n\n**Writing**\n- Create tools return the new row. Lookups are set with `\"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"`, e.g. `\"parentcustomerid_account@odata.bind\": \"/accounts(<id>)\"`; the dedicated tools do this for the common ones (`account_id`, `regarding_*_id`).\n- Update tools change only the columns given and send `If-Match`, so they never create a row by accident. Pass the row's `@odata.etag` from the last read to refuse the change when someone else edited it meanwhile (412), or leave the default `*`.\n- `d365_qualify_lead` closes a lead and creates account, contact and opportunity from it; `d365_win_opportunity` and `d365_lose_opportunity` close an opportunity. These change the sales pipeline and are reversed only by hand in Dynamics: ask the user before each one.\n- Confirm every create and update with the user.\n\n**Switched off at install**: `d365_delete_account`, `d365_delete_contact`, `d365_delete_lead`, `d365_delete_opportunity`, `d365_delete_record`. A deletion can cascade to related rows depending on the relationship; turn these on per tool only if the AI should delete data.\n\n**Limits**: Dataverse allows 6,000 requests per user in 5 minutes and a combined execution time of 20 minutes per 5 minutes; beyond that it answers 429 with Retry-After. A page holds at most 5,000 rows.\n\n**Common errors**\n- 401: the authorization was revoked, the client secret expired, or the token was issued for another environment (after changing `DYNAMICS_ORG_HOST`). Click **Authorize with Provider** again.\n- 403 with `0x80040220` (SecLib::AccessCheckEx) or \"principal user is missing privilege\": the user's security role lacks that privilege for the table.\n- 401 or 403 right after signing in, on every call: the user is not a member of this environment, or has no licence there.\n- 404 `0x80040217` \"Does Not Exist\": the id is wrong or the row was deleted. 404 \"Resource not found for the segment\": the entity set name is wrong (plural, as `d365_list_tables` shows it).\n- 400 \"Could not find a property named\": a column logical name is misspelled, or a lookup was written without `@odata.bind`.\n- 412: the row changed since the etag was read; read it again and retry.\n\n**Microsoft's own MCP server**: Dataverse also offers an MCP server at `/api/mcp`, which an administrator must turn on and to which every client app must be added as an allowed client in the Power Platform admin center. This connector uses the Web API instead, so it works in any environment with the user's normal sign-in.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "dynamics365-sales",
+  "docsUrl": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/overview",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID",
+    "DYNAMICS_ORG_HOST"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration of the Outlook connector works here too once it has the Dynamics CRM permission.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations.",
+      "example": "organizations",
+      "pattern": "^(organizations|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or organizations. Dataverse does not accept personal Microsoft accounts."
+    },
+    "DYNAMICS_ORG_HOST": {
+      "label": "Environment host",
+      "kind": "address",
+      "help": "The host name of the Dynamics 365 or Dataverse environment, without https:// and without a path, e.g. contoso.crm4.dynamics.com. Power Platform admin center → Environments → your environment → Environment URL.",
+      "link": "https://admin.powerplatform.microsoft.com/environments",
+      "example": "contoso.crm4.dynamics.com",
+      "pattern": "^[A-Za-z0-9-]+\\.(crm[0-9]*\\.dynamics\\.com|crm[0-9]*\\.microsoftdynamics\\.(us|de)|crm\\.dynamics\\.cn|crm\\.appsplatform\\.us)$",
+      "patternMessage": "Enter only the host, e.g. contoso.crm4.dynamics.com, without https:// or a path."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; the token belongs to one environment, so authorize again after changing DYNAMICS_ORG_HOST. If the client secret expired, create a new one first.",
+    "403": "The signed-in user may not use this environment or this data: they need a licence and a security role in it (for example Salesperson), and the app needs the delegated permission user_impersonation of Dynamics CRM with consent.",
+    "404": "No Dataverse environment answered at this address. Check DYNAMICS_ORG_HOST: only the host, e.g. contoso.crm4.dynamics.com.",
+    "rate_limited": "Dataverse is throttling this user (service protection limits). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "d365_who_am_i"
+  },
+  "prerequisites": "A Dynamics 365 Sales or Dataverse environment with a licensed user who has a security role in it, and an app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated permission `user_impersonation` of Dynamics CRM and a client secret. The app of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "Dynamics 365 Sales (Dataverse Web API)",
+    "type": "REST",
+    "baseUrl": "https://{{DYNAMICS_ORG_HOST}}/api/data/v9.2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "https://{{DYNAMICS_ORG_HOST}}/user_impersonation offline_access"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "OData-MaxVersion": "4.0",
+      "OData-Version": "4.0",
+      "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/WhoAmI"
+  },
+  "tools": [
+    {
+      "name": "d365_who_am_i",
+      "description": "Return the signed-in user's id (UserId), business unit and organization id. A cheap check that the connector works; the UserId is what ownerid filters and assignments need.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/WhoAmI"
+      }
+    },
+    {
+      "name": "d365_list_accounts",
+      "description": "List or search accounts (companies): name, number, phone, email, website, city, country, primary contact, owner, status. Search a name with contains(name,'text').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on column logical names, e.g. \"contains(name,'Contoso')\", \"address1_city eq 'Freiburg'\", \"statecode eq 0\". Text in single quotes, GUIDs and dates bare, lookups as _<column>_value."
+          },
+          "select": {
+            "type": "string",
+            "default": "accountid,name,accountnumber,telephone1,emailaddress1,websiteurl,address1_city,address1_country,_primarycontactid_value,_ownerid_value,statecode,modifiedon",
+            "description": "Comma-separated column logical names to return. The default is a short overview; d365_describe_table lists every column."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"name\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include through a navigation property, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages. Leave out to page with page_size."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count, the number of matching rows (counted up to 5000)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_get_account",
+      "description": "Read one account with every column (or the selected ones), with labels for choice and lookup columns and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated column logical names to return. Without it every column comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts({account_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "d365_create_account",
+      "description": "Create an account. Returns the new row with its accountid. Check with d365_list_accounts that it does not exist yet, and confirm the details with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Account name."
+          },
+          "accountnumber": {
+            "type": "string",
+            "description": "Account number."
+          },
+          "telephone1": {
+            "type": "string",
+            "description": "Main phone."
+          },
+          "emailaddress1": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "websiteurl": {
+            "type": "string",
+            "description": "Website."
+          },
+          "address1_line1": {
+            "type": "string",
+            "description": "Street."
+          },
+          "address1_city": {
+            "type": "string",
+            "description": "City."
+          },
+          "address1_postalcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "address1_country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "parent_account_id": {
+            "type": "string",
+            "description": "Id of the parent account."
+          },
+          "primary_contact_id": {
+            "type": "string",
+            "description": "Id of the primary contact."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "accountnumber": "$accountnumber",
+          "telephone1": "$telephone1",
+          "emailaddress1": "$emailaddress1",
+          "websiteurl": "$websiteurl",
+          "address1_line1": "$address1_line1",
+          "address1_city": "$address1_city",
+          "address1_postalcode": "$address1_postalcode",
+          "address1_country": "$address1_country",
+          "description": "$description",
+          "parentaccountid@odata.bind": "/accounts(${parent_account_id})",
+          "primarycontactid@odata.bind": "/contacts(${primary_contact_id})",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_update_account",
+      "description": "Change columns of one account; columns left out keep their values. Returns the updated row. Confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns to change by logical name, e.g. {\"telephone1\": \"+49 761 1234\", \"industrycode\": 7}. null clears a column; lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "account_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/accounts({account_id})",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_delete_account",
+      "description": "Delete one account. Related rows (contacts, opportunities, activities) may be deleted or unlinked depending on the relationship settings. Installed switched off; confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (GUID)."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/accounts({account_id})",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "d365_list_contacts",
+      "description": "List or search contacts (people): full name, job title, email, phones, company (parentcustomerid), city, owner, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on column logical names, e.g. \"contains(fullname,'Meyer')\", \"emailaddress1 eq 'ana@contoso.com'\", \"_parentcustomerid_value eq <account id>\". Text in single quotes, GUIDs and dates bare, lookups as _<column>_value."
+          },
+          "select": {
+            "type": "string",
+            "default": "contactid,fullname,jobtitle,emailaddress1,telephone1,mobilephone,_parentcustomerid_value,address1_city,_ownerid_value,statecode,modifiedon",
+            "description": "Comma-separated column logical names to return. The default is a short overview; d365_describe_table lists every column."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"fullname\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include through a navigation property, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages. Leave out to page with page_size."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count, the number of matching rows (counted up to 5000)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_get_contact",
+      "description": "Read one contact with every column (or the selected ones), with labels for choice and lookup columns and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated column logical names to return. Without it every column comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include, e.g. \"parentcustomerid_account($select=name)\"."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts({contact_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "d365_create_contact",
+      "description": "Create a contact, optionally linked to its account. Returns the new row with its contactid. Check with d365_list_contacts that the person does not exist yet, and confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstname": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastname": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "jobtitle": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "emailaddress1": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "telephone1": {
+            "type": "string",
+            "description": "Business phone."
+          },
+          "mobilephone": {
+            "type": "string",
+            "description": "Mobile phone."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Id of the account (company) the contact works for."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "lastname"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "firstname": "$firstname",
+          "lastname": "$lastname",
+          "jobtitle": "$jobtitle",
+          "emailaddress1": "$emailaddress1",
+          "telephone1": "$telephone1",
+          "mobilephone": "$mobilephone",
+          "description": "$description",
+          "parentcustomerid_account@odata.bind": "/accounts(${account_id})",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_update_contact",
+      "description": "Change columns of one contact; columns left out keep their values. Returns the updated row. Confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns to change by logical name, e.g. {\"jobtitle\": \"Head of Purchasing\", \"mobilephone\": \"+49 170 1234\"}. null clears a column; lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "contact_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/contacts({contact_id})",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_delete_contact",
+      "description": "Delete one contact. Installed switched off; confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (GUID)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts({contact_id})",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "d365_list_leads",
+      "description": "List or search leads: topic, name, company, email, phone, source, rating, estimated value, owner, status (open, qualified, disqualified). Open leads have statecode 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on column logical names, e.g. \"statecode eq 0\", \"contains(companyname,'Fabrikam')\", \"createdon ge 2026-10-01\". Text in single quotes, GUIDs and dates bare, lookups as _<column>_value."
+          },
+          "select": {
+            "type": "string",
+            "default": "leadid,subject,fullname,companyname,emailaddress1,telephone1,leadsourcecode,leadqualitycode,estimatedvalue,_ownerid_value,statecode,statuscode,createdon",
+            "description": "Comma-separated column logical names to return. The default is a short overview; d365_describe_table lists every column."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"createdon desc\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include through a navigation property, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages. Leave out to page with page_size."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count, the number of matching rows (counted up to 5000)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads",
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_get_lead",
+      "description": "Read one lead with every column (or the selected ones), with labels for choice and lookup columns and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "description": "Lead id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated column logical names to return. Without it every column comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include, e.g. \"parentaccountid($select=name)\"."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads({lead_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "d365_create_lead",
+      "description": "Create a lead. Returns the new row with its leadid. Confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Topic, e.g. \"Interest in 20 office chairs\"."
+          },
+          "firstname": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastname": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "companyname": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "jobtitle": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "emailaddress1": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "telephone1": {
+            "type": "string",
+            "description": "Business phone."
+          },
+          "estimatedvalue": {
+            "type": "number",
+            "description": "Estimated value in the lead's currency."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "subject",
+          "lastname"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "subject": "$subject",
+          "firstname": "$firstname",
+          "lastname": "$lastname",
+          "companyname": "$companyname",
+          "jobtitle": "$jobtitle",
+          "emailaddress1": "$emailaddress1",
+          "telephone1": "$telephone1",
+          "estimatedvalue": "$estimatedvalue",
+          "description": "$description",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_update_lead",
+      "description": "Change columns of one open lead; columns left out keep their values. Returns the updated row. Confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "description": "Lead id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns to change by logical name, e.g. {\"leadqualitycode\": 1, \"estimatedvalue\": 12000}. null clears a column; lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "lead_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/leads({lead_id})",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_qualify_lead",
+      "description": "Qualify an open lead: Dynamics closes it as qualified and creates the chosen records (account, contact, opportunity) from it, linked to the lead. Returns the created records. Ask the user to confirm first, and which records to create; when the company already exists as an account, set create_account to false so no duplicate is made.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "description": "Lead id (GUID)."
+          },
+          "create_account": {
+            "type": "boolean",
+            "default": true,
+            "description": "Create an account from the lead's company (default true)."
+          },
+          "create_contact": {
+            "type": "boolean",
+            "default": true,
+            "description": "Create a contact from the lead's person (default true)."
+          },
+          "create_opportunity": {
+            "type": "boolean",
+            "default": true,
+            "description": "Create an opportunity (default true)."
+          },
+          "status": {
+            "type": "integer",
+            "default": 3,
+            "description": "Status reason of the qualified lead; 3 is Qualified."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Transaction currency id for the new opportunity, when it should differ from the default."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Id of the campaign the opportunity came from."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads({lead_id})/Microsoft.Dynamics.CRM.QualifyLead",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "CreateAccount": "$create_account",
+          "CreateContact": "$create_contact",
+          "CreateOpportunity": "$create_opportunity",
+          "Status": "$status",
+          "OpportunityCurrencyId@odata.bind": "/transactioncurrencies(${currency_id})",
+          "SourceCampaignId@odata.bind": "/campaigns(${campaign_id})"
+        }
+      }
+    },
+    {
+      "name": "d365_disqualify_lead",
+      "description": "Close an open lead as disqualified with a reason: 4 Lost, 5 Cannot Contact, 6 No Longer Interested (default), 7 Canceled. It can be reactivated in Dynamics later. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "description": "Lead id (GUID)."
+          },
+          "status_reason": {
+            "type": "integer",
+            "default": 6,
+            "description": "Disqualification reason (statuscode): 4 Lost, 5 Cannot Contact, 6 No Longer Interested, 7 Canceled, or a custom reason from d365_get_choice_options."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/leads({lead_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "statecode": 2,
+          "statuscode": "$status_reason"
+        }
+      }
+    },
+    {
+      "name": "d365_delete_lead",
+      "description": "Delete one lead. Installed switched off; confirm every deletion with the user. Closing it with d365_disqualify_lead keeps the history.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "description": "Lead id (GUID)."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/leads({lead_id})",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "d365_list_opportunities",
+      "description": "List or search opportunities: topic, customer (account or contact), estimated value and close date, probability, pipeline phase, owner, status (open, won, lost). Open ones have statecode 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on column logical names, e.g. \"statecode eq 0\", \"estimatedclosedate le 2026-12-31\", \"_customerid_value eq <account id>\". Text in single quotes, GUIDs and dates bare, lookups as _<column>_value."
+          },
+          "select": {
+            "type": "string",
+            "default": "opportunityid,name,_customerid_value,estimatedvalue,estimatedclosedate,closeprobability,stepname,_ownerid_value,statecode,statuscode,actualvalue,actualclosedate",
+            "description": "Comma-separated column logical names to return. The default is a short overview; d365_describe_table lists every column."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"estimatedclosedate\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include through a navigation property, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages. Leave out to page with page_size."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count, the number of matching rows (counted up to 5000)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities",
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_get_opportunity",
+      "description": "Read one opportunity with every column (or the selected ones), with labels for choice and lookup columns and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated column logical names to return. Without it every column comes back."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include, e.g. \"parentaccountid($select=name)\"."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities({opportunity_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "d365_create_opportunity",
+      "description": "Create an opportunity for an account or a contact. Returns the new row with its opportunityid. Confirm topic, customer, value and close date with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Topic, e.g. \"20 office chairs for the new site\"."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Id of the customer account. Give account_id or contact_id."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Id of the customer contact, for a person without an account."
+          },
+          "estimatedvalue": {
+            "type": "number",
+            "description": "Estimated revenue."
+          },
+          "estimatedclosedate": {
+            "type": "string",
+            "description": "Estimated close date, YYYY-MM-DD."
+          },
+          "closeprobability": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Probability in percent."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "customerid_account@odata.bind": "/accounts(${account_id})",
+          "customerid_contact@odata.bind": "/contacts(${contact_id})",
+          "estimatedvalue": "$estimatedvalue",
+          "estimatedclosedate": "$estimatedclosedate",
+          "closeprobability": "$closeprobability",
+          "description": "$description",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_update_opportunity",
+      "description": "Change columns of one open opportunity (value, close date, probability, description); columns left out keep their values. Returns the updated row. Use d365_win_opportunity or d365_lose_opportunity to close it. Confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns to change by logical name, e.g. {\"estimatedvalue\": 25000, \"estimatedclosedate\": \"2026-12-15\"}. null clears a column; lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "opportunity_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/opportunities({opportunity_id})",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_win_opportunity",
+      "description": "Close an open opportunity as won, with the actual revenue and close date. Dynamics records an opportunity close activity. Ask the user to confirm first.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id (GUID)."
+          },
+          "status": {
+            "type": "integer",
+            "default": 3,
+            "description": "Status reason for won; 3 is Won."
+          },
+          "subject": {
+            "type": "string",
+            "default": "Won",
+            "description": "Subject of the closing note."
+          },
+          "actual_revenue": {
+            "type": "number",
+            "description": "Actual revenue to record."
+          },
+          "close_date": {
+            "type": "string",
+            "description": "Actual close date, YYYY-MM-DD (default today)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Closing comment."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/WinOpportunity",
+        "bodyMapping": {
+          "Status": "$status",
+          "OpportunityClose": {
+            "subject": "$subject",
+            "opportunityid@odata.bind": "/opportunities(${opportunity_id})",
+            "actualrevenue": "$actual_revenue",
+            "actualend": "$close_date",
+            "description": "$description"
+          }
+        }
+      }
+    },
+    {
+      "name": "d365_lose_opportunity",
+      "description": "Close an open opportunity as lost (canceled or out-sold), with an optional comment. Dynamics records an opportunity close activity. Ask the user to confirm first.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id (GUID)."
+          },
+          "status": {
+            "type": "integer",
+            "default": 4,
+            "description": "Status reason for lost: 4 Canceled (default) or 5 Out-Sold, or a custom reason."
+          },
+          "subject": {
+            "type": "string",
+            "default": "Lost",
+            "description": "Subject of the closing note."
+          },
+          "actual_revenue": {
+            "type": "number",
+            "description": "Actual revenue to record."
+          },
+          "close_date": {
+            "type": "string",
+            "description": "Actual close date, YYYY-MM-DD (default today)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Closing comment."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/LoseOpportunity",
+        "bodyMapping": {
+          "Status": "$status",
+          "OpportunityClose": {
+            "subject": "$subject",
+            "opportunityid@odata.bind": "/opportunities(${opportunity_id})",
+            "actualrevenue": "$actual_revenue",
+            "actualend": "$close_date",
+            "description": "$description"
+          }
+        }
+      }
+    },
+    {
+      "name": "d365_delete_opportunity",
+      "description": "Delete one opportunity. Installed switched off; confirm every deletion with the user. Closing it as lost keeps the history.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id (GUID)."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/opportunities({opportunity_id})",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "d365_list_activities",
+      "description": "List activities of every type (tasks, phone calls, emails, appointments) with subject, type, dates, status and the row they are about. Filter by _regardingobjectid_value for one account, contact, lead or opportunity, by activitytypecode for one type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on column logical names, e.g. \"_regardingobjectid_value eq <id>\", \"activitytypecode eq 'task' and statecode eq 0\", \"scheduledend lt 2026-10-15\". Text in single quotes, GUIDs and dates bare, lookups as _<column>_value."
+          },
+          "select": {
+            "type": "string",
+            "default": "activityid,activitytypecode,subject,scheduledstart,scheduledend,actualend,statecode,_regardingobjectid_value,_ownerid_value,modifiedon",
+            "description": "Comma-separated column logical names to return. The default is a short overview; d365_describe_table lists every column."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"scheduledend desc\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows to include through a navigation property, e.g. \"primarycontactid($select=fullname,emailaddress1)\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages. Leave out to page with page_size."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count, the number of matching rows (counted up to 5000)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activitypointers",
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_get_email",
+      "description": "Read one email activity: subject, body (HTML in description), sender, recipients, direction, sent date, status and the row it is about.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "activity_id": {
+            "type": "string",
+            "description": "Activity id (GUID) of the email, from d365_list_activities."
+          },
+          "select": {
+            "type": "string",
+            "default": "activityid,subject,description,sender,torecipients,directioncode,senton,statuscode,_regardingobjectid_value",
+            "description": "Comma-separated columns to return."
+          }
+        },
+        "required": [
+          "activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails({activity_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select"
+        }
+      }
+    },
+    {
+      "name": "d365_create_task",
+      "description": "Create a task for the signed-in user, about an account, contact, lead or opportunity. Returns the new task. Confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "What to do, e.g. \"Send revised offer\"."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details."
+          },
+          "scheduledend": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601 (2026-10-20T09:00:00Z)."
+          },
+          "prioritycode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 Low, 1 Normal (default), 2 High."
+          },
+          "regarding_account_id": {
+            "type": "string",
+            "description": "Id of the account this is about. Give at most one regarding_* id."
+          },
+          "regarding_contact_id": {
+            "type": "string",
+            "description": "Id of the contact this is about. Give at most one regarding_* id."
+          },
+          "regarding_lead_id": {
+            "type": "string",
+            "description": "Id of the lead this is about. Give at most one regarding_* id."
+          },
+          "regarding_opportunity_id": {
+            "type": "string",
+            "description": "Id of the opportunity this is about. Give at most one regarding_* id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "subject": "$subject",
+          "description": "$description",
+          "scheduledend": "$scheduledend",
+          "prioritycode": "$prioritycode",
+          "regardingobjectid_account_task@odata.bind": "/accounts(${regarding_account_id})",
+          "regardingobjectid_contact_task@odata.bind": "/contacts(${regarding_contact_id})",
+          "regardingobjectid_lead_task@odata.bind": "/leads(${regarding_lead_id})",
+          "regardingobjectid_opportunity_task@odata.bind": "/opportunities(${regarding_opportunity_id})",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_create_phone_call",
+      "description": "Log a phone call activity about an account, contact, lead or opportunity, with notes. Returns the new activity. Confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Subject, e.g. \"Follow-up on quote\"."
+          },
+          "phonenumber": {
+            "type": "string",
+            "description": "Phone number called or calling."
+          },
+          "directioncode": {
+            "type": "boolean",
+            "description": "true for an outgoing call (default), false for incoming."
+          },
+          "description": {
+            "type": "string",
+            "description": "Call notes."
+          },
+          "scheduledend": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601."
+          },
+          "regarding_account_id": {
+            "type": "string",
+            "description": "Id of the account this is about. Give at most one regarding_* id."
+          },
+          "regarding_contact_id": {
+            "type": "string",
+            "description": "Id of the contact this is about. Give at most one regarding_* id."
+          },
+          "regarding_lead_id": {
+            "type": "string",
+            "description": "Id of the lead this is about. Give at most one regarding_* id."
+          },
+          "regarding_opportunity_id": {
+            "type": "string",
+            "description": "Id of the opportunity this is about. Give at most one regarding_* id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/phonecalls",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "subject": "$subject",
+          "phonenumber": "$phonenumber",
+          "directioncode": "$directioncode",
+          "description": "$description",
+          "scheduledend": "$scheduledend",
+          "regardingobjectid_account_phonecall@odata.bind": "/accounts(${regarding_account_id})",
+          "regardingobjectid_contact_phonecall@odata.bind": "/contacts(${regarding_contact_id})",
+          "regardingobjectid_lead_phonecall@odata.bind": "/leads(${regarding_lead_id})",
+          "regardingobjectid_opportunity_phonecall@odata.bind": "/opportunities(${regarding_opportunity_id})",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_create_note",
+      "description": "Add a note to the timeline of an account, contact, lead or opportunity. Returns the new note. Confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Title of the note."
+          },
+          "notetext": {
+            "type": "string",
+            "description": "Text of the note."
+          },
+          "regarding_account_id": {
+            "type": "string",
+            "description": "Id of the account this is about. Give at most one regarding_* id."
+          },
+          "regarding_contact_id": {
+            "type": "string",
+            "description": "Id of the contact this is about. Give at most one regarding_* id."
+          },
+          "regarding_lead_id": {
+            "type": "string",
+            "description": "Id of the lead this is about. Give at most one regarding_* id."
+          },
+          "regarding_opportunity_id": {
+            "type": "string",
+            "description": "Id of the opportunity this is about. Give at most one regarding_* id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further columns by logical name, e.g. {\"industrycode\": 7, \"new_customfield\": \"x\"}. Choice columns take the number, lookups take \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\" (d365_list_lookups names them)."
+          }
+        },
+        "required": [
+          "notetext"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/annotations",
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "subject": "$subject",
+          "notetext": "$notetext",
+          "objectid_account@odata.bind": "/accounts(${regarding_account_id})",
+          "objectid_contact@odata.bind": "/contacts(${regarding_contact_id})",
+          "objectid_lead@odata.bind": "/leads(${regarding_lead_id})",
+          "objectid_opportunity@odata.bind": "/opportunities(${regarding_opportunity_id})",
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_complete_task",
+      "description": "Mark an open task as completed. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Activity id (GUID) of the task."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tasks({task_id})",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "statecode": 1,
+          "statuscode": 5
+        }
+      }
+    },
+    {
+      "name": "d365_query",
+      "description": "Query any table by its entity set name with OData: quotes, salesorders, invoices, products, pricelevels, campaigns, competitors, systemusers, teams, transactioncurrencies or a custom table. d365_list_tables gives entity set names, d365_describe_table the columns. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name, usually the plural logical name, e.g. \"salesorders\" or \"cr123_projects\"."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. \"statecode eq 0 and createdon ge 2026-01-01\"."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated columns to return. Always set it: without it every column comes back."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"createdon desc\"."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows through a navigation property."
+          },
+          "apply": {
+            "type": "string",
+            "description": "OData $apply for aggregates, e.g. \"groupby((statecode),aggregate($count as total))\"."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Return at most this many rows in total and no further pages."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "true to add @odata.count."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        },
+        "required": [
+          "entity_set"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_set}",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$expand": "$expand",
+          "$apply": "$apply",
+          "$top": "$top",
+          "$count": "$count"
+        }
+      }
+    },
+    {
+      "name": "d365_next_page",
+      "description": "Read the next page of any list, query or FetchXML answer that carried @odata.nextLink. Pass the entity set of the first call and everything after the \"?\" of the nextLink, unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set of the first call, e.g. \"accounts\"."
+          },
+          "next_query": {
+            "type": "string",
+            "description": "The part of @odata.nextLink after the \"?\", copied exactly as received (it is already encoded), e.g. \"$select=name&$skiptoken=%3Ccookie...\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50,
+            "description": "Rows per page (default 50, up to 5000). When more rows exist the answer carries @odata.nextLink; d365_next_page reads the next page."
+          }
+        },
+        "required": [
+          "entity_set",
+          "next_query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_set}",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize=${page_size}"
+        },
+        "queryParams": {
+          "__rawquery": "$next_query"
+        }
+      }
+    },
+    {
+      "name": "d365_fetchxml_query",
+      "description": "Run a FetchXML query: joins across tables (link-entity), aggregates (count, sum, avg with groupby) and filters the OData syntax cannot express. Up to 5000 rows; page with the page and count attributes of <fetch>. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name of the <entity> in the FetchXML, e.g. \"opportunities\" for <entity name=\"opportunity\">."
+          },
+          "fetch_xml": {
+            "type": "string",
+            "description": "The FetchXML document, e.g. <fetch top=\"10\"><entity name=\"opportunity\"><attribute name=\"name\"/><attribute name=\"estimatedvalue\"/><filter><condition attribute=\"statecode\" operator=\"eq\" value=\"0\"/></filter><order attribute=\"estimatedvalue\" descending=\"true\"/></entity></fetch>."
+          }
+        },
+        "required": [
+          "entity_set",
+          "fetch_xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_set}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fetchXml": "$fetch_xml"
+        }
+      }
+    },
+    {
+      "name": "d365_get_record",
+      "description": "Read one row of any table by entity set and id, with labels for choice and lookup columns and its @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name, e.g. \"salesorders\"."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "Row id (GUID)."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated columns to return."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related rows through a navigation property."
+          }
+        },
+        "required": [
+          "entity_set",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity_set}({record_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "$select",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "d365_create_record",
+      "description": "Create a row in any table that has no dedicated tool (a quote, a product, a custom table). Returns the new row. Check the columns with d365_describe_table and the lookup names with d365_list_lookups first, and confirm with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name, e.g. \"quotes\"."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns by logical name. Lookups: \"<navigation property>@odata.bind\": \"/<entity set>(<id>)\", e.g. {\"name\": \"Q-1\", \"customerid_account@odata.bind\": \"/accounts(<id>)\"}."
+          }
+        },
+        "required": [
+          "entity_set",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{entity_set}",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_update_record",
+      "description": "Change columns of one row in any table; columns left out keep their values. It never creates a row. Returns the updated row. Confirm the change with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name, e.g. \"quotes\"."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "Row id (GUID)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Columns to change by logical name; null clears a column."
+          },
+          "etag": {
+            "type": "string",
+            "default": "*",
+            "description": "The row's @odata.etag from the last read, so the change is refused (412) when someone else changed the row meanwhile. Default * updates whatever version is current; it never creates a row."
+          }
+        },
+        "required": [
+          "entity_set",
+          "record_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/{entity_set}({record_id})",
+        "encodePathParams": true,
+        "headers": {
+          "Prefer": "return=representation,odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+          "If-Match": "$etag"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "d365_delete_record",
+      "description": "Delete one row of any table. Installed switched off; turn it on only if the AI should delete data, and confirm every deletion with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_set": {
+            "type": "string",
+            "description": "Entity set name."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "Row id (GUID)."
+          }
+        },
+        "required": [
+          "entity_set",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{entity_set}({record_id})",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "d365_list_tables",
+      "description": "List tables with their logical name, entity set name (what the query tools take) and primary name column. The full list has several hundred tables: filter it, e.g. IsCustomEntity eq true for custom tables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter on table metadata, e.g. \"IsCustomEntity eq true\" or \"LogicalName eq 'salesorder'\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EntityDefinitions",
+        "queryParams": {
+          "$select": "LogicalName,EntitySetName,PrimaryIdAttribute,PrimaryNameAttribute",
+          "$filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "d365_describe_table",
+      "description": "Describe one table: entity set name, primary id and name columns, and every column with its type, whether it is required and whether it can be set on create or update. Call it before querying or writing a table you do not know.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table logical name (singular), e.g. \"account\", \"opportunity\", \"cr123_project\"."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EntityDefinitions(LogicalName='{table}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "LogicalName,EntitySetName,PrimaryIdAttribute,PrimaryNameAttribute",
+          "$expand": "Attributes($select=LogicalName,AttributeType,RequiredLevel,IsValidForCreate,IsValidForUpdate)"
+        }
+      }
+    },
+    {
+      "name": "d365_list_lookups",
+      "description": "List the lookup columns of a table with the table each points to and the navigation property name a write needs (\"<navigation property>@odata.bind\": \"/<entity set>(<id>)\"), e.g. parentcustomerid_account for a contact's company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table logical name (singular), e.g. \"contact\"."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EntityDefinitions(LogicalName='{table}')/ManyToOneRelationships",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "ReferencingAttribute,ReferencedEntity,ReferencingEntityNavigationPropertyName"
+        }
+      }
+    },
+    {
+      "name": "d365_get_choice_options",
+      "description": "List the values and labels of a choice column (option set), e.g. industrycode of account or statuscode of opportunity, so filters and writes can use the right number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table logical name, e.g. \"account\"."
+          },
+          "column": {
+            "type": "string",
+            "description": "Column logical name, e.g. \"industrycode\"."
+          },
+          "column_type": {
+            "type": "string",
+            "enum": [
+              "PicklistAttributeMetadata",
+              "MultiSelectPicklistAttributeMetadata",
+              "StatusAttributeMetadata",
+              "StateAttributeMetadata",
+              "BooleanAttributeMetadata"
+            ],
+            "default": "PicklistAttributeMetadata",
+            "description": "Kind of choice column: PicklistAttributeMetadata (default), MultiSelectPicklistAttributeMetadata, StatusAttributeMetadata for statuscode, StateAttributeMetadata for statecode, BooleanAttributeMetadata for yes/no."
+          }
+        },
+        "required": [
+          "table",
+          "column"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EntityDefinitions(LogicalName='{table}')/Attributes(LogicalName='{column}')/Microsoft.Dynamics.CRM.{column_type}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "LogicalName",
+          "$expand": "OptionSet"
+        }
+      }
+    }
+  ]
+}
