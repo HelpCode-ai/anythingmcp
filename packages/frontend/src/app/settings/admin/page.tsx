@@ -30,6 +30,8 @@ export default function SettingsAdminPage() {
 
   // Footer links
   const [footerLinks, setFooterLinks] = useState<Array<{ label: string; url: string }>>([]);
+  const [versionInfo, setVersionInfo] = useState<{ version: string; commit: string; buildDate: string | null; deploymentMode: string } | null>(null);
+  const [versionMsg, setVersionMsg] = useState('');
   const [footerMsg, setFooterMsg] = useState('');
 
   // Connector-failure alert webhook
@@ -63,6 +65,7 @@ export default function SettingsAdminPage() {
     }).catch(() => {});
 
     adminSettings.getFooterLinks(token).then(setFooterLinks).catch(() => {});
+    versionApi.get(token).then(setVersionInfo).catch(() => {});
 
     adminSettings.getAlertWebhook(token).then((data) => {
       if (!('url' in data)) return;
@@ -525,6 +528,41 @@ export default function SettingsAdminPage() {
             </p>
           )}
         </div>
+      </Card>
+
+      {/* About this instance */}
+      <Card>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-2">About this instance</h3>
+        {versionInfo && (
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--text-2)]">
+              Version <span className="font-mono">{versionInfo.version}</span> · commit{' '}
+              <span className="font-mono">
+                {/^[0-9a-f]{40}$/.test(versionInfo.commit) ? versionInfo.commit.slice(0, 7) : versionInfo.commit}
+              </span>
+              {versionInfo.buildDate && <> · built {versionInfo.buildDate.slice(0, 10)}</>}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const text = `AnythingMCP v${versionInfo.version} (commit ${versionInfo.commit}, built ${versionInfo.buildDate ?? 'unknown'}, mode ${versionInfo.deploymentMode})`;
+                navigator.clipboard.writeText(text).then(() => {
+                  setVersionMsg('Copied to clipboard');
+                }).catch(() => {
+                  setVersionMsg('Copy failed');
+                });
+              }}
+            >
+              Copy version info
+            </Button>
+            {versionMsg && (
+              <p className={`text-sm ${versionMsg === 'Copy failed' ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+                {versionMsg}
+              </p>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );

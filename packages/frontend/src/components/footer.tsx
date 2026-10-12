@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/theme-context';
-import { siteSettings } from '@/lib/api';
+import { siteSettings, versionApi } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 function SunIcon({ size = 16 }: { size?: number }) {
   return (
@@ -37,13 +38,64 @@ interface FooterLink {
   url: string;
 }
 
+interface VersionInfo {
+  version: string;
+  commit: string;
+}
+
+/** Fetch the version once per session; every mount shares the same promise. */
+let versionPromise: Promise<VersionInfo | null> | null = null;
+
+function getVersionOnce(token: string): Promise<VersionInfo | null> {
+  if (!versionPromise) {
+    versionPromise = versionApi
+      .get(token)
+      .then((v) => ({ version: v.version, commit: v.commit }))
+      .catch(() => null);
+  }
+  return versionPromise;
+}
+
+/** Shorten a 40-char SHA for display; pass anything else through. */
+function shortSha(c: string): string {
+  return /^[0-9a-f]{40}$/.test(c) ? c.slice(0, 7) : c;
+}
+
+function VersionBadge({ version }: { version: VersionInfo }) {
+  const sha = shortSha(version.commit);
+  return (
+    <span className="text-[var(--text-3)]">
+      v{version.version} ·{' '}
+      {/^[0-9a-f]{7}$/.test(sha) && version.commit.length === 40 ? (
+        <a
+          href={`https://github.com/HelpCode-ai/anythingmcp/commit/${version.commit}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-[var(--text)] hover:underline"
+        >
+          {sha}
+        </a>
+      ) : (
+        sha
+      )}
+    </span>
+  );
+}
+
 export function Footer() {
   const { theme, setTheme } = useTheme();
+  const { token } = useAuth();
   const [links, setLinks] = useState<FooterLink[]>([]);
+  const [version, setVersion] = useState<{ version: string; commit: string } | null>(null);
 
   useEffect(() => {
     siteSettings.footerLinks().then(setLinks).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    getVersionOnce(token).then(setVersion).catch(() => {});
+  }, [token]);
 
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: SunIcon },
@@ -60,6 +112,12 @@ export function Footer() {
             <span>&copy; {new Date().getFullYear()} Anything<span className="text-[var(--brand)]">MCP</span></span>
             <span className="hidden sm:inline">·</span>
             <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text)] hover:underline">Powered by helpcode.ai</a>
+            {version && (
+              <>
+                <span className="hidden sm:inline">·</span>
+                <VersionBadge version={version} />
+              </>
+            )}
             {links.length > 0 && (
               <>
                 <span className="hidden sm:inline">·</span>

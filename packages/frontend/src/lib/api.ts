@@ -1040,6 +1040,11 @@ export const siteSettings = {
     request<Array<{ label: string; url: string }>>('/api/site-settings/footer-links'),
 };
 
+export const versionApi = {
+  get: (token: string) =>
+    request<{ version: string; commit: string; buildDate: string | null; deploymentMode: string }>('/api/version', { token, skipAutoLogout: true }),
+};
+
 // Admin Settings
 export const adminSettings = {
   getSmtp: (token: string) =>

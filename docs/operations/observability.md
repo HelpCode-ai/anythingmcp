@@ -65,6 +65,8 @@ Service identity:
 |---|---|
 | `OTEL_SERVICE_NAME` | `anythingmcp-backend` |
 | `OTEL_SERVICE_VERSION` | `npm_package_version` |
+
+The `service.version` value now comes from `APP_VERSION` (resolved from `package.json`), with `APP_COMMIT` and `APP_BUILD_DATE` available as build-time env vars.
 | `OTEL_DEPLOYMENT_ENVIRONMENT` | `NODE_ENV` |
 
 Auth: standard `OTEL_EXPORTER_OTLP_HEADERS` (e.g. `authorization=Bearer …`).
@@ -193,3 +195,4 @@ When a customer reports a problem, the **first** thing to ask is "what's the `X-
 - No PII in error reports: the organization id is the only identifier, and no IP address is sent.
 
 If a self-hoster wants any of these enabled, every knob is a documented env var. If we add one that isn't, that's a bug — file it.
+
