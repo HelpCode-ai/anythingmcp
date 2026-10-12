@@ -1,0 +1,4015 @@
+{
+  "slug": "cloudinary",
+  "name": "Cloudinary",
+  "description": "Upload images and videos to Cloudinary and get a public URL, search and organize your media library, generate AI images and build transformations from Claude, ChatGPT or Copilot through Cloudinary's official MCP server.",
+  "instructions": "This connector bridges Cloudinary's **Asset Management MCP server**, Cloudinary's official remote MCP server at `https://asset-management.mcp.cloudinary.com/mcp`. Cloudinary's own server provides the tools: uploading from a URL or a data URI, listing, searching and updating assets, folders, tags and metadata, usage reports, AI image generation, and transformations. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**What it is for**: many APIs only take a file by public URL. Instagram and Facebook publishing, for example, fetch the image or video from a link you give them. `cloudinary_upload_asset` takes a public URL, a Base64 data URI (an AI-generated image, a file from another tool) or a private S3 or Google Cloud Storage path, stores the file in your Cloudinary product environment and returns `secure_url`, an HTTPS link anyone can fetch. Pass that link on to the next connector.\n\n**The tools come from the server.** Cloudinary signs you in before it serves anything, so the catalog's list is installed first; once you authorize, AnythingMCP asks the server for its tools and takes their current descriptions and schemas. Cloudinary adds tools over time: open the connector and click **Discover tools** to pick up new ones.\n\n**Setup (about 2 minutes)**:\n1. Install the connector. There is nothing to paste.\n2. On the connector page click **Authorize with Provider**. AnythingMCP reads Cloudinary's OAuth metadata, registers itself as a client (dynamic client registration) and sends you to Cloudinary.\n3. Sign in, choose the product environment (cloud) the AI should use and approve. Back in AnythingMCP the tools are listed again from the server.\n\nNo API key, client id or secret is needed. If you would rather not sign in (a server-to-server setup), Cloudinary's server also accepts the API key: in the connector's settings switch authentication to **API key**, header name `cloudinary-url`, and paste the value of **API environment variable** from **Settings > API Keys** in the Cloudinary Console, which has the form `cloudinary://<api_key>:<api_secret>@<cloud_name>`.\n\n**Whose access it is**: the person who authorizes becomes the Cloudinary user for every caller of this connector, in the product environment picked at sign-in. Everyone using it through AnythingMCP uploads, changes and reads that environment's assets. For a shared connector, authorize with a Cloudinary user whose role only covers what the AI should do. To switch to another product environment, click **Authorize with Provider** again and pick it.\n\n**Public by default**: an asset uploaded with the default delivery type `upload` is public to anyone who has its URL. Do not upload confidential files unless you set `type` to `authenticated` or `private`, or use `access_control`; those URLs then need a signed link and are no use to an API that fetches by URL.\n\n**Safety**: deleting assets (`cloudinary_delete_asset`), derived assets (`cloudinary_delete_derived_assets`), folders (`cloudinary_delete_folder`) and asset relations (`cloudinary_delete_asset_relations`) install switched off; turn them on per tool if needed. Uploads, renames, tag and metadata changes stay on. Renaming an asset (`cloudinary_asset_rename`) changes its public ID and so its URL: links already handed out stop working.\n\n**Working with it**:\n- Upload: `cloudinary_upload_asset` with `upload_request.file` set to the URL or data URI. Set `asset_folder`, `public_id`, `tags` or `context` as needed, and use the returned `secure_url` and `asset_id`. `resource_type` `auto` picks image, video or raw from the file.\n- Find: `cloudinary_search_assets` with an expression such as `tags=summer AND resource_type:image AND created_at>1w`, or the `cloudinary_list_images` / `_videos` / `_files` lists. Results page with `next_cursor`.\n- Read and change one asset: `cloudinary_get_asset_details` and `cloudinary_asset_update` take the immutable `asset_id`; the bulk tag, context and metadata tools take public IDs.\n- Transformations: read `cloudinary_get_tx_reference` once per session, then build a delivery URL such as `https://res.cloudinary.com/<cloud_name>/image/upload/c_fill,w_1080,h_1080/f_auto/q_auto/<public_id>`, or create derived files with `cloudinary_transform_asset`. A transformed URL works as soon as it is requested; Instagram wants JPEG, so use `f_jpg` rather than `f_auto` for it.\n- AI images: `cloudinary_generate_image` (text to image) and `cloudinary_generate_image_from_images` (from reference images) store the result as an asset with a public URL. They need the Image Generation add-on and use credits.\n- Files on the user's own computer: `cloudinary_sign_upload` returns signed parameters for posting the file straight to Cloudinary; the AI cannot read local paths through AnythingMCP.\n- `cloudinary_get_usage_details` shows credits, storage and bandwidth against the plan.\n\n**Other Cloudinary MCP servers**: Cloudinary also runs servers for environment configuration (upload presets, named transformations, webhooks), structured metadata and media analysis. Add them as custom MCP connectors if you need them; this connector covers the asset library.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "cloudinary",
+  "docsUrl": "https://cloudinary.com/documentation/cloudinary_llm_mcp",
+  "requiredEnvVars": [],
+  "envVarMeta": {},
+  "prerequisites": "- A Cloudinary account; the free plan works, and AI image generation needs the Image Generation add-on.\n- After saving, you click Authorize with Provider, sign in with Cloudinary and pick the product environment; whoever signs in is the Cloudinary user for everyone who uses this connector.",
+  "connector": {
+    "name": "Cloudinary",
+    "type": "MCP",
+    "baseUrl": "https://asset-management.mcp.cloudinary.com/mcp",
+    "authType": "OAUTH2",
+    "config": {
+      "mcpToolPrefix": "cloudinary_",
+      "mcpOAuth": {
+        "registration": "dcr"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "cloudinary_upload_asset",
+      "description": "Upload an image, video or other file to Cloudinary from a public HTTP(S) URL, a Base64 data URI, an FTP address or a private S3 or Google Cloud Storage bucket, and get back its permanent public delivery URL (`secure_url`). This is the way to turn a generated or attached file into a public link that Instagram, Facebook or another API can fetch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "default": "auto",
+            "description": "The type of resource (image, video, raw, or auto).",
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw",
+              "auto"
+            ]
+          },
+          "upload_request": {
+            "type": "object",
+            "properties": {
+              "access_control": {
+                "description": "Restricts access to the asset by specifying one or more access types.\nThe asset is restricted unless at least one listed access type is valid.\n",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "access_type": {
+                      "type": "string",
+                      "enum": [
+                        "token",
+                        "anonymous"
+                      ],
+                      "description": "The type of access control to apply to the asset."
+                    },
+                    "end": {
+                      "description": "The end date and time when anonymous access expires. Accepts ISO 8601 string or Unix timestamp.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      ]
+                    },
+                    "key": {
+                      "description": "The authentication key identifier for token-based access. Default key is used if not specified or if set to 'default'.",
+                      "type": "string"
+                    },
+                    "start": {
+                      "description": "The start date and time when anonymous access becomes available. Accepts ISO 8601 string or Unix timestamp.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "access_type"
+                  ],
+                  "description": "Access control rule that defines when and how the asset can be accessed."
+                }
+              },
+              "access_mode": {
+                "description": "Deprecated. Use access_control instead. Allows the asset to behave as if it's of the authenticated delivery type while still using the default 'upload' type in delivery URLs. The asset can later be made public by changing its access_mode via the Admin API, without having to update any delivery URLs.\n",
+                "type": "string",
+                "enum": [
+                  "public",
+                  "authenticated"
+                ]
+              },
+              "accessibility_analysis": {
+                "description": "Whether to return accessibility analysis values for the image.",
+                "type": "boolean"
+              },
+              "allowed_formats": {
+                "description": "A comma-separated list of file formats that are allowed for uploading. Files of other types will be rejected. The formats can be any combination of image types, video formats or raw file extensions.\nNote: You can also add the `format` parameter to convert other file types instead of rejecting them. In this case, only files that would normally be rejected are converted, any file format allowed for upload won't be converted.\n",
+                "type": "string"
+              },
+              "asset_folder": {
+                "description": "The asset folder to assign to the asset.",
+                "type": "string"
+              },
+              "async": {
+                "description": "When set to true, returns the uploaded asset's public_id immediately in the response, before the upload is completed (asynchronously). Default: false.\n",
+                "type": "boolean"
+              },
+              "auto_chaptering": {
+                "description": "Whether to trigger automatic generation of video chapters. Chapters will be generated and saved as a .vtt file with -chapters appended to the public ID of the video. You can enable chapters as part of the Cloudinary Video Player. Relevant for videos only.",
+                "type": "boolean"
+              },
+              "auto_tagging": {
+                "description": "Automatically assigns tags to an asset according to detected objects or categories with a confidence score higher than the specified value.\nUse together with the detection parameter for:\n- Cloudinary AI Content Analysis\n- Amazon Rekognition Celebrity Detection\nUse together with the categorization parameter for:\n- Google Automatic Video Tagging\n- Google Auto Tagging\n- Imagga Auto Tagging\n- Amazon Rekognition Auto Tagging\n",
+                "type": "number"
+              },
+              "auto_transcription": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "translate": {
+                        "description": "Array of target language codes for transcription translation.",
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "description": "Configuration object for automatic video transcription with translation options."
+                  }
+                ]
+              },
+              "background_removal": {
+                "description": "Automatically remove the background of an image using an add-on.\n- Set to cloudinary_ai to use the deep-learning based Cloudinary AI Background Removal add-on.\n  Optionally append a template suffix (e.g., cloudinary_ai:fine_edges).\n- Note: this feature has been superseded by background removal on the fly.\n- Set to pixelz to use the human-powered Pixelz Remove-The-Background Editing add-on service.\nRelevant for images only.\n",
+                "type": "string"
+              },
+              "backup": {
+                "description": "Whether to backup the uploaded asset. When set to true, backs up uploaded assets to a secondary storage bucket.",
+                "type": "boolean"
+              },
+              "categorization": {
+                "description": "A comma-separated list of the categorization add-ons to run on the asset.\nSet to google_tagging, google_video_tagging, imagga_tagging and/or aws_rek_tagging\nto automatically classify the scenes of the uploaded asset.\nOptionally append a language code suffix (e.g., google_tagging:fr).\n",
+                "type": "string"
+              },
+              "cinemagraph_analysis": {
+                "description": "Whether to return a cinemagraph analysis value for the media asset between 0 and 1, where 0 means the asset is not a cinemagraph and 1 means the asset is a cinemagraph. Relevant for animated images and video only. A static image will return 0.",
+                "type": "boolean"
+              },
+              "clear_invalid": {
+                "default": false,
+                "description": "Whether to clear metadata field values that have become invalid due to a change in metadata rules. If false, the API returns an error if any existing metadata value is no longer valid. Default: false.",
+                "type": "boolean"
+              },
+              "colors": {
+                "default": false,
+                "description": "Whether to retrieve predominant colors & color histogram of the uploaded image. Note: If all returned colors are opaque, then 6-digit RGB hex values are returned. If one or more colors contain an alpha channel, then 8-digit RGBA hex quadruplet values are returned.",
+                "type": "boolean"
+              },
+              "context": {
+                "description": "A pipe-separated list of key-value pairs of general textual context metadata to attach to the asset (e.g., \"alt=My image|caption=Nice photo\"). A literal = or | inside a value must be escaped with a prepending backslash, and a literal backslash must be doubled. A double quote must not be escaped.",
+                "type": "string"
+              },
+              "custom_coordinates": {
+                "description": "Custom coordinates as comma-separated values, with multiple coordinates separated by pipes.",
+                "type": "string"
+              },
+              "detection": {
+                "description": "Invokes the relevant add-on to return a list of detected content.\nSet to:\n- <content-aware model>_[<version>] (e.g. coco_v2) to return a list of detected content using the Cloudinary AI Content Analysis add-on. Can be used together with the auto_tagging parameter to apply tags automatically.\n- captioning to analyze an image and suggest a caption based on the image's contents.\n- iqa to analyze the quality of an image.\n- watermark-detection to detect watermarks in an image.\n- adv_face to return a list of facial attributes using the Advanced Facial Attribute Detection add-on.\n- aws_rek_face to return a list of detected celebrities and facial attributes using the Amazon Rekognition Celebrity Detection add-on. Can be used together with the auto_tagging parameter to apply tags automatically.\n",
+                "type": "string"
+              },
+              "discard_original_filename": {
+                "description": "Whether to discard the name of the original uploaded file. Relevant when delivering assets as attachments (setting the flag disposition:attachment in delivery URLs).",
+                "type": "boolean"
+              },
+              "display_name": {
+                "description": "A display name for the asset.",
+                "type": "string"
+              },
+              "eager": {
+                "description": "A list of transformations to eagerly generate for the asset. Accepts either a single transformation or a pipe-separated list of transformations.",
+                "type": "string"
+              },
+              "eager_async": {
+                "description": "Whether to generate the eager transformations asynchronously in the background after the upload request is completed rather than before the upload is completed.",
+                "type": "boolean"
+              },
+              "eager_notification_url": {
+                "description": "A URL to notify when eager transformations are completed.",
+                "type": "string"
+              },
+              "eval": {
+                "description": "Allows you to modify upload parameters by specifying custom logic with JavaScript. This can be useful for conditionally adding tags, contextual metadata, structured metadata or eager transformations depending on specific criteria of the uploaded file.",
+                "type": "string"
+              },
+              "face_coordinates": {
+                "description": "Face coordinates as comma-separated values, with multiple faces separated by pipes.",
+                "type": "string"
+              },
+              "faces": {
+                "description": "Whether to detect faces in the asset.",
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string",
+                "description": "One of the following:\n- The remote HTTP or HTTPS URL address of an existing file.\n- The Data URI (Base64 encoded), max ~60 MB (62,910,000 chars).\n- The FTP address of an existing file.\n- Local file path starting with file://.\n"
+              },
+              "filename_override": {
+                "description": "Overrides the originally uploaded asset's file name in downloads that use flags like fl_attachment or fl_force_original.",
+                "type": "string"
+              },
+              "folder": {
+                "description": "Folder name where the uploaded asset will be stored. This parameter applies when using the Admin API, or when specifying the upload preset for unsigned uploading with the Upload API.",
+                "type": "string"
+              },
+              "format": {
+                "description": "An optional format to convert the uploaded asset to before saving in the cloud.",
+                "type": "string"
+              },
+              "headers": {
+                "description": "An HTTP header or a list of headers lines for adding as response HTTP headers when delivering the asset to your users. Supported headers: Link, Authorization, X-Robots-Tag.\n",
+                "type": "string"
+              },
+              "invalidate": {
+                "description": "Whether to invalidate CDN cache copies of a previously uploaded asset that shares the same public ID. Default: false.\n",
+                "type": "boolean"
+              },
+              "media_metadata": {
+                "description": "Whether to return IPTC, XMP, and detailed Exif metadata of the uploaded asset in the response.\nSupported for images, video, and audio.\n- Returned metadata for images includes: PixelsPerUnitX, PixelsPerUnitY, PixelUnits, Colorspace, and DPI.\n- Returned metadata for audio and video includes: audio_codec, audio_bit_rate, audio_frequency, channels, channel_layout.\n- Additional metadata for video includes: pix_format, codec, level, profile, video_bit_rate, dar.\n",
+                "type": "boolean"
+              },
+              "metadata": {
+                "description": "A pipe-separated list or a map of custom metadata fields (by external_id) and the values to assign to each of them. The = \" and | characters can be supported as values when escaped with a prepended backslash (\\). For a multi-select field, you can set a maximum of 3000 different metadata values on an asset.\n",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "moderation": {
+                "description": "For all asset types, set to:\n- manual to add the uploaded asset to a list of pending assets that can be moderated using the Admin API or the Cloudinary Console.\n- perception_point to automatically moderate the uploaded asset using the Perception Point Malware Detection add-on.\n\nFor images only, set to:\n- webpurify to automatically moderate the uploaded image using the WebPurify Image Moderation add-on.\n- aws_rek to automatically moderate the uploaded image using the Amazon Rekognition AI Moderation add-on.\n- duplicate:<threshold> to detect if the same or a similar image already exists using the Cloudinary Duplicate Image Detection add-on. Set threshold to a float greater than 0 and less than or equal to 1.0 to specify how similar an image needs to be in order to be considered a duplicate. Set threshold to 0 to add an image to the index of images that are searched when duplicate detection is invoked for another image.\n\nFor videos only, set to:\n- aws_rek_video to automatically moderate the uploaded video using the Amazon Rekognition Video Moderation add-on.\n- google_video_moderation automatically moderate the uploaded video using the Google AI Video Moderation add-on.\n\nTo request multiple moderations in a single API call:\n- Send the desired list of moderations as a pipe-separated string with manual moderation, if relevant, being last.\n\nNote: Rejected assets are automatically invalidated on the CDN within approximately ten minutes.\n",
+                "type": "string"
+              },
+              "notification_url": {
+                "description": "A URL to notify when the asset is ready.",
+                "type": "string"
+              },
+              "ocr": {
+                "description": "Set to adv_ocr to extract all text elements in an image as well as the bounding box\ncoordinates of each detected element using the OCR text detection and extraction add-on.\nOptionally append options (e.g., adv_ocr:document).\n",
+                "type": "string"
+              },
+              "on_success": {
+                "description": "Allows you to update an asset by specifying custom logic with JavaScript that is executed after the upload to Cloudinary is completed successfully. This can be useful for conditionally adding tags, contextual metadata, and structured metadata, depending on the results of using the detection parameter on upload.",
+                "type": "string"
+              },
+              "overwrite": {
+                "description": "Whether to overwrite existing assets with the same public ID. When set to false, return immediately if an asset with the same public ID already exists. Default: true (when using unsigned upload, the default is false and cannot be changed to true).\n",
+                "type": "boolean"
+              },
+              "phash": {
+                "description": "Whether to return the perceptual hash (pHash) on the uploaded image for image similarity detection.\n",
+                "type": "boolean"
+              },
+              "proxy": {
+                "description": "A proxy to use for fetching remote URLs. The format should be http://hostname:port.",
+                "type": "string"
+              },
+              "public_id": {
+                "description": "The identifier that is used for accessing the uploaded asset. If not specified, a unique ID is generated automatically.",
+                "type": "string"
+              },
+              "public_id_prefix": {
+                "description": "A string or path that's automatically prepended to the public_id with a forward slash. The value can contain the same characters as the public_id including additional forward slashes. This prefix can be useful to provide context and improve the SEO of an asset's filename in the delivery URL, but the value does not impact the location where the asset is stored.",
+                "type": "string"
+              },
+              "quality_analysis": {
+                "description": "Whether to return a quality analysis value for the image between 0 and 1, where 0 means the image is blurry and out of focus and 1 means the image is sharp and in focus. Relevant for images only.",
+                "type": "boolean"
+              },
+              "raw_convert": {
+                "description": "Generates a related file based on the uploaded file.\n- Set to aspose to automatically create a PDF or other image format from a raw Office document using the Aspose Document Conversion add-on. (Asynchronous)\n- Set to google_speech to instruct the Google AI Video Transcription add-on to generate an automatic transcript raw file from an uploaded video. (Asynchronous)\n- Set to extract_text to extract all the text from a PDF file and store it in a raw JSON file with a public ID in the format: [pdf_public_id].extract_text.json. The full URL of the generated JSON file is included in the API response. Unlike the above raw_convert options, this option doesn't require registering for an add-on.(Synchronous)\n- Set to azure_video_indexer to generate AI-powered video insights from Microsoft Azure. (Asynchronous)\n",
+                "type": "string"
+              },
+              "regions": {
+                "description": "Named region coordinate groups for cropping with region gravity.\nCan be a JSON-encoded string or an object. Each region name may contain\nonly letters, numbers, or hyphens, and must have at least two coordinate pairs.\n",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "responsive_breakpoints": {
+                "description": "Settings to automatically generate breakpoints for responsive images.",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "bytes_step": {
+                          "description": "The minimum byte size difference between consecutive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "create_derived": {
+                          "description": "Whether to generate and store the derived images. Default is true.",
+                          "type": "boolean"
+                        },
+                        "max_images": {
+                          "description": "The maximum number of breakpoint images to generate.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "max_width": {
+                          "description": "The maximum width for responsive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "min_width": {
+                          "description": "The minimum width for responsive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "transformation": {
+                          "description": "A transformation string to apply before generating breakpoints.",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "bytes_step": {
+                        "description": "The minimum byte size difference between consecutive breakpoint images.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "create_derived": {
+                        "description": "Whether to generate and store the derived images. Default is true.",
+                        "type": "boolean"
+                      },
+                      "max_images": {
+                        "description": "The maximum number of breakpoint images to generate.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "max_width": {
+                        "description": "The maximum width for responsive breakpoint images.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "min_width": {
+                        "description": "The minimum width for responsive breakpoint images.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "transformation": {
+                        "description": "A transformation string to apply before generating breakpoints.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              "return_delete_token": {
+                "description": "Whether to return a deletion token in the upload response. The token can be used to delete the uploaded asset within approximately 10 minutes using an unauthenticated API call.",
+                "type": "boolean"
+              },
+              "tags": {
+                "description": "A comma-separated list of tag names, or an array of tag names.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "transformation": {
+                "description": "An incoming transformation to run on the uploaded asset before its storage. In contrast to eager, this parameter is applied before the file is stored.",
+                "type": "string"
+              },
+              "type": {
+                "description": "The delivery type that defines if and how the uploaded asset is available for public delivery. By default, all uploaded assets are public (upload).",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  }
+                ]
+              },
+              "unique_display_name": {
+                "description": "Whether the display name should be unique.",
+                "type": "boolean"
+              },
+              "unique_filename": {
+                "description": "When set to false and used together with use_filename, if an asset with the same file name already exists, no random characters are appended to the file name. Instead, the asset is overwritten. Default: true (random characters are added to the file name if needed).\n",
+                "type": "boolean"
+              },
+              "upload_preset": {
+                "description": "(Required for unsigned uploading / optional for signed uploading)\nName of an upload preset that you defined for your Cloudinary product environment. An upload preset consists of upload parameters centrally managed using the Admin API or from the Upload Presets page of the Console Settings. An upload preset may be marked as unsigned, which allows unsigned uploading directly from the browser and restricts the optional parameters to: public_id, folder, tags, context, face_coordinates, regions and custom_coordinates.\n",
+                "type": "string"
+              },
+              "use_asset_folder_as_public_id_prefix": {
+                "description": "Whether to add the asset_folder value as a prefix to the public_id value (prepended with a forward slash). This ensures that the public ID path will always match the initial asset folder, and can help to retain the behavior that previously existed in fixed folder mode. However, keep in mind that even when this option is used during upload, an asset with a certain public ID path can later be moved to a completely different asset folder hierarchy without impacting the public ID. This option only ensures path matching for the initial upload. Relevant only when public_id_prefix (or folder) has not been separately specified.",
+                "type": "boolean"
+              },
+              "use_filename": {
+                "description": "Whether to use the original file name of the uploaded asset if available for the public ID. The file name is normalized and random characters are appended to ensure uniqueness if the file name already exists. Default: false.\n",
+                "type": "boolean"
+              },
+              "use_filename_as_display_name": {
+                "description": "Whether to automatically assign the original filename of the uploaded asset as the asset's display name. Relevant only if the display_name parameter isn't set.",
+                "type": "boolean"
+              },
+              "visual_search": {
+                "description": "Whether to index the image for use with visual searches. Relevant for images only.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "file"
+            ],
+            "description": "The file to upload and associated parameters."
+          }
+        },
+        "required": [
+          "upload_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "upload-asset",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_asset_rename",
+      "description": "Rename an asset by changing its public ID (and optionally its delivery type). The delivery URL changes with it, so links already shared stop working.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ],
+            "description": "The type of resource (image, video, or raw)."
+          },
+          "RequestBody": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "default": false,
+                "description": "Whether to include contextual metadata in the response. Default is false.",
+                "type": "boolean"
+              },
+              "from_public_id": {
+                "type": "string",
+                "description": "The public ID of the asset to rename."
+              },
+              "invalidate": {
+                "default": false,
+                "description": "Whether to invalidate CDN cache copies of the renamed asset. Default is false.",
+                "type": "boolean"
+              },
+              "metadata": {
+                "default": false,
+                "description": "Whether to include structured metadata in the response. Default is false.",
+                "type": "boolean"
+              },
+              "notification_url": {
+                "description": "URL to notify when the operation is complete.",
+                "type": "string"
+              },
+              "overwrite": {
+                "default": false,
+                "description": "Whether to overwrite the target asset if it already exists. Default is false.",
+                "type": "boolean"
+              },
+              "to_public_id": {
+                "type": "string",
+                "description": "The new public ID for the asset."
+              },
+              "to_type": {
+                "description": "The target delivery type for the renamed asset. If omitted, the delivery type remains unchanged.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  }
+                ]
+              },
+              "type": {
+                "description": "The current delivery type of the asset.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  }
+                ]
+              }
+            },
+            "required": [
+              "from_public_id",
+              "to_public_id"
+            ],
+            "description": "The rename request parameters."
+          }
+        },
+        "required": [
+          "resource_type",
+          "RequestBody"
+        ]
+      },
+      "endpointMapping": {
+        "method": "asset-rename",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_generate_archive",
+      "description": "Create a ZIP or TGZ archive of selected assets (by public IDs, tags or prefix) and return the archive's download URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw",
+              "all"
+            ],
+            "description": "The type of resource for archive generation (image, video, or raw)."
+          },
+          "RequestBody": {
+            "type": "object",
+            "properties": {
+              "allow_missing": {
+                "default": false,
+                "description": "Whether to allow missing assets in the archive. If false, the operation will fail if any asset is not found.",
+                "type": "boolean"
+              },
+              "asset_folders": {
+                "description": "A list of asset folder paths to include in the archive, or a single folder path string. Only available when asset folders are enabled for your account.",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "async": {
+                "default": false,
+                "description": "(\"create\" mode only), specifies whether to generate the archive asynchronously.",
+                "type": "boolean"
+              },
+              "expires_at": {
+                "description": "(\"download\" mode only) Unix timestamp indicating when the generated archive URL should expire.",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "flatten_folders": {
+                "default": false,
+                "description": "Whether to flatten all files to be in the root of the archive file.",
+                "type": "boolean"
+              },
+              "flatten_transformations": {
+                "default": false,
+                "description": "Whether to flatten the folder structure of the derived assets.",
+                "type": "boolean"
+              },
+              "fully_qualified_public_ids": {
+                "description": "A list of fully qualified public IDs (resource_type/type/public_id) to include in the archive.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keep_derived": {
+                "default": false,
+                "description": "Whether to keep the derived assets used for generating the archive.",
+                "type": "boolean"
+              },
+              "mode": {
+                "default": "create",
+                "description": "The method for generating and delivering the archive. Options:\ndownload - Generates and delivers the archive file without storing it\ncreate - Creates and stores the archive as a raw asset, returning URLs in the response\ncreate_and_download - Creates, stores, and delivers the archive file\n",
+                "type": "string",
+                "enum": [
+                  "download",
+                  "create",
+                  "create_and_download"
+                ]
+              },
+              "notification_url": {
+                "description": "(\"create\" mode only), specifies the URL to notify when the archive generation is complete.",
+                "type": "string"
+              },
+              "prefixes": {
+                "description": "Select all assets where the public ID starts with this prefix.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "public_ids": {
+                "description": "The list of public IDs to include in the archive.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "search_expression": {
+                "description": "A search expression to select assets to include in the archive.",
+                "type": "string"
+              },
+              "skip_transformation_name": {
+                "default": false,
+                "description": "Whether to skip adding the transformation details to the file names in the archive.",
+                "type": "boolean"
+              },
+              "tags": {
+                "description": "Tags to filter which assets to include in the archive. Assets matching any of the specified tags are included.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "target_asset_folder": {
+                "description": "The folder in your product environment where the generated archive should be stored.",
+                "type": "string"
+              },
+              "target_filename": {
+                "description": "The filename for the downloaded archive file. Extension must match target_format (zip or tgz).",
+                "type": "string"
+              },
+              "target_format": {
+                "default": "zip",
+                "description": "The format of the generated archive.",
+                "type": "string",
+                "enum": [
+                  "zip",
+                  "tgz"
+                ]
+              },
+              "target_public_id": {
+                "description": "The public ID to assign to the generated archive, or the filename of the downloaded archive file.",
+                "type": "string"
+              },
+              "target_tags": {
+                "description": "A list of tag names to assign to the generated archive.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "transformations": {
+                "description": "The transformations to apply to the assets before including them in the archive (separated by \"|\").",
+                "type": "string"
+              },
+              "type": {
+                "description": "All supported delivery types.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "fetch",
+                      "url2png"
+                    ],
+                    "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "facebook",
+                      "twitter",
+                      "twitter_name",
+                      "instagram",
+                      "instagram_name",
+                      "gravatar",
+                      "youtube",
+                      "hulu",
+                      "vimeo",
+                      "animoto",
+                      "dailymotion",
+                      "worldstarhiphop"
+                    ],
+                    "description": "Delivery types for assets fetched from third-party platforms."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "multi",
+                      "sprite",
+                      "text",
+                      "list"
+                    ],
+                    "description": "Delivery types for assets generated by Cloudinary operations."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "media_optimization"
+                    ]
+                  }
+                ]
+              },
+              "use_original_filename": {
+                "default": false,
+                "description": "Whether to use the original filenames of the assets in the archive instead of public IDs (when available).",
+                "type": "boolean"
+              }
+            },
+            "description": "The archive generation parameters."
+          }
+        },
+        "required": [
+          "resource_type",
+          "RequestBody"
+        ]
+      },
+      "endpointMapping": {
+        "method": "generate-archive",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_download_asset_backup",
+      "description": "Download a backed-up version of an asset by its asset ID and version ID. Needs backups switched on for the product environment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset ID of the resource. Must be a 32-character hexadecimal string."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "The version ID of the backup to download. Must be a 32-character hexadecimal string."
+          }
+        },
+        "required": [
+          "asset_id",
+          "version_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "download-asset-backup",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_delete_asset",
+      "description": "Delete an asset permanently by its asset ID, optionally invalidating the CDN cache. Installed switched off; turn it on per tool if the AI may delete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "asset_id": {
+                "type": "string",
+                "description": "A 32-character hexadecimal asset ID."
+              },
+              "invalidate": {
+                "description": "Whether to invalidate CDN cache. Default is false.",
+                "type": "boolean"
+              },
+              "notification_url": {
+                "description": "URL to receive completion notification.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "asset_id"
+            ],
+            "description": "The asset to delete and related options."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete-asset",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "cloudinary_list_images",
+      "description": "List image assets, filtered by delivery type, public ID prefix, public IDs or tag, newest or oldest first, with cursor pagination (`next_cursor`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "The delivery type to filter by. When omitted, returns assets of all delivery types.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "private",
+                  "authenticated"
+                ],
+                "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "asset"
+                ],
+                "description": "Static asset delivery type."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "fetch",
+                  "url2png"
+                ],
+                "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "facebook",
+                  "twitter",
+                  "twitter_name",
+                  "instagram",
+                  "instagram_name",
+                  "gravatar",
+                  "youtube",
+                  "hulu",
+                  "vimeo",
+                  "animoto",
+                  "dailymotion",
+                  "worldstarhiphop"
+                ],
+                "description": "Delivery types for assets fetched from third-party platforms."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "multi",
+                  "sprite",
+                  "text",
+                  "list"
+                ],
+                "description": "Delivery types for assets generated by Cloudinary operations."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "media_optimization"
+                ]
+              }
+            ]
+          },
+          "prefix": {
+            "type": "string",
+            "description": "A public_id prefix. When specified, all assets with that prefix are returned."
+          },
+          "public_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "An array of public IDs to return."
+          },
+          "tags": {
+            "default": false,
+            "description": "Whether to include the list of tag names assigned to each asset. Default is false.",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Cursor for pagination."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Maximum number of results to return (1-500)."
+          },
+          "direction": {
+            "description": "The sort direction for the results. Default is \"desc\".",
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "An ISO-8601 formatted timestamp. When specified, returns resources created since that timestamp. Supported only if neither `prefix` nor `public_ids` were passed."
+          },
+          "fields": {
+            "description": "Additional fields to include in the response. The fields public_id and asset_id are always included.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "public_id",
+                    "asset_id",
+                    "asset_folder",
+                    "folder",
+                    "display_name",
+                    "format",
+                    "version",
+                    "resource_type",
+                    "type",
+                    "created_at",
+                    "bytes",
+                    "width",
+                    "height",
+                    "backup",
+                    "access_control",
+                    "access_mode",
+                    "url",
+                    "secure_url",
+                    "tags",
+                    "context",
+                    "metadata",
+                    "moderation_kind",
+                    "moderation_status",
+                    "placeholder",
+                    "regions",
+                    "is_audio"
+                  ],
+                  "description": "Valid field names for selective resource responses."
+                }
+              }
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list-images",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_list_videos",
+      "description": "List video assets, filtered by delivery type, public ID prefix, public IDs or tag, newest or oldest first, with cursor pagination (`next_cursor`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "The delivery type to filter by. When omitted, returns assets of all delivery types.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "private",
+                  "authenticated"
+                ],
+                "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "asset"
+                ],
+                "description": "Static asset delivery type."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "fetch",
+                  "url2png"
+                ],
+                "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "facebook",
+                  "twitter",
+                  "twitter_name",
+                  "instagram",
+                  "instagram_name",
+                  "gravatar",
+                  "youtube",
+                  "hulu",
+                  "vimeo",
+                  "animoto",
+                  "dailymotion",
+                  "worldstarhiphop"
+                ],
+                "description": "Delivery types for assets fetched from third-party platforms."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "multi",
+                  "sprite",
+                  "text",
+                  "list"
+                ],
+                "description": "Delivery types for assets generated by Cloudinary operations."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "media_optimization"
+                ]
+              }
+            ]
+          },
+          "prefix": {
+            "type": "string",
+            "description": "A public_id prefix. When specified, all assets with that prefix are returned."
+          },
+          "public_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "An array of public IDs to return."
+          },
+          "tags": {
+            "default": false,
+            "description": "Whether to include the list of tag names assigned to each asset. Default is false.",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Cursor for pagination."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Maximum number of results to return (1-500)."
+          },
+          "direction": {
+            "description": "The sort direction for the results. Default is \"desc\".",
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "An ISO-8601 formatted timestamp. When specified, returns resources created since that timestamp. Supported only if neither `prefix` nor `public_ids` were passed."
+          },
+          "fields": {
+            "description": "Additional fields to include in the response. The fields public_id and asset_id are always included.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "public_id",
+                    "asset_id",
+                    "asset_folder",
+                    "folder",
+                    "display_name",
+                    "format",
+                    "version",
+                    "resource_type",
+                    "type",
+                    "created_at",
+                    "bytes",
+                    "width",
+                    "height",
+                    "backup",
+                    "access_control",
+                    "access_mode",
+                    "url",
+                    "secure_url",
+                    "tags",
+                    "context",
+                    "metadata",
+                    "moderation_kind",
+                    "moderation_status",
+                    "placeholder",
+                    "regions",
+                    "is_audio"
+                  ],
+                  "description": "Valid field names for selective resource responses."
+                }
+              }
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list-videos",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_list_files",
+      "description": "List raw files (PDFs, documents, archives and other non-media files), filtered by delivery type, public ID prefix, public IDs or tag, with cursor pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "The delivery type to filter by. When omitted, returns assets of all delivery types.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "private",
+                  "authenticated"
+                ],
+                "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "asset"
+                ],
+                "description": "Static asset delivery type."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "fetch",
+                  "url2png"
+                ],
+                "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "facebook",
+                  "twitter",
+                  "twitter_name",
+                  "instagram",
+                  "instagram_name",
+                  "gravatar",
+                  "youtube",
+                  "hulu",
+                  "vimeo",
+                  "animoto",
+                  "dailymotion",
+                  "worldstarhiphop"
+                ],
+                "description": "Delivery types for assets fetched from third-party platforms."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "multi",
+                  "sprite",
+                  "text",
+                  "list"
+                ],
+                "description": "Delivery types for assets generated by Cloudinary operations."
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "media_optimization"
+                ]
+              }
+            ]
+          },
+          "prefix": {
+            "type": "string",
+            "description": "A public_id prefix. When specified, all assets with that prefix are returned."
+          },
+          "public_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "An array of public IDs to return."
+          },
+          "tags": {
+            "default": false,
+            "description": "Whether to include the list of tag names assigned to each asset. Default is false.",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Cursor for pagination."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Maximum number of results to return (1-500)."
+          },
+          "direction": {
+            "description": "The sort direction for the results. Default is \"desc\".",
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "An ISO-8601 formatted timestamp. When specified, returns resources created since that timestamp. Supported only if neither `prefix` nor `public_ids` were passed."
+          },
+          "fields": {
+            "description": "Additional fields to include in the response. The fields public_id and asset_id are always included.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "public_id",
+                    "asset_id",
+                    "asset_folder",
+                    "folder",
+                    "display_name",
+                    "format",
+                    "version",
+                    "resource_type",
+                    "type",
+                    "created_at",
+                    "bytes",
+                    "width",
+                    "height",
+                    "backup",
+                    "access_control",
+                    "access_mode",
+                    "url",
+                    "secure_url",
+                    "tags",
+                    "context",
+                    "metadata",
+                    "moderation_kind",
+                    "moderation_status",
+                    "placeholder",
+                    "regions",
+                    "is_audio"
+                  ],
+                  "description": "Valid field names for selective resource responses."
+                }
+              }
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list-files",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_get_asset_details",
+      "description": "Get one asset by its asset ID: public ID, delivery URLs, format, size, dimensions, tags and metadata, plus on request colors, faces, quality and accessibility analysis, versions and derived assets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset ID of the resource. Must be a 32-character hexadecimal string."
+          },
+          "colors": {
+            "default": false,
+            "description": "Whether to include color information (predominant colors and histogram of 32 leading colors). Default: false.",
+            "type": "boolean"
+          },
+          "media_metadata": {
+            "default": false,
+            "description": "Whether to include IPTC, XMP, and detailed Exif metadata in the response. Default: false.",
+            "type": "boolean"
+          },
+          "faces": {
+            "default": false,
+            "description": "Whether to include a list of coordinates of detected faces. Default: false.",
+            "type": "boolean"
+          },
+          "quality_analysis": {
+            "default": false,
+            "description": "Whether to return quality analysis scores for the image. Default: false.",
+            "type": "boolean"
+          },
+          "accessibility_analysis": {
+            "default": false,
+            "description": "Whether to return accessibility analysis scores for the image. Default: false.",
+            "type": "boolean"
+          },
+          "pages": {
+            "default": false,
+            "description": "Whether to report the number of pages in multi-page documents (e.g., PDF). Default: false.",
+            "type": "boolean"
+          },
+          "phash": {
+            "default": false,
+            "description": "Whether to include the perceptual hash (pHash) of the uploaded photo for image similarity detection. Default: false.",
+            "type": "boolean"
+          },
+          "coordinates": {
+            "default": false,
+            "description": "Whether to include previously specified custom cropping coordinates and faces coordinates. Default: false.",
+            "type": "boolean"
+          },
+          "versions": {
+            "default": false,
+            "description": "Whether to include details of all the backed up versions of the asset. Default: false.",
+            "type": "boolean"
+          },
+          "max_results": {
+            "default": 10,
+            "description": "Maximum number of derived assets to return. Default: 10.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "derived_next_cursor": {
+            "type": "string",
+            "description": "The cursor for the next page of derived assets when there are more derived images than max_results."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get-asset-details",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_asset_update",
+      "description": "Update an asset by its asset ID: display name, asset folder, tags, contextual and structured metadata, access control, moderation status and other attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset ID of the resource. Must be a 32-character hexadecimal string."
+          },
+          "ResourceUpdateRequest": {
+            "type": "object",
+            "properties": {
+              "access_control": {
+                "description": "Restricts access to the asset by specifying one or more access types.\nThe asset is restricted unless at least one listed access type is valid.\n",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "access_type": {
+                      "type": "string",
+                      "enum": [
+                        "token",
+                        "anonymous"
+                      ],
+                      "description": "The type of access control to apply to the asset."
+                    },
+                    "end": {
+                      "description": "The end date and time when anonymous access expires. Accepts ISO 8601 string or Unix timestamp.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      ]
+                    },
+                    "key": {
+                      "description": "The authentication key identifier for token-based access. Default key is used if not specified or if set to 'default'.",
+                      "type": "string"
+                    },
+                    "start": {
+                      "description": "The start date and time when anonymous access becomes available. Accepts ISO 8601 string or Unix timestamp.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "access_type"
+                  ],
+                  "description": "Access control rule that defines when and how the asset can be accessed."
+                }
+              },
+              "asset_folder": {
+                "description": "The folder where the asset should be placed.",
+                "type": "string"
+              },
+              "auto_tagging": {
+                "description": "Confidence threshold for auto-tagging.",
+                "type": "number"
+              },
+              "background_removal": {
+                "description": "The background removal provider to use for the resource. Optionally append a template suffix (e.g., cloudinary_ai:fine_edges).",
+                "type": "string"
+              },
+              "categorization": {
+                "description": "The type of categorization to perform on the resource. Optionally append a language code suffix (e.g., google_tagging:fr).",
+                "type": "string"
+              },
+              "clear_invalid": {
+                "default": false,
+                "description": "Whether to clear invalid metadata fields. If false, invalid fields will be preserved. Default: false",
+                "type": "boolean"
+              },
+              "context": {
+                "description": "A pipe-separated list of key-value pairs of general textual context metadata to attach to the asset (e.g., \"alt=My image|caption=Nice photo\"). A literal = or | inside a value must be escaped with a prepending backslash, and a literal backslash must be doubled. A double quote must not be escaped.",
+                "type": "string"
+              },
+              "custom_coordinates": {
+                "description": "Custom coordinates as comma-separated values, with multiple coordinates separated by pipes.",
+                "type": "string"
+              },
+              "detection": {
+                "description": "The type of detection to perform on the resource.",
+                "type": "string"
+              },
+              "display_name": {
+                "description": "The display name of the resource.",
+                "type": "string"
+              },
+              "face_coordinates": {
+                "description": "Face coordinates as comma-separated values, with multiple faces separated by pipes.",
+                "type": "string"
+              },
+              "metadata": {
+                "description": "A pipe-separated list or a map of custom metadata fields (by external_id) and the values to assign to each of them. The = \" and | characters can be supported as values when escaped with a prepended backslash (\\). For a multi-select field, you can set a maximum of 3000 different metadata values on an asset.\n",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "moderation_status": {
+                "description": "The moderation status of the resource.",
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "rejected"
+                ]
+              },
+              "ocr": {
+                "description": "The type of OCR to perform on the resource. Set to adv_ocr, optionally with options (e.g., adv_ocr:document).",
+                "type": "string"
+              },
+              "quality_override": {
+                "description": "Quality override value that will override any automatic quality transformations.",
+                "type": "string"
+              },
+              "raw_convert": {
+                "description": "The conversion to apply for raw files (e.g., aspose, google_speech, extract_text).",
+                "type": "string"
+              },
+              "regions": {
+                "description": "A JSON-encoded object of named groups of coordinate pairs representing regions. Each region name may contain only letters, numbers, or hyphens, and must have at least two coordinate pairs.",
+                "type": "string"
+              },
+              "tags": {
+                "description": "A comma-separated list of tag names, or an array of tag names.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "unique_display_name": {
+                "default": false,
+                "description": "Whether to ensure the display name is unique across all resources. If false, the operation will fail if a resource with the same display name exists. Default: false",
+                "type": "boolean"
+              },
+              "visual_search": {
+                "description": "Whether to index the resource with visual search. If true, the resource will be indexed for visual search capabilities. Default: false",
+                "type": "boolean"
+              }
+            },
+            "description": "The asset attributes to update."
+          }
+        },
+        "required": [
+          "asset_id",
+          "ResourceUpdateRequest"
+        ]
+      },
+      "endpointMapping": {
+        "method": "asset-update",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_list_tags",
+      "description": "List the tags used on images, videos or raw files, optionally only those starting with a prefix, with cursor pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ],
+            "description": "The type of resource (image, video, or raw)."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Limit the returned tags to those that start with the specified prefix."
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Cursor for pagination."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Maximum number of results to return (1-500)."
+          }
+        },
+        "required": [
+          "resource_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "list-tags",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_delete_derived_assets",
+      "description": "Delete derived (transformed) versions of assets by derived resource ID; the originals stay. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "derived_resource_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Array of derived resource IDs to delete specific derived resources"
+              },
+              "invalidate": {
+                "description": "Whether to invalidate the CDN cache for the deleted resources",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "derived_resource_ids"
+            ],
+            "description": "The derived resource IDs to delete."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete-derived-assets",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "cloudinary_manage_asset_tags",
+      "description": "Add, remove, replace or clear tags on several assets at once, addressed by public ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ],
+            "description": "The type of resource (image, video, or raw)."
+          },
+          "tags_update_request": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove",
+                  "replace",
+                  "remove_all"
+                ],
+                "description": "The tag operation to apply.\n\n- `add` adds the given tags, leaving existing tags untouched.\n- `remove` removes the given tags, leaving other tags untouched.\n- `replace` overwrites the full tag list with the given tags.\n- `remove_all` clears every tag. The `tags` field is ignored."
+              },
+              "public_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The public IDs of the assets to apply the operation to. At most 1000 are processed per request; any beyond the first 1000 are ignored rather than rejected. Public IDs that do not exist, or that the caller lacks update permission for, are skipped rather than failing the request, so the returned `public_ids` may be shorter than the requested list."
+              },
+              "tags": {
+                "description": "The tag names to apply. Required for `add`, `remove`, and `replace`; ignored for `remove_all`. A tag name must not contain a comma.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "description": "The delivery type of the assets to operate on. Defaults to `upload`.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "fetch",
+                      "url2png"
+                    ],
+                    "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "facebook",
+                      "twitter",
+                      "twitter_name",
+                      "instagram",
+                      "instagram_name",
+                      "gravatar",
+                      "youtube",
+                      "hulu",
+                      "vimeo",
+                      "animoto",
+                      "dailymotion",
+                      "worldstarhiphop"
+                    ],
+                    "description": "Delivery types for assets fetched from third-party platforms."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "multi",
+                      "sprite",
+                      "text",
+                      "list"
+                    ],
+                    "description": "Delivery types for assets generated by Cloudinary operations."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "media_optimization"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "command",
+              "public_ids"
+            ],
+            "description": "The tag command, the tags to apply, and the assets to apply them to."
+          }
+        },
+        "required": [
+          "resource_type",
+          "tags_update_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "manage-asset-tags",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_manage_asset_context",
+      "description": "Add or clear contextual metadata (key-value pairs such as alt text or caption) on several assets, addressed by public ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ],
+            "description": "The type of resource (image, video, or raw)."
+          },
+          "context_update_request": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove_all"
+                ],
+                "description": "The contextual-metadata operation to apply.\n\n- `add` merges the given key-value pairs into each asset's existing context. Keys\n  already present are overwritten; keys not mentioned are left intact. `context`\n  is required.\n- `remove_all` clears all contextual metadata. The `context` field is ignored."
+              },
+              "context": {
+                "description": "The key-value pairs to merge. Required for `add`; ignored for `remove_all`.\nAn empty value deletes that key rather than storing an empty string, so `\"alt=\"` removes `alt` while leaving other keys intact. Deletes and sets may be combined: `\"alt=|owner=new\"`.\nA literal `=` or `|` inside a value must be escaped with a prepending backslash, and a literal backslash must be doubled. A double quote must not be escaped.",
+                "type": "string"
+              },
+              "public_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The public IDs of the assets to apply the operation to. At most 1000 are processed per request; any beyond the first 1000 are ignored rather than rejected. Public IDs that do not exist, or that the caller lacks update permission for, are skipped rather than failing the request, so the returned `public_ids` may be shorter than the requested list."
+              },
+              "type": {
+                "description": "The delivery type of the assets to operate on. Defaults to `upload`.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "fetch",
+                      "url2png"
+                    ],
+                    "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "facebook",
+                      "twitter",
+                      "twitter_name",
+                      "instagram",
+                      "instagram_name",
+                      "gravatar",
+                      "youtube",
+                      "hulu",
+                      "vimeo",
+                      "animoto",
+                      "dailymotion",
+                      "worldstarhiphop"
+                    ],
+                    "description": "Delivery types for assets fetched from third-party platforms."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "multi",
+                      "sprite",
+                      "text",
+                      "list"
+                    ],
+                    "description": "Delivery types for assets generated by Cloudinary operations."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "media_optimization"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "command",
+              "public_ids"
+            ],
+            "description": "The context command, the metadata to apply, and the assets to apply it to."
+          }
+        },
+        "required": [
+          "resource_type",
+          "context_update_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "manage-asset-context",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_manage_asset_metadata",
+      "description": "Set structured metadata field values on several assets, addressed by public ID. The metadata fields must already exist in the product environment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ],
+            "description": "The type of resource (image, video, or raw)."
+          },
+          "metadata_update_request": {
+            "type": "object",
+            "properties": {
+              "clear_invalid": {
+                "description": "Whether to clear a value already stored on the asset that is no longer valid, for example because its datasource entry was deleted, instead of failing the update for that asset. Applies only to fields governed by an active conditional metadata rule; an invalid value sent in this request is always rejected. Default is false.",
+                "type": "boolean"
+              },
+              "metadata": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "description": "A pipe-separated list or a map of custom metadata fields (by external_id) and the values to assign to each of them. The = \" and | characters can be supported as values when escaped with a prepended backslash (\\). For a multi-select field, you can set a maximum of 3000 different metadata values on an asset.\n"
+              },
+              "public_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The public IDs of the assets to apply the operation to. At most 1000 are processed per request; any beyond the first 1000 are ignored rather than rejected. Public IDs that do not exist, or that the caller lacks update permission for, are skipped rather than failing the request, so the returned `public_ids` may be shorter than the requested list."
+              },
+              "type": {
+                "description": "The delivery type of the assets to operate on. Defaults to `upload`.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "private",
+                      "authenticated"
+                    ],
+                    "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ],
+                    "description": "Static asset delivery type."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "fetch",
+                      "url2png"
+                    ],
+                    "description": "Fetch-based delivery types for assets retrieved from remote URLs."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "facebook",
+                      "twitter",
+                      "twitter_name",
+                      "instagram",
+                      "instagram_name",
+                      "gravatar",
+                      "youtube",
+                      "hulu",
+                      "vimeo",
+                      "animoto",
+                      "dailymotion",
+                      "worldstarhiphop"
+                    ],
+                    "description": "Delivery types for assets fetched from third-party platforms."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "multi",
+                      "sprite",
+                      "text",
+                      "list"
+                    ],
+                    "description": "Delivery types for assets generated by Cloudinary operations."
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "media_optimization"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "metadata",
+              "public_ids"
+            ],
+            "description": "The structured metadata values to assign and the assets to assign them to."
+          }
+        },
+        "required": [
+          "resource_type",
+          "metadata_update_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "manage-asset-metadata",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_get_usage_details",
+      "description": "Report the product environment's usage against its plan: credits, storage, bandwidth, transformations, requests, asset counts and add-on usage, for today or a given date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "The date for which to retrieve usage details (YYYY-MM-DD). If not specified, returns the current usage."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "get-usage-details",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_create_asset_relations",
+      "description": "Relate an asset to other assets by asset ID, for example a product photo to its variants, so they can be found together.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset ID of the resource. Must be a 32-character hexadecimal string."
+          },
+          "relate_assets_by_asset_id_request": {
+            "type": "object",
+            "properties": {
+              "assets_to_relate": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Relates the asset to all the assets specified in this array of up to 10 assets, specified by their asset IDs."
+              }
+            },
+            "required": [
+              "assets_to_relate"
+            ],
+            "description": "The asset IDs to relate."
+          }
+        },
+        "required": [
+          "asset_id",
+          "relate_assets_by_asset_id_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create-asset-relations",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_delete_asset_relations",
+      "description": "Remove the relations between an asset and other assets by asset ID; the assets themselves stay. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "The asset ID of the resource. Must be a 32-character hexadecimal string."
+          },
+          "unrelate_assets_by_asset_id_request": {
+            "type": "object",
+            "properties": {
+              "assets_to_unrelate": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Unrelates the asset from all the assets specified in this array of assets, specified by their asset IDs."
+              }
+            },
+            "required": [
+              "assets_to_unrelate"
+            ],
+            "description": "The asset IDs to unrelate."
+          }
+        },
+        "required": [
+          "asset_id",
+          "unrelate_assets_by_asset_id_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete-asset-relations",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "cloudinary_move_folder",
+      "description": "Rename or move an asset folder, with all the assets it contains, to a new path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "The full path of the folder, including any nested folders. Must not be empty, and must not contain double slashes or leading/trailing slashes."
+          },
+          "move_folder_request": {
+            "type": "object",
+            "properties": {
+              "to_folder": {
+                "type": "string",
+                "description": "The new path for the folder."
+              }
+            },
+            "required": [
+              "to_folder"
+            ],
+            "description": "The new folder path."
+          }
+        },
+        "required": [
+          "folder",
+          "move_folder_request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "move-folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_create_folder",
+      "description": "Create an empty asset folder at a path, for example `products/2026`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "The full path of the folder, including any nested folders. Must not be empty, and must not contain double slashes or leading/trailing slashes."
+          }
+        },
+        "required": [
+          "folder"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create-folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_delete_folder",
+      "description": "Delete an asset folder by its path. Installed switched off; turn it on per tool if the AI may delete folders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "The full path of the folder, including any nested folders. Must not be empty, and must not contain double slashes or leading/trailing slashes."
+          }
+        },
+        "required": [
+          "folder"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete-folder",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "cloudinary_search_folders",
+      "description": "Search asset folders by name, path or creation date with a Lucene-like expression; returns up to 2,000 folders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "The (Lucene-like) string expression specifying the search query. If not passed, returns all folders (up to max_results)."
+          },
+          "sort_by": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ],
+                "description": "Sort direction."
+              }
+            },
+            "description": "Sort order for the results. Each item maps a field name to a direction."
+          },
+          "max_results": {
+            "default": 50,
+            "description": "Maximum number of folders to return (max 500, default 50).",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "The cursor for pagination. Use the next_cursor value from a previous response to get the next page of results."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "search-folders",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_search_assets",
+      "description": "Search assets with Cloudinary's Lucene-like expression language (tags, folder, format, size, dimensions, dates, structured and contextual metadata and more), with sorting, aggregations, selected fields and cursor pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "aggregate": {
+                "description": "Fields or ranges to aggregate search results by. Requires a Tier 2 search plan; on Tier 1 the field is accepted but aggregations are omitted from the response.\n",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "format",
+                        "resource_type",
+                        "type"
+                      ]
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "ranges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "description": "Start of the range (inclusive). At least one of `from` / `to` is required.",
+                                "type": "number"
+                              },
+                              "key": {
+                                "type": "string",
+                                "description": "A label for the bucket, returned in the aggregation response. 1-20 chars, alphanumeric plus `-` and `_`."
+                              },
+                              "to": {
+                                "description": "End of the range (exclusive). At least one of `from` / `to` is required.",
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "key"
+                            ]
+                          },
+                          "description": "One or more ranges for the numeric field. Each range must include a `key` label and at least one of `from` / `to`.\n"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "image_pixels",
+                            "video_pixels",
+                            "duration"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ranges",
+                        "type"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "expression": {
+                "description": "The Lucene-like search expression. Supports token match (`:`), exact match (`=`), trailing `*` for prefix match, ranges (`[a TO b]`, `{a TO b}`), and comparisons (`>`, `<`, `>=`, `<=`). Combine terms with uppercase `AND`, `OR`, `NOT`, or `+`/`-`. `NOT` must appear between clauses, a leading `NOT` is a parse error; use `-field:value` to negate the first clause. Group with parentheses.\n\nWrap values containing spaces, colons, or other reserved characters (`! ( ) { } [ ] ^ ~ ?  \\ = & < > |`) in double quotes, e.g. `tags:\"service:mantels\"`, `tags:\"brand:openhaul\"`, `aspect_ratio:\"16:9\"`. Send raw `<`/`>`, never HTML-escaped.\n\nWildcards are prefix-only (trailing `*`). A bare `*` (e.g. `folder:*`, `context.alt:*`, `metadata.key:*`, `tags:*`, `-tags:*`) is a parse error, there is no \"has any value\" / presence probe. Either drop the clause, use a concrete prefix, or filter on a known token.\n\nDates: ISO-8601 in quotes (`uploaded_at>\"2024-01-15\"`, `created_at>\"2026-01-01T00:00:00Z\"`), or relative shorthand `Nh`, `Nd`, `Nw` (`uploaded_at>1d`, `created_at:[4w TO 1w]`).\n\nSupported fields: `public_id`, `asset_id`, `filename`, `display_name`, `folder` / `asset_folder` (singular, not `folders`), `tags`, `context.<key>`, `metadata.<external_id>`, `resource_type`, `type`, `format`, `bytes`, `width`, `height`, `duration`, `pages`, `aspect_ratio`, `transparent`, `grayscale`, `status`, `moderation_status`, `moderation_kind`, `uploaded_at`, `created_at`, `taken_at`, `updated_at`, `last_updated.<kind>`, `face_count`, `illustration_score`, `quality_score`. Fields under `image_metadata.*`, `image_analysis.*`, `quality_analysis.*`, and `accessibility_analysis.*` also require the matching `with_field` to be returned in the response.\n\nSee the [search expressions guide](https://cloudinary.com/documentation/search_expressions.md) for the full reference.\n",
+                "type": "string"
+              },
+              "fields": {
+                "description": "A comma-separated list of fields to include in the response.\nNotes:\n- This parameter takes precedence over the with_field parameter, so if you want any additional asset attributes returned, make sure to also include them in this list (e.g., tags or context).\n- The following fields are always included in the response: public_id, asset_id, asset_folder, created_at, status, type, and resource_type.\n",
+                "type": "string"
+              },
+              "max_results": {
+                "description": "The maximum number of results to return. Default - 50. Maximum - 500.\nSet to `0` to get only `total_count` and `aggregations` without any resources in the response, useful for counting or aggregation-only queries.\n",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "next_cursor": {
+                "description": "The cursor value to get the next page of results. Available when a previous search returned more results than max_results.",
+                "type": "string"
+              },
+              "sort_by": {
+                "description": "An array of single-key objects mapping a field to a sort direction. Each object must contain exactly one field name mapped to 'asc' or 'desc'.\nDefault: [{\"created_at\": \"desc\"}].\n",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "enum": [
+                      "asc",
+                      "desc"
+                    ],
+                    "description": "Sort direction."
+                  }
+                }
+              },
+              "with_field": {
+                "description": "The additional asset attributes to include in each search result. The `fields` parameter takes precedence over this parameter. `image_metadata`, `image_analysis`, and `metadata` require a Tier 2 search plan.\n",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "context",
+                    "tags",
+                    "image_metadata",
+                    "image_analysis",
+                    "metadata",
+                    "quality_analysis",
+                    "accessibility_analysis"
+                  ]
+                }
+              }
+            },
+            "description": "The search query parameters."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "search-assets",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_visual_search_assets",
+      "description": "Find images in the library that look like a given image (by URL or asset ID) or that match a text description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "image_url": {
+                    "type": "string",
+                    "description": "The URL of an image to use as the source for finding visually similar images"
+                  },
+                  "threshold": {
+                    "description": "The minimum similarity score (between 0 and 1.0) that a resource must have to be included in the response",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "image_url"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "image_asset_id": {
+                    "type": "string",
+                    "description": "The asset ID of an existing image to use as the source for finding visually similar images"
+                  },
+                  "threshold": {
+                    "description": "The minimum similarity score (between 0 and 1.0) that a resource must have to be included in the response",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "image_asset_id"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "A textual description to find visually similar images"
+                  },
+                  "threshold": {
+                    "description": "The minimum similarity score (between 0 and 1.0) that a resource must have to be included in the response",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            ],
+            "description": "The visual search parameters."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "visual-search-assets",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_generate_image",
+      "description": "Generate an image from a text prompt with Cloudinary's Image Generation add-on and store it in the product environment, so it has a public delivery URL. It waits for the image by default; with `async: true` it returns at once and `cloudinary_get_generation_task` reports the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "async": {
+                "default": false,
+                "description": "Whether to perform the generation asynchronously. When true, the API\nreturns immediately with a 202 and completes in the background. Once\ncomplete, a webhook notification is sent to the specified URL and/or to\nthe URLs defined in the product environment's settings.\n",
+                "type": "boolean"
+              },
+              "format": {
+                "description": "Desired output image format. Optional; defaults to `png` when omitted.\nMapped to the closest format the chosen model supports, `webp` falls\nback to `png` on models that don't support it (e.g. FLUX.2 Pro), and the\nrequest is ignored entirely by models that don't expose a format option\n(e.g. Recraft).\n",
+                "type": "string",
+                "enum": [
+                  "jpeg",
+                  "png",
+                  "webp"
+                ]
+              },
+              "image_size": {
+                "description": "Desired output size, given in **one** of two mutually exclusive forms:\n\n  * `DimensionsImageSize`: `width` and `height` in pixels, for precise\n    control.\n  * `DeclarativeImageSize`: `aspect_ratio` (and an optional `resolution`\n    tier), resolved server-side to the closest size the chosen model\n    supports. This is the portable form: most providers natively accept\n    an aspect ratio plus a resolution tier rather than raw pixels.\n\nOmit `image_size` entirely to use the model's default size.\n",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "height": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Output height in pixels."
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Output width in pixels."
+                      }
+                    },
+                    "required": [
+                      "height",
+                      "width"
+                    ],
+                    "description": "Exact output dimensions in pixels. Both `width` and `height` are required together."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "aspect_ratio": {
+                        "type": "string",
+                        "enum": [
+                          "1:1",
+                          "16:9",
+                          "9:16",
+                          "4:3",
+                          "3:4"
+                        ],
+                        "description": "Output aspect ratio, width-to-height. Limited to the core ratios\nevery model supports natively.\n"
+                      },
+                      "resolution": {
+                        "description": "Output resolution tier, measured on the longest edge. Defaults to\n`1K` when omitted.\n* `0.5K`: ~512 px\n* `1K`: ~1024 px\n* `2K`: ~2048 px\n* `4K`: ~4096 px\n",
+                        "type": "string",
+                        "enum": [
+                          "0.5K",
+                          "1K",
+                          "2K",
+                          "4K"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "aspect_ratio"
+                    ],
+                    "description": "Declarative output size, an aspect ratio plus an optional resolution\ntier, resolved server-side to the nearest size the model supports.\n"
+                  }
+                ]
+              },
+              "model": {
+                "description": "Selects the model, in one of three mutually exclusive forms (omit to use\nthe global default):\n  * `ModelByFamily`: `family` (+ optional `tier`); the stable-over-time\n    selector.\n  * `ModelById`: an explicit `id`, pinning one exact model.\n  * `ModelAuto`: `mode: auto`, letting the service choose the model for\n    the request (+ optional `preference`).\n",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "family": {
+                        "type": "string",
+                        "enum": [
+                          "flux",
+                          "recraft",
+                          "gpt-image",
+                          "nano-banana",
+                          "ideogram"
+                        ],
+                        "description": "Model family:\n* `flux`: Photorealistic images (FLUX.2 Klein 9B / FLUX.2 Pro).\n* `recraft`: Vector and illustration (Recraft V3 / Recraft V4).\n* `gpt-image`: Campaign and marketing images (GPT Image 1 Mini / GPT Image 2).\n* `nano-banana`: General purpose generation (Nano Banana 1 / Nano Banana 2).\n* `ideogram`: Realism, text rendering, and artistic generation (Ideogram V4).\n"
+                      },
+                      "tier": {
+                        "description": "Quality tier within the family. Defaults to `standard` when omitted.",
+                        "type": "string",
+                        "enum": [
+                          "standard",
+                          "premium"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "family"
+                    ],
+                    "description": "Select a model by family and quality tier; a missing `tier` defaults to\n`standard`.\n"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "enum": [
+                          "nano-banana-1",
+                          "nano-banana-2",
+                          "nano-banana-2-lite",
+                          "flux-2-klein-9b",
+                          "flux-2-pro",
+                          "flux-2-flash",
+                          "recraft-v3",
+                          "recraft-v4",
+                          "gpt-image-1-mini",
+                          "gpt-image-2",
+                          "gpt-image-2.5-flare",
+                          "gpt-image-2.5-sunburst",
+                          "muse-image",
+                          "mai-image-2.5",
+                          "mai-image-2.5-pro",
+                          "seedream-5-pro",
+                          "grok-imagine-image",
+                          "recraft-v4.1-utility",
+                          "recraft-v4.1-utility-pro",
+                          "seedream-5-lite",
+                          "grok-imagine-image-2.0-low",
+                          "qwen-image-3",
+                          "ideogram-v4-base",
+                          "ideogram-v4-turbo",
+                          "nano-banana-1-edit",
+                          "nano-banana-2-edit",
+                          "nano-banana-2-lite-edit",
+                          "flux-2-klein-9b-edit",
+                          "flux-2-pro-edit",
+                          "flux-2-flash-edit",
+                          "recraft-v3-edit",
+                          "gpt-image-1-mini-edit",
+                          "gpt-image-2-edit",
+                          "gpt-image-2.5-flare-edit",
+                          "gpt-image-2.5-sunburst-edit",
+                          "muse-image-edit",
+                          "mai-image-2.5-edit",
+                          "mai-image-2.5-pro-edit",
+                          "seedream-5-pro-edit",
+                          "grok-imagine-image-edit",
+                          "seedream-5-lite-edit",
+                          "grok-imagine-image-2.0-low-edit",
+                          "qwen-image-3-edit"
+                        ],
+                        "description": "Exact model identifier; overrides family/tier when provided. The\n`-edit` models accept reference images and are selectable only on\n`image_to_image`; the others only on `text_to_image`.\n"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "description": "Pin an exact model by ID, bypassing family/tier."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "auto"
+                        ],
+                        "description": "The only valid value; selects automatic model selection."
+                      },
+                      "preference": {
+                        "default": "balanced",
+                        "description": "What the choice optimizes for:\n* `balanced` (default): quality and cost weighted equally.\n* `quality`: quality only; cost isn't weighed.\n* `economy`: cost first, quality second.\n* `balanced_fast`, `quality_fast`, `economy_fast`: as above, but also\n\n\n\n\n\n\n\n\n\n  favor faster generation, and never pick a model that typically\n  takes longer than 30 seconds.\n",
+                        "type": "string",
+                        "enum": [
+                          "balanced",
+                          "quality",
+                          "economy",
+                          "balanced_fast",
+                          "quality_fast",
+                          "economy_fast"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "description": "Let the service choose the model for this request. The response reports\nthe resolved model in `data.assets[].model`, as for the other forms; on\n`image_to_image` it is always an edit model.\n"
+                  }
+                ]
+              },
+              "notification_url": {
+                "description": "The webhook URL to notify when the generation is complete. Only relevant when `async` is set to true.",
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string",
+                "description": "The text description of the image to generate."
+              },
+              "seed": {
+                "description": "Seed for reproducible generation. Supported by the `flux`, `nano-banana`\nand `ideogram` models and by `qwen-image-3`; silently ignored by the\nmodels that don't support it, which report `seed` as null in the\nresponse.\n",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target": {
+                "description": "Where to store the generated output, determined by `target_type`.\nOptional; defaults to a `managed_asset` target when omitted.\n",
+                "anyOf": [
+                  {
+                    "allOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "public_id": {
+                            "description": "Public ID to store the asset under. Auto-assigned when omitted.",
+                            "type": "string"
+                          },
+                          "target_type": {
+                            "type": "string",
+                            "enum": [
+                              "managed_asset"
+                            ],
+                            "description": "Discriminator identifying this as a managed-asset target."
+                          },
+                          "upload_preset": {
+                            "description": "Upload preset to apply. Uses the product environment's default when omitted.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ],
+                        "description": "Store the output as a permanent managed asset in your Cloudinary product environment (the default)."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "const": "managed_asset"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "enum": [
+                              "temporary"
+                            ],
+                            "description": "Discriminator identifying this as a temporary target."
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ],
+                        "description": "Store the output as a short-lived asset on the upload service."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "const": "temporary"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "description": "A JSON object containing the generation request parameters."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "generate-image",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_generate_image_from_images",
+      "description": "Generate an image guided by one or more reference images (stored assets or HTTPS URLs) and a prompt: restyle, on-brand variants, consistent characters, edits and extensions. With `async: true` it returns at once and `cloudinary_get_generation_task` reports the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "async": {
+                "default": false,
+                "description": "Whether to perform the generation asynchronously. When true, the API\nreturns immediately with a 202 and completes in the background. Once\ncomplete, a webhook notification is sent to the specified URL and/or to\nthe URLs defined in the product environment's settings.\n",
+                "type": "boolean"
+              },
+              "format": {
+                "description": "Desired output image format. Optional; defaults to `png` when omitted.\nMapped to the closest format the chosen model supports, `webp` falls\nback to `png` on models that don't support it (e.g. FLUX.2 Pro), and the\nrequest is ignored entirely by models that don't expose a format option\n(e.g. Recraft).\n",
+                "type": "string",
+                "enum": [
+                  "jpeg",
+                  "png",
+                  "webp"
+                ]
+              },
+              "image_size": {
+                "description": "Desired output size, given in **one** of two mutually exclusive forms:\n\n  * `DimensionsImageSize`: `width` and `height` in pixels, for precise\n    control.\n  * `DeclarativeImageSize`: `aspect_ratio` (and an optional `resolution`\n    tier), resolved server-side to the closest size the chosen model\n    supports. This is the portable form: most providers natively accept\n    an aspect ratio plus a resolution tier rather than raw pixels.\n\nOmit `image_size` entirely to use the model's default size.\n",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "height": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Output height in pixels."
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Output width in pixels."
+                      }
+                    },
+                    "required": [
+                      "height",
+                      "width"
+                    ],
+                    "description": "Exact output dimensions in pixels. Both `width` and `height` are required together."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "aspect_ratio": {
+                        "type": "string",
+                        "enum": [
+                          "1:1",
+                          "16:9",
+                          "9:16",
+                          "4:3",
+                          "3:4"
+                        ],
+                        "description": "Output aspect ratio, width-to-height. Limited to the core ratios\nevery model supports natively.\n"
+                      },
+                      "resolution": {
+                        "description": "Output resolution tier, measured on the longest edge. Defaults to\n`1K` when omitted.\n* `0.5K`: ~512 px\n* `1K`: ~1024 px\n* `2K`: ~2048 px\n* `4K`: ~4096 px\n",
+                        "type": "string",
+                        "enum": [
+                          "0.5K",
+                          "1K",
+                          "2K",
+                          "4K"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "aspect_ratio"
+                    ],
+                    "description": "Declarative output size, an aspect ratio plus an optional resolution\ntier, resolved server-side to the nearest size the model supports.\n"
+                  }
+                ]
+              },
+              "model": {
+                "description": "Selects the model, in one of three mutually exclusive forms (omit to use\nthe global default):\n  * `ModelByFamily`: `family` (+ optional `tier`); the stable-over-time\n    selector.\n  * `ModelById`: an explicit `id`, pinning one exact model.\n  * `ModelAuto`: `mode: auto`, letting the service choose the model for\n    the request (+ optional `preference`).\n",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "family": {
+                        "type": "string",
+                        "enum": [
+                          "flux",
+                          "recraft",
+                          "gpt-image",
+                          "nano-banana",
+                          "ideogram"
+                        ],
+                        "description": "Model family:\n* `flux`: Photorealistic images (FLUX.2 Klein 9B / FLUX.2 Pro).\n* `recraft`: Vector and illustration (Recraft V3 / Recraft V4).\n* `gpt-image`: Campaign and marketing images (GPT Image 1 Mini / GPT Image 2).\n* `nano-banana`: General purpose generation (Nano Banana 1 / Nano Banana 2).\n* `ideogram`: Realism, text rendering, and artistic generation (Ideogram V4).\n"
+                      },
+                      "tier": {
+                        "description": "Quality tier within the family. Defaults to `standard` when omitted.",
+                        "type": "string",
+                        "enum": [
+                          "standard",
+                          "premium"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "family"
+                    ],
+                    "description": "Select a model by family and quality tier; a missing `tier` defaults to\n`standard`.\n"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "enum": [
+                          "nano-banana-1",
+                          "nano-banana-2",
+                          "nano-banana-2-lite",
+                          "flux-2-klein-9b",
+                          "flux-2-pro",
+                          "flux-2-flash",
+                          "recraft-v3",
+                          "recraft-v4",
+                          "gpt-image-1-mini",
+                          "gpt-image-2",
+                          "gpt-image-2.5-flare",
+                          "gpt-image-2.5-sunburst",
+                          "muse-image",
+                          "mai-image-2.5",
+                          "mai-image-2.5-pro",
+                          "seedream-5-pro",
+                          "grok-imagine-image",
+                          "recraft-v4.1-utility",
+                          "recraft-v4.1-utility-pro",
+                          "seedream-5-lite",
+                          "grok-imagine-image-2.0-low",
+                          "qwen-image-3",
+                          "ideogram-v4-base",
+                          "ideogram-v4-turbo",
+                          "nano-banana-1-edit",
+                          "nano-banana-2-edit",
+                          "nano-banana-2-lite-edit",
+                          "flux-2-klein-9b-edit",
+                          "flux-2-pro-edit",
+                          "flux-2-flash-edit",
+                          "recraft-v3-edit",
+                          "gpt-image-1-mini-edit",
+                          "gpt-image-2-edit",
+                          "gpt-image-2.5-flare-edit",
+                          "gpt-image-2.5-sunburst-edit",
+                          "muse-image-edit",
+                          "mai-image-2.5-edit",
+                          "mai-image-2.5-pro-edit",
+                          "seedream-5-pro-edit",
+                          "grok-imagine-image-edit",
+                          "seedream-5-lite-edit",
+                          "grok-imagine-image-2.0-low-edit",
+                          "qwen-image-3-edit"
+                        ],
+                        "description": "Exact model identifier; overrides family/tier when provided. The\n`-edit` models accept reference images and are selectable only on\n`image_to_image`; the others only on `text_to_image`.\n"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "description": "Pin an exact model by ID, bypassing family/tier."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "auto"
+                        ],
+                        "description": "The only valid value; selects automatic model selection."
+                      },
+                      "preference": {
+                        "default": "balanced",
+                        "description": "What the choice optimizes for:\n* `balanced` (default): quality and cost weighted equally.\n* `quality`: quality only; cost isn't weighed.\n* `economy`: cost first, quality second.\n* `balanced_fast`, `quality_fast`, `economy_fast`: as above, but also\n\n\n\n\n\n\n\n\n\n  favor faster generation, and never pick a model that typically\n  takes longer than 30 seconds.\n",
+                        "type": "string",
+                        "enum": [
+                          "balanced",
+                          "quality",
+                          "economy",
+                          "balanced_fast",
+                          "quality_fast",
+                          "economy_fast"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "description": "Let the service choose the model for this request. The response reports\nthe resolved model in `data.assets[].model`, as for the other forms; on\n`image_to_image` it is always an edit model.\n"
+                  }
+                ]
+              },
+              "notification_url": {
+                "description": "The webhook URL to notify when the generation is complete. Only relevant when `async` is set to true.",
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string",
+                "description": "The text instruction describing the desired edit / output."
+              },
+              "reference_images": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "asset_id": {
+                              "type": "string",
+                              "description": "Cloudinary asset ID of the reference image. READ permission is enforced."
+                            },
+                            "source_type": {
+                              "type": "string",
+                              "enum": [
+                                "managed_asset"
+                              ],
+                              "description": "Discriminator identifying this as a managed-asset reference."
+                            }
+                          },
+                          "required": [
+                            "asset_id",
+                            "source_type"
+                          ],
+                          "description": "A reference to a managed asset in the caller's product environment, by\nasset ID.\n"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source_type": {
+                              "type": "string",
+                              "const": "managed_asset"
+                            }
+                          },
+                          "required": [
+                            "source_type"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source_type": {
+                              "type": "string",
+                              "enum": [
+                                "url"
+                              ],
+                              "description": "Discriminator identifying this as an external-URL reference."
+                            },
+                            "url": {
+                              "type": "string",
+                              "description": "HTTPS URL of the reference image."
+                            }
+                          },
+                          "required": [
+                            "source_type",
+                            "url"
+                          ],
+                          "description": "A reference to an external image by HTTPS URL."
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source_type": {
+                              "type": "string",
+                              "const": "url"
+                            }
+                          },
+                          "required": [
+                            "source_type"
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "description": "A single reference image, in **one** of two mutually exclusive forms\ndetermined by `source_type`:\n  * `ManagedAssetReference`: a managed asset in the caller's product\n    environment, by `asset_id` (read permission is checked).\n  * `UrlReference`: an external image by HTTPS `url`.\n"
+                },
+                "description": "Reference images that steer the generation, in order (1-indexed; the\nprompt may address them positionally as `[1]`, `[2]`, ...). Each entry\nis either a managed asset (by `asset_id`) or an external `url`. The\nplatform accepts up to 4; a specific model may accept fewer, the\n`recraft-v3-edit` and `mai-image` edit models accept 1, and the\n`grok-imagine` and `qwen-image` edit models accept 3. Exceeding the\nselected model's capacity returns 400.\n"
+              },
+              "seed": {
+                "description": "Seed for reproducible generation. Supported by the `flux`, `nano-banana`\nand `ideogram` models and by `qwen-image-3`; silently ignored by the\nmodels that don't support it, which report `seed` as null in the\nresponse.\n",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target": {
+                "description": "Where to store the generated output, determined by `target_type`.\nOptional; defaults to a `managed_asset` target when omitted.\n",
+                "anyOf": [
+                  {
+                    "allOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "public_id": {
+                            "description": "Public ID to store the asset under. Auto-assigned when omitted.",
+                            "type": "string"
+                          },
+                          "target_type": {
+                            "type": "string",
+                            "enum": [
+                              "managed_asset"
+                            ],
+                            "description": "Discriminator identifying this as a managed-asset target."
+                          },
+                          "upload_preset": {
+                            "description": "Upload preset to apply. Uses the product environment's default when omitted.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ],
+                        "description": "Store the output as a permanent managed asset in your Cloudinary product environment (the default)."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "const": "managed_asset"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "enum": [
+                              "temporary"
+                            ],
+                            "description": "Discriminator identifying this as a temporary target."
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ],
+                        "description": "Store the output as a short-lived asset on the upload service."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "target_type": {
+                            "type": "string",
+                            "const": "temporary"
+                          }
+                        },
+                        "required": [
+                          "target_type"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "prompt",
+              "reference_images"
+            ],
+            "description": "A JSON object containing the image-to-image generation request parameters."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "endpointMapping": {
+        "method": "generate-image-from-images",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_get_generation_task",
+      "description": "Get the status and, once finished, the result of an image generation task started with `cloudinary_generate_image` or `cloudinary_generate_image_from_images`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "The ID of the generation task."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get-generation-task",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_get_tx_reference",
+      "description": "Return Cloudinary's transformation reference: the parameters and syntax rules for transformation strings and transformed delivery URLs. Read it once per session before building a transformation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "get-tx-reference",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "cloudinary_transform_asset",
+      "description": "Create derived versions of an existing asset with a transformation string (for example `c_fill,w_1080,h_1080/f_auto/q_auto`) through the explicit API and return their URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publicId": {
+            "type": "string",
+            "description": "The public ID of the existing asset to transform"
+          },
+          "transformations": {
+            "type": "string",
+            "description": "VALIDATED transformation string using ONLY parameters from get-tx-reference docs. Examples: 'c_fill,w_300,h_200' or 'e_sepia/a_90'. MUST follow component rules: commas within components, slashes between components."
+          },
+          "resourceType": {
+            "default": "image",
+            "description": "The resource type of the asset",
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "raw"
+            ]
+          },
+          "invalidate": {
+            "default": false,
+            "description": "Whether to invalidate cached versions",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "publicId",
+          "transformations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "transform-asset",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloudinary_sign_upload",
+      "description": "Sign Upload API parameters so a file on the user's own machine can be posted straight to Cloudinary. Returns the signed parameters, signature, API key, host and cloud name; the file itself is posted by the caller, not by AnythingMCP.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uploads": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "access_control": {
+                  "description": "Restricts access to the asset by specifying one or more access types.\nThe asset is restricted unless at least one listed access type is valid.\n",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "access_type": {
+                        "type": "string",
+                        "enum": [
+                          "token",
+                          "anonymous"
+                        ],
+                        "description": "The type of access control to apply to the asset."
+                      },
+                      "end": {
+                        "description": "The end date and time when anonymous access expires. Accepts ISO 8601 string or Unix timestamp.",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      },
+                      "key": {
+                        "description": "The authentication key identifier for token-based access. Default key is used if not specified or if set to 'default'.",
+                        "type": "string"
+                      },
+                      "start": {
+                        "description": "The start date and time when anonymous access becomes available. Accepts ISO 8601 string or Unix timestamp.",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "access_type"
+                    ],
+                    "description": "Access control rule that defines when and how the asset can be accessed."
+                  }
+                },
+                "access_mode": {
+                  "description": "Deprecated. Use access_control instead. Allows the asset to behave as if it's of the authenticated delivery type while still using the default 'upload' type in delivery URLs. The asset can later be made public by changing its access_mode via the Admin API, without having to update any delivery URLs.\n",
+                  "type": "string",
+                  "enum": [
+                    "public",
+                    "authenticated"
+                  ]
+                },
+                "accessibility_analysis": {
+                  "description": "Whether to return accessibility analysis values for the image.",
+                  "type": "boolean"
+                },
+                "allowed_formats": {
+                  "description": "A comma-separated list of file formats that are allowed for uploading. Files of other types will be rejected. The formats can be any combination of image types, video formats or raw file extensions.\nNote: You can also add the `format` parameter to convert other file types instead of rejecting them. In this case, only files that would normally be rejected are converted, any file format allowed for upload won't be converted.\n",
+                  "type": "string"
+                },
+                "asset_folder": {
+                  "description": "The asset folder to assign to the asset.",
+                  "type": "string"
+                },
+                "async": {
+                  "description": "When set to true, returns the uploaded asset's public_id immediately in the response, before the upload is completed (asynchronously). Default: false.\n",
+                  "type": "boolean"
+                },
+                "auto_chaptering": {
+                  "description": "Whether to trigger automatic generation of video chapters. Chapters will be generated and saved as a .vtt file with -chapters appended to the public ID of the video. You can enable chapters as part of the Cloudinary Video Player. Relevant for videos only.",
+                  "type": "boolean"
+                },
+                "auto_tagging": {
+                  "description": "Automatically assigns tags to an asset according to detected objects or categories with a confidence score higher than the specified value.\nUse together with the detection parameter for:\n- Cloudinary AI Content Analysis\n- Amazon Rekognition Celebrity Detection\nUse together with the categorization parameter for:\n- Google Automatic Video Tagging\n- Google Auto Tagging\n- Imagga Auto Tagging\n- Amazon Rekognition Auto Tagging\n",
+                  "type": "number"
+                },
+                "auto_transcription": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "translate": {
+                          "description": "Array of target language codes for transcription translation.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "description": "Configuration object for automatic video transcription with translation options."
+                    }
+                  ]
+                },
+                "background_removal": {
+                  "description": "Automatically remove the background of an image using an add-on.\n- Set to cloudinary_ai to use the deep-learning based Cloudinary AI Background Removal add-on.\n  Optionally append a template suffix (e.g., cloudinary_ai:fine_edges).\n- Note: this feature has been superseded by background removal on the fly.\n- Set to pixelz to use the human-powered Pixelz Remove-The-Background Editing add-on service.\nRelevant for images only.\n",
+                  "type": "string"
+                },
+                "backup": {
+                  "description": "Whether to backup the uploaded asset. When set to true, backs up uploaded assets to a secondary storage bucket.",
+                  "type": "boolean"
+                },
+                "categorization": {
+                  "description": "A comma-separated list of the categorization add-ons to run on the asset.\nSet to google_tagging, google_video_tagging, imagga_tagging and/or aws_rek_tagging\nto automatically classify the scenes of the uploaded asset.\nOptionally append a language code suffix (e.g., google_tagging:fr).\n",
+                  "type": "string"
+                },
+                "cinemagraph_analysis": {
+                  "description": "Whether to return a cinemagraph analysis value for the media asset between 0 and 1, where 0 means the asset is not a cinemagraph and 1 means the asset is a cinemagraph. Relevant for animated images and video only. A static image will return 0.",
+                  "type": "boolean"
+                },
+                "clear_invalid": {
+                  "default": false,
+                  "description": "Whether to clear metadata field values that have become invalid due to a change in metadata rules. If false, the API returns an error if any existing metadata value is no longer valid. Default: false.",
+                  "type": "boolean"
+                },
+                "colors": {
+                  "default": false,
+                  "description": "Whether to retrieve predominant colors & color histogram of the uploaded image. Note: If all returned colors are opaque, then 6-digit RGB hex values are returned. If one or more colors contain an alpha channel, then 8-digit RGBA hex quadruplet values are returned.",
+                  "type": "boolean"
+                },
+                "context": {
+                  "description": "A pipe-separated list of key-value pairs of general textual context metadata to attach to the asset (e.g., \"alt=My image|caption=Nice photo\"). A literal = or | inside a value must be escaped with a prepending backslash, and a literal backslash must be doubled. A double quote must not be escaped.",
+                  "type": "string"
+                },
+                "custom_coordinates": {
+                  "description": "Custom coordinates as comma-separated values, with multiple coordinates separated by pipes.",
+                  "type": "string"
+                },
+                "detection": {
+                  "description": "Invokes the relevant add-on to return a list of detected content.\nSet to:\n- <content-aware model>_[<version>] (e.g. coco_v2) to return a list of detected content using the Cloudinary AI Content Analysis add-on. Can be used together with the auto_tagging parameter to apply tags automatically.\n- captioning to analyze an image and suggest a caption based on the image's contents.\n- iqa to analyze the quality of an image.\n- watermark-detection to detect watermarks in an image.\n- adv_face to return a list of facial attributes using the Advanced Facial Attribute Detection add-on.\n- aws_rek_face to return a list of detected celebrities and facial attributes using the Amazon Rekognition Celebrity Detection add-on. Can be used together with the auto_tagging parameter to apply tags automatically.\n",
+                  "type": "string"
+                },
+                "discard_original_filename": {
+                  "description": "Whether to discard the name of the original uploaded file. Relevant when delivering assets as attachments (setting the flag disposition:attachment in delivery URLs).",
+                  "type": "boolean"
+                },
+                "display_name": {
+                  "description": "A display name for the asset.",
+                  "type": "string"
+                },
+                "eager": {
+                  "description": "A list of transformations to eagerly generate for the asset. Accepts either a single transformation or a pipe-separated list of transformations.",
+                  "type": "string"
+                },
+                "eager_async": {
+                  "description": "Whether to generate the eager transformations asynchronously in the background after the upload request is completed rather than before the upload is completed.",
+                  "type": "boolean"
+                },
+                "eager_notification_url": {
+                  "description": "A URL to notify when eager transformations are completed.",
+                  "type": "string"
+                },
+                "eval": {
+                  "description": "Allows you to modify upload parameters by specifying custom logic with JavaScript. This can be useful for conditionally adding tags, contextual metadata, structured metadata or eager transformations depending on specific criteria of the uploaded file.",
+                  "type": "string"
+                },
+                "face_coordinates": {
+                  "description": "Face coordinates as comma-separated values, with multiple faces separated by pipes.",
+                  "type": "string"
+                },
+                "faces": {
+                  "description": "Whether to detect faces in the asset.",
+                  "type": "boolean"
+                },
+                "filename_override": {
+                  "description": "Overrides the originally uploaded asset's file name in downloads that use flags like fl_attachment or fl_force_original.",
+                  "type": "string"
+                },
+                "folder": {
+                  "description": "Folder name where the uploaded asset will be stored. This parameter applies when using the Admin API, or when specifying the upload preset for unsigned uploading with the Upload API.",
+                  "type": "string"
+                },
+                "format": {
+                  "description": "An optional format to convert the uploaded asset to before saving in the cloud.",
+                  "type": "string"
+                },
+                "headers": {
+                  "description": "An HTTP header or a list of headers lines for adding as response HTTP headers when delivering the asset to your users. Supported headers: Link, Authorization, X-Robots-Tag.\n",
+                  "type": "string"
+                },
+                "invalidate": {
+                  "description": "Whether to invalidate CDN cache copies of a previously uploaded asset that shares the same public ID. Default: false.\n",
+                  "type": "boolean"
+                },
+                "media_metadata": {
+                  "description": "Whether to return IPTC, XMP, and detailed Exif metadata of the uploaded asset in the response.\nSupported for images, video, and audio.\n- Returned metadata for images includes: PixelsPerUnitX, PixelsPerUnitY, PixelUnits, Colorspace, and DPI.\n- Returned metadata for audio and video includes: audio_codec, audio_bit_rate, audio_frequency, channels, channel_layout.\n- Additional metadata for video includes: pix_format, codec, level, profile, video_bit_rate, dar.\n",
+                  "type": "boolean"
+                },
+                "metadata": {
+                  "description": "A pipe-separated list or a map of custom metadata fields (by external_id) and the values to assign to each of them. The = \" and | characters can be supported as values when escaped with a prepended backslash (\\). For a multi-select field, you can set a maximum of 3000 different metadata values on an asset.\n",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "moderation": {
+                  "description": "For all asset types, set to:\n- manual to add the uploaded asset to a list of pending assets that can be moderated using the Admin API or the Cloudinary Console.\n- perception_point to automatically moderate the uploaded asset using the Perception Point Malware Detection add-on.\n\nFor images only, set to:\n- webpurify to automatically moderate the uploaded image using the WebPurify Image Moderation add-on.\n- aws_rek to automatically moderate the uploaded image using the Amazon Rekognition AI Moderation add-on.\n- duplicate:<threshold> to detect if the same or a similar image already exists using the Cloudinary Duplicate Image Detection add-on. Set threshold to a float greater than 0 and less than or equal to 1.0 to specify how similar an image needs to be in order to be considered a duplicate. Set threshold to 0 to add an image to the index of images that are searched when duplicate detection is invoked for another image.\n\nFor videos only, set to:\n- aws_rek_video to automatically moderate the uploaded video using the Amazon Rekognition Video Moderation add-on.\n- google_video_moderation automatically moderate the uploaded video using the Google AI Video Moderation add-on.\n\nTo request multiple moderations in a single API call:\n- Send the desired list of moderations as a pipe-separated string with manual moderation, if relevant, being last.\n\nNote: Rejected assets are automatically invalidated on the CDN within approximately ten minutes.\n",
+                  "type": "string"
+                },
+                "notification_url": {
+                  "description": "A URL to notify when the asset is ready.",
+                  "type": "string"
+                },
+                "ocr": {
+                  "description": "Set to adv_ocr to extract all text elements in an image as well as the bounding box\ncoordinates of each detected element using the OCR text detection and extraction add-on.\nOptionally append options (e.g., adv_ocr:document).\n",
+                  "type": "string"
+                },
+                "on_success": {
+                  "description": "Allows you to update an asset by specifying custom logic with JavaScript that is executed after the upload to Cloudinary is completed successfully. This can be useful for conditionally adding tags, contextual metadata, and structured metadata, depending on the results of using the detection parameter on upload.",
+                  "type": "string"
+                },
+                "overwrite": {
+                  "description": "Whether to overwrite existing assets with the same public ID. When set to false, return immediately if an asset with the same public ID already exists. Default: true (when using unsigned upload, the default is false and cannot be changed to true).\n",
+                  "type": "boolean"
+                },
+                "phash": {
+                  "description": "Whether to return the perceptual hash (pHash) on the uploaded image for image similarity detection.\n",
+                  "type": "boolean"
+                },
+                "proxy": {
+                  "description": "A proxy to use for fetching remote URLs. The format should be http://hostname:port.",
+                  "type": "string"
+                },
+                "public_id": {
+                  "description": "The identifier that is used for accessing the uploaded asset. If not specified, a unique ID is generated automatically.",
+                  "type": "string"
+                },
+                "public_id_prefix": {
+                  "description": "A string or path that's automatically prepended to the public_id with a forward slash. The value can contain the same characters as the public_id including additional forward slashes. This prefix can be useful to provide context and improve the SEO of an asset's filename in the delivery URL, but the value does not impact the location where the asset is stored.",
+                  "type": "string"
+                },
+                "quality_analysis": {
+                  "description": "Whether to return a quality analysis value for the image between 0 and 1, where 0 means the image is blurry and out of focus and 1 means the image is sharp and in focus. Relevant for images only.",
+                  "type": "boolean"
+                },
+                "raw_convert": {
+                  "description": "Generates a related file based on the uploaded file.\n- Set to aspose to automatically create a PDF or other image format from a raw Office document using the Aspose Document Conversion add-on. (Asynchronous)\n- Set to google_speech to instruct the Google AI Video Transcription add-on to generate an automatic transcript raw file from an uploaded video. (Asynchronous)\n- Set to extract_text to extract all the text from a PDF file and store it in a raw JSON file with a public ID in the format: [pdf_public_id].extract_text.json. The full URL of the generated JSON file is included in the API response. Unlike the above raw_convert options, this option doesn't require registering for an add-on.(Synchronous)\n- Set to azure_video_indexer to generate AI-powered video insights from Microsoft Azure. (Asynchronous)\n",
+                  "type": "string"
+                },
+                "regions": {
+                  "description": "Named region coordinate groups for cropping with region gravity.\nCan be a JSON-encoded string or an object. Each region name may contain\nonly letters, numbers, or hyphens, and must have at least two coordinate pairs.\n",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "responsive_breakpoints": {
+                  "description": "Settings to automatically generate breakpoints for responsive images.",
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "bytes_step": {
+                            "description": "The minimum byte size difference between consecutive breakpoint images.",
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "create_derived": {
+                            "description": "Whether to generate and store the derived images. Default is true.",
+                            "type": "boolean"
+                          },
+                          "max_images": {
+                            "description": "The maximum number of breakpoint images to generate.",
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "max_width": {
+                            "description": "The maximum width for responsive breakpoint images.",
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "min_width": {
+                            "description": "The minimum width for responsive breakpoint images.",
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "transformation": {
+                            "description": "A transformation string to apply before generating breakpoints.",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "bytes_step": {
+                          "description": "The minimum byte size difference between consecutive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "create_derived": {
+                          "description": "Whether to generate and store the derived images. Default is true.",
+                          "type": "boolean"
+                        },
+                        "max_images": {
+                          "description": "The maximum number of breakpoint images to generate.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "max_width": {
+                          "description": "The maximum width for responsive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "min_width": {
+                          "description": "The minimum width for responsive breakpoint images.",
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "transformation": {
+                          "description": "A transformation string to apply before generating breakpoints.",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "return_delete_token": {
+                  "description": "Whether to return a deletion token in the upload response. The token can be used to delete the uploaded asset within approximately 10 minutes using an unauthenticated API call.",
+                  "type": "boolean"
+                },
+                "tags": {
+                  "description": "A comma-separated list of tag names, or an array of tag names.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "transformation": {
+                  "description": "An incoming transformation to run on the uploaded asset before its storage. In contrast to eager, this parameter is applied before the file is stored.",
+                  "type": "string"
+                },
+                "type": {
+                  "description": "The delivery type that defines if and how the uploaded asset is available for public delivery. By default, all uploaded assets are public (upload).",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "upload",
+                        "private",
+                        "authenticated"
+                      ],
+                      "description": "Managed delivery types for assets uploaded and stored by Cloudinary."
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "asset"
+                      ],
+                      "description": "Static asset delivery type."
+                    }
+                  ]
+                },
+                "unique_display_name": {
+                  "description": "Whether the display name should be unique.",
+                  "type": "boolean"
+                },
+                "unique_filename": {
+                  "description": "When set to false and used together with use_filename, if an asset with the same file name already exists, no random characters are appended to the file name. Instead, the asset is overwritten. Default: true (random characters are added to the file name if needed).\n",
+                  "type": "boolean"
+                },
+                "upload_preset": {
+                  "description": "(Required for unsigned uploading / optional for signed uploading)\nName of an upload preset that you defined for your Cloudinary product environment. An upload preset consists of upload parameters centrally managed using the Admin API or from the Upload Presets page of the Console Settings. An upload preset may be marked as unsigned, which allows unsigned uploading directly from the browser and restricts the optional parameters to: public_id, folder, tags, context, face_coordinates, regions and custom_coordinates.\n",
+                  "type": "string"
+                },
+                "use_asset_folder_as_public_id_prefix": {
+                  "description": "Whether to add the asset_folder value as a prefix to the public_id value (prepended with a forward slash). This ensures that the public ID path will always match the initial asset folder, and can help to retain the behavior that previously existed in fixed folder mode. However, keep in mind that even when this option is used during upload, an asset with a certain public ID path can later be moved to a completely different asset folder hierarchy without impacting the public ID. This option only ensures path matching for the initial upload. Relevant only when public_id_prefix (or folder) has not been separately specified.",
+                  "type": "boolean"
+                },
+                "use_filename": {
+                  "description": "Whether to use the original file name of the uploaded asset if available for the public ID. The file name is normalized and random characters are appended to ensure uniqueness if the file name already exists. Default: false.\n",
+                  "type": "boolean"
+                },
+                "use_filename_as_display_name": {
+                  "description": "Whether to automatically assign the original filename of the uploaded asset as the asset's display name. Relevant only if the display_name parameter isn't set.",
+                  "type": "boolean"
+                },
+                "visual_search": {
+                  "description": "Whether to index the image for use with visual searches. Relevant for images only.",
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "description": "Cloudinary Upload API parameters to sign (public_id, folder, tags, context, metadata, eager, transformation, etc.). Do not include file, resource_type, api_key, or signature, these are not part of the signed parameter set and will be ignored."
+            },
+            "description": "One or more sets of Cloudinary Upload API parameters to sign. Returns one signed credential object per entry, in the same order. Only genuine Upload API params are signed; file, resource_type, api_key, and signature are excluded."
+          }
+        },
+        "required": [
+          "uploads"
+        ]
+      },
+      "endpointMapping": {
+        "method": "sign-upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

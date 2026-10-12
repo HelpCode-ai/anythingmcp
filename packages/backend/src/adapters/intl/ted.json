@@ -1,0 +1,306 @@
+{
+  "slug": "ted",
+  "name": "TED (EU Public Tenders)",
+  "description": "Search EU public procurement on TED, Tenders Electronic Daily: calls for tenders, contract awards and other notices from every EU and EEA country by CPV code, buyer, country, deadline, value or full text. Public API, no key needed.",
+  "instructions": "This connector searches **TED (Tenders Electronic Daily)**, the online version of the Supplement to the Official Journal of the EU, through its public Search API v3 at `https://api.ted.europa.eu`. TED publishes public procurement above the EU thresholds from all EU member states, the EEA and other participating countries: some 3,500 to 4,000 notices every working day, calls for tenders as well as contract awards.\n\n**Setup**: none. The search API is public and needs no account or API key; install the connector and use it. (A TED developer API key only matters for submitting notices, which this connector does not do.)\n\n**Tools**\n- `ted_search_notices`: expert-query search with chosen fields, pages and scope.\n- `ted_get_notice`: the full detail of one notice by publication number.\n- `ted_count_notices`: how many notices match a query, without fetching them.\n- `ted_check_query`: checks a query's syntax and field names without running it.\n\n**Expert query syntax** (the same language as the Expert Search page on ted.europa.eu):\n- Compare fields with `=`, `!=`, `IN (a b c)`, `~` (contains words, e.g. `title-proc~\"cloud hosting\"`) and `>`, `>=`, `<`, `<=`.\n- Combine with `AND`, `OR`, `AND NOT` and parentheses. A bare `NOT` after a condition is a syntax error; write `AND NOT`.\n- `FT~(word)` or `FT~\"a phrase\"` searches the full text of the notice.\n- Sort with `SORT BY publication-date DESC` at the end.\n- Dates are `YYYYMMDD` (`publication-date>=20260101`) or relative: `today()`, `today(-7)`.\n- Countries are ISO 3166-1 alpha-3 codes: DEU, AUT, CHE, FRA, ITA, ESP, NLD, BEL, POL, SWE.\n- CPV codes match everything below them: `classification-cpv IN (72000000)` (IT services) also finds 72260000. Common divisions: 03 agriculture, 09 energy, 15 food, 30 office and computing equipment, 33 medical, 34 transport equipment, 45 construction work, 48 software, 50 repair and maintenance, 71 architecture and engineering, 72 IT services, 79 business services, 80 education, 85 health and social, 90 waste and environment.\n- Notice types (`notice-type`): `pin-only` and the other `pin-*` (prior information), `cn-standard` and `cn-social` (calls for competition), `can-standard` and `can-social` (contract awards), `veat` (voluntary ex-ante transparency), `corr` (corrections).\n\nUseful patterns:\n- Open calls in a sector and country: `classification-cpv IN (72000000 48000000) AND buyer-country=DEU AND deadline-receipt-tender-date-lot>=today() SORT BY publication-date DESC`, with `scope` `ACTIVE`.\n- Who wins what: `notice-type=can-standard AND winner-name~\"company name\" SORT BY publication-date DESC`.\n- Today's edition: `scope` `LATEST`.\n\n**Fields**: every result carries only the fields asked for. The default is a compact summary (publication number and date, notice type, procedure title, buyer, country, CPV, contract nature, procedure type, tender deadline, estimated value, awarded value and winner). Text fields are objects keyed by language (`{\"deu\": \"...\"}`) in the languages the buyer used; `notice-title` comes in all 24 EU languages and is large, so prefer `title-proc`. A field that does not apply to a notice is simply missing. Each notice carries `links` to its English HTML page, English PDF and multilingual XML; replace `/en/` in the HTML link for another language.\n\n**Paging and limits**: `limit` is 1 to 250 notices per page, and `limit` times the number of fields may not exceed 10,000. Page numbers reach the first 15,000 notices of a query; to walk through more, use `paginationMode` `ITERATION` and pass each response's `iterationNextToken` back until no notices return. Keep `limit` around 10 to 20 for reading in a chat.\n\n**Errors**: a 400 names the problem: `QUERY_SYNTAX_ERROR` (with line and column), `QUERY_UNKNOWN_FIELD` (a field name in the query or in `fields` TED does not know), `QUERY_UNSUPPORTED_FIELD_VALUE` (a malformed value, e.g. a publication number without the year), `SEARCH_EXCEEDS_MAX_LIMIT`. Run `ted_check_query` when a query keeps failing.\n\n**Reuse and bidding**: TED is run by the Publications Office of the EU; its terms of use are in the legal notice at https://ted.europa.eu/en/legal-notice. Notices are legal texts: for a bid, always read the procurement documents linked in `document-url-lot` and submit through the buyer's platform in `submission-url-lot`.",
+  "region": "eu",
+  "category": "government",
+  "icon": "ted",
+  "docsUrl": "https://docs.ted.europa.eu/api/latest/index.html",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "ted_count_notices",
+    "params": {
+      "query": "publication-date>=today(-7)"
+    }
+  },
+  "connector": {
+    "name": "TED (EU Public Tenders)",
+    "type": "REST",
+    "baseUrl": "https://api.ted.europa.eu",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/swagger-ui/index.html"
+  },
+  "tools": [
+    {
+      "name": "ted_search_notices",
+      "description": "Search EU public procurement notices on TED (Tenders Electronic Daily) with an expert query: calls for tenders, prior information, contract award notices and more from every EU and EEA country, by CPV code, buyer, country, dates, values, winners or full text. Each notice comes with `links` to its English HTML page, English PDF and multilingual XML on ted.europa.eu.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "TED expert search query. Fields compare with `=` (exact), `IN (a b)` (any of), `~` (contains words, e.g. `title-proc~\"software\"`), `!=` and `>`, `>=`, `<`, `<=`; combine with AND, OR, AND NOT and parentheses; end with `SORT BY <field> DESC|ASC`. `FT~(words)` or `FT~\"a phrase\"` searches the full text. Dates are YYYYMMDD or `today()` / `today(-7)`. Countries are ISO 3166-1 alpha-3 (DEU, FRA, ITA). CPV codes match their sub-codes (`classification-cpv IN (72000000)` finds 72260000). Examples: `classification-cpv IN (72000000) AND buyer-country=DEU AND deadline-receipt-tender-date-lot>=today() SORT BY publication-date DESC`; `notice-type=can-standard AND winner-country=ITA AND publication-date>=20260101`."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return for each notice (TED field names). Defaults to a compact summary. Useful extras: `description-proc`, `title-lot`, `description-lot`, `buyer-city`, `buyer-email`, `main-classification-proc`, `estimated-value-lot`, `deadline-receipt-tender-time-lot`, `place-of-performance-country-proc`, `document-url-lot`, `submission-url-lot`, `winner-country`, `result-value-notice`, `notice-title` (in all 24 languages, large). An unknown field is refused with QUERY_UNKNOWN_FIELD. limit x number of fields must stay within 10,000.",
+            "default": [
+              "publication-number",
+              "publication-date",
+              "notice-type",
+              "title-proc",
+              "buyer-name",
+              "buyer-country",
+              "classification-cpv",
+              "contract-nature-main-proc",
+              "procedure-type",
+              "deadline-receipt-tender-date-lot",
+              "estimated-value-proc",
+              "estimated-value-cur-proc",
+              "total-value",
+              "total-value-cur",
+              "winner-name"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Notices per page, 1 to 250 (default 10). Keep it small: each notice can carry its text in several languages.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1 (PAGE_NUMBER mode). PAGE_NUMBER mode reaches at most the first 15,000 notices of a query.",
+            "default": 1,
+            "minimum": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "ACTIVE",
+              "LATEST"
+            ],
+            "description": "ALL (default): every notice. ACTIVE: only active notices, which is what you want for calls you can still bid on. LATEST: only the notices of the latest daily edition (OJ S).",
+            "default": "ALL"
+          },
+          "paginationMode": {
+            "type": "string",
+            "enum": [
+              "PAGE_NUMBER",
+              "ITERATION"
+            ],
+            "description": "PAGE_NUMBER (default) pages with `page`. ITERATION walks through every result without the 15,000 cap: leave out `page`, then pass the returned `iterationNextToken` to get the next page until no notices come back."
+          },
+          "iterationNextToken": {
+            "type": "string",
+            "description": "In ITERATION mode, the `iterationNextToken` of the previous response. Leave it out on the first call."
+          },
+          "onlyLatestVersions": {
+            "type": "boolean",
+            "description": "true returns only the latest version of each notice (TED keeps corrected notices as new versions). Default false."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/notices/search",
+        "bodyMapping": {
+          "query": "$query",
+          "fields": "$fields",
+          "limit": "$limit",
+          "page": "$page",
+          "scope": "$scope",
+          "paginationMode": "$paginationMode",
+          "iterationNextToken": "$iterationNextToken",
+          "onlyLatestVersions": "$onlyLatestVersions"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{totalNoticeCount: totalNoticeCount, iterationNextToken: iterationNextToken, timedOut: timedOut, notices: notices[].merge(@, {links: {html: links.html.ENG, pdf: links.pdf.ENG, xml: links.xml.MUL}})}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ted_get_notice",
+      "description": "Get one TED notice by its publication number (for example 703792-2026): titles and descriptions of the procedure and its lots, buyer and contact, CPV codes, procedure type, deadline, estimated value, place of performance, links to the tender documents and submission, and for award notices the winners and values. Each notice comes with `links` to its English HTML page, English PDF and multilingual XML on ted.europa.eu.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publicationNumber": {
+            "type": "string",
+            "description": "Publication number as printed on TED: number, hyphen, year, e.g. 703792-2026 (the `publication-number` of a search result).",
+            "pattern": "^\\d{1,8}-\\d{4}$"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return (TED field names). Defaults to the full detail set listed in the tool description.",
+            "default": [
+              "publication-number",
+              "publication-date",
+              "notice-type",
+              "notice-version",
+              "procedure-identifier",
+              "title-proc",
+              "description-proc",
+              "identifier-lot",
+              "title-lot",
+              "description-lot",
+              "buyer-name",
+              "buyer-country",
+              "buyer-city",
+              "buyer-email",
+              "buyer-internet-address",
+              "classification-cpv",
+              "main-classification-proc",
+              "contract-nature-main-proc",
+              "procedure-type",
+              "deadline-receipt-tender-date-lot",
+              "deadline-receipt-tender-time-lot",
+              "estimated-value-proc",
+              "estimated-value-cur-proc",
+              "estimated-value-lot",
+              "estimated-value-cur-lot",
+              "place-of-performance-country-proc",
+              "place-of-performance-city-proc",
+              "document-url-lot",
+              "submission-url-lot",
+              "winner-name",
+              "winner-country",
+              "result-value-notice",
+              "result-value-cur-notice",
+              "total-value",
+              "total-value-cur"
+            ]
+          }
+        },
+        "required": [
+          "publicationNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/notices/search",
+        "bodyMapping": {
+          "query": "publication-number=${publicationNumber}",
+          "fields": "$fields",
+          "limit": 1,
+          "scope": "ALL"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{found: length(notices) > `0`, notice: notices[0].merge(@, {links: {html: links.html.ENG, pdf: links.pdf.ENG, xml: links.xml.MUL}})}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ted_count_notices",
+      "description": "Count the TED notices that match an expert query without fetching them, for market sizing and trends: how many calls for a CPV code in a country this year, how many awards a company won. Uses the same query syntax as ted_search_notices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "TED expert search query, as in ted_search_notices (e.g. `classification-cpv IN (45000000) AND buyer-country=AUT AND publication-date>=20260101`)."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "ACTIVE",
+              "LATEST"
+            ],
+            "description": "ALL (default): every notice. ACTIVE: only active notices, which is what you want for calls you can still bid on. LATEST: only the notices of the latest daily edition (OJ S).",
+            "default": "ALL"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/notices/search",
+        "bodyMapping": {
+          "query": "$query",
+          "fields": [
+            "publication-number"
+          ],
+          "limit": 1,
+          "scope": "$scope"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{totalNoticeCount: totalNoticeCount, timedOut: timedOut}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ted_check_query",
+      "description": "Check the syntax and field names of a TED expert query without running it. Returns valid: true, or TED's error with the type (QUERY_SYNTAX_ERROR, QUERY_UNKNOWN_FIELD, QUERY_UNSUPPORTED_FIELD_VALUE...) and the position in the query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "TED expert search query to check."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/notices/search",
+        "bodyMapping": {
+          "query": "$query",
+          "fields": [
+            "publication-number"
+          ],
+          "checkQuerySyntax": true
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{valid: `true`}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

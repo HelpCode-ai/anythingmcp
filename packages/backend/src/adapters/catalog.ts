@@ -111,6 +111,7 @@ import * as clickup from './intl/clickup.json';
 import * as clockify from './intl/clockify.json';
 import * as close from './intl/close.json';
 import * as cloudflare from './intl/cloudflare.json';
+import * as cloudinary from './intl/cloudinary.json';
 import * as coda from './intl/coda.json';
 import * as coingecko from './intl/coingecko.json';
 import * as contentful from './intl/contentful.json';
@@ -315,6 +316,7 @@ import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
 import * as tally from './intl/tally.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
+import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
@@ -698,6 +700,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   clockify as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   cloudflare as unknown as AdapterDefinition,
+  cloudinary as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
@@ -902,6 +905,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   synology as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
+  ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
