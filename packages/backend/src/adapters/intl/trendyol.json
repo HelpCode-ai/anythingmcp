@@ -1,0 +1,1715 @@
+{
+  "slug": "trendyol",
+  "name": "Trendyol",
+  "description": "Run a Trendyol seller account from an AI agent: products (Product v2 listing, creation, content, archive), stock and prices, buybox, batch results, shipment packages with status, tracking, carrier and invoice link, returns, customer questions and answers, categories, attributes and brands, addresses and finance settlements. Basic auth with the API key and secret.",
+  "instructions": "## Trendyol\nThis connector uses the **Trendyol seller integration API** on `https://apigw.trendyol.com/integration` (the old `api.trendyol.com/sapigw` host is no longer the documented one): products on the current Product v2 services, stock and prices, shipment packages (orders), returns, customer questions, the category, attribute and brand lookups, addresses and finance.\n\n**Setup (about 5 minutes)**\n1. Sign in to the Trendyol seller panel (partner.trendyol.com) with the **master user** (admin role); other users do not see the API data.\n2. Open your store name (top right) > **Hesap Bilgilerim** > **Entegrasyon Bilgileri**. Copy the **Satıcı ID** into `TRENDYOL_SELLER_ID`, the **API Key** into `TRENDYOL_API_KEY` and the **API Secret Key** into `TRENDYOL_API_SECRET`.\n3. Set `TRENDYOL_API_HOST` to `https://apigw.trendyol.com`.\n4. Only if you sell on an international Trendyol storefront: set `TRENDYOL_STOREFRONT_CODE` to its two-letter country code; it is sent as the `storeFrontCode` header. Leave it empty for Trendyol Turkey.\n5. Install and run `trendyol_list_stock_and_prices`.\n\n**How requests are signed**: HTTP Basic with the API key as user name and the secret as password, plus the `User-Agent` header Trendyol requires, built as `<seller id> - SelfIntegration` from `TRENDYOL_SELLER_ID`. Requests without it are refused with 403. A 401 with `ClientApiAuthenticationException` or `basic.authorization.failed` means wrong credentials.\n\n**Stage (test) environment**: `https://stageapigw.trendyol.com` uses separate stage credentials, and Trendyol only lets in IP addresses it has whitelisted; any other address gets 503. Use it from a self-hosted installation whose IP you registered with Trendyol, not for your live store.\n\n**Dates are epoch milliseconds** (e.g. `1759276800000` = 2025-10-01 00:00 UTC), in Turkey time (UTC+3) for orders. Convert before calling and when reading `orderDate`, `creationDate` and similar fields.\n\n**Orders** are shipment packages. `trendyol_list_orders` uses the v2 order endpoint, which Trendyol made mandatory on 15 October 2026: it reaches at most the last month, a date window of at most 2 weeks (without dates the last week) and the first 10,000 packages of a filter, so narrow the window or the status for more. The usual flow: status `Created` (to process) > `trendyol_update_package_status` with `Picking` > with `Invoiced` and the invoice number > Trendyol's carrier picks it up (`Shipped`, then `Delivered`). Sellers on the international storefronts who ship with their own carrier send the tracking number with `trendyol_update_tracking_number` after Picking. `trendyol_send_invoice_link` sends the e-invoice link to the customer.\n\n**Products** use Trendyol's Product v2 services (the old product filter is being switched off): `trendyol_list_products` lists approved products grouped by content with their variants, `trendyol_list_unapproved_products` the ones pending or rejected (with the reasons), `trendyol_list_stock_and_prices` only stock and prices. To create a product, find a leaf category with `trendyol_list_categories` (pass `name`), its attributes with `trendyol_get_category_attributes` and their values with `trendyol_list_attribute_values`, the brand with `trendyol_search_brands`, the addresses with `trendyol_list_addresses`, then call `trendyol_create_products`.\n\n**Every product write is asynchronous.** Create, update, stock and price, archive and delete return a `batchRequestId`; call `trendyol_get_batch_request` until `status` is `COMPLETED` and read each item's `status` and `failureReasons`. A 200 on the write only means the request was queued. Results stay available for 4 hours.\n\n**Writes: confirm first.** Price and stock updates, content changes, package status, tracking, carrier change, invoice link, approving returns, answering questions, archiving and creating products act on the live store. Before each call, show the user what will change (barcodes with old and new price or stock, package and lines, the answer text) and wait for a yes. `trendyol_delete_products`, `trendyol_report_unsupplied` (cancels order lines) and `trendyol_reject_claim_items` are installed switched off.\n\n**Prices and stock**: `trendyol_update_price_and_inventory` takes up to 1,000 barcodes, at most 20,000 units per product; `salePrice` may not exceed `listPrice`. Trendyol refuses the same request again within 15 minutes and more than 30 price updates a minute for one barcode.\n\n**Finance**: `trendyol_list_settlements` (sales, returns, discounts, commissions) and `trendyol_list_other_financials` (payouts, transfers, invoices) need a transaction type and either a window of at most 15 days or a `paymentDate` / `paymentOrderId`.\n\n**Rate limits**: at most 50 requests per 10 seconds on one endpoint (429 `too.many.requests`), plus per-minute limits per service group (product reads, product writes, stock and price writes) that depend on the store's listing tier. Do not loop over pages faster than needed.\n\n**Lookups need no seller data**: categories, attributes, attribute values, brands, cargo providers and return rejection reasons are the same for every seller on a storefront; the attribute and category names come in Turkish on the TR storefront.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "trendyol",
+  "docsUrl": "https://developers.trendyol.com",
+  "requiredEnvVars": [
+    "TRENDYOL_API_HOST",
+    "TRENDYOL_SELLER_ID",
+    "TRENDYOL_API_KEY",
+    "TRENDYOL_API_SECRET"
+  ],
+  "optionalEnvVars": [
+    "TRENDYOL_STOREFRONT_CODE"
+  ],
+  "prerequisites": "A Trendyol seller account and its master (admin) user, which is the only user that sees the API key and secret under Hesap Bilgilerim > Entegrasyon Bilgileri. The stage environment needs separate credentials and an IP whitelisting by Trendyol.",
+  "envVarMeta": {
+    "TRENDYOL_API_HOST": {
+      "label": "API host (production or stage)",
+      "kind": "address",
+      "help": "https://apigw.trendyol.com for your live store. https://stageapigw.trendyol.com only with stage credentials and an IP that Trendyol whitelisted.",
+      "example": "https://apigw.trendyol.com",
+      "pattern": "^https://(apigw|stageapigw)\\.trendyol\\.com$",
+      "patternMessage": "Use exactly https://apigw.trendyol.com or https://stageapigw.trendyol.com, without a path or trailing slash."
+    },
+    "TRENDYOL_SELLER_ID": {
+      "label": "Seller ID (Satıcı ID)",
+      "kind": "setting",
+      "help": "Seller panel: your store name (top right) > Hesap Bilgilerim > Entegrasyon Bilgileri. A number.",
+      "link": "https://partner.trendyol.com/account/info?tab=integrationInformation",
+      "example": "123456",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "The seller id is a number, e.g. 123456."
+    },
+    "TRENDYOL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Same page (Entegrasyon Bilgileri): the API Key. Only the master user sees it.",
+      "link": "https://partner.trendyol.com/account/info?tab=integrationInformation",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API key alone, without spaces."
+    },
+    "TRENDYOL_API_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: the API Secret Key.",
+      "link": "https://partner.trendyol.com/account/info?tab=integrationInformation",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API secret alone, without spaces."
+    },
+    "TRENDYOL_STOREFRONT_CODE": {
+      "label": "Storefront code (optional)",
+      "kind": "setting",
+      "help": "Only for the international storefronts: the two-letter country code of the storefront you sell on, sent as the storeFrontCode header. Leave empty for Trendyol Turkey (TR).",
+      "example": "TR",
+      "pattern": "^[A-Za-z]{2}$",
+      "patternMessage": "A two-letter country code."
+    }
+  },
+  "verifyHints": {
+    "401": "Trendyol refused the credentials. Check TRENDYOL_API_KEY and TRENDYOL_API_SECRET (Hesap Bilgilerim > Entegrasyon Bilgileri, master user only) and that TRENDYOL_SELLER_ID is the seller id of the same account. Stage and production credentials differ.",
+    "403": "Trendyol blocked the request. The User-Agent is built from TRENDYOL_SELLER_ID, so check that it is right; on stage your IP must be whitelisted.",
+    "503": "The stage environment answers 503 when your IP is not whitelisted. Use https://apigw.trendyol.com for your live store.",
+    "rate_limited": "Trendyol allows 50 requests per 10 seconds on one endpoint, plus per-minute limits per service group. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "trendyol_list_stock_and_prices",
+    "params": {
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "Trendyol Seller API",
+    "type": "REST",
+    "baseUrl": "{{TRENDYOL_API_HOST}}/integration",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{TRENDYOL_API_KEY}}",
+      "password": "{{TRENDYOL_API_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "{{TRENDYOL_SELLER_ID}} - SelfIntegration"
+    }
+  },
+  "tools": [
+    {
+      "name": "trendyol_list_products",
+      "description": "List the seller's approved products (Product v2 filter): one entry per content (productMainId, title, brand, category, images, attributes) with its variants (barcode, stock code, price, stock, on-sale state). Filter by barcode, stock code, productMainId, brand or status. Pages with page and size; page x size may not exceed 10,000, beyond that pass nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "One barcode."
+          },
+          "stockCode": {
+            "type": "string",
+            "description": "Your stock code."
+          },
+          "productMainId": {
+            "type": "string",
+            "description": "Main product code shared by the variants."
+          },
+          "brandIds": {
+            "type": "string",
+            "description": "Comma-separated brand ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Product state.",
+            "enum": [
+              "onSale",
+              "archived",
+              "locked",
+              "blacklisted"
+            ]
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start of the date filter, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End of the date filter, epoch milliseconds."
+          },
+          "dateQueryType": {
+            "type": "string",
+            "description": "Which date startDate and endDate filter on.",
+            "enum": [
+              "VARIANT_CREATED_DATE",
+              "VARIANT_MODIFIED_DATE",
+              "CONTENT_MODIFIED_DATE"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Contents per page, at most 100.",
+            "default": 20
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, only needed beyond 10,000 contents."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/approved",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "barcode": "$barcode",
+          "stockCode": "$stockCode",
+          "productMainId": "$productMainId",
+          "brandIds": "$brandIds",
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "dateQueryType": "$dateQueryType",
+          "page": "$page",
+          "size": "$size",
+          "nextPageToken": "$nextPageToken"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_unapproved_products",
+      "description": "List products that are not approved yet: pending approval or rejected, with the reject reasons, price, stock and attributes. Use it after trendyol_create_products to see why a product was refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "One barcode."
+          },
+          "stockCode": {
+            "type": "string",
+            "description": "Your stock code."
+          },
+          "productMainId": {
+            "type": "string",
+            "description": "Main product code."
+          },
+          "status": {
+            "type": "string",
+            "description": "Approval state.",
+            "enum": [
+              "pendingApproval",
+              "rejected"
+            ]
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start of the date filter, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End of the date filter, epoch milliseconds."
+          },
+          "dateQueryType": {
+            "type": "string",
+            "description": "Which date the filter uses.",
+            "enum": [
+              "CREATED_DATE",
+              "LAST_MODIFIED_DATE"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Products per page, at most 1000.",
+            "default": 50
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, only needed beyond 10,000 products."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/unapproved",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "barcode": "$barcode",
+          "stockCode": "$stockCode",
+          "productMainId": "$productMainId",
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "dateQueryType": "$dateQueryType",
+          "page": "$page",
+          "size": "$size",
+          "nextPageToken": "$nextPageToken"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_stock_and_prices",
+      "description": "List only stock and prices of approved products (list price, sale price, quantity, last stock change per variant). Lighter than trendyol_list_products for stock and price checks. Up to 50 barcodes at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "One barcode."
+          },
+          "barcodes": {
+            "type": "string",
+            "description": "Comma-separated barcodes, up to 50."
+          },
+          "contentId": {
+            "type": "integer",
+            "description": "One content id."
+          },
+          "stockCode": {
+            "type": "string",
+            "description": "Your stock code."
+          },
+          "productMainId": {
+            "type": "string",
+            "description": "Main product code."
+          },
+          "status": {
+            "type": "string",
+            "description": "Product state.",
+            "enum": [
+              "onSale",
+              "notOnSale",
+              "archived",
+              "locked",
+              "blacklisted"
+            ]
+          },
+          "orderByDirection": {
+            "type": "string",
+            "description": "Sort by creation date: asc oldest first, desc newest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Contents per page, at most 100.",
+            "default": 50
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, only needed beyond 10,000 contents."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/approved/inventory-and-price",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "barcode": "$barcode",
+          "barcodes": "$barcodes",
+          "contentId": "$contentId",
+          "stockCode": "$stockCode",
+          "productMainId": "$productMainId",
+          "status": "$status",
+          "orderByDirection": "$orderByDirection",
+          "page": "$page",
+          "size": "$size",
+          "nextPageToken": "$nextPageToken"
+        }
+      }
+    },
+    {
+      "name": "trendyol_get_product",
+      "description": "Read the basic state of one product by barcode: approved or not (and when), archived, listing id and content id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "Product barcode."
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/product/{barcode}",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_get_buybox",
+      "description": "Check the buybox for up to 10 barcodes: your position in the buybox, the buybox price and whether other sellers offer the same product. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcodes": {
+            "type": "array",
+            "description": "Barcodes, at most 10.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "barcodes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/buybox-information",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "barcodes": "$barcodes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_get_batch_request",
+      "description": "Read the result of an asynchronous product, price, stock, archive or delete request by its batchRequestId: overall status (IN_PROGRESS, COMPLETED) and, per item, SUCCESS or FAILED with the failure reasons. Results are kept for 4 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batchRequestId": {
+            "type": "string",
+            "description": "The batchRequestId returned by the write."
+          }
+        },
+        "required": [
+          "batchRequestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/batch-requests/{batchRequestId}",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_create_products",
+      "description": "Create products (Product v2, up to 1,000 per call). Each item needs barcode, title, productMainId, brandId, categoryId (a leaf category), quantity, stockCode, dimensionalWeight, description, listPrice, salePrice (not above listPrice), vatRate, images (up to 8 {url}) and the category attributes. Processed asynchronously: check the returned batchRequestId with trendyol_get_batch_request. Products go to Trendyol for approval: describe them and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Products to create. Attributes are [{\"attributeId\": 338, \"attributeValueIds\": [6980]}] or [{\"attributeId\": 47, \"attributeValue\": \"free text\"}] for attributes that allow custom values. Optional: shipmentAddressId and returningAddressId from trendyol_list_addresses, deliveryOption, lotNumber.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/v2/products",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_update_price_and_inventory",
+      "description": "Update the stock and prices of approved products (up to 1,000 barcodes per call, at most 20,000 units per product). Send only the fields to change per barcode. The same request may not be repeated within 15 minutes. Processed asynchronously: check the returned batchRequestId with trendyol_get_batch_request. Changes what shoppers see at once: list each barcode with the old and new value and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per barcode: {\"barcode\": \"...\", \"quantity\": 10, \"salePrice\": 199.9, \"listPrice\": 249.9}. salePrice may not exceed listPrice.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "salePrice": {
+                  "type": "number"
+                },
+                "listPrice": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "barcode"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/sellers/{{TRENDYOL_SELLER_ID}}/products/price-and-inventory",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_update_product_content",
+      "description": "Update the content of approved products (title, description, images, attributes) by contentId, up to 1,000 per call. Fields left out stay as they are, except attributes: when you change one, send all of them. Asynchronous: check the batchRequestId with trendyol_get_batch_request. Changes the live product page: show the change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per content: {\"contentId\": 123, \"title\": \"...\", \"description\": \"...\", \"images\": [{\"url\": \"https://...\"}], \"attributes\": [...]}.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/content-bulk-update",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_update_unapproved_products",
+      "description": "Correct products that are still waiting for approval or were rejected (title, description, brand, category, images, attributes, stock code, VAT, addresses) by barcode, up to 1,000 per call. Asynchronous: check the batchRequestId with trendyol_get_batch_request. Show the change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per barcode with the fields to change, e.g. {\"barcode\": \"...\", \"title\": \"...\", \"attributes\": [...]}.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/unapproved-bulk-update",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_archive_products",
+      "description": "Archive products (take them off sale) or bring them back from the archive, by barcode, up to 1,000 per call. Asynchronous: check the batchRequestId with trendyol_get_batch_request. Name the products and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "[{\"barcode\": \"...\", \"archived\": true}] to archive, archived false to restore.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string"
+                },
+                "archived": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "barcode",
+                "archived"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products/archive-state",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_delete_products",
+      "description": "Delete products from Trendyol by barcode. Only products waiting for approval, and approved products archived for more than a day, can be deleted. Cannot be undone. Installed switched off; name every barcode and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "[{\"barcode\": \"...\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "barcode"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/product/sellers/{{TRENDYOL_SELLER_ID}}/products",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "trendyol_list_orders",
+      "description": "List shipment packages (orders) with their lines, customer, addresses, amounts, status, cargo provider and tracking. Filter by status (Created = to process), order number, package ids or a date window of at most 2 weeks within the last month (without dates: the last week). Pages with page and size; only the first 10,000 packages of a filter can be reached, so narrow the window for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Package status.",
+            "enum": [
+              "Awaiting",
+              "Created",
+              "Picking",
+              "Invoiced",
+              "Shipped",
+              "Cancelled",
+              "Delivered",
+              "UnDelivered",
+              "Returned",
+              "AtCollectionPoint",
+              "UnPacked",
+              "UnSupplied",
+              "Verified"
+            ]
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Packages from this time, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "Packages up to this time, epoch milliseconds. At most 2 weeks after startDate."
+          },
+          "orderNumber": {
+            "type": "string",
+            "description": "One order number."
+          },
+          "shipmentPackageIds": {
+            "type": "string",
+            "description": "Comma-separated package ids, up to 50."
+          },
+          "orderByField": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "PackageLastModifiedDate",
+              "CreatedDate"
+            ]
+          },
+          "orderByDirection": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Packages per page, at most 200.",
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/v2/orders",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "orderNumber": "$orderNumber",
+          "shipmentPackageIds": "$shipmentPackageIds",
+          "orderByField": "$orderByField",
+          "orderByDirection": "$orderByDirection",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_update_package_status",
+      "description": "Move a shipment package to Picking (you started preparing it) or Invoiced (with the invoice number). Picking must come first. List every line with its quantity. The customer sees the new state: name the package, status and lines and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "integer",
+            "description": "Shipment package id (id in trendyol_list_orders)."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "Picking",
+              "Invoiced"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "description": "The package lines: [{\"lineId\": 123, \"quantity\": 1}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineId": {
+                  "type": "integer"
+                },
+                "quantity": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lineId",
+                "quantity"
+              ]
+            }
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "Invoice number, only with status Invoiced."
+          }
+        },
+        "required": [
+          "packageId",
+          "status",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/shipment-packages/{packageId}",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "status": "$status",
+          "lines": "$lines",
+          "params": {
+            "invoiceNumber": "$invoiceNumber"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_update_tracking_number",
+      "description": "Send the carrier's tracking number of a package shipped with your own carrier, mainly on the international storefronts (Europe, Gulf), where TRENDYOL_STOREFRONT_CODE is required. The package must be in Picking first; the number can be changed in Picking, Invoiced and Shipped. Shown to the customer: name the package and tracking data and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "integer",
+            "description": "Shipment package id."
+          },
+          "cargoSenderNumber": {
+            "type": "string",
+            "description": "The carrier's tracking number."
+          },
+          "providerCode": {
+            "type": "string",
+            "description": "Carrier code, e.g. DHLMP (see trendyol_list_cargo_providers)."
+          },
+          "returnTrackingNumber": {
+            "type": "string",
+            "description": "Optional return tracking number."
+          }
+        },
+        "required": [
+          "packageId",
+          "cargoSenderNumber",
+          "providerCode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/shipment-packages/{packageId}/tracking-details",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "cargoSenderNumber": "$cargoSenderNumber",
+          "providerCode": "$providerCode",
+          "returnTrackingNumber": "$returnTrackingNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_change_cargo_provider",
+      "description": "Change the cargo company of a shipment package. Name the package and the new carrier and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "integer",
+            "description": "Shipment package id."
+          },
+          "cargoProvider": {
+            "type": "string",
+            "description": "New carrier code.",
+            "enum": [
+              "YKMP",
+              "ARASMP",
+              "SURATMP",
+              "HOROZMP",
+              "DHLECOMMP",
+              "PTTMP",
+              "CEVAMP",
+              "TEXMP",
+              "KOLAYGELSINMP",
+              "CEVATEDARIK"
+            ]
+          }
+        },
+        "required": [
+          "packageId",
+          "cargoProvider"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/shipment-packages/{packageId}/cargo-providers",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "cargoProvider": "$cargoProvider"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_send_invoice_link",
+      "description": "Send the link of the e-invoice (e-Fatura or e-Arşiv) of a shipment package; Trendyol forwards it to the customer. The link must stay reachable for 10 years. Only one invoice per package. Name the package and the link and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipmentPackageId": {
+            "type": "integer",
+            "description": "Shipment package id."
+          },
+          "invoiceLink": {
+            "type": "string",
+            "description": "Public URL of the invoice PDF.",
+            "format": "uri"
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "16-character invoice number (3 letters or digits, the year, 9 digits), required for micro-export packages."
+          },
+          "invoiceDateTime": {
+            "type": "integer",
+            "description": "Invoice date, epoch seconds or milliseconds, required for micro-export packages."
+          }
+        },
+        "required": [
+          "shipmentPackageId",
+          "invoiceLink"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sellers/{{TRENDYOL_SELLER_ID}}/seller-invoice-links",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "shipmentPackageId": "$shipmentPackageId",
+          "invoiceLink": "$invoiceLink",
+          "invoiceNumber": "$invoiceNumber",
+          "invoiceDateTime": "$invoiceDateTime"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_report_unsupplied",
+      "description": "Report that lines of a package cannot be supplied, which cancels them for the customer. Cannot be undone. Installed switched off; name the package, lines, quantities and reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "integer",
+            "description": "Shipment package id."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Lines to cancel: [{\"lineId\": 123, \"quantity\": 1}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineId": {
+                  "type": "integer"
+                },
+                "quantity": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lineId",
+                "quantity"
+              ]
+            }
+          },
+          "reasonId": {
+            "type": "integer",
+            "description": "Cancellation reason id: 500, 501, 502, 504, 505 or 506 (see the Trendyol documentation for their meaning)."
+          }
+        },
+        "required": [
+          "packageId",
+          "lines",
+          "reasonId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/shipment-packages/{packageId}/items/unsupplied",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "lines": "$lines",
+          "reasonId": "$reasonId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "trendyol_list_claims",
+      "description": "List returns (claims) with the order, customer, cargo tracking and each returned item with the customer reason and status. Filter by item status, order number or date. Pages with page and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimItemStatus": {
+            "type": "string",
+            "description": "Status of the returned items.",
+            "enum": [
+              "Created",
+              "WaitingInAction",
+              "WaitingFraudCheck",
+              "Accepted",
+              "Unresolved",
+              "Rejected",
+              "Cancelled",
+              "InAnalysis"
+            ]
+          },
+          "orderNumber": {
+            "type": "string",
+            "description": "One order number."
+          },
+          "claimIds": {
+            "type": "string",
+            "description": "Comma-separated claim ids."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "From this time, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "Up to this time, epoch milliseconds."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Claims per page, at most 200.",
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/claims",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "claimItemStatus": "$claimItemStatus",
+          "orderNumber": "$orderNumber",
+          "claimIds": "$claimIds",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_get_claim_item_audit",
+      "description": "Read the status history of one returned item: each status change, when and by whom.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimItemId": {
+            "type": "string",
+            "description": "Claim item id (items[].claimItems[].id in trendyol_list_claims)."
+          }
+        },
+        "required": [
+          "claimItemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/claims/items/{claimItemId}/audit",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_claim_issue_reasons",
+      "description": "List the reasons a seller can give when rejecting a returned item, with their ids for trendyol_reject_claim_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/claim-issue-reasons",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_approve_claim_items",
+      "description": "Approve returned items that arrived at your warehouse; the customer is refunded. Name the claim and items and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimId": {
+            "type": "string",
+            "description": "Claim id."
+          },
+          "claimLineItemIdList": {
+            "type": "array",
+            "description": "Claim item ids to approve.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claimId",
+          "claimLineItemIdList"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/claims/{claimId}/items/approve",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "claimLineItemIdList": "$claimLineItemIdList",
+          "params": {}
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "trendyol_reject_claim_items",
+      "description": "Open a rejection request for returned items (for example a wrong or damaged item came back), with a reason from trendyol_list_claim_issue_reasons and a description. Trendyol reviews it. Installed switched off; name the claim, items and reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimId": {
+            "type": "string",
+            "description": "Claim id."
+          },
+          "claimIssueReasonId": {
+            "type": "integer",
+            "description": "Reason id from trendyol_list_claim_issue_reasons."
+          },
+          "claimItemIdList": {
+            "type": "string",
+            "description": "Comma-separated claim item ids."
+          },
+          "description": {
+            "type": "string",
+            "description": "Explanation, up to 500 characters."
+          },
+          "file_url": {
+            "type": "string",
+            "description": "Optional public URL of a photo or PDF as evidence.",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "claimId",
+          "claimIssueReasonId",
+          "claimItemIdList",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/sellers/{{TRENDYOL_SELLER_ID}}/claims/{claimId}/issue",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "claimIssueReasonId": "$claimIssueReasonId",
+          "claimItemIdList": "$claimItemIdList",
+          "description": "$description",
+          "files": {
+            "__file": "$file_url"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "trendyol_list_questions",
+      "description": "List customer questions about your products: text, product, status (WAITING_FOR_ANSWER to answer), date and the answer if any. Pages with page and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Question status.",
+            "enum": [
+              "WAITING_FOR_ANSWER",
+              "ANSWERED",
+              "REJECTED",
+              "REPORTED"
+            ]
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Only questions about this barcode."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "From this time, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "Up to this time, epoch milliseconds."
+          },
+          "orderByField": {
+            "type": "string",
+            "description": "Sort field (default CreatedDate).",
+            "enum": [
+              "CreatedDate",
+              "LastModifiedDate"
+            ]
+          },
+          "orderByDirection": {
+            "type": "string",
+            "description": "Sort direction (default DESC).",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Questions per page, at most 200.",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/qna/sellers/{{TRENDYOL_SELLER_ID}}/questions/filter",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "status": "$status",
+          "barcode": "$barcode",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "orderByField": "$orderByField",
+          "orderByDirection": "$orderByDirection",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_get_question",
+      "description": "Read one customer question with the product, the answer and, if it was rejected or reported, the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Question id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/qna/sellers/{{TRENDYOL_SELLER_ID}}/questions/{id}",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_answer_question",
+      "description": "Answer a customer question (10 to 2,000 characters). Trendyol reviews the answer and then publishes it on the product page. Show the user the answer and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Question id."
+          },
+          "text": {
+            "type": "string",
+            "description": "The answer, 10 to 2,000 characters."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/qna/sellers/{{TRENDYOL_SELLER_ID}}/questions/{id}/answers",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "trendyol_list_categories",
+      "description": "Find categories for product creation. Always pass name: the full tree is several hundred kilobytes. Returns the matching categories with their parents and subcategories; products need a leaf category id (no subCategories).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Part of the category name, e.g. Ayakkabı or Shoes (the language follows the storefront)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Answer language on international storefronts: tr, en, ro, ar or el. The TR storefront always answers in Turkish."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/product-categories",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}",
+          "Accept-Language": "$language"
+        },
+        "queryParams": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "trendyol_get_category_attributes",
+      "description": "List the attributes of a leaf category: id, name, whether it is required, a variant attribute, allows several values or a free value. Use it to build the attributes of trendyol_create_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "integer",
+            "description": "Leaf category id."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "true: only required attributes; false: only optional ones; leave out for all."
+          },
+          "language": {
+            "type": "string",
+            "description": "Answer language on international storefronts: tr, en, ro, ar or el."
+          }
+        },
+        "required": [
+          "categoryId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/categories/{categoryId}/attributes",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}",
+          "Accept-Language": "$language"
+        },
+        "queryParams": {
+          "required": "$required"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_attribute_values",
+      "description": "List the allowed values of one category attribute (attributeValueId and name), for attributeValueIds in trendyol_create_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "integer",
+            "description": "Leaf category id."
+          },
+          "attributeId": {
+            "type": "integer",
+            "description": "Attribute id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Values per page, at most 1000.",
+            "default": 200
+          },
+          "language": {
+            "type": "string",
+            "description": "Answer language on international storefronts: tr, en, ro, ar or el."
+          }
+        },
+        "required": [
+          "categoryId",
+          "attributeId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/categories/{categoryId}/attributes/{attributeId}/values",
+        "encodePathParams": true,
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}",
+          "Accept-Language": "$language"
+        },
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_search_brands",
+      "description": "Find brands by name to get the brandId for trendyol_create_products. The search is case-sensitive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brand name, case-sensitive."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/brands/by-name",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_brands",
+      "description": "List all brands page by page (id and name). Prefer trendyol_search_brands to find one brand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Brands per page.",
+            "default": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/brands",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_cargo_providers",
+      "description": "List the cargo companies available on the storefront (code and name).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/lookup/cargo-providers",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_addresses",
+      "description": "List the seller's shipment, invoice and return addresses with their ids (shipmentAddressId and returningAddressId for products) and the defaults.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/{{TRENDYOL_SELLER_ID}}/addresses",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_settlements",
+      "description": "List settlement lines: sales, returns, discounts, coupons, commissions and their payout, with amounts, commission rate, seller revenue, order number and payment date. Give a transaction type and a window of at most 15 days, or a paymentDate or paymentOrderId. Pages of 500 or 1000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactionType": {
+            "type": "string",
+            "description": "Transaction type.",
+            "enum": [
+              "Sale",
+              "Return",
+              "Discount",
+              "DiscountCancel",
+              "Coupon",
+              "CouponCancel",
+              "ProvisionPositive",
+              "ProvisionNegative",
+              "ManualRefund",
+              "ManualRefundCancel",
+              "TyDiscount",
+              "TyDiscountCancel",
+              "TyCoupon",
+              "TyCouponCancel",
+              "SellerRevenuePositive",
+              "SellerRevenueNegative",
+              "CommissionPositive",
+              "CommissionNegative",
+              "SellerRevenuePositiveCancel",
+              "SellerRevenueNegativeCancel",
+              "CommissionPositiveCancel",
+              "CommissionNegativeCancel",
+              "DeliveryFee",
+              "DeliveryFeeCancel",
+              "PayByLink"
+            ]
+          },
+          "transactionTypes": {
+            "type": "string",
+            "description": "Several types, comma-separated; wins over transactionType."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start of the window, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End of the window, epoch milliseconds, at most 15 days after startDate."
+          },
+          "paymentDate": {
+            "type": "string",
+            "description": "Instead of the window: lines due for payment from this date, yyyy-MM-dd (Istanbul time)."
+          },
+          "paymentOrderId": {
+            "type": "integer",
+            "description": "Instead of the window: lines of this payment order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Lines per page: 500 or 1000.",
+            "enum": [
+              500,
+              1000
+            ],
+            "default": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/che/sellers/{{TRENDYOL_SELLER_ID}}/settlements",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "transactionType": "$transactionType",
+          "transactionTypes": "$transactionTypes",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "paymentDate": "$paymentDate",
+          "paymentOrderId": "$paymentOrderId",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "trendyol_list_other_financials",
+      "description": "List other financial records: payment orders (payouts), wire transfers, incoming transfers, deduction and return invoices, commission agreement invoices, cash advances and stoppages. Give a transaction type and a window of at most 15 days, or a paymentDate or paymentOrderId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactionType": {
+            "type": "string",
+            "description": "Record type.",
+            "enum": [
+              "Stoppage",
+              "CashAdvance",
+              "WireTransfer",
+              "IncomingTransfer",
+              "ReturnInvoice",
+              "CommissionAgreementInvoice",
+              "PaymentOrder",
+              "DeductionInvoices",
+              "FinancialItem"
+            ]
+          },
+          "transactionTypes": {
+            "type": "string",
+            "description": "Several types, comma-separated; wins over transactionType."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start of the window, epoch milliseconds, e.g. 1759276800000 for 2025-10-01 00:00 UTC."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End of the window, epoch milliseconds, at most 15 days after startDate."
+          },
+          "paymentDate": {
+            "type": "string",
+            "description": "Instead of the window: records due for payment from this date, yyyy-MM-dd."
+          },
+          "paymentOrderId": {
+            "type": "integer",
+            "description": "Instead of the window: records of this payment order."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page: 500 or 1000.",
+            "enum": [
+              500,
+              1000
+            ],
+            "default": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/che/sellers/{{TRENDYOL_SELLER_ID}}/otherfinancials",
+        "headers": {
+          "storeFrontCode": "${TRENDYOL_STOREFRONT_CODE}"
+        },
+        "queryParams": {
+          "transactionType": "$transactionType",
+          "transactionTypes": "$transactionTypes",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "paymentDate": "$paymentDate",
+          "paymentOrderId": "$paymentOrderId",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    }
+  ]
+}

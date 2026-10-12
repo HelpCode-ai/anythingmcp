@@ -1,0 +1,1167 @@
+{
+  "slug": "mirakl",
+  "name": "Mirakl Seller API",
+  "description": "Run your shop on any Mirakl-powered marketplace (Leroy Merlin, Conforama, BUT, home24, Maisons du Monde, Vente-unique, ePrice, Decathlon, Carrefour and many more) from an AI agent: orders, acceptance, tracking and shipping, offers with prices and stock, offer and product imports, customer and operator messages, returns, invoices and transactions. One install per marketplace.",
+  "instructions": "## Mirakl Seller API\nThis connector uses the **Mirakl Marketplace Platform (MMP) shop API**, the same REST API on every marketplace that runs on Mirakl. Each marketplace operator has its own Mirakl instance, so **one install covers one marketplace**: install the connector once per marketplace you sell on (for example once for Leroy Merlin and once for Conforama) and give each install a name that says which one it is.\n\n**Setup (about 5 minutes per marketplace)**\n1. Sign in to the marketplace's seller back office (the Mirakl portal the operator gave you).\n2. Copy the address of the portal without any path into `MIRAKL_URL`, e.g. `https://adeo-marketplace.mirakl.net` or `https://conforama-prod.mirakl.net`. Some operators use their own domain (e.g. `https://marketplace.eprice.it`); that works the same way. The connector adds `/api` itself, so do not paste it.\n3. Click your user name in the top right corner, open **My user settings** and the **API Key** tab, and generate a key (or copy the existing one). Paste it into `MIRAKL_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n4. Only if your user manages several shops on this marketplace: set `MIRAKL_SHOP_ID` to the shop to work on (shown in the back office and in `mirakl_get_account`). Without it Mirakl uses your default shop.\n5. Install and run `mirakl_get_account`.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mirakl_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mirakl_update_tracking` stores the carrier and tracking number (carrier codes come from `mirakl_list_carriers`) and `mirakl_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mirakl_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents.\n\n**Writes: confirm first.** `mirakl_accept_order`, `mirakl_update_tracking`, `mirakl_ship_order`, `mirakl_update_offers`, `mirakl_reply_thread`, `mirakl_create_order_thread` and `mirakl_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. `mirakl_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mirakl_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mirakl_get_offer` or `mirakl_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mirakl_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mirakl_list_offer_conditions`.\n\n**File imports**: `mirakl_import_products` (P41) and `mirakl_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the operator's format; the connector downloads it and uploads it to Mirakl. Track them with `mirakl_list_product_imports` / `mirakl_get_product_import` and `mirakl_list_offer_imports` / `mirakl_get_offer_import`.\n\n**Messages**: `mirakl_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order), `mirakl_get_thread` reads one with its messages, `mirakl_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`) and `mirakl_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mirakl_list_reasons`.\n\n**Money**: `mirakl_list_invoices` (IV01) lists the operator's accounting documents and `mirakl_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). On marketplaces with Enhanced Seller Invoicing IV01 returns no new documents; use the transactions then.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; Mirakl answers in UTC.\n\n**Rate limits**: Mirakl limits each API separately and the operator can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mirakl_get_account` and `mirakl_list_carriers` about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or belongs to another marketplace, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop (or that `MIRAKL_URL` is not a Mirakl instance), 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "mirakl",
+  "docsUrl": "https://developer.mirakl.com/content/product/mmp/rest/seller/openapi3",
+  "requiredEnvVars": [
+    "MIRAKL_URL",
+    "MIRAKL_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "MIRAKL_SHOP_ID"
+  ],
+  "prerequisites": "A seller account on a marketplace that runs on Mirakl, and access to its seller back office to generate the shop API key. One install per marketplace.",
+  "envVarMeta": {
+    "MIRAKL_URL": {
+      "label": "Marketplace address (Mirakl instance)",
+      "kind": "address",
+      "help": "The address of the marketplace's seller back office, without a path: e.g. https://adeo-marketplace.mirakl.net for Leroy Merlin. The connector adds /api itself. One install per marketplace.",
+      "example": "https://adeo-marketplace.mirakl.net",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$",
+      "patternMessage": "Use the https address of the seller back office only, e.g. https://adeo-marketplace.mirakl.net, without /api, a path or a trailing slash."
+    },
+    "MIRAKL_API_KEY": {
+      "label": "Shop API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller back office: your user name (top right) > My user settings > API Key. Generating a new key invalidates the previous one.",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the API key alone, without Bearer, quotes or spaces."
+    },
+    "MIRAKL_SHOP_ID": {
+      "label": "Shop ID (optional)",
+      "kind": "setting",
+      "help": "Only when your user manages several shops on this marketplace: the numeric id of the shop to use. Leave empty to use your default shop.",
+      "example": "2001",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The shop id is a number."
+    }
+  },
+  "verifyHints": {
+    "401": "Mirakl refused the API key. Check that MIRAKL_API_KEY is the shop key of this marketplace (each marketplace has its own key) and that it was not replaced by a newer key in the back office.",
+    "403": "The key works, but your user is not allowed to do this on the shop. Ask the shop administrator for the role, or set MIRAKL_SHOP_ID to a shop you manage.",
+    "404": "Nothing answered at this address. Check that MIRAKL_URL is the address of the marketplace's seller back office (e.g. https://adeo-marketplace.mirakl.net) without /api.",
+    "rate_limited": "Mirakl is rate limiting this API for your shop. Wait for the seconds in the Retry-After header before trying again."
+  },
+  "probe": {
+    "tool": "mirakl_get_account"
+  },
+  "connector": {
+    "name": "Mirakl Seller API",
+    "type": "REST",
+    "baseUrl": "{{MIRAKL_URL}}/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{MIRAKL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "mirakl_get_account",
+      "description": "Read the shop behind the API key on this marketplace (A01): shop id and name, state, channels, currency, grade and approval rate, contact and shipping settings. The quickest check that MIRAKL_URL and the key belong together. Mirakl recommends calling it about once a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_orders",
+      "description": "List orders (OR11) with their lines, customer, shipping address, prices, state and incidents. Filter by state (e.g. WAITING_ACCEPTANCE for orders to accept, SHIPPING for orders to ship), by creation or update date, by order id or channel. Pages with max (at most 100) and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_state_codes": {
+            "type": "string",
+            "description": "Comma-separated order states: STAGING, WAITING_ACCEPTANCE, WAITING_DEBIT, WAITING_DEBIT_PAYMENT, SHIPPING, SHIPPED, TO_COLLECT, RECEIVED, CLOSED, REFUSED, CANCELED."
+          },
+          "order_ids": {
+            "type": "string",
+            "description": "Comma-separated order ids (e.g. 1234567-A), up to 100."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Orders created at or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Orders created before this time, ISO 8601."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Orders updated at or after this time, ISO 8601. Best filter for polling changes."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Orders updated before this time, ISO 8601."
+          },
+          "has_incident": {
+            "type": "boolean",
+            "description": "true: only orders with an open incident; false: only orders without one."
+          },
+          "customer_debited": {
+            "type": "boolean",
+            "description": "true: only orders the customer has paid."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Comma-separated sales channel codes (country sites of the marketplace)."
+          },
+          "order_references_for_seller": {
+            "type": "string",
+            "description": "Comma-separated order references you set for yourself."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of orders to skip, for paging."
+          },
+          "order": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "order_state_codes": "$order_state_codes",
+          "order_ids": "$order_ids",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date",
+          "has_incident": "$has_incident",
+          "customer_debited": "$customer_debited",
+          "channel_codes": "$channel_codes",
+          "order_references_for_seller": "$order_references_for_seller",
+          "max": "$max",
+          "offset": "$offset",
+          "order": "$order",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_offers",
+      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU (shop_sku)."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "The marketplace's product SKU."
+          },
+          "offer_state_codes": {
+            "type": "string",
+            "description": "Comma-separated offer condition codes (see mirakl_list_offer_conditions)."
+          },
+          "pricing_channel_code": {
+            "type": "string",
+            "description": "Channel whose prices should be returned as the applicable price."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Offers per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of offers to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "enum": ["totalPrice", "price", "productTitle"],
+            "description": "Sort field (default totalPrice)."
+          },
+          "order": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "description": "Sort direction (default asc)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "sku": "$sku",
+          "product_id": "$product_id",
+          "offer_state_codes": "$offer_state_codes",
+          "pricing_channel_code": "$pricing_channel_code",
+          "max": "$max",
+          "offset": "$offset",
+          "sort": "$sort",
+          "order": "$order",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_offer",
+      "description": "Read one offer in full by its Mirakl offer id (OF22): every price field, discount, quantity, condition, logistic class, lead time and custom fields. Read it before mirakl_update_offers, which needs the complete offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer",
+            "description": "Mirakl offer id (offer_id in mirakl_list_offers), not your SKU."
+          }
+        },
+        "required": ["offer_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{offer_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_offer_conditions",
+      "description": "List the offer conditions (OF61) the marketplace accepts, e.g. new or used, with the code to put in state_code when updating offers.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/states",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_offer_imports",
+      "description": "List offer imports and updates (OF04), from files and from mirakl_update_offers: status (WAITING, RUNNING, COMPLETE, FAILED), lines read, in success and in error, offers inserted, updated and deleted. Newest first. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["WAITING_SYNCHRONIZATION_PRODUCT", "WAITING", "RUNNING", "COMPLETE", "FAILED"],
+            "description": "Only imports in this status."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["NORMAL", "REPLACE"],
+            "description": "Only imports in this mode."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Imports created at or after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Imports created before this time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Imports per page, 1 to 100 (default 10)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/imports",
+        "queryParams": {
+          "status": "$status",
+          "mode": "$mode",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_offer_import",
+      "description": "Read the status of one offer import or offer update (OF02) by its import_id, as returned by mirakl_update_offers or mirakl_import_offers: status, lines in success and in error, offers inserted, updated and deleted, and whether an error report exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "integer",
+            "description": "The import_id returned by mirakl_update_offers or mirakl_import_offers."
+          }
+        },
+        "required": ["import_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/imports/{import_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_product_imports",
+      "description": "List product imports (P51) with their status (WAITING, RUNNING, SENT, COMPLETE, FAILED, CANCELLED), the transformation counts and the integration result (products synchronized, rejected, invalid). Pages with max and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["CANCELLED", "WAITING", "RUNNING", "SENT", "COMPLETE", "FAILED"],
+            "description": "Only imports in this status."
+          },
+          "last_request_date": {
+            "type": "string",
+            "description": "Only imports that changed since this time, ISO 8601. Without it Mirakl returns every product import."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Imports per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of imports to skip, for paging."
+          },
+          "order": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/imports",
+        "queryParams": {
+          "status": "$status",
+          "last_request_date": "$last_request_date",
+          "max": "$max",
+          "offset": "$offset",
+          "order": "$order",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_product_import",
+      "description": "Read the status of one product import (P42) by its import_id: import status, reason, transformation counts and the integration details (synchronized, rejected, invalid, wrong identifiers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "integer",
+            "description": "The import_id returned by mirakl_import_products."
+          }
+        },
+        "required": ["import_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/imports/{import_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_products",
+      "description": "Look up products in the marketplace catalog by their identifiers (P31), e.g. EAN, and get the marketplace product SKU, title and category. Up to 100 products per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_references": {
+            "type": "string",
+            "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000,EAN|4000000000000. The types are the operator's product references (EAN, UPC...); SKU and SHOP_SKU are not accepted."
+          }
+        },
+        "required": ["product_references"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "product_references": "$product_references",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_product_offers",
+      "description": "List the offers of every shop for given products (P11), sorted by best price, to compare your price with the competition. Give product_ids or product_references (up to 100). Mirakl allows about 5 calls a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Comma-separated marketplace product SKUs."
+          },
+          "product_references": {
+            "type": "string",
+            "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000."
+          },
+          "all_offers": {
+            "type": "boolean",
+            "description": "true to include inactive offers (default: active offers only)."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Comma-separated channel codes: only offers sold on these channels."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of products to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/offers",
+        "queryParams": {
+          "product_ids": "$product_ids",
+          "product_references": "$product_references",
+          "all_offers": "$all_offers",
+          "channel_codes": "$channel_codes",
+          "max": "$max",
+          "offset": "$offset",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_threads",
+      "description": "List message threads (M11) with customers and the operator: topic, linked order or offer, participants, last message date and since when a shop reply is needed. Filter with entity_type and entity_id for one order. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": ["MMP_ORDER", "MMP_OFFER", "MPS_ORDER", "MPS_SERVICE", "SELLER_OPERATOR"],
+            "description": "Only threads on this kind of entity: MMP_ORDER (orders), MMP_OFFER (offers), SELLER_OPERATOR (with the operator)."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Comma-separated entity ids, e.g. order ids. Needs entity_type."
+          },
+          "updated_since": {
+            "type": "string",
+            "description": "Only threads changed at or after this time, ISO 8601."
+          },
+          "with_messages": {
+            "type": "boolean",
+            "description": "true to include the messages (the last 100 of each thread)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Threads per page, 1 to 100 (default 50)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox/threads",
+        "queryParams": {
+          "entity_type": "$entity_type",
+          "entity_id": "$entity_id",
+          "updated_since": "$updated_since",
+          "with_messages": "$with_messages",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_thread",
+      "description": "Read one message thread (M10) with all its messages, senders, recipients, attachments and the linked order or offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id (a UUID) from mirakl_list_threads."
+          }
+        },
+        "required": ["thread_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox/threads/{thread_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_returns",
+      "description": "List return requests (RT11) with their state, return lines, reason, RMA, tracking and the linked order. Filter by state, order or date. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_state": {
+            "type": "string",
+            "description": "Only returns in this state: WAITING_ACCEPTANCE, IN_PROGRESS, REFUSED, RECEIVED, NO_RECEPTION, CLOSED or CANCELED."
+          },
+          "order_commercial_id": {
+            "type": "string",
+            "description": "Only returns of this order (commercial id)."
+          },
+          "return_creation_date_from": {
+            "type": "string",
+            "description": "Returns created after this time, ISO 8601."
+          },
+          "return_creation_date_to": {
+            "type": "string",
+            "description": "Returns created before this time, ISO 8601."
+          },
+          "return_last_updated_from": {
+            "type": "string",
+            "description": "Returns updated after this time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Returns per page, 1 to 100 (default 10)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns",
+        "queryParams": {
+          "return_state": "$return_state",
+          "order_commercial_id": "$order_commercial_id",
+          "return_creation_date_from": "$return_creation_date_from",
+          "return_creation_date_to": "$return_creation_date_to",
+          "return_last_updated_from": "$return_last_updated_from",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_reasons",
+      "description": "List the marketplace's reason codes (RE01): incident, cancellation, refund and message reasons, with their labels and whether the shop may use them. Use a code as the topic of a message thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "description": "Language of the labels, e.g. fr_FR or en_US."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reasons",
+        "queryParams": {
+          "locale": "$locale",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_carriers",
+      "description": "List the carriers the marketplace knows (SH21) with their code, label and tracking URL. Use the code as carrier_code in mirakl_update_tracking.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/carriers",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_invoices",
+      "description": "List the operator's accounting documents for the shop (IV01): invoices and credit notes with period, totals with and without tax, commission details, payment state and due date. Pages with max and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Documents created at or after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Documents created before this time, ISO 8601."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["ALL", "AUTO_INVOICE", "MANUAL_INVOICE", "MANUAL_CREDIT"],
+            "description": "Document type. Mirakl's default is AUTO_INVOICE (the regular billing-cycle invoices); ALL includes manual invoices and credits."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": ["PENDING", "PAID", "FAILED"],
+            "description": "Only documents in this payment state."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Documents per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of documents to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "type": "$type",
+          "payment_status": "$payment_status",
+          "max": "$max",
+          "offset": "$offset",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_list_transactions",
+      "description": "List the shop's transaction lines (TL02): order amounts, shipping, commissions, refunds, manual credits and payouts, with amount, type, payment state, balance and the accounting document they belong to. Filter by date, type or order. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_created_from": {
+            "type": "string",
+            "description": "Lines created at or after this time, ISO 8601."
+          },
+          "date_created_to": {
+            "type": "string",
+            "description": "Lines created before this time, ISO 8601."
+          },
+          "transaction_date_from": {
+            "type": "string",
+            "description": "Lines whose transaction date is at or after this time, ISO 8601."
+          },
+          "transaction_date_to": {
+            "type": "string",
+            "description": "Lines whose transaction date is before this time, ISO 8601."
+          },
+          "last_updated_from": {
+            "type": "string",
+            "description": "Lines updated at or after this time, ISO 8601."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Only this transaction type, e.g. ORDER_AMOUNT, ORDER_SHIPPING_AMOUNT, COMMISSION_FEE, REFUND_ORDER_AMOUNT, PAYMENT."
+          },
+          "payment_state": {
+            "type": "string",
+            "description": "Only lines in this payment state: PENDING, PAYABLE, PAID, NOT_APPLICABLE or RESERVE."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only lines of this order."
+          },
+          "accounting_document_number": {
+            "type": "string",
+            "description": "Only lines of this accounting document (invoice number)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per page, 1 to 2000.",
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellerpayment/transactions_logs",
+        "queryParams": {
+          "date_created_from": "$date_created_from",
+          "date_created_to": "$date_created_to",
+          "transaction_date_from": "$transaction_date_from",
+          "transaction_date_to": "$transaction_date_to",
+          "last_updated_from": "$last_updated_from",
+          "transaction_type": "$transaction_type",
+          "payment_state": "$payment_state",
+          "order_id": "$order_id",
+          "accounting_document_number": "$accounting_document_number",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mirakl_accept_order",
+      "description": "Accept or refuse the lines of an order waiting for acceptance (OR21). Every line of the order must be listed. Refusing a line cancels it for good. Acts on the live marketplace: name the order and the decision per line and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "order_lines": {
+            "type": "array",
+            "description": "One entry per order line: {\"id\": \"<order_line_id>\", \"accepted\": true}. Use accepted false only when the user explicitly wants to refuse that line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "order_line_id from mirakl_list_orders."
+                },
+                "accepted": {
+                  "type": "boolean",
+                  "description": "true to accept, false to refuse (cancels the line)."
+                }
+              },
+              "required": ["id", "accepted"]
+            }
+          }
+        },
+        "required": ["order_id", "order_lines"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/accept",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "order_lines": "$order_lines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_update_tracking",
+      "description": "Set the carrier and tracking number of an order (OR23). Give carrier_code from mirakl_list_carriers, or carrier_name with carrier_url for a carrier the marketplace does not know. Acts on the live marketplace and is shown to the customer: name the order and the tracking data and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The carrier's tracking number."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Carrier code from mirakl_list_carriers."
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "Carrier name, for a carrier that is not in mirakl_list_carriers."
+          },
+          "carrier_url": {
+            "type": "string",
+            "description": "Full tracking URL, for a carrier that is not in mirakl_list_carriers."
+          },
+          "carrier_standard_code": {
+            "type": "string",
+            "description": "Standard carrier code, when the marketplace uses them."
+          }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/tracking",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "tracking_number": "$tracking_number",
+          "carrier_code": "$carrier_code",
+          "carrier_name": "$carrier_name",
+          "carrier_url": "$carrier_url",
+          "carrier_standard_code": "$carrier_standard_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_ship_order",
+      "description": "Confirm that an order in SHIPPING has been shipped (OR24); it moves to SHIPPED and the customer is notified. Set the tracking first with mirakl_update_tracking. Cannot be undone: name the order and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          }
+        },
+        "required": ["order_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/ship",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_update_offers",
+      "description": "Create or update offers, including price and stock (OF24). Replaces each offer completely: every field left out is reset (a missing quantity becomes 0), so read the offer first and send it back whole with only the intended change. Returns an import_id to check with mirakl_get_offer_import. Acts on the live marketplace: list each SKU with the old and new values and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "description": "Offers to create or update. Each needs shop_sku, state_code and price; product_id and product_id_type are required when the offer is new. Send every field the offer has (quantity, leadtime_to_ship, logistic_class, description, discount, all_prices, min_quantity_alert, available_started, available_ended, offer_additional_fields...), otherwise it is reset. Leave update_delete empty or set it to update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shop_sku": {
+                  "type": "string",
+                  "description": "Your SKU of the offer."
+                },
+                "product_id": {
+                  "type": "string",
+                  "description": "Product reference, e.g. the EAN."
+                },
+                "product_id_type": {
+                  "type": "string",
+                  "description": "Type of product_id, e.g. EAN, or SHOP_SKU / SKU as the marketplace allows."
+                },
+                "state_code": {
+                  "type": "string",
+                  "description": "Offer condition code from mirakl_list_offer_conditions."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Price in the marketplace currency."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Stock available. If left out it is set to 0."
+                },
+                "leadtime_to_ship": {
+                  "type": "integer",
+                  "description": "Days to ship."
+                },
+                "logistic_class": {
+                  "type": "string",
+                  "description": "Logistic class code."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Offer description."
+                },
+                "discount": {
+                  "type": "object",
+                  "description": "Discount {price, start_date, end_date}; left out means deleted."
+                },
+                "all_prices": {
+                  "type": "array",
+                  "description": "Channel and volume prices, as read from the offer.",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "update_delete": {
+                  "type": "string",
+                  "enum": ["update"],
+                  "description": "Leave empty or update. Deleting offers is not done with this tool."
+                }
+              },
+              "required": ["shop_sku", "state_code", "price"]
+            }
+          }
+        },
+        "required": ["offers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "offers": "$offers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mirakl_reply_thread",
+      "description": "Reply in a message thread (M12) to the customer or the operator. The message is delivered at once and cannot be taken back: show the user the text and the recipients and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id from mirakl_list_threads."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (up to 50,000 characters)."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, e.g. [{\"type\": \"CUSTOMER\"}] or [{\"type\": \"OPERATOR\"}]. type is CUSTOMER, OPERATOR or SHOP; add id only to pick one participant of the thread.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["CUSTOMER", "OPERATOR", "SHOP"]
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["type"]
+            }
+          },
+          "topic": {
+            "type": "object",
+            "description": "Optional new topic: {\"type\": \"FREE_TEXT\", \"value\": \"...\"} or {\"type\": \"REASON_CODE\", \"value\": \"<code from mirakl_list_reasons>\"}."
+          }
+        },
+        "required": ["thread_id", "body", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inbox/threads/{thread_id}/message",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "message_input": {
+            "__json": {
+              "body": "$body",
+              "to": "$to",
+              "topic": "$topic"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mirakl_create_order_thread",
+      "description": "Start a new message thread on an order (OR43) with the customer, the operator or both. The message is delivered at once: show the user the text, topic and recipients and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (up to 50,000 characters)."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients: CUSTOMER, OPERATOR or both.",
+            "items": {
+              "type": "string",
+              "enum": ["CUSTOMER", "OPERATOR"]
+            }
+          },
+          "topic_type": {
+            "type": "string",
+            "enum": ["FREE_TEXT", "REASON_CODE"],
+            "description": "FREE_TEXT for your own subject, REASON_CODE for a code from mirakl_list_reasons.",
+            "default": "FREE_TEXT"
+          },
+          "topic_value": {
+            "type": "string",
+            "description": "The subject text, or the reason code."
+          }
+        },
+        "required": ["order_id", "body", "to", "topic_value"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/threads",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "thread_input": {
+            "__json": {
+              "body": "$body",
+              "to": "$to",
+              "topic": {
+                "type": "$topic_type",
+                "value": "$topic_value"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mirakl_import_products",
+      "description": "Send a product file to the marketplace (P41) to create or enrich products in its catalog. file_url is the address of a CSV, XLSX or XML file in the operator's product format; the connector downloads it (up to 10 MB) and uploads it. Returns an import_id to follow with mirakl_get_product_import. Mirakl allows one import every 15 minutes. Changes the marketplace catalog: describe the file and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the product file (CSV, XLSX or XML)."
+          },
+          "operator_format": {
+            "type": "boolean",
+            "description": "true when the file already uses the operator's product format."
+          }
+        },
+        "required": ["file_url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/imports",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "operator_format": "$operator_format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mirakl_import_offers",
+      "description": "Import an offer file (OF01) to create, update or delete offers in bulk. REPLACE mode deletes every offer that is not in the file, and NORMAL mode deletes the lines marked delete. file_url is the address of a CSV, XLSX or XML file in Mirakl's offer format; the connector downloads it (up to 10 MB) and uploads it. Returns an import_id to follow with mirakl_get_offer_import. Installed switched off; describe the file and the mode and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the offer file."
+          },
+          "import_mode": {
+            "type": "string",
+            "enum": ["NORMAL", "REPLACE"],
+            "description": "NORMAL creates, updates or deletes the offers in the file. REPLACE also deletes every offer missing from it.",
+            "default": "NORMAL"
+          },
+          "with_products": {
+            "type": "boolean",
+            "description": "true when the file also carries product data."
+          }
+        },
+        "required": ["file_url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers/imports",
+        "queryParams": {
+          "shop_id": "${MIRAKL_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "import_mode": "$import_mode",
+          "with_products": "$with_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}
