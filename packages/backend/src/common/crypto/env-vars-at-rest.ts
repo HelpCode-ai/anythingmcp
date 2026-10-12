@@ -75,6 +75,24 @@ export function openEnvVars(value: unknown): unknown {
   }
 }
 
+/**
+ * Like openEnvVars, but null when an encrypted value cannot be decrypted, so
+ * a maintenance script never mistakes "unreadable" for "no variables" and
+ * writes an empty set over the real one.
+ */
+export function openEnvVarsStrict(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined) return {};
+  if (!isPlainObject(value)) return null;
+  if (!isEncryptedEnvVars(value)) return value;
+  const { [ENC_KEY]: sealed, ...plain } = value;
+  try {
+    const opened = JSON.parse(decrypt(sealed as string, key(), AAD));
+    return isPlainObject(opened) ? { ...opened, ...plain } : null;
+  } catch {
+    return null;
+  }
+}
+
 const WRITE_OPERATIONS = new Set([
   'create',
   'createMany',
