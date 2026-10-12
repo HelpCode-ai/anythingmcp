@@ -403,6 +403,11 @@ export type VerifyHint = string | { hint: string; suggest?: string };
 export interface AdapterMeta {
   slug: string;
   name: string;
+  /** Other names people search the app by: a former name ("lexoffice"), a
+   *  translation ("Mercado Livre"), a short form ("D365"), or the vendor's
+   *  umbrella brand ("Facebook" for Meta Ads). Matched by the catalog search
+   *  (catalog-search.ts) like the name, and never shown. */
+  aliases?: string[];
   description: string;
   instructions?: string;
   region: string;
@@ -995,6 +1000,7 @@ export function listAdapters(): AdapterMeta[] {
   return ALL_ADAPTERS.map((adapter) => ({
     slug: adapter.slug,
     name: adapter.name,
+    aliases: adapter.aliases,
     description: adapter.description,
     instructions: adapter.instructions,
     region: adapter.region,

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, users } from '@/lib/api';
@@ -9,7 +9,7 @@ import { setupNeeds } from '@/lib/setup-needs';
 import { LogoIcon } from '@/components/logo-icon';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { StarterPack } from '@/components/starter-pack';
-import { matchesSearch } from '@/lib/marketplace-search';
+import { searchCatalog } from '@/lib/catalog-search';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
 
 // Shown when the ranking can't be loaded: what the cloud ranked in October
@@ -44,14 +44,21 @@ export default function WelcomePage() {
       .catch(() => setStarters([]));
   }, [token]);
 
-  const matches = query.trim()
-    ? catalog.filter((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query))
-    : [];
+  // The same ranked, typo-tolerant search as the store and the chat.
+  const searchEntries = useMemo(
+    () => catalog.map((a) => ({ ...a, text: [a.description ?? '', a.category ?? ''] })),
+    [catalog],
+  );
+  const searchResult = useMemo(
+    () => (query.trim() ? searchCatalog(searchEntries, query) : null),
+    [searchEntries, query],
+  );
+  const matches = searchResult ? searchResult.hits.map((h) => h.entry) : [];
   const reportPicked = useCatalogSearchReport(
     token,
     'welcome',
     query,
-    catalog.length > 0 && query.trim() ? matches.length : null,
+    catalog.length > 0 ? searchResult : null,
   );
 
   const popular =

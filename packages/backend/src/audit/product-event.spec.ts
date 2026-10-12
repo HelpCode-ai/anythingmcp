@@ -40,6 +40,16 @@ describe('POST /api/product-events — catalog searches', () => {
     ]);
   });
 
+  it('keeps how a search matched, and only the known kinds', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, { event: 'catalog_search', metadata: { query: 'telgram', results: 1, match: 'fuzzy', via: 'store' } });
+    await controller.record(req, { event: 'catalog_search', metadata: { query: 'etsy', results: 1, match: 'anything else', via: 'store' } });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { via: 'store', query: 'telgram', results: 1, match: 'fuzzy' },
+      { via: 'store', query: 'etsy', results: 1 },
+    ]);
+  });
+
   it('refuses a search a page claims came from a chat, or from nowhere', async () => {
     const { controller, req, stored } = build();
     await controller.record(req, { event: 'catalog_search', metadata: { query: 'x', results: 0, via: 'mcp' } });

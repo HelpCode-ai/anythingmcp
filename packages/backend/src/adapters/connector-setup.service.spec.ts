@@ -139,6 +139,28 @@ describe('ConnectorSetupService — find', () => {
     expect(logged[2].metadata).toEqual({ query: 'zzqx', results: 0, missing: 'zzqx', via: 'mcp' });
   });
 
+  it('forgives a typo and knows other names, and records how it matched', async () => {
+    const { service, ctx, productEvents } = build();
+    const typo: any = (await service.find(ctx, { query: 'bot de telgram' })).body;
+    expect(typo.results[0].adapter).toBe('telegram-bot');
+    const alias: any = (await service.find(ctx, { query: 'mercado livre' })).body;
+    expect(alias.results[0].adapter).toBe('mercado-libre');
+    const logged = productEvents.log.mock.calls.map(([e]: any) => e.metadata);
+    expect(logged[0]).toEqual(expect.objectContaining({ query: 'bot de telgram', match: 'fuzzy' }));
+    expect(logged[0].missing).toBeUndefined();
+    expect(logged[1]).toEqual(expect.objectContaining({ query: 'mercado livre', match: 'direct' }));
+  });
+
+  it('never offers an unlisted adapter, whatever the query', async () => {
+    const { service, ctx } = build();
+    for (const query of ['teamsystem', 'zucchetti', 'zucheti', 'cas genesisworld', 'asite']) {
+      const out: any = (await service.find(ctx, { query, limit: 10 })).body;
+      expect(out.results.map((r: any) => r.adapter)).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^(teamsystem|zucchetti|cas-genesisworld|asite)$/)]),
+      );
+    }
+  });
+
   it('never offers payment, banking or trading connectors', async () => {
     const { service, ctx } = build();
     const out: any = (await service.find(ctx, { query: 'payone sorare', limit: 10 })).body;
