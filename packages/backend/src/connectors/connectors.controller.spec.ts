@@ -177,6 +177,16 @@ describe('OAuth2 config endpoints', () => {
       });
     });
 
+    it('stores the PKCE switch as sent', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', { pkce: false });
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenLastCalledWith('c1', { pkce: false });
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', { pkce: true });
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenLastCalledWith('c1', { pkce: true });
+    });
+
     it('passes client credentials through when supplied', async () => {
       const { controller, connectorsService } = build(oauthConnector());
 
@@ -367,6 +377,20 @@ describe('OAuth2 config endpoints', () => {
 
       expect(result.tokenAuthMethod).toBe('client_secret_post');
       expect(result.hasClientSecret).toBe(false);
+      expect(result.pkce).toBe(true);
+    });
+
+    it("reports PKCE as the authorization will run it: the row's value, else the catalog's", async () => {
+      const { encrypt } = require('../common/crypto/encryption.util');
+      const enc = (v: unknown) => encrypt(JSON.stringify(v), VALID_ENCRYPTION_KEY);
+
+      const own = build(oauthConnector({ authConfig: enc({ clientId: 'x', pkce: false }) }));
+      expect((await own.controller.getOAuthConfig(req('ADMIN'), 'c1')).pkce).toBe(false);
+
+      const fromCatalog = build(
+        oauthConnector({ authConfig: enc({ clientId: 'x' }), config: { adapterSlug: 'linkedin-ads' } }),
+      );
+      expect((await fromCatalog.controller.getOAuthConfig(req('ADMIN'), 'c1')).pkce).toBe(false);
     });
 
     it('reports Basic for client_credentials with nothing stored, as the token service sends', async () => {
@@ -865,7 +889,7 @@ describe('POST :id/oauth/authorize (REST)', () => {
     expect(url.searchParams.get('state')).toBe(state);
     // The verifier stays on the server; the URL carries its S256 image.
     expect(url.searchParams.get('code_challenge')).toBe(
-      new McpOAuthService().generateCodeChallenge(flow.codeVerifier),
+      new McpOAuthService().generateCodeChallenge(flow.codeVerifier!),
     );
     expect(result.authorizationUrl).not.toContain(flow.codeVerifier);
     expect(flow).toMatchObject({
@@ -943,6 +967,75 @@ describe('POST :id/oauth/authorize (REST)', () => {
     const without = setup(row(own, { config: null }));
     await without.controller.initiateOAuth(req('ADMIN'), 'c1');
     expect(without.store.mock.calls[0][1]).not.toHaveProperty('userAgent');
+  });
+
+  describe('PKCE', () => {
+    const own = {
+      clientId: 'id',
+      clientSecret: 's',
+      authorizationUrl: 'https://x.example/auth',
+      tokenUrl: 'https://x.example/token',
+    };
+
+    it('is on by default: a challenge on the URL, the verifier kept for the exchange', async () => {
+      const { controller, store, mcpOAuthService } = setup(row(own, { config: null }));
+      const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+      const url = new URL(result.authorizationUrl);
+      const flow = store.mock.calls[0][1];
+      expect(flow.codeVerifier).toMatch(/^[A-Za-z0-9\-._~]{43,128}$/);
+      expect(url.searchParams.get('code_challenge')).toBe(
+        mcpOAuthService.generateCodeChallenge(flow.codeVerifier!),
+      );
+      expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    });
+
+    it('is left out entirely with pkce: false', async () => {
+      const { controller, store } = setup(row({ ...own, pkce: false }, { config: null }));
+      const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+      const url = new URL(result.authorizationUrl);
+      expect(url.searchParams.has('code_challenge')).toBe(false);
+      expect(url.searchParams.has('code_challenge_method')).toBe(false);
+      expect(store.mock.calls[0][1]).not.toHaveProperty('codeVerifier');
+    });
+
+    it("follows the catalog adapter's pkce: false for a row installed without it (LinkedIn Ads)", async () => {
+      const { controller, store } = setup(
+        row(
+          {
+            clientId: 'li-client',
+            clientSecret: 'li-secret',
+            authorizationUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+            tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+          },
+          { config: { adapterSlug: 'linkedin-ads' } },
+        ),
+      );
+      const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+      expect(new URL(result.authorizationUrl).searchParams.has('code_challenge')).toBe(false);
+      expect(store.mock.calls[0][1]).not.toHaveProperty('codeVerifier');
+    });
+
+    it("lets a row's explicit pkce: true win over the catalog", async () => {
+      const { controller, store } = setup(
+        row(
+          {
+            clientId: 'li-client',
+            clientSecret: 'li-secret',
+            authorizationUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+            tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+            pkce: true,
+          },
+          { config: { adapterSlug: 'linkedin-ads' } },
+        ),
+      );
+      const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+      expect(new URL(result.authorizationUrl).searchParams.get('code_challenge_method')).toBe('S256');
+      expect(store.mock.calls[0][1].codeVerifier).toBeDefined();
+    });
   });
 
   it('still reports a missing authorization URL for a connector outside the catalog', async () => {

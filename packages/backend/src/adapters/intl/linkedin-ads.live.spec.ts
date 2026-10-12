@@ -5,8 +5,9 @@ type Tool = {
   endpointMapping: { method: string; path: string; headers?: Record<string, string>; queryParams?: Record<string, string> };
 };
 const a = adapter as unknown as {
+  unlisted?: boolean;
   probe: { tool: string };
-  connector: { baseUrl: string; authType: string; authConfig: Record<string, string> };
+  connector: { baseUrl: string; authType: string; authConfig: Record<string, unknown> };
   tools: Tool[];
 };
 const tool = (name: string) => a.tools.find((t) => t.name === name)!;
@@ -18,6 +19,17 @@ describe('linkedin-ads adapter: static spec conformance', () => {
     expect(a.connector.authConfig.authorizationUrl).toBe('https://www.linkedin.com/oauth/v2/authorization');
     expect(a.connector.authConfig.tokenUrl).toBe('https://www.linkedin.com/oauth/v2/accessToken');
     expect(a.connector.authConfig.scopes).toBe('r_ads r_ads_reporting');
+  });
+
+  it("uses LinkedIn's standard web flow: no PKCE, client credentials in the body", () => {
+    // LinkedIn answers 401 invalid_client to a token request that carries a
+    // code_verifier; PKCE is reserved for its native-app flow.
+    expect(a.connector.authConfig.pkce).toBe(false);
+    expect(a.connector.authConfig.tokenAuthMethod).toBe('client_secret_post');
+  });
+
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('every tool is a GET with a YYYYMM LinkedIn-Version and Rest.li 2.0', () => {

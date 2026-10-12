@@ -14,6 +14,7 @@ type Tool = {
   annotations?: Record<string, boolean>;
 };
 const a = adapter as unknown as {
+  unlisted?: boolean;
   connector: { baseUrl: string; authType: string; authConfig: Record<string, unknown>; headers?: Record<string, string> };
   probe: { tool: string; params?: Record<string, unknown> };
   tools: Tool[];
@@ -31,16 +32,17 @@ const refs = (v: unknown, out: Set<string>) => {
 };
 
 describe('atera adapter: static spec conformance', () => {
-  it('uses API v3 with the X-API-KEY header and asks for JSON', () => {
+  it('uses API v3 with the token as a Bearer header and asks for JSON', () => {
+    // Atera's API tokens are JWTs; sent as X-API-KEY they are refused.
     expect(a.connector.baseUrl).toBe('https://app.atera.com/api/v3');
-    expect(a.connector.authType).toBe('API_KEY');
-    expect(a.connector.authConfig).toEqual({ headerName: 'X-API-KEY', apiKey: '{{ATERA_API_KEY}}' });
+    expect(a.connector.authType).toBe('BEARER_TOKEN');
+    expect(a.connector.authConfig).toEqual({ token: '{{ATERA_API_KEY}}' });
     expect(a.connector.headers?.Accept).toBe('application/json');
   });
 
   it('pages with the documented page and itemsInPage names', () => {
     expect(tool('atera_list_tickets').endpointMapping.queryParams).toMatchObject({ page: '$page', itemsInPage: '$items_in_page' });
-    expect(tool('atera_list_contacts').endpointMapping.queryParams).toMatchObject({ 'searchOptions.email': '$email' });
+    expect(tool('atera_list_contacts').endpointMapping.queryParams).toMatchObject({ Email: '$email', Phone: '$phone' });
   });
 
   it('device tools build the typed device paths', () => {
@@ -75,6 +77,10 @@ describe('atera adapter: static spec conformance', () => {
       if (m.bodyTemplate) refs(m.bodyTemplate, used);
       for (const p of Object.keys(t.parameters?.properties ?? {})) expect(`${t.name}:${p}:${used.has(p)}`).toBe(`${t.name}:${p}:true`);
     }
+  });
+
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('tool names carry the adapter prefix and are unique', () => {

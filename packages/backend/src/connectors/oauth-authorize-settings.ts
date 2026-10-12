@@ -38,6 +38,11 @@ export interface RestAuthorizeSettings {
   /** private_key_jwt only: how to sign the client assertion (resolved). */
   clientAssertion?: ClientAssertionSettings;
   /**
+   * Whether the flow uses PKCE (RFC 7636). True unless `pkce: false` is set,
+   * see resolvePkce.
+   */
+  pkce: boolean;
+  /**
    * Settings taken from the catalog because the row lacked them, to be
    * written to the row's authConfig once the authorization succeeds, so the
    * OAuth settings form shows what was used and a later re-authorization
@@ -57,6 +62,39 @@ const ADOPTABLE = [
 
 const str = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() !== '' ? v : undefined;
+
+/** `pkce` as stored: a boolean, or its string form; anything else is unset. */
+function pkceFlag(v: unknown): boolean | undefined {
+  if (v === true || v === 'true') return true;
+  if (v === false || v === 'false') return false;
+  return undefined;
+}
+
+/**
+ * Whether the authorization-code flow sends PKCE (`code_challenge` on
+ * authorize, `code_verifier` on the code exchange).
+ *
+ * On by default: Etsy and X require it, and most other providers ignore
+ * it. `authConfig.pkce: false` turns it off for providers that refuse it:
+ * LinkedIn's standard web flow answers 401 invalid_client to a token request
+ * that carries a code_verifier (LinkedIn reserves PKCE for its native-app
+ * flow).
+ *
+ * The row's own value wins. A row without one takes the catalog adapter's,
+ * because authConfig is copied once at install and neither the catalog
+ * re-sync nor export/import carries it: a connector installed before its
+ * adapter set `pkce: false` would otherwise keep failing.
+ */
+export function resolvePkce(
+  storedAuthConfig: Record<string, unknown> | null | undefined,
+  catalogAuthConfig?: Record<string, unknown> | null,
+): boolean {
+  return (
+    pkceFlag(storedAuthConfig?.pkce) ??
+    pkceFlag(catalogAuthConfig?.pkce) ??
+    true
+  );
+}
 
 export function resolveRestAuthorizeSettings(
   storedAuthConfig: Record<string, unknown>,
@@ -122,6 +160,7 @@ export function resolveRestAuthorizeSettings(
     scope: str(merged.scopes),
     tokenAuthMethod,
     clientAssertion,
+    pkce: resolvePkce(cfg, catalogAuthConfig),
     adopted,
     missingVars: findUnresolvedPlaceholders(
       clientAssertion

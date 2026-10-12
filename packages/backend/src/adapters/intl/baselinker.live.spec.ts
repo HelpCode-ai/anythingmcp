@@ -62,8 +62,8 @@ const OFF = ['baselinker_add_order', 'baselinker_create_package', 'baselinker_up
 const WRITES = [...OFF, 'baselinker_set_order_status'].sort();
 
 describe('baselinker adapter: static spec conformance', () => {
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
   });
 
   it('sends the token in X-BLToken', () => {

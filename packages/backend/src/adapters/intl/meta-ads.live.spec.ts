@@ -111,8 +111,8 @@ const WRITES = ['meta_ads_update_budget', 'meta_ads_update_status'];
 describe('meta-ads adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.name).toBe('Meta Ads');
     expect(a.prerequisites).toMatch(/ads_read/);
   });

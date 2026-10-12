@@ -1,5 +1,6 @@
 import * as adapter from './bill-com.json';
 const a = adapter as unknown as {
+  unlisted?: boolean;
   connector: { baseUrl: string; authType: string; authConfig: Record<string, unknown>; healthcheckPath: string };
   envVarMeta: Record<string, { pattern?: string }>;
   probe: { tool: string };
@@ -17,6 +18,10 @@ const tool = (name: string) => {
 };
 
 describe('bill-com adapter: static spec conformance', () => {
+  it('is listed (verified against the official API spec on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
+  });
+
   it('signs in with POST /v3/login and sends sessionId plus devKey', () => {
     expect(a.connector.baseUrl).toBe('{{BILL_API_URL}}');
     expect(a.connector.authType).toBe('LOGIN_TOKEN');
