@@ -37,6 +37,16 @@ import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { connectorErrorWhen } from '../connectors/error-when.util';
+
+/**
+ * The content of a tool result: one text item, then the images taken out of
+ * the response by `responseMapping.images` (none for every other tool). The
+ * text comes first so whatever reads `content[0].text` keeps working.
+ */
+export type ToolResultContent = [
+  { type: 'text'; text: string },
+  ...{ type: 'image'; data: string; mimeType: string }[],
+];
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
 
 /**
@@ -189,7 +199,7 @@ export class DynamicMcpTools {
       intent?: string;
     },
   ): Promise<{
-    content: { type: 'text'; text: string }[];
+    content: ToolResultContent;
     isError?: boolean;
     /**
      * The result as an object, before it was serialized into `content[0].text`.
@@ -464,7 +474,7 @@ export class DynamicMcpTools {
         meta,
         tool.endpointMapping?.queryParams,
       );
-      this.logToolCall(tool, context, durationMs, 'SUCCESS', rendered.content?.[0]?.text);
+      this.logToolCall(tool, context, durationMs, 'SUCCESS', textOf(rendered.content));
       return rendered;
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
@@ -551,7 +561,7 @@ export class DynamicMcpTools {
     meta?: ResponseMeta,
     queryParams?: Record<string, unknown>,
   ): {
-    content: { type: 'text'; text: string }[];
+    content: ToolResultContent;
     isError?: boolean;
     structured?: unknown;
   } {
@@ -589,8 +599,17 @@ export class DynamicMcpTools {
       resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
     }
 
+    // `responseMapping.images`: the pictures follow the text, which keeps a
+    // placeholder for each. Text stays first, so whatever reads content[0]
+    // (the call log, older clients) still finds the JSON there.
+    const images = (outcome.images ?? []).map((img) => ({
+      type: 'image' as const,
+      data: img.data,
+      mimeType: img.mimeType,
+    }));
+
     return {
-      content: [{ type: 'text' as const, text: resultText }],
+      content: [{ type: 'text' as const, text: resultText }, ...images],
       structured: value,
     };
   }
@@ -812,4 +831,9 @@ export class DynamicMcpTools {
         throw new Error(`Unsupported connector type: ${connectorType}`);
     }
   }
+}
+
+/** The text of a tool result, which is always its first item. */
+function textOf(content: ToolResultContent | undefined): string | undefined {
+  return content?.[0]?.text;
 }
