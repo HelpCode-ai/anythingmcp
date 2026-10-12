@@ -107,8 +107,8 @@ const SCOPES = [
 describe('canva adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed (verified live on 12 Oct 2026)', () => {
+    expect(a.unlisted).toBeUndefined();
     expect(a.prerequisites).toMatch(/multi-factor/);
   });
 
@@ -314,7 +314,7 @@ live('canva adapter: live REST API', () => {
       const replies = await run('canva_list_comment_replies', { design_id: design.id, thread_id: thread.id });
       expect(replies.items.length).toBeGreaterThan(0);
 
-      const url = process.env.CANVA_TEST_IMAGE_URL || 'https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png';
+      const url = process.env.CANVA_TEST_IMAGE_URL || 'https://anythingmcp.com/apple-icon.png';
       const upload = await run('canva_upload_asset_from_url', { name: 'AnythingMCP test', url });
       const uploaded = await until(() => run('canva_get_asset_upload', { job_id: upload.job.id }), (job) => job.status !== 'in_progress');
       expect(uploaded.status).toBe('success');
