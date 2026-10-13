@@ -68,7 +68,6 @@ export function verificationEmail(
   input: { code: string; verifyUrl: string },
   ctx: EmailBrandContext,
 ): RenderedEmail {
-  const shown = /^\d{6}$/.test(input.code) ? `${input.code.slice(0, 3)} ${input.code.slice(3)}` : input.code;
   return build({
     // Code first: it is what the inbox preview shows, and what iOS reads to
     // offer it above the keyboard (autocomplete one-time-code).
@@ -77,7 +76,11 @@ export function verificationEmail(
     bodyHtml:
       h1('Confirm your email,', 'and you are in.') +
       p('Enter this code in the AnythingMCP window you just left. It is valid for 15 minutes.') +
-      codeBox(shown) +
+      // The code exactly as it is typed: no space between the two halves. The
+      // box's letter-spacing already spaces the digits out to read, while a
+      // real space was copied along with them, so a pasted "504 452" no
+      // longer fitted the six-character field (October 2026).
+      codeBox(input.code) +
       p('Or confirm with one click:', { size: 15, muted: true, mb: 4 }) +
       button(input.verifyUrl, 'Verify my email') +
       small("Didn't sign up? You can ignore this email; the address stays unverified without the code."),
