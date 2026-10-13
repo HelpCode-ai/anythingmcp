@@ -83,12 +83,52 @@ describe('kommo adapter: static spec conformance', () => {
     expect(Array.isArray(tool('kommo_update_lead').endpointMapping.bodyMapping)).toBe(false);
   });
 
-  it('pages lists with page and limit up to 250', () => {
+  it('pages lists with page and limit up to 250 (100 for the event log)', () => {
     for (const t of a.tools.filter((x) => x.endpointMapping.method === 'GET' && x.parameters.properties?.limit)) {
-      expect(t.parameters.properties!.limit.maximum).toBe(250);
+      expect(t.parameters.properties!.limit.maximum).toBe(t.name === 'kommo_list_events' ? 100 : 250);
       expect(t.endpointMapping.queryParams).toMatchObject({ page: '$page', limit: '$limit' });
     }
     expect(a.instructions).toMatch(/HTTP 204/);
+  });
+
+  it('reads the event log with the documented filters', () => {
+    const t = tool('kommo_list_events');
+    expect(t.endpointMapping).toMatchObject({ method: 'GET', path: '/events' });
+    expect(t.endpointMapping.queryParams).toEqual({
+      'filter[type][]': '$types',
+      'filter[entity][]': '$entity',
+      'filter[entity_id][]': '$entity_ids',
+      'filter[created_by][]': '$created_by',
+      'filter[created_at][from]': '$created_from',
+      'filter[created_at][to]': '$created_to',
+      'filter[id][]': '$ids',
+      with: '$with',
+      page: '$page',
+      limit: '$limit',
+    });
+    expect(t.parameters.required).toBeUndefined();
+    expect(t.description).toContain('lead_status_changed');
+  });
+
+  it('reads the notes of a whole entity type, separate from one record\'s notes', () => {
+    const t = tool('kommo_list_notes_by_type');
+    expect(t.endpointMapping).toMatchObject({ method: 'GET', path: '/{entity_type}/notes' });
+    expect(t.parameters.required).toEqual(['entity_type']);
+    expect(t.endpointMapping.queryParams).toMatchObject({
+      'filter[note_type][]': '$note_types',
+      'filter[entity_id][]': '$entity_ids',
+      'filter[id][]': '$ids',
+      'filter[updated_at][from]': '$updated_from',
+      'filter[updated_at][to]': '$updated_to',
+      'order[updated_at]': '$order_by_updated_at',
+      'order[id]': '$order_by_id',
+    });
+    expect(tool('kommo_list_notes').endpointMapping.path).toBe('/{entity_type}/{entity_id}/notes');
+  });
+
+  it('sends amocrm.ru accounts to the amoCRM connector', () => {
+    expect(a.instructions).toContain('.amocrm.ru');
+    expect(a.instructions).toContain('**amoCRM** connector');
   });
 
   it('documents setup, rate limit, closed stages and the read-only setup', () => {
@@ -155,6 +195,27 @@ describe('kommo adapter: requests through the real engine', () => {
     expect(JSON.parse(seen[0].body)).toEqual([{ entity_id: 9, note_type: 'common', params: { text: 'Called back' } }]);
   });
 
+  it('lists events with repeated array filters and a created_at range', async () => {
+    await run('kommo_list_events', { types: ['lead_status_changed', 'lead_added'], entity: ['lead'], entity_ids: [9], created_from: 1700000000, limit: 100 });
+    const url = new URL(seen[0].url!, origin);
+    expect(url.pathname).toBe('/api/v4/events');
+    expect(url.searchParams.getAll('filter[type][]')).toEqual(['lead_status_changed', 'lead_added']);
+    expect(url.searchParams.getAll('filter[entity][]')).toEqual(['lead']);
+    expect(url.searchParams.getAll('filter[entity_id][]')).toEqual(['9']);
+    expect(url.searchParams.get('filter[created_at][from]')).toBe('1700000000');
+    expect(url.searchParams.has('filter[created_at][to]')).toBe(false);
+    expect(url.searchParams.get('limit')).toBe('100');
+  });
+
+  it('lists the notes of all leads, filtered by type and update time', async () => {
+    await run('kommo_list_notes_by_type', { entity_type: 'leads', note_types: ['call_in', 'call_out'], updated_from: 1700000000 });
+    const url = new URL(seen[0].url!, origin);
+    expect(url.pathname).toBe('/api/v4/leads/notes');
+    expect(url.searchParams.getAll('filter[note_type][]')).toEqual(['call_in', 'call_out']);
+    expect(url.searchParams.get('filter[updated_at][from]')).toBe('1700000000');
+    expect(url.searchParams.has('filter[entity_id][]')).toBe(false);
+  });
+
   it('updates one lead with a PATCH object', async () => {
     await run('kommo_update_lead', { lead_id: 9, status_id: 143 });
     expect(seen[0].method).toBe('PATCH');
@@ -199,6 +260,14 @@ live('kommo adapter: live calls', () => {
     expect(Array.isArray(fields._embedded.custom_fields)).toBe(true);
     await run('kommo_list_tasks', { limit: 2, is_completed: 0 });
   }, 60000);
+
+  it('reads notes across all leads and the event log', async () => {
+    // Either may be empty (HTTP 204) on a fresh account.
+    const notes = await run('kommo_list_notes_by_type', { entity_type: 'leads', limit: 5 });
+    if (notes) expect(Array.isArray(notes._embedded.notes)).toBe(true);
+    const events = await run('kommo_list_events', { limit: 5, entity: ['lead'] });
+    if (events) expect(Array.isArray(events._embedded.events)).toBe(true);
+  }, 30000);
 
   (process.env.KOMMO_LIVE_WRITE === '1' ? it : it.skip)(
     'creates an "AnythingMCP test" lead with a note and a task, then closes both',

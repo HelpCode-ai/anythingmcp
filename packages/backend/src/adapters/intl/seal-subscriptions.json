@@ -1,0 +1,1141 @@
+{
+  "slug": "seal-subscriptions",
+  "name": "Seal Subscriptions",
+  "description": "Run Shopify subscriptions in Seal Subscriptions from your AI: find subscribers, read upcoming and failed charges, skip or reschedule a delivery, pause or resume, change items, address and discounts, and manage subscription rules and webhooks.",
+  "unlisted": true,
+  "instructions": "## Seal Subscriptions\nThis connector calls the **Seal Subscriptions merchant API** (`https://app.sealsubscriptions.com/shopify/merchant/api`) of one Shopify shop with that shop's API token: subscriptions and their charges, items, discounts and shipping details, subscription rules and webhooks.\n\n**Setup (about 2 minutes)**\n1. In Shopify admin open **Apps > Seal Subscriptions > Settings > General Settings > API**.\n2. Copy the **API token** (not the API secret, which only signs webhooks) into `SEAL_SUBSCRIPTIONS_API_TOKEN` and install. It is sent in the `X-Seal-Token` header, only to Seal.\n3. The token belongs to one shop; install the connector once per shop.\n\n**Ids**: every subscription has an `id` and an `internal_id`. The tools always take `id`. Billing attempt ids, item ids and discount ids come from `seal_subscriptions_get_subscription` (or `seal_subscriptions_list_subscriptions` with `with_billing_attempts` / `with_items`).\n\n**Tools**\n- Read: `seal_subscriptions_list_subscriptions` (search by customer e-mail or name, filter by status, 50 per page with `page`), `seal_subscriptions_list_by_billing_date` (charges in a UTC window, cursor paging), `seal_subscriptions_get_subscription`, `seal_subscriptions_list_rules`, `seal_subscriptions_get_rule`, `seal_subscriptions_list_webhooks`, `seal_subscriptions_get_payment_update_url`.\n- Change a subscription: `seal_subscriptions_pause_subscription`, `seal_subscriptions_resume_subscription`, `seal_subscriptions_update_subscription`, `seal_subscriptions_add_items`, `seal_subscriptions_edit_items`, `seal_subscriptions_apply_discount_code`, `seal_subscriptions_send_payment_update_email`.\n- Change a charge: `seal_subscriptions_skip_billing_attempt`, `seal_subscriptions_unskip_billing_attempt`, `seal_subscriptions_reschedule_billing_attempt`.\n- Webhooks: `seal_subscriptions_create_webhook`.\n- **Installed switched off** (turn on per tool when the workspace wants them): `seal_subscriptions_cancel_subscription`, `seal_subscriptions_schedule_cancellation`, `seal_subscriptions_remove_items`, `seal_subscriptions_remove_discount_code`, `seal_subscriptions_delete_webhook`, the two tools that take money now (`seal_subscriptions_charge_now`, `seal_subscriptions_process_billing_attempt`) and `seal_subscriptions_get_customer_magic_link`, whose link lets anyone holding it change that customer's subscriptions.\n\n**Every write acts on a real customer's subscription.** Before any change, say which subscription (customer, id) and what will change, and wait for the user's yes. Skips, pauses and charges are seen by the customer.\n\n**Dates**: `seal_subscriptions_list_by_billing_date` takes UTC date-times written `2026-10-19T00:00:00`. Rescheduling and scheduled cancellation take `date` (YYYY-MM-DD), `time` (HH:MM) and `timezone` (an offset such as +02:00).\n\n**Privacy**: subscriptions carry customer names, e-mail, phone, addresses and the last card digits; show only what the user needs. The customer's secret `edit_url` is removed from the answers.\n\n**Common errors**\n- 403 `Access forbidden.`: the token is wrong, revoked or from another shop. Copy it again from Seal Settings > General Settings > API.\n- 503: Seal allows 10 requests at a time per token. Wait for running calls to finish and retry once.\n- 404 or `success: false`: the id does not exist or the action is not allowed in the subscription's state (for example skipping a charge already processed).\n\n**Out of scope here**: creating subscriptions, deleting subscriptions or single billing attempts, editing subscription rules, fulfillment orders of prepaid subscriptions and quick checkout links.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "seal-subscriptions",
+  "docsUrl": "https://www.sealsubscriptions.com/articles/merchant-api-documentation",
+  "requiredEnvVars": [
+    "SEAL_SUBSCRIPTIONS_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SEAL_SUBSCRIPTIONS_API_TOKEN": {
+      "label": "Seal API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shopify admin > Apps > Seal Subscriptions > Settings > General Settings > API. Copy the API token, not the API secret. One token per shop.",
+      "link": "https://www.sealsubscriptions.com/articles/merchant-api-documentation",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the token, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "403": "Seal refused the token (Access forbidden). Copy the API token again from Seal Subscriptions > Settings > General Settings > API; the API secret does not work here.",
+    "503": "Seal allows 10 requests at a time per token. Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "seal_subscriptions_list_rules"
+  },
+  "prerequisites": "A Shopify shop with the Seal Subscriptions app installed and access to its settings, where the API token is shown. About 2 minutes.",
+  "connector": {
+    "name": "Seal Subscriptions",
+    "type": "REST",
+    "baseUrl": "https://app.sealsubscriptions.com/shopify/merchant/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Seal-Token",
+      "apiKey": "{{SEAL_SUBSCRIPTIONS_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/subscription-rules?page=1",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "seal_subscriptions_list_subscriptions",
+      "description": "List the shop's Seal subscriptions, 50 per page, newest first. Search by the customer's e-mail, first or last name with `query`; filter to active, paused or cancelled ones. Set with_billing_attempts to see each subscription's scheduled and past charges (their ids are needed to skip or reschedule one). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text matched against the customer's e-mail, first name or last name."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds 50 subscriptions.",
+            "minimum": 1
+          },
+          "active_only": {
+            "type": "boolean",
+            "description": "Only active subscriptions."
+          },
+          "paused_only": {
+            "type": "boolean",
+            "description": "Only paused subscriptions."
+          },
+          "cancelled_only": {
+            "type": "boolean",
+            "description": "Only cancelled subscriptions."
+          },
+          "with_items": {
+            "type": "boolean",
+            "description": "Include the products on each subscription."
+          },
+          "with_billing_attempts": {
+            "type": "boolean",
+            "description": "Include each subscription's billing attempts (scheduled and past charges with their ids and status)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "query": "$query",
+          "page": "$page",
+          "active-only": "$active_only",
+          "paused-only": "$paused_only",
+          "cancelled-only": "$cancelled_only",
+          "with-items": "$with_items",
+          "with-billing-attempts": "$with_billing_attempts"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "payload.edit_url",
+            "payload.subscriptions[*].edit_url",
+            "payload[*].edit_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_list_by_billing_date",
+      "description": "List subscriptions that have at least one charge scheduled between two UTC date-times, e.g. everything renewing next week. Each subscription carries a `cursor`; pass the cursor of the last one to get the next page, until a page comes back empty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_datetime": {
+            "type": "string",
+            "description": "Start of the window in UTC, written YYYY-MM-DDTHH:MM:SS without a zone suffix, e.g. 2026-10-19T00:00:00."
+          },
+          "to_datetime": {
+            "type": "string",
+            "description": "End of the window in UTC, same format, e.g. 2026-10-25T23:59:59."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `cursor` of the last subscription on the previous page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "from_datetime",
+          "to_datetime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions-by-billing-date",
+        "queryParams": {
+          "from_datetime": "$from_datetime",
+          "to_datetime": "$to_datetime",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "payload.edit_url",
+            "payload.subscriptions[*].edit_url",
+            "payload[*].edit_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_get_subscription",
+      "description": "Get one subscription with everything Seal knows about it: status (ACTIVE, PAUSED, CANCELLED, EXPIRED), customer and shipping address, delivery and billing interval, items with prices and discounts, billing attempts (scheduled, completed, failed with error message), fulfillment orders, card brand and expiry, and the activity log. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "payload.edit_url",
+            "payload.subscriptions[*].edit_url",
+            "payload[*].edit_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_pause_subscription",
+      "description": "Pause an active subscription: no charges or deliveries until it is resumed. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "pause"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_resume_subscription",
+      "description": "Resume a paused subscription or reactivate a cancelled one, so charges and deliveries start again. Seal treats both actions the same; use resume for paused and reactivate for cancelled subscriptions. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "action": {
+            "type": "string",
+            "description": "resume for a paused subscription, reactivate for a cancelled one.",
+            "enum": [
+              "resume",
+              "reactivate"
+            ],
+            "default": "resume"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "$action"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_cancel_subscription",
+      "description": "Cancel a subscription at once: no further charges or deliveries. It can be reactivated later with seal_subscriptions_resume_subscription. Installed switched off; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "cancel"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_schedule_cancellation",
+      "description": "Schedule a subscription to be cancelled at a future date and time; it keeps renewing until then. Installed switched off; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Cancellation date, YYYY-MM-DD."
+          },
+          "time": {
+            "type": "string",
+            "description": "Cancellation time, HH:MM (24 hours).",
+            "default": "00:00"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "UTC offset the date and time are written in, e.g. +00:00 or +02:00.",
+            "default": "+00:00"
+          }
+        },
+        "required": [
+          "id",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-schedule-cancellation",
+        "bodyMapping": {
+          "id": "$id",
+          "date": "$date",
+          "time": "$time",
+          "timezone": "$timezone"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_update_subscription",
+      "description": "Change a subscription's schedule, delivery method or shipping address: delivery and billing interval (a billing interval longer than the delivery interval makes it prepaid), minimum and maximum number of charges, anchor day, order note attributes, delivery method and price, and the shipping address fields. Only the fields given are sent. Items are changed with the item tools. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "delivery_interval": {
+            "type": "string",
+            "description": "Delivery interval as number and unit, e.g. 2 week, 1 month."
+          },
+          "billing_interval": {
+            "type": "string",
+            "description": "Billing interval, same format. Different from delivery_interval turns the subscription into a prepaid one."
+          },
+          "automatically_update_product_prices": {
+            "type": "string",
+            "description": "\"true\" to let Seal adjust item prices when the subscription switches between prepaid and pay-per-delivery.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "billing_min_cycles": {
+            "type": "integer",
+            "description": "Minimum number of charges before the customer may cancel."
+          },
+          "billing_max_cycles": {
+            "type": "integer",
+            "description": "Maximum number of charges, after which the subscription expires."
+          },
+          "anchor_day": {
+            "type": "integer",
+            "description": "Day the charges are anchored to: for weekly subscriptions 1 = Monday to 7 = Sunday, for monthly ones the day of the month."
+          },
+          "note_attributes": {
+            "type": "array",
+            "description": "Order note attributes; replaces the existing list, an empty list removes them.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "delivery_method_title": {
+            "type": "string",
+            "description": "Internal title of the delivery method."
+          },
+          "delivery_method_presentment_title": {
+            "type": "string",
+            "description": "Delivery method title shown to the customer."
+          },
+          "delivery_method_code": {
+            "type": "string",
+            "description": "Delivery method code."
+          },
+          "delivery_price": {
+            "type": "number",
+            "description": "Delivery price per shipment, in the subscription's currency."
+          },
+          "s_first_name": {
+            "type": "string",
+            "description": "Shipping address: first name."
+          },
+          "s_last_name": {
+            "type": "string",
+            "description": "Shipping address: last name."
+          },
+          "s_company": {
+            "type": "string",
+            "description": "Shipping address: company."
+          },
+          "s_address1": {
+            "type": "string",
+            "description": "Shipping address: street and number."
+          },
+          "s_address2": {
+            "type": "string",
+            "description": "Shipping address: second address line."
+          },
+          "s_zip": {
+            "type": "string",
+            "description": "Shipping address: postal code."
+          },
+          "s_city": {
+            "type": "string",
+            "description": "Shipping address: city."
+          },
+          "s_province": {
+            "type": "string",
+            "description": "Shipping address: province or state."
+          },
+          "s_province_code": {
+            "type": "string",
+            "description": "Shipping address: province or state code, e.g. NY."
+          },
+          "s_country": {
+            "type": "string",
+            "description": "Shipping address: country name."
+          },
+          "s_country_code": {
+            "type": "string",
+            "description": "Shipping address: two-letter country code, e.g. DE."
+          },
+          "s_phone": {
+            "type": "string",
+            "description": "Shipping address: phone number."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "edit",
+          "edit": {
+            "delivery_interval": "$delivery_interval",
+            "billing_interval": "$billing_interval",
+            "automatically_update_product_prices": "$automatically_update_product_prices",
+            "billing_min_cycles": "$billing_min_cycles",
+            "billing_max_cycles": "$billing_max_cycles",
+            "anchor_day": "$anchor_day",
+            "note_attributes": "$note_attributes",
+            "delivery_method_title": "$delivery_method_title",
+            "delivery_method_presentment_title": "$delivery_method_presentment_title",
+            "delivery_method_code": "$delivery_method_code",
+            "delivery_price": "$delivery_price",
+            "s_first_name": "$s_first_name",
+            "s_last_name": "$s_last_name",
+            "s_company": "$s_company",
+            "s_address1": "$s_address1",
+            "s_address2": "$s_address2",
+            "s_zip": "$s_zip",
+            "s_city": "$s_city",
+            "s_province": "$s_province",
+            "s_province_code": "$s_province_code",
+            "s_country": "$s_country",
+            "s_country_code": "$s_country_code",
+            "s_phone": "$s_phone"
+          }
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_add_items",
+      "description": "Add one or more products to a subscription, as recurring items or as one-off add-ons for the next renewal only (one_time 1). Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "items": {
+            "type": "array",
+            "description": "The items to add.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "string",
+                  "description": "Shopify product id, as digits."
+                },
+                "variant_id": {
+                  "type": "string",
+                  "description": "Shopify product variant id, as digits."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity, at least 1.",
+                  "minimum": 1
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Product and variant title shown on the subscription."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "SKU of the variant."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Unit price in the subscription's currency."
+                },
+                "taxable": {
+                  "type": "integer",
+                  "description": "1 if the item is taxable, 0 if not.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "requires_shipping": {
+                  "type": "integer",
+                  "description": "1 if the item is shipped, 0 if not.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "one_time": {
+                  "type": "integer",
+                  "description": "1 to remove the item again after the next renewal (a one-off add-on), 0 to keep it on the subscription.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "properties": {
+                  "type": "array",
+                  "description": "Line item properties as key/value pairs.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "product_id",
+                "variant_id",
+                "quantity",
+                "title",
+                "price"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "add_items",
+          "add_items": "$items"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_edit_items",
+      "description": "Change items already on a subscription: swap the variant, change quantity or price, or turn an item into a one-off. Item ids come from seal_subscriptions_get_subscription. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "items": {
+            "type": "array",
+            "description": "The items to change; each needs its item id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "The subscription item id (items[].id from seal_subscriptions_get_subscription)."
+                },
+                "variant_id": {
+                  "type": "string",
+                  "description": "Shopify product variant id, as digits."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity, at least 1.",
+                  "minimum": 1
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Product and variant title shown on the subscription."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "SKU of the variant."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Unit price in the subscription's currency."
+                },
+                "one_time": {
+                  "type": "integer",
+                  "description": "1 to remove the item again after the next renewal (a one-off add-on), 0 to keep it on the subscription.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "properties": {
+                  "type": "array",
+                  "description": "Line item properties as key/value pairs.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "edit_items",
+          "edit_items": "$items"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_remove_items",
+      "description": "Remove items from a subscription by their item ids. Installed switched off; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "item_ids": {
+            "type": "array",
+            "description": "Item ids to remove (items[].id from seal_subscriptions_get_subscription).",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "remove_items",
+          "remove_items": "$item_ids"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_skip_billing_attempt",
+      "description": "Skip one upcoming charge (and its delivery) of a subscription, e.g. when the customer is away. The billing attempt id comes from billing_attempts of seal_subscriptions_get_subscription; only attempts not yet processed can be skipped. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The billing attempt id."
+          },
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id",
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-billing-attempt",
+        "bodyMapping": {
+          "id": "$id",
+          "subscription_id": "$subscription_id",
+          "action": "skip"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_unskip_billing_attempt",
+      "description": "Undo a skip, so a previously skipped upcoming charge is made again on its date. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The billing attempt id."
+          },
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id",
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-billing-attempt",
+        "bodyMapping": {
+          "id": "$id",
+          "subscription_id": "$subscription_id",
+          "action": "unskip"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_reschedule_billing_attempt",
+      "description": "Move one upcoming charge of a subscription to another date and time. With reset_schedule \"true\" the charges after it are rescheduled from the new date. Only attempts not yet processed can be moved. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The billing attempt id."
+          },
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "date": {
+            "type": "string",
+            "description": "New date, YYYY-MM-DD."
+          },
+          "time": {
+            "type": "string",
+            "description": "New time, HH:MM (24 hours).",
+            "default": "09:00"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "UTC offset of date and time, e.g. +00:00 or -04:00.",
+            "default": "+00:00"
+          },
+          "reset_schedule": {
+            "type": "string",
+            "description": "\"true\" to rebuild the rest of the schedule from this charge.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "subscription_id",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-billing-attempt",
+        "bodyMapping": {
+          "id": "$id",
+          "subscription_id": "$subscription_id",
+          "date": "$date",
+          "time": "$time",
+          "timezone": "$timezone",
+          "action": "reschedule",
+          "reset_schedule": "$reset_schedule"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_charge_now",
+      "description": "Charge the subscription immediately instead of waiting for the next scheduled date; the customer's saved payment method is billed and an order is created. With reset_schedule \"true\" the following charges are rescheduled from now. Installed switched off because it takes money; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "reset_schedule": {
+            "type": "string",
+            "description": "\"true\" to rebuild the schedule from this charge.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-create-charge-now",
+        "bodyMapping": {
+          "id": "$id",
+          "reset_schedule": "$reset_schedule"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_process_billing_attempt",
+      "description": "Process one specific billing attempt now, for example to retry a failed charge after the customer updated the card. The customer's payment method is billed. Installed switched off because it takes money; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "billing_attempt_id": {
+            "type": "integer",
+            "description": "The billing attempt id to process."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "billing_attempt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-process-charge",
+        "bodyMapping": {
+          "subscription_id": "$subscription_id",
+          "billing_attempt_id": "$billing_attempt_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_apply_discount_code",
+      "description": "Apply a Shopify discount code to an auto-charging subscription; it counts from the next charge. Not available for recurring-invoice subscriptions. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "discount_code": {
+            "type": "string",
+            "description": "The discount code as created in Shopify, e.g. LOYAL10."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "discount_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription-discount-code",
+        "bodyMapping": {
+          "subscription_id": "$subscription_id",
+          "action": "apply",
+          "discount_code": "$discount_code"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_remove_discount_code",
+      "description": "Remove a discount code from a subscription. The discount code id is in items[].discount_codes[].id of seal_subscriptions_get_subscription. Installed switched off; turn it on deliberately. Changes the live subscription in Seal: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          },
+          "discount_code_id": {
+            "type": "string",
+            "description": "Id of the applied discount (a UUID), not the code text."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "discount_code_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/subscription-discount-code",
+        "queryParams": {
+          "subscription_id": "$subscription_id",
+          "discount_code_id": "$discount_code_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_get_payment_update_url",
+      "description": "Get a secure Shopify link where the customer can replace the payment method of a subscription (Shop Pay subscriptions only). The link is personal to the customer: give it only to them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription-payment-method-update-url",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_send_payment_update_email",
+      "description": "E-mail the customer Seal's message with a link to update the payment method of a subscription, e.g. after a failed charge or an expiring card. Sends an e-mail to the customer: confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription's id from the list or get tools (the `id` field, not `internal_id`)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscription",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "send_payment_method_update_email"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_get_customer_magic_link",
+      "description": "Get the magic link that signs a customer into Seal's portal, where they can see and change all their subscriptions. Works only for customers with at least one subscription. Anyone holding the link can change the customer's subscriptions, so it is installed switched off: turn it on deliberately and give the link only to that customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The customer's e-mail address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer-magic-link",
+        "queryParams": {
+          "email": "$email"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "seal_subscriptions_list_rules",
+      "description": "List the shop's subscription rules (the selling plans offered on product pages): name, plan selector label, payment type, intervals, discounts and the products and variants each rule covers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription-rules",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_get_rule",
+      "description": "Get one subscription rule with its selling plans (intervals, pricing policy, minimum and maximum cycles, selling plan ids) and the products and variants it applies to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The subscription rule id from seal_subscriptions_list_rules."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription-rule",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_list_webhooks",
+      "description": "List the webhooks registered on the Seal account, with id, topic and target address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks"
+      }
+    },
+    {
+      "name": "seal_subscriptions_create_webhook",
+      "description": "Register a webhook so Seal sends a signed POST (header X-Seal-Hmac-Sha256) to an https address whenever a subscription, rule or billing attempt event happens. Seal deletes a webhook that fails 20 deliveries in a row. Changes the Seal account: confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "The event.",
+            "enum": [
+              "subscription/created",
+              "subscription/updated",
+              "subscription/paused",
+              "subscription/resumed",
+              "subscription/reactivated",
+              "subscription/expired",
+              "subscription/payment_method_updated",
+              "subscription/shipping_address_updated",
+              "subscription/cancelled",
+              "subscription_rule/created",
+              "subscription_rule/updated",
+              "billing_attempt/succeeded",
+              "billing_attempt/failed",
+              "billing_attempt/upcoming_email_sent"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "description": "The https URL that receives the event."
+          }
+        },
+        "required": [
+          "topic",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webhooks",
+        "bodyMapping": {
+          "topic": "$topic",
+          "address": "$address"
+        }
+      }
+    },
+    {
+      "name": "seal_subscriptions_delete_webhook",
+      "description": "Delete a webhook by id. Installed switched off; turn it on deliberately. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The webhook id from seal_subscriptions_list_webhooks."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/webhooks",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

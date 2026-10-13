@@ -1,0 +1,903 @@
+{
+  "slug": "manomano",
+  "name": "ManoMano",
+  "description": "Sell on ManoMano, the European DIY and garden marketplace, from an AI agent: orders with acceptance, shipment and refunds, offer prices and stock, competitiveness against other sellers, catalog lookups by EAN, ManoFulfillment stock and customer invoices. One install per seller contract.",
+  "aliases": [
+    "Mano Mano",
+    "ManoMano Seller",
+    "ManoMano Partners API"
+  ],
+  "region": "fr",
+  "category": "e-commerce",
+  "icon": "manomano",
+  "docsUrl": "https://www.manomano.dev/",
+  "unlisted": true,
+  "instructions": "## ManoMano Seller API\nThis connector uses the **ManoMano Partners API** (`https://partnersapi.manomano.com`), the REST API for sellers on ManoMano (manomano.fr, .es, .it, .de and .co.uk): orders with acceptance, shipment and refunds, offer prices and stock, competitiveness, catalog lookups by EAN, ManoFulfillment stock and customer invoices.\n\n**Setup (about 5 minutes)**\n1. Sign in to the **ManoMano Toolbox** (https://toolbox.manomano.com) with a user that has the **Admin** role.\n2. Open **Settings > API keys**, click **Create API key**, give it a name such as AnythingMCP and click **Generate API key**. Copy it at once: it is shown only once. Paste it into `MANOMANO_API_KEY`.\n3. Put your **seller contract id** into `MANOMANO_SELLER_CONTRACT_ID`. It is a number shown in the Toolbox. ManoMano creates one contract per platform (country) and delivery mode, so a seller on several platforms has several contracts: **one install covers one contract**. Install the connector once per contract and name each install after it (for example ManoMano FR).\n4. Install and run `manomano_list_orders`.\n\nThe key is sent in the `x-api-key` header and the connector identifies itself with `x-thirdparty-name: AnythingMCP`. The seller contract id is added to every call.\n\n**Order workflow**: a new order is `PENDING`. `manomano_accept_order` moves it to `PREPARATION`; `manomano_refuse_order` declines it (`REFUNDING`, then `REFUSED`). Ship with `manomano_ship_order` (carrier, tracking number and URL, and the products in the parcel; once per parcel); the order becomes `SHIPPED`. `manomano_refund_order` refunds some or all products (`REFUNDING`, then `REFUNDED`). For the daily to-do list use `manomano_list_orders` with `status=PENDING` and `status=PREPARATION`. Read the order with `manomano_get_order` first: shipping and refunds need each product's `seller_sku` and quantity.\n\n**Writes: confirm first.** `manomano_accept_order`, `manomano_refuse_order`, `manomano_ship_order`, `manomano_refund_order`, `manomano_update_offers`, `manomano_unfreeze_offers`, `manomano_upsert_offers` and `manomano_upload_order_document` act on the live marketplace. Before each call show the user what will change (order, products and quantities, tracking number, SKUs with old and new price or stock, the document) and wait for a yes. Refusals and refunds cannot be undone.\n\n**Prices and stock**: `manomano_update_offers` changes the price, the stock or both of existing SKUs. By default the values are **frozen**: later product feed imports no longer overwrite them, until `manomano_unfreeze_offers` hands them back to the feed (or the update is sent with `frozen_price` / `frozen_stock` false). The update is applied asynchronously; check it with `manomano_list_offers` and the returned `request_id` (status `IN PROGRESS`, `ERROR` with the errors, or `COMPLETED`). `manomano_upsert_offers` creates or fully replaces offers and is installed switched off.\n\n**Competition**: `manomano_get_offer_competitiveness` compares given SKUs with the best offer; `manomano_list_competitiveness_changes` lists what changed in a date range.\n\n**Invoices**: `manomano_list_invoice_requests` lists the invoices customers asked for (3 working days after shipment to answer); `manomano_upload_order_document` uploads the PDF from a URL; `manomano_get_order_documents` lists what is already there.\n\n**Limits**: the orders API allows about 250 requests an hour per API key and the offers API about 200 an hour; both answer 429 beyond that. Orders page at most 50 at a time. ManoMano's sandbox (`partnersapi.sandbox.manomano.com`) is not used by this connector.",
+  "prerequisites": "A ManoMano seller account with a Toolbox user in the Admin role, to create an API key, and your seller contract id. One install per contract (platform and delivery mode).",
+  "requiredEnvVars": [
+    "MANOMANO_API_KEY",
+    "MANOMANO_SELLER_CONTRACT_ID"
+  ],
+  "envVarMeta": {
+    "MANOMANO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "ManoMano Toolbox (Admin role): Settings > API keys > Create API key > Generate API key. The key is shown only once.",
+      "link": "https://toolbox.manomano.com",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the API key alone, without spaces or quotes."
+    },
+    "MANOMANO_SELLER_CONTRACT_ID": {
+      "label": "Seller contract ID",
+      "kind": "setting",
+      "help": "The numeric id of the seller contract to work on, as shown in the Toolbox. ManoMano has one contract per platform and delivery mode; install the connector once per contract.",
+      "link": "https://toolbox.manomano.com",
+      "example": "110841",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "The seller contract id is a number."
+    }
+  },
+  "verifyHints": {
+    "401": "ManoMano refused the API key. Check MANOMANO_API_KEY, or create a new key in the Toolbox under Settings > API keys (a deleted key stops working at once).",
+    "403": "The key works but may not act on this contract. Check that MANOMANO_SELLER_CONTRACT_ID belongs to the seller account that created the key.",
+    "400": "ManoMano rejected the request. Check that MANOMANO_SELLER_CONTRACT_ID is your numeric seller contract id.",
+    "rate_limited": "ManoMano allows about 250 order requests and 200 offer requests an hour. Wait before trying again."
+  },
+  "probe": {
+    "tool": "manomano_list_orders"
+  },
+  "connector": {
+    "name": "ManoMano Partners API",
+    "type": "REST",
+    "baseUrl": "https://partnersapi.manomano.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{MANOMANO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "x-thirdparty-name": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v1/products/brands?name=bosch&page=1&limit=1"
+  },
+  "tools": [
+    {
+      "name": "manomano_list_orders",
+      "description": "List the orders of this seller contract with status, prices and VAT details, customer and addresses, products (seller_sku, quantity, price) and carrier. Filter by status (PENDING for orders to accept, PREPARATION for orders to ship), by creation or status-change date, by carrier or order reference. Up to 50 per page; content holds the orders and pagination the page count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only orders in this status. PENDING waits for acceptance, PREPARATION is to ship, REFUNDING/REFUNDED do not apply to ManoFulfillment orders.",
+            "enum": [
+              "PENDING",
+              "PREPARATION",
+              "SHIPPED",
+              "REFUSED",
+              "REFUNDING",
+              "REFUNDED"
+            ]
+          },
+          "order_reference": {
+            "type": "string",
+            "description": "A ManoMano order reference, e.g. M2022080713464."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Only orders with this carrier, e.g. UPS. Not for ManoFulfillment sellers."
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created at or after this date-time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created at or before this date-time, ISO 8601."
+          },
+          "status_updated_at_start": {
+            "type": "string",
+            "description": "Status changed at or after this date-time, ISO 8601. Best filter for polling changes."
+          },
+          "status_updated_at_end": {
+            "type": "string",
+            "description": "Status changed at or before this date-time, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 50.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/v1/orders",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}",
+          "status": "$status",
+          "order_reference": "$order_reference",
+          "carrier": "$carrier",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "status_updated_at_start": "$status_updated_at_start",
+          "status_updated_at_end": "$status_updated_at_end",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "manomano_get_order",
+      "description": "Read one order in full: status, totals with and without VAT, ManoMano and seller discounts, VAT and invoice liability, B2B flags, customer, billing and shipping addresses, and every product with seller_sku, quantity, price and carrier. Read it before accepting, shipping or refunding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference, e.g. M2022080713464."
+          }
+        },
+        "required": [
+          "order_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/v1/orders/{order_reference}",
+        "encodePathParams": true,
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        }
+      }
+    },
+    {
+      "name": "manomano_accept_order",
+      "description": "Accept a PENDING order; it moves to PREPARATION and the seller must ship it. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          }
+        },
+        "required": [
+          "order_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/v1/accept-orders",
+        "bodyTemplate": "[{\"order_reference\": \"${order_reference}\", \"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}}]"
+      }
+    },
+    {
+      "name": "manomano_refuse_order",
+      "description": "Refuse a PENDING order. The customer is refunded: the order goes to REFUNDING, then REFUSED. Cannot be undone. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          }
+        },
+        "required": [
+          "order_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/v1/refuse-orders",
+        "bodyTemplate": "[{\"order_reference\": \"${order_reference}\", \"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}}]"
+      }
+    },
+    {
+      "name": "manomano_ship_order",
+      "description": "Confirm the shipment of a parcel of an order in PREPARATION: carrier, tracking number and URL, and the products in the parcel. The order moves to SHIPPED and the customer is notified. For an order sent in several parcels, call once per parcel. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier name, e.g. UPS, Colissimo, DHL, GLS, Chronopost, DPD."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the parcel."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Public tracking URL of the parcel."
+          },
+          "products": {
+            "type": "array",
+            "description": "The products concerned, each with its seller_sku and quantity (from manomano_get_order).",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "seller_sku": {
+                  "type": "string",
+                  "description": "Your SKU of the product, as in the order."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Number of units.",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "seller_sku",
+                "quantity"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_reference",
+          "carrier",
+          "tracking_number",
+          "tracking_url",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/v1/shippings",
+        "bodyTemplate": "[{\"order_reference\": \"${order_reference}\", \"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"carrier\": \"${carrier}\", \"tracking_number\": \"${tracking_number}\", \"tracking_url\": \"${tracking_url}\", \"products\": ${products}}]"
+      }
+    },
+    {
+      "name": "manomano_refund_order",
+      "description": "Refund products of an order, fully or partly. The order goes to REFUNDING, then REFUNDED once the money is returned. NO_STOCK when the seller cannot deliver, CUSTOMER_CANCEL when the customer withdrew. Cannot be undone. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          },
+          "products": {
+            "type": "array",
+            "description": "The products concerned, each with its seller_sku and quantity (from manomano_get_order).",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "seller_sku": {
+                  "type": "string",
+                  "description": "Your SKU of the product, as in the order."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Number of units.",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "seller_sku",
+                "quantity"
+              ]
+            }
+          },
+          "refund_reason": {
+            "type": "string",
+            "description": "NO_STOCK for a seller reason (no stock, cannot deliver), CUSTOMER_CANCEL for a customer reason (withdrawal).",
+            "enum": [
+              "NO_STOCK",
+              "CUSTOMER_CANCEL"
+            ]
+          },
+          "refund_shipping_fees": {
+            "type": "boolean",
+            "description": "Also refund the shipping fees.",
+            "default": false
+          }
+        },
+        "required": [
+          "order_reference",
+          "products",
+          "refund_reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/v1/refunds",
+        "bodyTemplate": "[{\"order_reference\": \"${order_reference}\", \"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"products\": ${products}, \"refund_reason\": \"${refund_reason}\", \"refund_shipping_fees\": ${refund_shipping_fees}}]"
+      }
+    },
+    {
+      "name": "manomano_list_offers",
+      "description": "Read offers of this seller contract: SKU, price (VAT included), stock, carrier grid and delivery window, ManoMano product id and page link, and the status of the last price or stock update (IN PROGRESS, ERROR with the error list, COMPLETED). Online offers only unless offer_online is false. Filter by SKUs or by the request_id of an update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "string",
+            "description": "SKUs separated by commas."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Only offers changed by this update, using the request id returned by manomano_update_offers."
+          },
+          "offer_online": {
+            "type": "boolean",
+            "description": "false to read offline offers instead of online ones."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Offers per page.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/offer-information/offers",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}",
+          "skus": "$skus",
+          "request_id": "$request_id",
+          "offer_online": "$offer_online",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "manomano_update_offers",
+      "description": "Change the price and/or stock of existing offers by SKU. By default the new values are frozen, so the product feed import no longer overwrites them; set frozen_price or frozen_stock to false to let the feed keep control. Applied asynchronously: keep the returned request id and check it with manomano_list_offers (request_id). Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "The offers to change, each with its sku and a price, a stock or both.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "SKU of the offer."
+                },
+                "price": {
+                  "type": "object",
+                  "description": "New price.",
+                  "properties": {
+                    "price_vat_included": {
+                      "type": "number",
+                      "description": "Selling price, VAT included."
+                    },
+                    "retail_price_vat_included": {
+                      "type": "number",
+                      "description": "Recommended retail price (shown struck through), VAT included."
+                    },
+                    "frozen_price": {
+                      "type": "boolean",
+                      "description": "Keep this price against feed imports (default true)."
+                    },
+                    "frozen_msrp": {
+                      "type": "boolean",
+                      "description": "Keep this retail price against feed imports (default true)."
+                    }
+                  }
+                },
+                "stock": {
+                  "type": "object",
+                  "description": "New stock.",
+                  "properties": {
+                    "quantity": {
+                      "type": "integer",
+                      "description": "Units available.",
+                      "minimum": 0
+                    },
+                    "frozen_stock": {
+                      "type": "boolean",
+                      "description": "Keep this stock against feed imports (default true)."
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sku"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/offer-information/offers",
+        "bodyTemplate": "{\"content\": [{\"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"items\": ${items}}]}"
+      }
+    },
+    {
+      "name": "manomano_unfreeze_offers",
+      "description": "Hand the price and/or stock of offers back to the product feed: after this, the next feed import overwrites the values set through the API. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "SKUs to unfreeze.",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "What to unfreeze: PRICE, STOCK or both.",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRICE",
+                "STOCK"
+              ]
+            }
+          }
+        },
+        "required": [
+          "skus",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/offer-information/offers-unfreeze",
+        "bodyTemplate": "{\"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"skus\": ${skus}, \"fields\": ${fields}}"
+      }
+    },
+    {
+      "name": "manomano_upsert_offers",
+      "description": "Create offers or replace them completely, up to 20 per call: stock, pricing, shipping (weight and carrier grid) and packaging are all required and replace what is there. A new SKU with the EAN of a product already in the ManoMano catalog becomes an offer without a product import. For a simple price or stock change use manomano_update_offers instead. Each SKU has its own result in content[].response.status. Installed switched off because it overwrites whole offers. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "description": "1 to 20 complete offers.",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "SKU of the offer."
+                },
+                "ean": {
+                  "type": "string",
+                  "description": "EAN of the product; only used when the SKU is new."
+                },
+                "stock": {
+                  "type": "integer",
+                  "description": "Units available.",
+                  "minimum": 0
+                },
+                "pricing": {
+                  "type": "object",
+                  "description": "Prices, VAT included.",
+                  "properties": {
+                    "price_vat_included": {
+                      "type": "number",
+                      "description": "Selling price."
+                    },
+                    "retail_price_vat_included": {
+                      "type": "number",
+                      "description": "Recommended retail price, shown struck through."
+                    },
+                    "eco_participation": {
+                      "type": "number",
+                      "description": "Eco-participation amount; required on the French platform."
+                    },
+                    "bulk_discount": {
+                      "type": "object",
+                      "description": "Tiered discount, e.g. {\"type\": \"PERCENT\", \"bounds\": [{\"quantity\": 5, \"value\": 10}]}.",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "Discount type, e.g. PERCENT."
+                        },
+                        "bounds": {
+                          "type": "array",
+                          "description": "Tiers with a minimum quantity and a discount value.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "quantity": {
+                                "type": "integer",
+                                "description": "Minimum quantity."
+                              },
+                              "value": {
+                                "type": "number",
+                                "description": "Discount value."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "price_vat_included"
+                  ]
+                },
+                "shipping": {
+                  "type": "object",
+                  "description": "Shipping constraints.",
+                  "properties": {
+                    "display_weight": {
+                      "type": "number",
+                      "description": "Weight used for shipping, in kg."
+                    },
+                    "carrier_grid": {
+                      "type": "array",
+                      "description": "Carrier grids with delivery times.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "description": "Carrier grid name as configured in the Toolbox, e.g. CARRIER_GRID_1."
+                          },
+                          "shipping_time_min": {
+                            "type": "integer",
+                            "description": "Minimum delivery days."
+                          },
+                          "shipping_time_max": {
+                            "type": "integer",
+                            "description": "Maximum delivery days."
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "packaging": {
+                  "type": "object",
+                  "description": "Quantity rules.",
+                  "properties": {
+                    "min_quantity": {
+                      "type": "integer",
+                      "description": "Minimum units per order."
+                    },
+                    "increment": {
+                      "type": "integer",
+                      "description": "Units are sold in steps of this size."
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sku",
+                "stock",
+                "pricing",
+                "shipping",
+                "packaging"
+              ]
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v1/offers",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        },
+        "bodyMapping": {
+          "__raw": "$offers"
+        }
+      }
+    },
+    {
+      "name": "manomano_get_offer_competitiveness",
+      "description": "Compare your offers with the competition for given SKUs: the current best offer and its price and delivery mode, whether yours is the best offer, and the other offers on the same product, per platform. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "SKUs to look up.",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Offers per page, up to 250.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/competitiveness/offers/search",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        },
+        "bodyTemplate": "{\"filters\": {\"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"skus\": ${skus}}, \"page\": ${page}, \"limit\": ${limit}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "manomano_list_competitiveness_changes",
+      "description": "List the competitiveness data of every offer whose competitive situation changed within a date range: best offer, whether yours is the best, and the competing offers. Both dates are required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_at_from": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "updated_at_to": {
+            "type": "string",
+            "description": "End of the window, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Offers per page, up to 250.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 250
+          }
+        },
+        "required": [
+          "updated_at_from",
+          "updated_at_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/competitiveness/offers/search",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        },
+        "bodyTemplate": "{\"filters\": {\"seller_contract_id\": {{MANOMANO_SELLER_CONTRACT_ID}}, \"updated_at_from\": \"${updated_at_from}\", \"updated_at_to\": \"${updated_at_to}\"}, \"page\": ${page}, \"limit\": ${limit}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "manomano_search_products_by_ean",
+      "description": "Look up products in the ManoMano catalog by EAN and country, up to 200 at once: title, ManoMano id (mmid) and whether an offer can be published on it (with the reason when not). EANs not in the catalog are simply missing from the answer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "EAN and locale pairs.",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ean": {
+                  "type": "string",
+                  "description": "EAN of the product."
+                },
+                "locale": {
+                  "type": "string",
+                  "description": "Platform: fr_FR, es_ES, it_IT, en_GB or de_DE.",
+                  "enum": [
+                    "fr_FR",
+                    "es_ES",
+                    "it_IT",
+                    "en_GB",
+                    "de_DE"
+                  ]
+                }
+              },
+              "required": [
+                "ean",
+                "locale"
+              ]
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product-catalog/seller-catalog/api/v1/products/ean/search",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        },
+        "bodyMapping": {
+          "__raw": "$products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "manomano_list_fulfillment_stock",
+      "description": "Read ManoFulfillment (MMF) warehouse stock per SKU: available for sale, reserved, inbound, in returns and unfulfillable (with the reasons). Only for a ManoFulfillment contract; other contracts get an error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only this SKU."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number.",
+            "default": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 30).",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mano-fulfillment/catalog/v1/offers/stock",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}",
+          "sku": "$sku",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "manomano_list_invoice_requests",
+      "description": "List the invoices customers are waiting for, oldest request first, with order reference, request date and order date. The seller has 3 working days after shipment to provide the invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/invoice-requests",
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        }
+      }
+    },
+    {
+      "name": "manomano_get_order_documents",
+      "description": "List the invoice or credit note documents already uploaded for an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "INVOICE or CREDIT_NOTE.",
+            "enum": [
+              "INVOICE",
+              "CREDIT_NOTE"
+            ],
+            "default": "INVOICE"
+          }
+        },
+        "required": [
+          "order_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/orders/{order_reference}/documents",
+        "encodePathParams": true,
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}",
+          "document_type": "$document_type"
+        }
+      }
+    },
+    {
+      "name": "manomano_upload_order_document",
+      "description": "Upload an invoice or credit note PDF for an order. The document is added (never replaces an earlier one), shown in the Toolbox and in the customer's account, and the customer is notified. A credit note needs an invoice first. file_url is the address of the PDF; the connector downloads it and uploads it. Acts on the live marketplace: show the user exactly what will change and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_reference": {
+            "type": "string",
+            "description": "The ManoMano order reference."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "INVOICE or CREDIT_NOTE.",
+            "enum": [
+              "INVOICE",
+              "CREDIT_NOTE"
+            ]
+          },
+          "file_url": {
+            "type": "string",
+            "description": "https address of the PDF to upload.",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "order_reference",
+          "document_type",
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/orders/{order_reference}/documents",
+        "encodePathParams": true,
+        "queryParams": {
+          "seller_contract_id": "{{MANOMANO_SELLER_CONTRACT_ID}}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "document_type": "$document_type"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1219 @@
+{
+  "slug": "gong",
+  "name": "Gong",
+  "aliases": [
+    "Gong.io",
+    "Gong Engage"
+  ],
+  "description": "Let your AI work with Gong: find recorded sales calls, read transcripts, AI briefs and highlights, review rep activity, talk ratios and scorecards, ask about accounts and deals, and manage Engage flows and tasks.",
+  "instructions": "## Gong\nThis connector reads **Gong** (revenue intelligence) through the Gong REST API v2 with an access key created by a Gong technical administrator: recorded calls and their metadata, AI call briefs, highlights, outlines and topics, transcripts, users, activity and interaction statistics, scorecards, trackers, the call library, Engage flows and tasks, and the AI answers Gong writes about CRM accounts and deals.\n\n**Setup (about 5 minutes, needs a Gong technical administrator)**\n1. In Gong open **Admin center → Settings → Ecosystem → API** (https://app.gong.io/company/api-authentication?currentTab=MY_API_TAB).\n2. Click **Create** to get an **Access Key** and an **Access Key Secret**. The secret is shown once: copy it at once.\n3. Copy the **API base URL** shown on the same page. Gong gives many companies their own host, such as `https://us-12345.api.gong.io`; use `https://api.gong.io` only when the page shows that.\n4. Paste the three values into `GONG_API_BASE_URL`, `GONG_ACCESS_KEY` and `GONG_ACCESS_KEY_SECRET` and install. Key and secret are sent as HTTP Basic credentials and only to Gong.\n\nThe key acts for the whole company, not for one user: whoever uses this connector sees every call, transcript and user the key can reach. Share the MCP server only with people allowed to see that.\n\n**Limits**: Gong allows 3 API calls per second and 10,000 per day per company by default; more calls answer 429 with a Retry-After header. Lists come in pages: when `records.cursor` is present, call the same tool again with the same filters and that `cursor`; when it is missing you have everything.\n\n**How to work**\n1. Find the calls: `gong_list_calls` for a date range (ids, titles, start, duration, host), `gong_get_call` for one call by id, or `gong_get_call_details` with `from_date_time`/`to_date_time`, `call_ids` or `primary_user_ids` for the parties and Gong's AI content (brief, key points, highlights, outline, topics, trackers, call outcome).\n2. Read what was said: `gong_get_call_transcripts` for a few `call_ids` at a time (transcripts are long). Each monologue has a `speakerId`; `gong_get_call_details` with `include_parties` maps it to a person.\n3. People: `gong_list_users` / `gong_get_user` turn user ids (`primaryUserId`, `userId`) into names and emails.\n4. Coaching and activity: `gong_get_activity_stats`, `gong_get_activity_by_period`, `gong_get_interaction_stats` (talk ratio, longest monologue, interactivity, patience; calls with Whisper on), `gong_list_answered_scorecards` with `gong_list_scorecards` for the questions, `gong_list_trackers` for the keyword trackers.\n5. Accounts and deals: `gong_ask_about_crm_entity` answers a question about a CRM account, deal, contact or lead from its calls and emails; `gong_get_crm_entity_brief` generates a brief configured in Gong's Agent Studio. **Both spend Gong AI credits** according to the calls and emails they read; use them when the user asks for it.\n6. Library and settings: `gong_list_library_folders`, then `gong_list_library_folder_calls`; `gong_list_workspaces` for the workspace ids the CRM entity tools need and other tools filter by; `gong_list_call_outcomes` for the dialer's call outcomes.\n7. Gong Engage (needs Engage licences): `gong_list_flows`, `gong_list_prospect_flows`, `gong_list_tasks`; the writes `gong_assign_prospects_to_flow` and `gong_update_task` change what reps and prospects receive, so confirm with the user before each one.\n8. Data privacy: `gong_find_data_for_email` lists the calls, emails and CRM records that mention an email address. `gong_erase_data_for_email` deletes them for good and is installed switched off: an administrator turns it on deliberately, and the model confirms the address with the user before calling it.\n\nDates: call filters take ISO 8601 date-times (`2026-10-01T00:00:00Z`); statistics take dates (`2026-10-01`) in the company's time zone, `to_date` exclusive and not after today.\n\n**Common errors**\n- 401: the access key or secret is wrong, or the key was deleted. Create a new one under Ecosystem → API.\n- 404 on every call: the base URL is not your company's. Copy the API base URL from the API page.\n- 404 with \"No calls found corresponding to the provided filters\": the filters matched no calls; widen the date range or check the ids.\n- 403: the key is not allowed to use this endpoint, or the feature (Engage, AI Briefer, Ask anything) is not licensed.\n- 429: the per-second or daily limit is reached. Wait for Retry-After and retry once.\n- 400: a parameter is invalid; the message names it. Date ranges in the future are refused by the statistics endpoints.\n\n**Out of scope here**: uploading calls and media, meetings, CRM uploads, digital interactions, permission profiles, the audit log, coaching and account or contact enrichment.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "gong",
+  "docsUrl": "https://gong.app.gong.io/settings/api/documentation",
+  "prerequisites": "A Gong technical administrator who can create an API access key under Admin center, Settings, Ecosystem, API, and the company's API base URL shown on that page. About 5 minutes.",
+  "requiredEnvVars": [
+    "GONG_API_BASE_URL",
+    "GONG_ACCESS_KEY",
+    "GONG_ACCESS_KEY_SECRET"
+  ],
+  "envVarMeta": {
+    "GONG_API_BASE_URL": {
+      "label": "API base URL",
+      "kind": "address",
+      "help": "Gong, Admin center, Settings, Ecosystem, API: the base URL shown there, e.g. https://us-12345.api.gong.io. Use https://api.gong.io only if the page shows that.",
+      "link": "https://app.gong.io/company/api-authentication?currentTab=MY_API_TAB",
+      "example": "https://us-12345.api.gong.io",
+      "pattern": "^(https://)?([A-Za-z0-9-]+\\.)?api\\.gong\\.io/?$",
+      "patternMessage": "Paste the API base URL from Gong's API page, such as https://us-12345.api.gong.io, without /v2 or any other path."
+    },
+    "GONG_ACCESS_KEY": {
+      "label": "Access key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Created with the Create button on Gong's API page (Admin center, Settings, Ecosystem, API).",
+      "link": "https://app.gong.io/company/api-authentication?currentTab=MY_API_TAB",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the access key as Gong shows it, without spaces."
+    },
+    "GONG_ACCESS_KEY_SECRET": {
+      "label": "Access key secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once, together with the access key, when the key is created. If it was lost, create a new key.",
+      "link": "https://app.gong.io/company/api-authentication?currentTab=MY_API_TAB",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the secret as Gong shows it, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Gong refused the access key or secret: they are wrong, swapped or the key was deleted. Create a new key under Admin center, Settings, Ecosystem, API.",
+    "403": "Gong refused this key for the request. Check that the key is active and the company's API access is enabled.",
+    "404": "Nothing answered at this base URL. Copy the API base URL exactly as shown on Gong's API page (for example https://us-12345.api.gong.io).",
+    "429": "Gong's API limit is reached (3 calls a second, 10,000 a day by default). Wait a minute and verify again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "gong_list_workspaces"
+  },
+  "connector": {
+    "name": "Gong",
+    "type": "REST",
+    "baseUrl": "{{GONG_API_BASE_URL}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{GONG_ACCESS_KEY}}",
+      "password": "{{GONG_ACCESS_KEY_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v2/workspaces"
+  },
+  "tools": [
+    {
+      "name": "gong_list_workspaces",
+      "description": "List the Gong workspaces of the company (id, name, description). Workspace ids filter calls, trackers, library folders and flows, and are required by the CRM entity tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/workspaces"
+      }
+    },
+    {
+      "name": "gong_list_users",
+      "description": "List the Gong users of the company, 100 per page, with id, email, name, title, manager, active flag and recording settings. Use it to turn user ids from calls and statistics into people. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          },
+          "include_avatars": {
+            "type": "boolean",
+            "description": "Also list Gong staff avatars (support and success people who access the instance)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users",
+        "queryParams": {
+          "cursor": "$cursor",
+          "includeAvatars": "$include_avatars"
+        }
+      }
+    },
+    {
+      "name": "gong_get_user",
+      "description": "Get one Gong user by id: email, name, title, phone, manager id, active flag, recording and import settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Gong user id (up to 20 digits)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{id}"
+      }
+    },
+    {
+      "name": "gong_list_calls",
+      "description": "List the Gong calls that started in a date range, 100 per page: id, title, url, scheduled and started time, duration in seconds, host (primaryUserId), direction, scope (internal or external), system, language and workspace. For parties, AI briefs and topics use gong_get_call_details; for what was said use gong_get_call_transcripts. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date_time": {
+            "type": "string",
+            "description": "Calls that started at or after this moment, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to_date_time": {
+            "type": "string",
+            "description": "Calls that started before this moment, ISO 8601, e.g. 2026-10-08T00:00:00Z."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Optional workspace id (from gong_list_workspaces) to limit the result to one workspace."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        },
+        "required": [
+          "from_date_time",
+          "to_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/calls",
+        "queryParams": {
+          "fromDateTime": "$from_date_time",
+          "toDateTime": "$to_date_time",
+          "workspaceId": "$workspace_id",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "gong_get_call",
+      "description": "Get the basic data of one Gong call by id: title, url, start, duration, host, direction, scope, media, language, workspace. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Gong call id (up to 20 digits)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/calls/{id}"
+      }
+    },
+    {
+      "name": "gong_get_call_details",
+      "description": "Get detailed data for Gong calls chosen by date range, call ids or hosts: metadata plus, as asked, the parties (name, email, company, speakerId), Gong's AI brief, key points, highlights, outline, call outcome, topics with durations, trackers, interaction statistics, public comments and CRM context. Sent as a POST but only reads. Give call_ids or a date range; pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gong call ids to fetch. Combine with a date range or use alone."
+          },
+          "from_date_time": {
+            "type": "string",
+            "description": "Calls that started at or after this moment, ISO 8601."
+          },
+          "to_date_time": {
+            "type": "string",
+            "description": "Calls that started before this moment, ISO 8601."
+          },
+          "primary_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only calls hosted by these Gong user ids."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Optional workspace id (from gong_list_workspaces) to limit the result to one workspace."
+          },
+          "include_parties": {
+            "type": "boolean",
+            "description": "Participants with name, email, title, company, affiliation and speakerId (to read transcripts). Default true.",
+            "default": true
+          },
+          "include_brief": {
+            "type": "boolean",
+            "description": "Gong's AI summary (spotlight brief) of the call. Default true.",
+            "default": true
+          },
+          "include_key_points": {
+            "type": "boolean",
+            "description": "The key points of the call. Default true.",
+            "default": true
+          },
+          "include_highlights": {
+            "type": "boolean",
+            "description": "Highlights such as next steps, action items and questions. Default true.",
+            "default": true
+          },
+          "include_outline": {
+            "type": "boolean",
+            "description": "The call outline by section, with timestamps."
+          },
+          "include_call_outcome": {
+            "type": "boolean",
+            "description": "The call outcome set on the call."
+          },
+          "include_topics": {
+            "type": "boolean",
+            "description": "The topics discussed and how long each took."
+          },
+          "include_trackers": {
+            "type": "boolean",
+            "description": "Smart and keyword trackers that fired in the call."
+          },
+          "include_interaction": {
+            "type": "boolean",
+            "description": "Speaker talk times, question counts and the host's interaction statistics."
+          },
+          "include_comments": {
+            "type": "boolean",
+            "description": "Public comments left on the call."
+          },
+          "context": {
+            "type": "string",
+            "description": "CRM context: Basic adds links to the CRM objects (account, deal), Extended also their fields. Default None.",
+            "enum": [
+              "None",
+              "Basic",
+              "Extended"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/calls/extensive",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "callIds": "$call_ids",
+            "fromDateTime": "$from_date_time",
+            "toDateTime": "$to_date_time",
+            "primaryUserIds": "$primary_user_ids",
+            "workspaceId": "$workspace_id"
+          },
+          "contentSelector": {
+            "context": "$context",
+            "exposedFields": {
+              "parties": "$include_parties",
+              "content": {
+                "brief": "$include_brief",
+                "keyPoints": "$include_key_points",
+                "highlights": "$include_highlights",
+                "outline": "$include_outline",
+                "callOutcome": "$include_call_outcome",
+                "topics": "$include_topics",
+                "trackers": "$include_trackers"
+              },
+              "interaction": {
+                "speakers": "$include_interaction",
+                "questions": "$include_interaction",
+                "personInteractionStats": "$include_interaction"
+              },
+              "collaboration": {
+                "publicComments": "$include_comments"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "records": "$.records",
+            "calls": "$.calls"
+          },
+          "maxBytes": 300000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_get_call_transcripts",
+      "description": "Get the transcripts of Gong calls: for each call a list of monologues with speakerId, topic and sentences (start and end in milliseconds, text). Transcripts are long, so ask for a few call_ids at a time; map speakerId to people with gong_get_call_details (include_parties). Sent as a POST but only reads. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gong call ids whose transcripts to fetch, ideally 1 to 5."
+          },
+          "from_date_time": {
+            "type": "string",
+            "description": "Calls that started at or after this moment, ISO 8601 (instead of or with call_ids)."
+          },
+          "to_date_time": {
+            "type": "string",
+            "description": "Calls that started before this moment, ISO 8601."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Optional workspace id (from gong_list_workspaces) to limit the result to one workspace."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/calls/transcript",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "callIds": "$call_ids",
+            "fromDateTime": "$from_date_time",
+            "toDateTime": "$to_date_time",
+            "workspaceId": "$workspace_id"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "records": "$.records",
+            "callTranscripts": "$.callTranscripts"
+          },
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_get_activity_stats",
+      "description": "Get each Gong user's activity totals for a date range: calls hosted, calls attended, feedback given, requested and received, own and others' calls listened to, calls shared, comments, scorecards filled. Sent as a POST but only reads. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "First day, inclusive, YYYY-MM-DD in the company's time zone."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Day after the last one (exclusive), YYYY-MM-DD, not after today."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these Gong user ids. Leave out for every user with activity."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/stats/activity/aggregate",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "fromDate": "$from_date",
+            "toDate": "$to_date",
+            "userIds": "$user_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_get_activity_by_period",
+      "description": "Get each Gong user's activity for a date range grouped by day, week, month, quarter or year, for trends (the same counters as gong_get_activity_stats). Sent as a POST but only reads. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "First day, inclusive, YYYY-MM-DD in the company's time zone."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Day after the last one (exclusive), YYYY-MM-DD, not after today."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these Gong user ids. Leave out for every user with activity."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          },
+          "aggregation_period": {
+            "type": "string",
+            "description": "How to group: DAY, WEEK (weeks start on Monday), MONTH, QUARTER or YEAR.",
+            "enum": [
+              "DAY",
+              "WEEK",
+              "MONTH",
+              "QUARTER",
+              "YEAR"
+            ]
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "aggregation_period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/stats/activity/aggregate-by-period",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "fromDate": "$from_date",
+            "toDate": "$to_date",
+            "userIds": "$user_ids"
+          },
+          "aggregationPeriod": "$aggregation_period"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_get_interaction_stats",
+      "description": "Get each Gong user's conversation statistics for a date range, from calls with Whisper on: talk ratio, longest monologue, longest customer story, interactivity and patience. Use it for coaching questions. Sent as a POST but only reads. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "First day, inclusive, YYYY-MM-DD in the company's time zone."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Day after the last one (exclusive), YYYY-MM-DD, not after today."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these Gong user ids. Leave out for every user with activity."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/stats/interaction",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "fromDate": "$from_date",
+            "toDate": "$to_date",
+            "userIds": "$user_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_list_answered_scorecards",
+      "description": "List the scorecards filled in for Gong calls, with each answer, score, reviewer and reviewed user, filtered by call date, review date, scorecard or reviewed user. Get the scorecard questions from gong_list_scorecards. Sent as a POST but only reads. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_from_date": {
+            "type": "string",
+            "description": "Calls on or after this day, YYYY-MM-DD (company time zone)."
+          },
+          "call_to_date": {
+            "type": "string",
+            "description": "Calls before this day (exclusive), YYYY-MM-DD."
+          },
+          "review_from_date": {
+            "type": "string",
+            "description": "Reviews on or after this day, YYYY-MM-DD."
+          },
+          "review_to_date": {
+            "type": "string",
+            "description": "Reviews before this day (exclusive), YYYY-MM-DD."
+          },
+          "review_method": {
+            "type": "string",
+            "description": "Manual reviews (Gong default), automatic AI reviews, or both.",
+            "enum": [
+              "MANUAL",
+              "AUTOMATIC",
+              "BOTH"
+            ]
+          },
+          "reviewed_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only scorecards about these Gong user ids."
+          },
+          "scorecard_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these scorecards."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/stats/activity/scorecards",
+        "bodyMapping": {
+          "cursor": "$cursor",
+          "filter": {
+            "callFromDate": "$call_from_date",
+            "callToDate": "$call_to_date",
+            "reviewFromDate": "$review_from_date",
+            "reviewToDate": "$review_to_date",
+            "reviewMethod": "$review_method",
+            "reviewedUserIds": "$reviewed_user_ids",
+            "scorecardIds": "$scorecard_ids"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "records": "$.records",
+            "answeredScorecards": "$.answeredScorecards"
+          },
+          "maxBytes": 250000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_list_scorecards",
+      "description": "List the scorecards defined in Gong with their questions, answer options, workspace, review method and whether they are enabled. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/settings/scorecards"
+      }
+    },
+    {
+      "name": "gong_list_trackers",
+      "description": "List the keyword trackers defined in Gong (name, keywords per language, who must say them, when in the call), for all workspaces or one. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Only trackers of this workspace. Leave out for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/settings/trackers",
+        "queryParams": {
+          "workspaceId": "$workspace_id"
+        }
+      }
+    },
+    {
+      "name": "gong_list_call_outcomes",
+      "description": "List the call outcomes defined in Gong (e.g. Connected, No answer) with category, sentiment and whether the call connected. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/call-outcomes"
+      }
+    },
+    {
+      "name": "gong_list_library_folders",
+      "description": "List the public folders of the Gong call library (id, name, parent folder). Private and archived folders are not returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Only folders of this workspace."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/library/folders",
+        "queryParams": {
+          "workspaceId": "$workspace_id"
+        }
+      }
+    },
+    {
+      "name": "gong_list_library_folder_calls",
+      "description": "List the calls saved in one Gong library folder, with the note, who added it, the url and the snippet (start and end second) when only part of the call was saved. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Library folder id from gong_list_library_folders."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/library/folder-content",
+        "queryParams": {
+          "folderId": "$folder_id"
+        }
+      }
+    },
+    {
+      "name": "gong_ask_about_crm_entity",
+      "description": "Ask Gong a question about a CRM account, deal, contact or lead and get an answer written from up to 60 of its calls and 500 emails in the period, with the calls and emails it used. Spends Gong AI credits according to the calls and emails read, so use it when the user asks for it. Needs Gong's Ask anything feature. Read-only in Gong.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "integer",
+            "description": "Workspace id (from gong_list_workspaces) whose calls and emails are used."
+          },
+          "crm_entity_type": {
+            "type": "string",
+            "description": "Type of the CRM record.",
+            "enum": [
+              "ACCOUNT",
+              "DEAL",
+              "CONTACT",
+              "LEAD"
+            ]
+          },
+          "crm_entity_id": {
+            "type": "string",
+            "description": "The record's id in the CRM (e.g. the Salesforce or HubSpot id), not a Gong id."
+          },
+          "time_period": {
+            "type": "string",
+            "description": "Which calls and emails to use: a preset such as LAST_90DAYS, or CUSTOM_RANGE with from_date_time.",
+            "enum": [
+              "LAST_7DAYS",
+              "LAST_30DAYS",
+              "LAST_90DAYS",
+              "LAST_90_DAYS_SINCE_LAST_ACTIVITY",
+              "LAST_YEAR_SINCE_LAST_ACTIVITY",
+              "LAST_YEAR",
+              "THIS_WEEK",
+              "THIS_MONTH",
+              "THIS_QUARTER",
+              "THIS_YEAR",
+              "CUSTOM_RANGE",
+              "ALL_CONVERSATIONS"
+            ]
+          },
+          "from_date_time": {
+            "type": "string",
+            "description": "With CUSTOM_RANGE (required then): calls and emails on or after this moment, ISO 8601 UTC, e.g. 2026-07-01T00:00:00Z."
+          },
+          "to_date_time": {
+            "type": "string",
+            "description": "With CUSTOM_RANGE: calls and emails before this moment, ISO 8601 UTC."
+          },
+          "question": {
+            "type": "string",
+            "description": "The question, e.g. \"What are the main objections and who is the economic buyer?\""
+          }
+        },
+        "required": [
+          "workspace_id",
+          "crm_entity_type",
+          "crm_entity_id",
+          "time_period",
+          "question"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entities/ask-entity",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "crmEntityType": "$crm_entity_type",
+          "crmEntityId": "$crm_entity_id",
+          "timePeriod": "$time_period",
+          "fromDateTime": "$from_date_time",
+          "toDateTime": "$to_date_time",
+          "question": "$question"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "numOfCallsSearched": "$.numOfCallsSearched",
+            "numOfEmailsSearched": "$.numOfEmailsSearched",
+            "answer": "$.answer"
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gong_get_crm_entity_brief",
+      "description": "Generate a brief for a CRM account, deal, contact or lead with a brief template set up in Gong's Agent Studio (AI Briefer), written from its calls and emails in the period, with the findings it used. Spends Gong AI credits according to the calls and emails read. The brief name must match one configured in Gong. Read-only in Gong.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "integer",
+            "description": "Workspace id (from gong_list_workspaces) whose calls and emails are used."
+          },
+          "crm_entity_type": {
+            "type": "string",
+            "description": "Type of the CRM record.",
+            "enum": [
+              "ACCOUNT",
+              "DEAL",
+              "CONTACT",
+              "LEAD"
+            ]
+          },
+          "crm_entity_id": {
+            "type": "string",
+            "description": "The record's id in the CRM (e.g. the Salesforce or HubSpot id), not a Gong id."
+          },
+          "time_period": {
+            "type": "string",
+            "description": "Which calls and emails to use: a preset such as LAST_90DAYS, or CUSTOM_RANGE with from_date_time.",
+            "enum": [
+              "LAST_7DAYS",
+              "LAST_30DAYS",
+              "LAST_90DAYS",
+              "LAST_90_DAYS_SINCE_LAST_ACTIVITY",
+              "LAST_YEAR_SINCE_LAST_ACTIVITY",
+              "LAST_YEAR",
+              "THIS_WEEK",
+              "THIS_MONTH",
+              "THIS_QUARTER",
+              "THIS_YEAR",
+              "CUSTOM_RANGE",
+              "ALL_CONVERSATIONS"
+            ]
+          },
+          "from_date_time": {
+            "type": "string",
+            "description": "With CUSTOM_RANGE (required then): calls and emails on or after this moment, ISO 8601 UTC, e.g. 2026-07-01T00:00:00Z."
+          },
+          "to_date_time": {
+            "type": "string",
+            "description": "With CUSTOM_RANGE: calls and emails before this moment, ISO 8601 UTC."
+          },
+          "brief_name": {
+            "type": "string",
+            "description": "Name of the brief as configured in Gong Agent Studio, AI Briefer."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "brief_name",
+          "crm_entity_type",
+          "crm_entity_id",
+          "time_period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entities/get-brief",
+        "queryParams": {
+          "workspaceId": "$workspace_id",
+          "crmEntityType": "$crm_entity_type",
+          "crmEntityId": "$crm_entity_id",
+          "timePeriod": "$time_period",
+          "fromDateTime": "$from_date_time",
+          "toDateTime": "$to_date_time",
+          "briefName": "$brief_name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "numOfCallsSearched": "$.numOfCallsSearched",
+            "numOfEmailsSearched": "$.numOfEmailsSearched",
+            "briefSections": "$.briefSections"
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gong_list_flows",
+      "description": "List the Gong Engage flows a user can use: company flows plus that user's personal and shared flows (id, name, folder, visibility, exclusive). Needs Gong Engage. Pages with records.cursor. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "flow_owner_email": {
+            "type": "string",
+            "description": "Email of the Gong user whose personal and shared flows to include."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Only flows of this workspace."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Only flows in this flow folder."
+          },
+          "most_recently_assigned": {
+            "type": "boolean",
+            "description": "Only the flows this user assigned most recently (up to 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "records.cursor from the previous page, to get the next one. Keep the other filters the same."
+          }
+        },
+        "required": [
+          "flow_owner_email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/flows",
+        "queryParams": {
+          "flowOwnerEmail": "$flow_owner_email",
+          "workspaceId": "$workspace_id",
+          "folderId": "$folder_id",
+          "mostRecentlyAssigned": "$most_recently_assigned",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "gong_list_prospect_flows",
+      "description": "List the Gong Engage flows assigned to CRM contacts or leads (open flows only: pending, running, paused), or the flow instances with the given ids (finished ones too), with status, owner and dates. Sent as a POST but only reads. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crm_prospect_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CRM ids of contacts or leads."
+          },
+          "flow_instance_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Flow instance ids, instead of crm_prospect_ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/flows/prospects",
+        "bodyMapping": {
+          "crmProspectsIds": "$crm_prospect_ids",
+          "flowInstanceIds": "$flow_instance_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_assign_prospects_to_flow",
+      "description": "Assign up to 100 CRM contacts or leads to a Gong Engage flow, which starts its emails, calls and tasks for them under the owner's name. This contacts real people: confirm the flow, the prospects and the owner with the user before calling it. Returns prospectsAssigned with the new flow instance ids and prospectsNotAssigned with the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "flow_id": {
+            "type": "string",
+            "description": "Engage flow id from gong_list_flows."
+          },
+          "crm_prospect_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CRM ids of the contacts or leads, 1 to 100.",
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "flow_instance_owner_email": {
+            "type": "string",
+            "description": "Email of the Gong user who owns the flow's to-dos and sends its messages."
+          },
+          "overrides": {
+            "type": "object",
+            "description": "Optional changes for these prospects: steps ([{\"number\": 1, \"subject\": \"...\", \"body\": \"...\"}]), flowInstanceVariables ([{\"name\": \"...\", \"value\": \"...\"}]) and coolOffOverride (true to assign despite the cool-off period)."
+          },
+          "flow_instance_description": {
+            "type": "string",
+            "description": "Optional description of this assignment (beta in Gong)."
+          }
+        },
+        "required": [
+          "flow_id",
+          "crm_prospect_ids",
+          "flow_instance_owner_email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/flows/prospects/assign",
+        "bodyMapping": {
+          "flowId": "$flow_id",
+          "crmProspectsIds": "$crm_prospect_ids",
+          "flowInstanceOwnerEmail": "$flow_instance_owner_email",
+          "overrides": "$overrides",
+          "flowInstanceDescription": "$flow_instance_description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "gong_list_tasks",
+      "description": "List a Gong user's Engage tasks (call tasks from flows or created by hand) by status, with due date, priority, contact, account, opportunity and flow step. Needs Gong Engage. Sent as a POST but only reads. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Gong user id of the task owner (from gong_list_users)."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "DONE",
+                "DISMISSED"
+              ]
+            },
+            "description": "Task statuses to include. Default [\"OPEN\"].",
+            "default": [
+              "OPEN"
+            ]
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FLOW",
+                "MANUAL"
+              ]
+            },
+            "description": "FLOW for tasks from flows, MANUAL for one-off tasks. Default both.",
+            "default": [
+              "FLOW",
+              "MANUAL"
+            ]
+          },
+          "task_actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CALL"
+              ]
+            },
+            "description": "Task actions to include. Gong supports CALL. Default [\"CALL\"].",
+            "default": [
+              "CALL"
+            ]
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Only tasks of this workspace."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/tasks",
+        "bodyMapping": {
+          "filter": {
+            "userId": "$user_id",
+            "status": "$statuses",
+            "types": "$types",
+            "taskAction": "$task_actions",
+            "workspaceId": "$workspace_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gong_update_task",
+      "description": "Update a Gong Engage task: mark it done or dismissed, reopen it, or move its due date or priority. Confirm the change with the user before calling it. Returns the updated task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Engage task id from gong_list_tasks."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Gong user id of the task owner."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "OPEN",
+              "DONE",
+              "DISMISSED"
+            ]
+          },
+          "due_date": {
+            "type": "string",
+            "description": "New due date and time, ISO 8601."
+          },
+          "has_specific_time": {
+            "type": "boolean",
+            "description": "True to keep the time of due_date; false (Gong default) makes the task due at 23:59 that day."
+          },
+          "priority": {
+            "type": "string",
+            "description": "New priority, as Gong names it."
+          }
+        },
+        "required": [
+          "task_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/tasks/{task_id}",
+        "bodyMapping": {
+          "userId": "$user_id",
+          "status": "$status",
+          "dueDate": "$due_date",
+          "hasSpecificTime": "$has_specific_time",
+          "priority": "$priority"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "gong_find_data_for_email",
+      "description": "Find everything Gong holds about an email address, for a data protection request: emails sent from or to it, calls it appears in, meetings, CRM contacts and leads, and engagement events. Read-only; to delete see gong_erase_data_for_email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_address": {
+            "type": "string",
+            "description": "The email address to look up."
+          }
+        },
+        "required": [
+          "email_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/data-privacy/data-for-email-address",
+        "queryParams": {
+          "emailAddress": "$email_address"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "emails": "$.emails",
+            "calls": "$.calls",
+            "meetings": "$.meetings",
+            "customerData": "$.customerData",
+            "customerEngagement": "$.customerEngagement"
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "gong_erase_data_for_email",
+      "description": "Permanently delete from Gong every call and email that references an email address, and the leads and contacts with it, for a data protection erasure request. Cannot be undone; it runs over several hours. Installed switched off. Run gong_find_data_for_email first, show the user what will go, and only call this after the user confirms the exact address. Delete the data in the CRM and mail system first, or Gong imports it again.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_address": {
+            "type": "string",
+            "description": "The email address whose data to erase, exactly as confirmed by the user."
+          }
+        },
+        "required": [
+          "email_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/data-privacy/erase-data-for-email-address",
+        "queryParams": {
+          "emailAddress": "$email_address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

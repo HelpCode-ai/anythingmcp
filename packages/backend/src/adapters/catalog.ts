@@ -49,6 +49,7 @@ import * as payone from './de/payone.json';
 import * as personio from './de/personio.json';
 import * as planradar from './de/planradar.json';
 import * as propstack from './de/propstack.json';
+import * as ready2order from './de/ready2order.json';
 import * as sage100 from './de/sage-100.json';
 import * as sapBusinessOne from './de/sap-business-one.json';
 import * as scopevisio from './de/scopevisio.json';
@@ -78,11 +79,13 @@ import * as agilecrm from './intl/agilecrm.json';
 import * as airtable from './intl/airtable.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
+import * as amocrm from './intl/amocrm.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apify from './intl/apify.json';
 import * as apollo from './intl/apollo.json';
 import * as archer from './intl/archer.json';
 import * as asana from './intl/asana.json';
+import * as ashby from './intl/ashby.json';
 import * as asite from './intl/asite.json';
 import * as atera from './intl/atera.json';
 import * as atlassian from './intl/atlassian.json';
@@ -119,6 +122,7 @@ import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as customily from './intl/customily.json';
+import * as daftra from './intl/daftra.json';
 import * as datadog from './intl/datadog.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
@@ -136,6 +140,7 @@ import * as ecwid from './intl/ecwid.json';
 import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
+import * as exa from './intl/exa.json';
 import * as exerciseCom from './intl/exercise-com.json';
 import * as facebookPages from './intl/facebook-pages.json';
 import * as fathom from './intl/fathom.json';
@@ -164,7 +169,9 @@ import * as github from './intl/github.json';
 import * as gitlab from './intl/gitlab.json';
 import * as glpi from './intl/glpi.json';
 import * as gmail from './intl/gmail.json';
+import * as goaffpro from './intl/goaffpro.json';
 import * as gocardless from './intl/gocardless.json';
+import * as gong from './intl/gong.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
 import * as googleCalendar from './intl/google-calendar.json';
@@ -295,6 +302,7 @@ import * as sapS4hanaOdata from './intl/sap-s4hana-odata.json';
 import * as sapSignavio from './intl/sap-signavio.json';
 import * as sapSuccessfactors from './intl/sap-successfactors.json';
 import * as savvycal from './intl/savvycal.json';
+import * as sealSubscriptions from './intl/seal-subscriptions.json';
 import * as seamlessAi from './intl/seamless-ai.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
@@ -346,6 +354,7 @@ import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as webflow from './intl/webflow.json';
+import * as weeek from './intl/weeek.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as wildberries from './intl/wildberries.json';
 import * as wix from './intl/wix.json';
@@ -382,6 +391,8 @@ import * as holded from './es/holded.json';
 import * as quipu from './es/quipu.json';
 import * as axonaut from './fr/axonaut.json';
 import * as dolibarr from './fr/dolibarr.json';
+import * as manomano from './fr/manomano.json';
+import * as octopia from './fr/octopia.json';
 import * as pennylane from './fr/pennylane.json';
 import * as sellsy from './fr/sellsy.json';
 import * as afasProfit from './nl/afas-profit.json';
@@ -650,6 +661,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   personio as unknown as AdapterDefinition,
   planradar as unknown as AdapterDefinition,
   propstack as unknown as AdapterDefinition,
+  ready2order as unknown as AdapterDefinition,
   sage100 as unknown as AdapterDefinition,
   sapBusinessOne as unknown as AdapterDefinition,
   scopevisio as unknown as AdapterDefinition,
@@ -679,11 +691,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   airtable as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
+  amocrm as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
   apify as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   archer as unknown as AdapterDefinition,
   asana as unknown as AdapterDefinition,
+  ashby as unknown as AdapterDefinition,
   asite as unknown as AdapterDefinition,
   atera as unknown as AdapterDefinition,
   atlassian as unknown as AdapterDefinition,
@@ -720,6 +734,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
   customily as unknown as AdapterDefinition,
+  daftra as unknown as AdapterDefinition,
   datadog as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
@@ -737,6 +752,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   erpnext as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
+  exa as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
   facebookPages as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
@@ -765,7 +781,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gitlab as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
   gmail as unknown as AdapterDefinition,
+  goaffpro as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
+  gong as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
   googleCalendar as unknown as AdapterDefinition,
@@ -896,6 +914,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sapSignavio as unknown as AdapterDefinition,
   sapSuccessfactors as unknown as AdapterDefinition,
   savvycal as unknown as AdapterDefinition,
+  sealSubscriptions as unknown as AdapterDefinition,
   seamlessAi as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
@@ -947,6 +966,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
+  weeek as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
   wix as unknown as AdapterDefinition,
@@ -983,6 +1003,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   quipu as unknown as AdapterDefinition,
   axonaut as unknown as AdapterDefinition,
   dolibarr as unknown as AdapterDefinition,
+  manomano as unknown as AdapterDefinition,
+  octopia as unknown as AdapterDefinition,
   pennylane as unknown as AdapterDefinition,
   sellsy as unknown as AdapterDefinition,
   afasProfit as unknown as AdapterDefinition,
