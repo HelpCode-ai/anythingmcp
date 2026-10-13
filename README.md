@@ -1,9 +1,5 @@
 <p align="center">
-<<<<<<< HEAD
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 382 connectors, 19 of them with no API key." width="100%" />
-=======
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 383 connectors, 19 of them with no API key." width="100%" />
->>>>>>> origin/helpcode/block7-ai-search
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 385 connectors, 19 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
@@ -23,11 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
-<<<<<<< HEAD
-  It ships 382 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 19 of them need no API key.
-=======
-  It ships 383 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 19 of them need no API key.
->>>>>>> origin/helpcode/block7-ai-search
+  It ships 385 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 19 of them need no API key.
 </p>
 
 <p align="center">
@@ -111,11 +103,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-<<<<<<< HEAD
-382 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
-=======
-383 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
->>>>>>> origin/helpcode/block7-ai-search
+385 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
