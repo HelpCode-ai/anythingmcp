@@ -7,6 +7,7 @@ import { connectors, withSecretsNotice } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
+import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { SetupStatusPill } from '@/components/setup-status';
@@ -265,6 +266,9 @@ export default function ConnectorsPage() {
 
   return (
     <AppShell title="Connectors" actions={headerActions}>
+      <div className="mb-4 empty:hidden">
+        <FirstSuccessOffer via="connectors" />
+      </div>
       {msg && (
         <div className="mb-4 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
           <span>{msg}</span>

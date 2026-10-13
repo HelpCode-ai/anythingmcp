@@ -2,20 +2,24 @@
 
 import { Fragment, useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { audit, connectors as connectorsApi, mcpServers } from '@/lib/api';
+import { audit, connectors as connectorsApi, mcpServers, server } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/clipboard';
+import { buildToolCallCurl } from '@/lib/curl';
+import { getApiOrigin } from '@/lib/origin';
 
 const PAGE_SIZE = 50;
 
 const GRID_COLS = '90px 1.5fr 1.2fr 70px 90px 90px';
 
-function parseClientInfo(raw: string | null | undefined) {
+function parseClientInfo(raw: any) {
   if (!raw) return null;
+  if (typeof raw === 'object') return raw;
   try {
     return JSON.parse(raw);
   } catch {
@@ -93,6 +97,55 @@ export default function LogsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [authMode, setAuthMode] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyErrorId, setCopyErrorId] = useState<string | null>(null);
+
+  // Load server info to determine MCP auth mode (legacy, both, oauth2)
+  useEffect(() => {
+    server.info().then((info) => {
+      if (info?.mcpAuthMode) setAuthMode(info.mcpAuthMode);
+    }).catch(() => {});
+  }, []);
+
+  const handleCopyCurl = async (log: any) => {
+    const serverId = log.mcpServer?.id || log.mcpServerId;
+    // Only the tool's name can be replayed; toolId is a database id.
+    const toolName = log.tool?.name;
+    if (!serverId || !toolName) return;
+
+    let currentAuthMode = authMode;
+    if (!currentAuthMode) {
+      try {
+        const info = await server.info();
+        if (info?.mcpAuthMode) {
+          currentAuthMode = info.mcpAuthMode;
+          setAuthMode(currentAuthMode);
+        }
+      } catch {}
+    }
+
+    const ci = parseClientInfo(log.clientInfo);
+    const origin = getApiOrigin();
+    const command = buildToolCallCurl({
+      origin,
+      serverId,
+      toolName,
+      args: log.input,
+      authMode: currentAuthMode || 'both',
+      authMethod: ci?.authMethod,
+    });
+
+    const ok = await copyText(command);
+    if (ok) {
+      setCopiedId(log.id);
+      setCopyErrorId(null);
+      setTimeout(() => setCopiedId((curr) => (curr === log.id ? null : curr)), 2000);
+    } else {
+      setCopyErrorId(log.id);
+      setTimeout(() => setCopyErrorId((curr) => (curr === log.id ? null : curr)), 3000);
+    }
+  };
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -397,24 +450,79 @@ export default function LogsPage() {
                         </pre>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--text-3)]">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-[var(--text-2)]">User:</span>
-                        <UserCell log={log} />
-                      </div>
-                      {(() => {
-                        const ci = parseClientInfo(log.clientInfo);
-                        if (!ci) return null;
-                        return (
-                          <>
-                            {ci.authMethod && <span>Auth: {authMethodLabel(ci.authMethod)}</span>}
-                            {ci.apiKeyName && <span>Key: {ci.apiKeyName}</span>}
-                          </>
-                        );
-                      })()}
-                      {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
-                      {log.tool?.connector && <span>Connector: {log.tool.connector.name} ({log.tool.connector.type})</span>}
-                    </div>
+                    {(() => {
+                      const isSharedEndpoint = !log.mcpServer;
+                      const isTruncated = Boolean(
+                        log.input &&
+                          typeof log.input === 'object' &&
+                          '_amcp_truncated' in log.input,
+                      ) || (typeof log.input === 'string' && log.input.includes('_amcp_truncated'));
+                      const cannotCopyReason = isSharedEndpoint
+                        ? 'Replay unavailable: call ran through the shared /mcp endpoint'
+                        : isTruncated
+                        ? 'Replay unavailable: stored input parameters were truncated'
+                        : !log.tool?.name
+                        ? 'Replay unavailable: tool name is missing'
+                        : null;
+                      const canCopy = !cannotCopyReason;
+
+                      return (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--text-3)]">
+                          <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium text-[var(--text-2)]">User:</span>
+                              <UserCell log={log} />
+                            </div>
+                            {(() => {
+                              const ci = parseClientInfo(log.clientInfo);
+                              if (!ci) return null;
+                              return (
+                                <>
+                                  {ci.authMethod && <span>Auth: {authMethodLabel(ci.authMethod)}</span>}
+                                  {ci.apiKeyName && <span>Key: {ci.apiKeyName}</span>}
+                                </>
+                              );
+                            })()}
+                            {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
+                            {log.tool?.connector && <span>Connector: {log.tool.connector.name} ({log.tool.connector.type})</span>}
+                          </div>
+
+                          <div className="flex items-center">
+                            <span title={cannotCopyReason || 'Copy as cURL to replay this MCP tool call'}>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={!canCopy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyCurl(log);
+                                }}
+                                aria-label="Copy as cURL"
+                                className="h-[28px] px-2.5 text-[11.5px]"
+                              >
+                                {copiedId === log.id ? (
+                                  <>
+                                    <svg className="h-3.5 w-3.5 text-[var(--ok)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span className="text-[var(--ok)]">Copied!</span>
+                                  </>
+                                ) : copyErrorId === log.id ? (
+                                  <span className="text-[var(--danger)]">Copy failed</span>
+                                ) : (
+                                  <>
+                                    <svg className="h-3.5 w-3.5 text-[var(--text-3)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                    <span>Copy as cURL</span>
+                                  </>
+                                )}
+                              </Button>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </Fragment>

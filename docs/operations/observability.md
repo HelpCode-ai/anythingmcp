@@ -176,6 +176,10 @@ Use the *raw* request body, not a re-serialized JSON object, since re-serializin
 
 The webhook URL is validated with the same guard (`SSRF_GUARD`, private/loopback/metadata-address blocking) used for every other outbound call this app makes on a user's behalf, both when it's saved and again on every dispatch, and redirects are not followed. On AnythingMCP Cloud the URL must use `https`, and it ignores both the env (`SSRF_ALLOWED_HOSTS`) and the admin-editable SSRF allowlist, which name hosts only the platform may reach. On a self-hosted instance the operator's allowlist applies, so an internal Mattermost or Slack proxy can receive alerts.
 
+## Fatal crash reports (always on in the Docker image)
+
+A fatal V8 error, such as an out-of-memory abort, ends the backend before any JavaScript handler runs, so the log has no stack. `start.sh` therefore starts the backend with `--report-on-fatalerror`: on such a crash Node writes a diagnostic report (`report.<date>.<time>.<pid>...json`) with the native stack, heap spaces and resource usage, plus the JavaScript stack when V8 can still produce one. It goes to `HEAP_SNAPSHOT_DIR` (`/app/diagnostics` in the image, a volume on AnythingMCP Cloud), next to the heap snapshots. Environment variables are left out of the report (`--report-exclude-env`); a Node older than 22.13 cannot do that, so on such a build the report stays off. Self-hosted and Cloud behave the same; to keep the reports across container recreation on a self-hosted install, mount a volume at `/app/diagnostics`.
+
 ## Correlating across pipelines
 
 The same `req.id` UUID appears in:

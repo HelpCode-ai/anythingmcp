@@ -9,10 +9,12 @@ import { TrustStatsService } from '../public-stats/trust-stats.service';
 import { EMPTY_TRUST_STATS, TrustStats, formatTrustStats } from '../public-stats/trust-stats.format';
 import type { EmailBrandContext } from './email-layout';
 import {
+  CardTrialOfferEmailInput,
   MarketingContext,
   RenderedEmail,
   WinbackOffer,
   activationReminderEmail,
+  cardTrialOfferEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -637,6 +639,35 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send trial win-back email to ${to}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * The card-trial offer after a workspace's first successful tool call
+   * (Cloud, SMTP only; see card-trial-offer.service.ts). Marketing: the
+   * caller honours the opt-out, and the email carries the unsubscribe line.
+   */
+  async sendCardTrialOfferEmail(
+    to: string,
+    input: Omit<CardTrialOfferEmailInput, 'ctaUrl'> & { ctaPath: string },
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping card-trial offer email to ${to}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctaPath, ...rest } = input;
+    const { ctx, headers } = await this.marketing(to);
+    const email = cardTrialOfferEmail({ ...rest, ctaUrl: `${this.cloudUrl()}${ctaPath}` }, ctx);
+
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });
+      this.logger.log(`Card-trial offer email sent to ${to}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send card-trial offer email to ${to}: ${err}`);
       return false;
     }
   }

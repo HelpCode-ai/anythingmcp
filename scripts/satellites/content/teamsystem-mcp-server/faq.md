@@ -1,46 +1,23 @@
 ### Is there a TeamSystem MCP server?
+AnythingMCP can connect TeamSystem to Claude, ChatGPT and other MCP clients through the API of your TeamSystem product. A ready-made catalog connector is not generally available yet: TeamSystem's API documentation is not public, and API access is enabled per product and per installation by TeamSystem or your TeamSystem partner. Until that changes, the connection is set up for your installation, from the API your vendor gives you.
 
-AnythingMCP provides an adapter for selected TeamSystem API endpoints. Its six tools cover customers, suppliers, invoices and catalogue items. The adapter is unlisted and has not been verified against a live tenant.
+### Which TeamSystem products can be connected?
+Any TeamSystem product for which your licence includes API access. TeamSystem is a family of products (TeamSystem Enterprise, TS Digital, Alyante and others), and each has its own API, versions and authentication. Which one you have, and what its API exposes, is something your TeamSystem partner can confirm.
 
-### How do I connect TeamSystem?
+### What TeamSystem data can an AI work with?
+Whatever your product's API exposes and your API user is allowed to read. In an ERP that usually means customers and suppliers, invoices and other documents, items and prices, and accounting records. Claude can then answer questions across them, such as which invoices are overdue or what a customer bought this year.
 
-Ask your TeamSystem partner to enable the appropriate APIs for your product and tenant. Register or configure an application through the TeamSystem developer portal, obtain its client ID and client secret, and confirm the scopes and tenant ID required for your integration.
+### What do I need from TeamSystem or my partner?
+- The API module or licence enabled for your installation.
+- The base URL of the API you will call.
+- Credentials for an API user, and the authentication method your product uses.
+- The API description, ideally as an OpenAPI (Swagger) file.
 
-Configure these environment variables:
-
-- `TEAMSYSTEM_CLIENT_ID`
-- `TEAMSYSTEM_CLIENT_SECRET`
-- `TEAMSYSTEM_TENANT_ID`
-
-The adapter uses OAuth 2.0 client credentials with the token endpoint `https://auth.teamsystem.com/oauth2/token` and API base URL `https://api.teamsystem.com`. It sends the tenant identifier in the `X-Tenant-Id` header.
-
-### What can I query?
-
-The declared tools can list and retrieve customer records, list suppliers, list invoices by date range or status, retrieve an individual invoice, and search catalogue items. List tools support pagination; relevant list tools also support search filters.
-
-The available data and supported filters depend on the APIs enabled for your product and tenant.
+### How do I connect it today?
+Two ways. [Contact us](https://anythingmcp.com/contact) and we set up the connector for your installation with you. Or build it yourself: create a REST connector in AnythingMCP, import the OpenAPI description your vendor gave you, and each operation becomes a tool. Then add the MCP server URL to Claude as a custom connector or to ChatGPT as an app.
 
 ### Can the AI change data in TeamSystem?
+Only if you let it. Give the MCP server a role that whitelists only the read operations, and the others are invisible to the AI client. Ask your partner for an API user with read-only rights, so the TeamSystem side enforces the same limit.
 
-The six tools declared by this adapter use HTTP GET requests. They do not declare create, update or delete operations. The API credentials and tenant permissions still determine which records the connection can read. Use the minimum permissions required for your task.
-
-### Why do I get a 401 or 403 response?
-
-- **401 Unauthorized:** Check the client ID, client secret, token endpoint and OAuth client-credentials configuration.
-- **403 Forbidden:** Ask your partner to verify that the relevant API is enabled and that your application has the required scopes and permissions.
-- **Unexpectedly empty results:** Confirm the `TEAMSYSTEM_TENANT_ID` value and the tenant associated with the credentials.
-- **404 Not Found:** Confirm that the endpoint paths are supported by your particular TeamSystem product and API configuration.
-
-These are troubleshooting guidelines; exact error behavior can vary by API.
-
-### Why does the tenant ID matter?
-
-TeamSystem uses the `X-Tenant-Id` header to scope requests to a tenant. A valid token alone does not guarantee that you are querying the intended customer's data. Confirm the tenant ID with your integration partner.
-
-### Does this adapter work with every TeamSystem product?
-
-No compatibility guarantee is made. TeamSystem APIs vary by product line and integration configuration. The declared paths and fields have not been exercised against a live tenant, so verify them with the developer portal and your partner before using the adapter in production.
-
-### Can I use it with AnythingMCP Cloud or self-hosted AnythingMCP?
-
-The adapter is configured for use through AnythingMCP. Choose a deployment that can reach the TeamSystem API and token endpoints. In either deployment mode, restrict credentials and API permissions to the minimum needed, and follow your organisation's data-handling policies.
+### Does TeamSystem data leave my network?
+Self-hosted, the credentials and the audit log stay on your server; only the fields a tool returns go to the AI model you use, and response mapping can remove fields before they do. If your TeamSystem installation is only reachable inside your network, run AnythingMCP on that network; AnythingMCP Cloud can only reach an API published on the internet with a valid HTTPS certificate.

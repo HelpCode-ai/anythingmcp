@@ -1,0 +1,387 @@
+{
+  "slug": "google-maps",
+  "name": "Google Maps",
+  "description": "Let your AI search Google Maps with your own API key: find businesses and places by text or around a point, read their address, phone, website, opening hours, rating and reviews, get photos, autocomplete names, geocode addresses and coordinates, and compute routes and travel-time matrices.",
+  "aliases": ["Google Places", "Places API", "Google Maps Platform", "Google Geocoding", "Google Routes API"],
+  "instructions": "## Google Maps Platform\nThis connector calls three Google Maps Platform web services with the user's own API key: **Places API (New)** (`https://places.googleapis.com/v1`: text search, nearby search, place details, photos, autocomplete), **Geocoding API v4** (`https://geocode.googleapis.com/v4`: address to coordinates and back) and **Routes API** (`https://routes.googleapis.com`: routes and travel-time matrices). The key goes in the `X-Goog-Api-Key` header and only to these Google hosts.\n\n**Every call is billed to the user's Google Cloud project** (each SKU has a free monthly allowance). Keep requests lean and do not repeat searches you already ran.\n\n**Setup (about 5 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project and link a billing account (Google Maps Platform requires billing, even within the free allowance).\n2. **APIs & Services, Library**: enable **Places API (New)**, **Geocoding API** and **Routes API**. Only the ones you want to use are needed; a call to an API that is not enabled fails with 403.\n3. **Google Maps Platform, Keys & Credentials, Create credentials, API key**. Under **API restrictions** allow only those three APIs. Do not set a website (HTTP referrer) restriction: the calls come from a server, not a browser. An IP restriction works only if your AnythingMCP server has a fixed outbound address.\n4. Paste the key into `GOOGLE_MAPS_API_KEY` and install the connector. The install check reads one place with the free ID-only field mask.\n\n**Field masks decide the price.** Places searches and details return only the fields you list in `field_mask`, and Google bills the request at the most expensive tier among them. Ask for what the user needs, nothing more:\n- IDs only (free, unlimited): `places.id` (searches) or `id` (details). Also `photos` and `attributions`.\n- Essentials (details only, about $5 per 1,000, 10,000 free a month): `formattedAddress`, `location`, `addressComponents`, `types`, `plusCode`, `viewport`. On searches these fields count as Pro.\n- Pro (searches about $32 per 1,000 with 5,000 free; details about $17 with 5,000 free): `displayName`, `businessStatus`, `googleMapsUri`, `primaryType`, `primaryTypeDisplayName`, `timeZone`, `utcOffsetMinutes`. **This is the default** for searches and details.\n- Enterprise (searches about $35, details about $20 per 1,000, 1,000 free): `nationalPhoneNumber`, `internationalPhoneNumber`, `websiteUri`, `rating`, `userRatingCount`, `regularOpeningHours`, `currentOpeningHours`, `priceLevel`, `priceRange`.\n- Enterprise + Atmosphere (searches about $40, details about $25 per 1,000, 1,000 free): `reviews`, `reviewSummary`, `editorialSummary`, `generativeSummary`, `delivery`, `dineIn`, `takeout`, `outdoorSeating`, `servesVegetarianFood`, `allowsDogs`, `accessibilityOptions`, `parkingOptions`, `paymentOptions` and the other amenity flags.\n\nOn searches every place field is prefixed with `places.` (`places.websiteUri`) and `nextPageToken` is added for paging; on details the field has no prefix (`websiteUri`). Typical masks:\n- Lead list with phone and website: `places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken` (Enterprise).\n- Reviews of one place: details with `id,displayName,rating,userRatingCount,reviews,googleMapsUri` (Enterprise + Atmosphere).\n- Cheapest two-step: search with `places.id` (free), then details only for the few places the user cares about.\nPrices are Google's list prices for the first 100,000 calls a month; check https://developers.google.com/maps/billing-and-pricing/pricing for current figures.\n\n**Tools**\n- `google_maps_search_text`: places from a free-text query (\"dentists in Riyadh Al Yasmin\", \"Bauhaus Freiburg\"), with optional type, rating, price and open-now filters and a location bias or restriction. Up to 20 per page and 60 in total over three pages (`page_token` = `nextPageToken`).\n- `google_maps_search_nearby`: places of given types within a circle around a point, up to 20, ranked by popularity or distance. No paging.\n- `google_maps_get_place`: details of one place by its id.\n- `google_maps_get_place_photo`: a short-lived image link for a photo name from the `photos` field (Place Details Photos, about $7 per 1,000, 1,000 free).\n- `google_maps_autocomplete`: suggestions while the user types a place or address (about $2.83 per 1,000 requests, 10,000 free). Pass the same `session_token` to the autocomplete calls and the final `google_maps_get_place` of one search session: the autocomplete requests of that session are then free.\n- `google_maps_geocode_address` and `google_maps_reverse_geocode`: address to coordinates and coordinates to address (Geocoding, about $5 per 1,000, 10,000 free).\n- `google_maps_compute_routes`: distance, duration and legs of a route by car, bike, on foot, two-wheeler or public transport.\n- `google_maps_compute_route_matrix`: distances and durations between several origins and destinations; each origin and destination pair is billed as one element.\n\n**Routes billing**: Compute Routes Essentials and Compute Route Matrix Essentials (about $5 per 1,000 routes or elements, 10,000 free) for plain requests with up to 10 intermediate stops; Pro (about $10, 5,000 free) as soon as `routing_preference` is `TRAFFIC_AWARE` or `TRAFFIC_AWARE_OPTIMAL` or there are 11 to 25 stops; Enterprise (about $15, 1,000 free) for two-wheeler routing. Leave `routing_preference` out unless the user asks for live traffic. A matrix may hold at most 625 elements (100 with transit or `TRAFFIC_AWARE_OPTIMAL`).\n\n**Reading results**: a place's `id` is its place id (`ChIJ...`), its `name` the resource name `places/ChIJ...`. `displayName.text` is the name. Durations are seconds as a string (`\"1834s\"`); `localizedValues` gives them as text (\"31 mins\"). Coordinates are WGS84 degrees.\n\n**Google's terms**: show Google Maps content with its attribution (\"Google Maps\") and link each place to its `googleMapsUri`; photos must show their `authorAttributions`. Place ids may be stored for later; other place content may not be cached beyond what the Google Maps Platform terms allow.\n\n**Common errors**\n- 400 `API_KEY_INVALID`: the key is wrong or deleted.\n- 400 `INVALID_ARGUMENT` naming a field: a wrong field in `field_mask` or the body. Fix the field name; the mask is required on searches and routes.\n- 403 `SERVICE_DISABLED` or `API_KEY_SERVICE_BLOCKED`: the API is not enabled in the key's project, or the key's API restrictions do not include it.\n- 403 `BILLING_DISABLED`: link a billing account to the project.\n- 429 `RESOURCE_EXHAUSTED`: a per-minute quota or a daily cap set in the console. Wait and retry once; do not loop.\n\n**Also available from Google**: Maps Grounding Lite, Google's own MCP server at `https://mapstools.googleapis.com/mcp`, answers place searches, weather and simple routes with an AI summary. It does not return place details, reviews, photos, autocomplete, geocoding or matrices, which is why this connector uses the REST APIs.",
+  "region": "intl",
+  "category": "maps",
+  "icon": "googlemaps",
+  "docsUrl": "https://developers.google.com/maps/documentation/places/web-service/op-overview",
+  "requiredEnvVars": ["GOOGLE_MAPS_API_KEY"],
+  "envVarMeta": {
+    "GOOGLE_MAPS_API_KEY": {
+      "label": "Google Maps Platform API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Google Cloud console, Google Maps Platform, Keys & Credentials, Create credentials, API key. Enable Places API (New), Geocoding API and Routes API in the same project and restrict the key to them. Calls are billed to that project.",
+      "link": "https://console.cloud.google.com/google/maps-apis/credentials",
+      "pattern": "^[A-Za-z0-9._-]{30,}$",
+      "patternMessage": "Paste the API key exactly as the console shows it (it usually starts with AIza), without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Google refused the API key (API_KEY_INVALID): it is wrong, was deleted, or has extra characters. Copy it again from Google Maps Platform, Keys & Credentials.",
+    "403": "Google refused the call: Places API (New) is not enabled in the key's project, the key's API restrictions do not include it, or billing is not linked to the project. Enable the API under APIs & Services, Library, and check the key's restrictions.",
+    "rate_limited": "The key reached a Google Maps Platform quota. Wait a minute and verify again, or raise the quota in the Google Cloud console."
+  },
+  "probe": {
+    "tool": "google_maps_get_place",
+    "params": { "place_id": "ChIJN1t_tDeuEmsRUsoyG83frY4", "field_mask": "id" }
+  },
+  "prerequisites": "A Google Cloud project with a billing account, Places API (New), Geocoding API and Routes API enabled, and an API key restricted to them. Each API has a free monthly allowance; calls beyond it are billed to your project. About 5 minutes.",
+  "connector": {
+    "name": "Google Maps Platform",
+    "type": "REST",
+    "baseUrl": "https://places.googleapis.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Goog-Api-Key",
+      "apiKey": "{{GOOGLE_MAPS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "google_maps_search_text",
+      "description": "Find places on Google Maps from a free-text query, as in the Maps search box: businesses, points of interest or an address (\"pizza near Freiburg Hauptbahnhof\", \"dental clinic Al Yasmin Riyadh\"). Include the area in the query or pass location_bias. The field_mask decides both the fields returned and the price: the default (name, address, location, type, status, Maps link) is billed as Text Search Pro; phone, website, rating and opening hours make it Enterprise, reviews Enterprise + Atmosphere (see the connector instructions). Up to 20 places per page; pass nextPageToken back as page_token for the next page (60 places at most). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text_query": { "type": "string", "description": "What to search for, with the area, e.g. \"coffee shops in Kreuzberg Berlin\" or \"Hotel Oberkirch Freiburg\"." },
+          "field_mask": {
+            "type": "string",
+            "description": "Comma-separated fields to return, each prefixed with places. (plus nextPageToken for paging). Decides the SKU. Default: Pro fields. Add places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.regularOpeningHours for contact data (Enterprise), places.reviews for reviews (Enterprise + Atmosphere), places.photos for photo names. places.id alone is free.",
+            "default": "places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.businessStatus,places.googleMapsUri,nextPageToken"
+          },
+          "page_size": { "type": "integer", "description": "Places per page, 1 to 20. The price is per request, not per place.", "default": 10 },
+          "page_token": { "type": "string", "description": "nextPageToken from the previous call. Send the other parameters unchanged." },
+          "language_code": { "type": "string", "description": "Language of names and addresses, e.g. en, de, ar, pt-BR. Default: the query's language or English." },
+          "region_code": { "type": "string", "description": "Two-letter CLDR region code of the user, e.g. DE, SA. Affects address formatting and ranking." },
+          "included_type": { "type": "string", "description": "Only one place type from Google's Table A, e.g. restaurant, dentist, hardware_store, lodging." },
+          "strict_type_filtering": { "type": "boolean", "description": "true: return only places of included_type." },
+          "open_now": { "type": "boolean", "description": "true: only places open right now." },
+          "min_rating": { "type": "number", "description": "Minimum average rating, 0 to 5 in steps of 0.5." },
+          "price_levels": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE", "PRICE_LEVEL_EXPENSIVE", "PRICE_LEVEL_VERY_EXPENSIVE"] },
+            "description": "Only places at these price levels."
+          },
+          "rank_preference": { "type": "string", "enum": ["RELEVANCE", "DISTANCE"], "description": "RELEVANCE (default) or DISTANCE from the location bias." },
+          "location_bias": {
+            "type": "object",
+            "description": "Prefer places in this area, others may still appear. Either {\"circle\": {\"center\": {\"latitude\": 47.995, \"longitude\": 7.85}, \"radius\": 5000}} (radius in meters, up to 50000) or {\"rectangle\": {\"low\": {\"latitude\": .., \"longitude\": ..}, \"high\": {\"latitude\": .., \"longitude\": ..}}}. Not together with location_restriction."
+          },
+          "location_restriction": {
+            "type": "object",
+            "description": "Return only places inside this rectangle: {\"rectangle\": {\"low\": {\"latitude\": 47.9, \"longitude\": 7.7}, \"high\": {\"latitude\": 48.1, \"longitude\": 7.95}}} (low = south-west corner, high = north-east). Not together with location_bias."
+          },
+          "include_pure_service_area_businesses": { "type": "boolean", "description": "true: also return businesses without a storefront that serve an area (plumbers, cleaners)." }
+        },
+        "required": ["text_query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/places:searchText",
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "bodyMapping": {
+          "textQuery": "$text_query",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "includedType": "$included_type",
+          "strictTypeFiltering": "$strict_type_filtering",
+          "openNow": "$open_now",
+          "minRating": "$min_rating",
+          "priceLevels": "$price_levels",
+          "rankPreference": "$rank_preference",
+          "locationBias": "$location_bias",
+          "locationRestriction": "$location_restriction",
+          "includePureServiceAreaBusinesses": "$include_pure_service_area_businesses"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "google_maps_search_nearby",
+      "description": "Find places of given types within a circle around a point (\"restaurants within 1 km of 47.995, 7.85\"), ranked by popularity or distance. Needs coordinates: get them from google_maps_geocode_address or a place's location first. Up to 20 places, no paging. The field_mask decides the fields and the price; the default is billed as Nearby Search Pro (about $32 per 1,000, 5,000 free a month). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Latitude of the centre in degrees." },
+          "longitude": { "type": "number", "description": "Longitude of the centre in degrees." },
+          "radius_meters": { "type": "number", "description": "Radius in meters, up to 50000.", "default": 1000 },
+          "included_types": { "type": "array", "items": { "type": "string" }, "description": "Place types to include (Google's Table A), e.g. [\"restaurant\", \"cafe\"]. Leave out for any type." },
+          "excluded_types": { "type": "array", "items": { "type": "string" }, "description": "Place types to leave out." },
+          "included_primary_types": { "type": "array", "items": { "type": "string" }, "description": "Only places whose main type is one of these." },
+          "excluded_primary_types": { "type": "array", "items": { "type": "string" }, "description": "Leave out places whose main type is one of these." },
+          "max_result_count": { "type": "integer", "description": "Places to return, 1 to 20.", "default": 10 },
+          "rank_preference": { "type": "string", "enum": ["POPULARITY", "DISTANCE"], "description": "POPULARITY (default) or DISTANCE from the centre." },
+          "language_code": { "type": "string", "description": "Language of names and addresses, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter CLDR region code of the user, e.g. DE." },
+          "field_mask": {
+            "type": "string",
+            "description": "Comma-separated fields, each prefixed with places. Decides the SKU (see google_maps_search_text). Default: Pro fields.",
+            "default": "places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.businessStatus,places.googleMapsUri"
+          }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/places:searchNearby",
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "bodyMapping": {
+          "locationRestriction": {
+            "circle": {
+              "center": { "latitude": "$latitude", "longitude": "$longitude" },
+              "radius": "$radius_meters"
+            }
+          },
+          "includedTypes": "$included_types",
+          "excludedTypes": "$excluded_types",
+          "includedPrimaryTypes": "$included_primary_types",
+          "excludedPrimaryTypes": "$excluded_primary_types",
+          "maxResultCount": "$max_result_count",
+          "rankPreference": "$rank_preference",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "google_maps_get_place",
+      "description": "Read the details of one place by its place id (the id field of a search result, e.g. ChIJN1t_tDeuEmsRUsoyG83frY4). The field_mask (no places. prefix here) decides the fields and the price: the default is Place Details Pro (about $17 per 1,000, 5,000 free); address fields alone are Essentials ($5), phone, website, rating and opening hours Enterprise ($20), reviews Enterprise + Atmosphere ($25), id alone is free. Pass the session_token of an autocomplete session to close it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "place_id": { "type": "string", "description": "Place id, e.g. ChIJN1t_tDeuEmsRUsoyG83frY4 (without the places/ prefix)." },
+          "field_mask": {
+            "type": "string",
+            "description": "Comma-separated fields without prefix, e.g. id,displayName,formattedAddress,nationalPhoneNumber,websiteUri,rating,userRatingCount,regularOpeningHours,reviews,photos. Default: Pro fields.",
+            "default": "id,displayName,formattedAddress,location,types,primaryType,businessStatus,googleMapsUri,utcOffsetMinutes"
+          },
+          "language_code": { "type": "string", "description": "Language of names, addresses and reviews, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter CLDR region code of the user, e.g. DE." },
+          "session_token": { "type": "string", "description": "The session_token used by the google_maps_autocomplete calls that led to this place." }
+        },
+        "required": ["place_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/places/{place_id}",
+        "encodePathParams": true,
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "queryParams": {
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "sessionToken": "$session_token"
+        }
+      }
+    },
+    {
+      "name": "google_maps_get_place_photo",
+      "description": "Get a short-lived link to one photo of a place. Ask for the field photos (or places.photos on a search) first: each entry has a name like places/ChIJ.../photos/AXCi2Q... and the authorAttributions to show with it. Returns photoUri, an image link that works without a key for a limited time. Billed as Place Details Photos (about $7 per 1,000, 1,000 free a month). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "photo_name": { "type": "string", "pattern": "^places/[^/]+/photos/[^/]+$", "description": "The photo's name exactly as returned in photos[].name, e.g. places/ChIJN1t_tDeuEmsRUsoyG83frY4/photos/AXCi2Q..." },
+          "max_width_px": { "type": "integer", "description": "Maximum width in pixels, 1 to 4800.", "default": 800 },
+          "max_height_px": { "type": "integer", "description": "Maximum height in pixels, 1 to 4800." }
+        },
+        "required": ["photo_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{photo_name}/media",
+        "queryParams": {
+          "maxWidthPx": "$max_width_px",
+          "maxHeightPx": "$max_height_px",
+          "skipHttpRedirect": "true"
+        }
+      }
+    },
+    {
+      "name": "google_maps_autocomplete",
+      "description": "Suggest places and addresses for what the user has typed so far (\"Münsterpl\", \"Starbucks Alexan\"). Returns placePrediction entries with placeId and text, and with include_query_predictions also search phrases. About $2.83 per 1,000 requests (10,000 free a month); give every call of one typing session the same session_token and end it with google_maps_get_place on the chosen placeId with that token, and the session's autocomplete requests are free. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": { "type": "string", "description": "The text typed so far." },
+          "session_token": { "type": "string", "description": "A random URL-safe string (up to 36 characters, e.g. a UUID) shared by the calls of one session." },
+          "language_code": { "type": "string", "description": "Language of the suggestions, e.g. en, de. Default en-US." },
+          "region_code": { "type": "string", "description": "Two-letter CLDR region code for formatting and ranking, e.g. DE." },
+          "included_region_codes": { "type": "array", "items": { "type": "string" }, "description": "Only suggestions in these regions (up to 15 two-letter codes), e.g. [\"de\", \"ch\"]." },
+          "included_primary_types": { "type": "array", "items": { "type": "string" }, "description": "Only these primary types (up to 5), e.g. [\"restaurant\"], or [\"(regions)\"] or [\"(cities)\"] for areas." },
+          "location_bias": { "type": "object", "description": "Prefer suggestions in this area: {\"circle\": {\"center\": {\"latitude\": .., \"longitude\": ..}, \"radius\": 5000}} or a rectangle {\"rectangle\": {\"low\": {..}, \"high\": {..}}}." },
+          "location_restriction": { "type": "object", "description": "Only suggestions in this circle or rectangle, same shape as location_bias. Not together with location_bias." },
+          "origin": { "type": "object", "description": "A point {\"latitude\": .., \"longitude\": ..}; each suggestion then carries distanceMeters from it." },
+          "include_query_predictions": { "type": "boolean", "description": "true: also suggest search phrases, not only places." }
+        },
+        "required": ["input"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/places:autocomplete",
+        "bodyMapping": {
+          "input": "$input",
+          "sessionToken": "$session_token",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "includedRegionCodes": "$included_region_codes",
+          "includedPrimaryTypes": "$included_primary_types",
+          "locationBias": "$location_bias",
+          "locationRestriction": "$location_restriction",
+          "origin": "$origin",
+          "includeQueryPredictions": "$include_query_predictions"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "google_maps_geocode_address",
+      "description": "Turn an address or place name into coordinates and a structured address (Geocoding API v4): \"Kaiser-Joseph-Straße 167, Freiburg\" gives results with formattedAddress, location (latitude, longitude), placeId, types, granularity (ROOFTOP is exact) and addressComponents. Several results mean the address was ambiguous. Billed as Geocoding (about $5 per 1,000, 10,000 free a month). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "string", "description": "The address in one line, as precise as possible, with town and country." },
+          "language_code": { "type": "string", "description": "Language of the returned address, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter region code that biases ambiguous addresses, e.g. DE." },
+          "field_mask": { "type": "string", "description": "Optional comma-separated fields to return, e.g. results.formattedAddress,results.location,results.placeId. Leave out for all fields (same price)." }
+        },
+        "required": ["address"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://geocode.googleapis.com/v4/geocode/address/{address}",
+        "encodePathParams": true,
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "queryParams": {
+          "languageCode": "$language_code",
+          "regionCode": "$region_code"
+        }
+      }
+    },
+    {
+      "name": "google_maps_reverse_geocode",
+      "description": "Turn coordinates into addresses (Geocoding API v4): returns results from the most precise (street address) to the broadest (country), each with formattedAddress, placeId, types and addressComponents. Filter with types or granularity. Billed as Geocoding (about $5 per 1,000, 10,000 free a month). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Latitude in degrees." },
+          "longitude": { "type": "number", "description": "Longitude in degrees." },
+          "language_code": { "type": "string", "description": "Language of the addresses, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter region code for address formatting, e.g. DE." },
+          "types": { "type": "array", "items": { "type": "string" }, "description": "Only results of these types, e.g. [\"street_address\"], [\"locality\"], [\"postal_code\"]." },
+          "granularity": { "type": "array", "items": { "type": "string", "enum": ["ROOFTOP", "RANGE_INTERPOLATED", "GEOMETRIC_CENTER", "APPROXIMATE"] }, "description": "Only results of these precisions." },
+          "field_mask": { "type": "string", "description": "Optional comma-separated fields, e.g. results.formattedAddress,results.placeId,results.types. Leave out for all fields." }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://geocode.googleapis.com/v4/geocode/location",
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "queryParams": {
+          "location.latitude": "$latitude",
+          "location.longitude": "$longitude",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "types": "$types",
+          "granularity": "$granularity"
+        }
+      }
+    },
+    {
+      "name": "google_maps_compute_routes",
+      "description": "Compute a route between two places (Routes API): distance, duration, the legs between stops and warnings, by car, bicycle, on foot, two-wheeler or public transport. Origin, destination and stops are waypoints: {\"address\": \"Freiburg Hauptbahnhof\"}, {\"placeId\": \"ChIJ...\"} or {\"location\": {\"latLng\": {\"latitude\": 47.99, \"longitude\": 7.84}}}. Billed as Compute Routes Essentials (about $5 per 1,000, 10,000 free) unless routing_preference asks for live traffic (Pro, about $10) or travel_mode is TWO_WHEELER (Enterprise, about $15). Add routes.legs.steps.navigationInstruction to field_mask for turn-by-turn directions, routes.polyline.encodedPolyline for the line on a map. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": { "type": "object", "description": "Start waypoint: {\"address\": \"...\"}, {\"placeId\": \"...\"} or {\"location\": {\"latLng\": {\"latitude\": .., \"longitude\": ..}}}." },
+          "destination": { "type": "object", "description": "End waypoint, same shape as origin." },
+          "intermediates": { "type": "array", "items": { "type": "object" }, "description": "Stops on the way, in order, same shape as origin. Up to 10 for the Essentials price, 25 at most." },
+          "travel_mode": { "type": "string", "enum": ["DRIVE", "BICYCLE", "WALK", "TWO_WHEELER", "TRANSIT"], "description": "How to travel. Default DRIVE.", "default": "DRIVE" },
+          "routing_preference": { "type": "string", "enum": ["TRAFFIC_UNAWARE", "TRAFFIC_AWARE", "TRAFFIC_AWARE_OPTIMAL"], "description": "Only for DRIVE and TWO_WHEELER. Leave out for TRAFFIC_UNAWARE (cheapest). TRAFFIC_AWARE and TRAFFIC_AWARE_OPTIMAL use live traffic and are billed as Pro." },
+          "departure_time": { "type": "string", "description": "RFC 3339 departure time, e.g. 2026-10-14T07:30:00Z. Needed for traffic or transit at a future time; must not be in the past." },
+          "arrival_time": { "type": "string", "description": "RFC 3339 arrival time. Only with TRANSIT, not together with departure_time." },
+          "compute_alternative_routes": { "type": "boolean", "description": "true: also return up to two alternative routes (not with intermediates)." },
+          "route_modifiers": { "type": "object", "description": "{\"avoidTolls\": true, \"avoidHighways\": true, \"avoidFerries\": true} for DRIVE and TWO_WHEELER." },
+          "language_code": { "type": "string", "description": "Language of instructions and localized values, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter region code, e.g. DE." },
+          "units": { "type": "string", "enum": ["METRIC", "IMPERIAL"], "description": "Units of the localized values." },
+          "field_mask": {
+            "type": "string",
+            "description": "Comma-separated route fields to return (required by Google). Default: totals, legs and warnings without steps or polyline.",
+            "default": "routes.distanceMeters,routes.duration,routes.staticDuration,routes.description,routes.localizedValues,routes.legs.distanceMeters,routes.legs.duration,routes.legs.localizedValues,routes.warnings,routes.routeLabels"
+          }
+        },
+        "required": ["origin", "destination"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://routes.googleapis.com/directions/v2:computeRoutes",
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "bodyMapping": {
+          "origin": "$origin",
+          "destination": "$destination",
+          "intermediates": "$intermediates",
+          "travelMode": "$travel_mode",
+          "routingPreference": "$routing_preference",
+          "departureTime": "$departure_time",
+          "arrivalTime": "$arrival_time",
+          "computeAlternativeRoutes": "$compute_alternative_routes",
+          "routeModifiers": "$route_modifiers",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "units": "$units"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "google_maps_compute_route_matrix",
+      "description": "Distances and travel times between several origins and several destinations in one call (Routes API), e.g. which of 3 technicians is closest to 5 customers. Each entry of origins and destinations is {\"waypoint\": {\"address\": \"...\"}} (or placeId or location instead of address). Returns one element per origin and destination pair with originIndex, destinationIndex, distanceMeters, duration and condition (ROUTE_EXISTS or ROUTE_NOT_FOUND). Billed per element (origins x destinations): Essentials about $5 per 1,000 elements (10,000 free), Pro with live traffic. At most 625 elements per call (100 with TRANSIT or TRAFFIC_AWARE_OPTIMAL). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origins": { "type": "array", "items": { "type": "object" }, "description": "Up to 50 origins, each {\"waypoint\": {\"address\": \"Freiburg\"}} or {\"waypoint\": {\"placeId\": \"ChIJ...\"}} or {\"waypoint\": {\"location\": {\"latLng\": {\"latitude\": .., \"longitude\": ..}}}}." },
+          "destinations": { "type": "array", "items": { "type": "object" }, "description": "Up to 50 destinations, same shape as origins." },
+          "travel_mode": { "type": "string", "enum": ["DRIVE", "BICYCLE", "WALK", "TWO_WHEELER", "TRANSIT"], "description": "How to travel. Default DRIVE.", "default": "DRIVE" },
+          "routing_preference": { "type": "string", "enum": ["TRAFFIC_UNAWARE", "TRAFFIC_AWARE", "TRAFFIC_AWARE_OPTIMAL"], "description": "Only for DRIVE and TWO_WHEELER. Leave out for TRAFFIC_UNAWARE (cheapest); the others use live traffic and are billed as Pro." },
+          "departure_time": { "type": "string", "description": "RFC 3339 departure time for traffic or transit, e.g. 2026-10-14T07:30:00Z." },
+          "language_code": { "type": "string", "description": "Language of localized values, e.g. en, de." },
+          "region_code": { "type": "string", "description": "Two-letter region code, e.g. DE." },
+          "units": { "type": "string", "enum": ["METRIC", "IMPERIAL"], "description": "Units of the localized values." },
+          "field_mask": {
+            "type": "string",
+            "description": "Comma-separated element fields to return (required by Google).",
+            "default": "originIndex,destinationIndex,status,condition,distanceMeters,duration,localizedValues"
+          }
+        },
+        "required": ["origins", "destinations"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",
+        "headers": { "X-Goog-FieldMask": "$field_mask" },
+        "bodyMapping": {
+          "origins": "$origins",
+          "destinations": "$destinations",
+          "travelMode": "$travel_mode",
+          "routingPreference": "$routing_preference",
+          "departureTime": "$departure_time",
+          "languageCode": "$language_code",
+          "regionCode": "$region_code",
+          "units": "$units"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    }
+  ]
+}

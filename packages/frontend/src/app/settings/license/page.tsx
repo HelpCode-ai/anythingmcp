@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
 import { EditionCard } from '@/components/edition-card';
 import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
+import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { describeBilling } from '@/lib/billing-summary';
 
 interface LicenseStatus {
@@ -48,6 +49,7 @@ export default function LicenseSettingsPage() {
     status.plan !== 'community';
   // Cloud admin on a running free trial: offer the card trial (/start-trial).
   const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
+  const cardTrialKind = useCardTrialKind(token, cardTrialOffer);
   const billingSummary = isCloud ? describeBilling(status?.billing) : null;
   const cardTrialDate = cardTrialOffer
     ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long')
@@ -417,13 +419,20 @@ export default function LicenseSettingsPage() {
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Upgrade Plan</h2>
           {cardTrialOffer ? (
             <>
-              <p className="text-sm text-[var(--text-2)] mb-4">
-                Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
-                charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
-              </p>
+              {cardTrialKind === 'pay' ? (
+                <p className="text-sm text-[var(--text-2)] mb-4">
+                  Choose a plan to keep AnythingMCP Cloud running after your trial. This address has had
+                  a subscription before, so the plan starts and is billed when you check out.
+                </p>
+              ) : (
+                <p className="text-sm text-[var(--text-2)] mb-4">
+                  Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
+                  charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
+                </p>
+              )}
               <div className="flex flex-wrap gap-3">
                 <Link href="/start-trial" className={cn(buttonVariants({ variant: 'primary' }))}>
-                  Add payment method
+                  {cardTrialKind === 'pay' ? 'Choose a plan' : 'Add payment method'}
                 </Link>
                 <a
                   href={pricingUrl}

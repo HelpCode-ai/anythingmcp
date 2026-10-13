@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { isConsumerEmail } from '../../common/consumer-email-domains';
@@ -7,6 +7,7 @@ import { EmailService } from '../../settings/email.service';
 import type { WinbackOffer } from '../../settings/email-templates';
 import { LicenseService } from '../../license/license.service';
 import { LicenseReleaseService } from '../../license/license-release.service';
+import { CardTrialOfferService } from '../../license/card-trial-offer.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
@@ -175,6 +176,7 @@ export class OnboardingCronService {
     private readonly email: EmailService,
     private readonly license: LicenseService,
     private readonly licenseRelease: LicenseReleaseService,
+    @Optional() private readonly cardTrialOffer?: CardTrialOfferService,
   ) {}
 
   /** run() unless another run holds the lease; null when skipped. */
@@ -230,6 +232,7 @@ export class OnboardingCronService {
     winbackFirstMonth: number;
     winbackControl: number;
     winbackHelp: number;
+    cardTrialOffers: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -250,6 +253,7 @@ export class OnboardingCronService {
       winbackFirstMonth: 0,
       winbackControl: 0,
       winbackHelp: 0,
+      cardTrialOffers: 0,
       skipped: 0,
     };
 
@@ -395,6 +399,9 @@ export class OnboardingCronService {
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
     await this.runWinbackPass(now, out);
+    // After the lifecycle and win-back passes, so an email they just sent
+    // holds this one back (12 hours; see card-trial-offer.service.ts).
+    out.cardTrialOffers = (await this.cardTrialOffer?.runEmailPass(new Date(now)))?.sent ?? 0;
     out.trialsMarkedExpired = await this.markExpiredTrials(now);
 
     // Before nudging anyone about their trial, make sure they actually got one.
@@ -421,6 +428,7 @@ export class OnboardingCronService {
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
         `winbackFirstMonth=${out.winbackFirstMonth} winbackControl=${out.winbackControl} winbackHelp=${out.winbackHelp} ` +
+        `cardTrialOffers=${out.cardTrialOffers} ` +
         `skipped=${out.skipped}`,
     );
     return out;

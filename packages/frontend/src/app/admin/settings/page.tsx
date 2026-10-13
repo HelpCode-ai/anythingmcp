@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { adminSettings } from '@/lib/api';
+import { adminSettings, FOOTER_LINKS_CHANGED } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -125,6 +125,7 @@ export default function AdminSettingsPage() {
     if (!token) return;
     try {
       await adminSettings.updateFooterLinks(footerLinks.filter(l => l.label && l.url), token);
+      window.dispatchEvent(new Event(FOOTER_LINKS_CHANGED));
       setFooterMsg('Footer links saved');
       setTimeout(() => setFooterMsg(''), 3000);
     } catch (err: any) {

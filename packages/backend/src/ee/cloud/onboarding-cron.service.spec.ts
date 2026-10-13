@@ -93,6 +93,30 @@ describe('OnboardingCronService — activation pass', () => {
     );
   });
 
+  it('runs the card-trial offer email pass after the trial and win-back passes', async () => {
+    const { service } = makeService({});
+    const order: string[] = [];
+    const prisma = (service as any).prisma;
+    prisma.license.findMany.mockImplementation(async () => {
+      order.push('license');
+      return [];
+    });
+    const offer = {
+      runEmailPass: jest.fn(async () => {
+        order.push('offer');
+        return { examined: 2, sent: 1, skipped: 0, postponed: 1, failed: 0 };
+      }),
+    };
+    (service as any).cardTrialOffer = offer;
+
+    const out = await service.run();
+
+    expect(offer.runEmailPass).toHaveBeenCalledTimes(1);
+    expect(out.cardTrialOffers).toBe(1);
+    // Lifecycle + win-back read the licences first, so their emails hold this one back.
+    expect(order).toEqual(['license', 'license', 'offer']);
+  });
+
   it('does not stamp when the email fails to send', async () => {
     const { service, update } = makeService({
       stuckUsers: [

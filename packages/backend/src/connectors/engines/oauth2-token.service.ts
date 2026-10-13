@@ -13,6 +13,7 @@ import {
 } from './client-assertion.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
+import { isMachineGrant } from '../oauth-grant.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -93,8 +94,8 @@ export class OAuth2TokenService {
     }
 
     // 2. Determine if proactive refresh is possible and needed.
-    // client_credentials needs only tokenUrl + clientId/Secret; refresh_token
-    // also needs a stored refreshToken.
+    // client_credentials needs only tokenUrl + clientId/Secret; password needs
+    // tokenUrl + username/password; refresh_token needs a stored refreshToken.
     const hasRefreshCapability =
       grant === 'client_credentials'
         ? !!(
@@ -102,7 +103,9 @@ export class OAuth2TokenService {
             authConfig.clientId &&
             (authConfig.clientSecret || isPrivateKeyJwt(authConfig.tokenAuthMethod))
           )
-        : !!(authConfig.refreshToken && authConfig.tokenUrl);
+        : grant === 'password'
+          ? !!(authConfig.tokenUrl && authConfig.username && authConfig.password)
+          : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
     let refreshFailed = false;
@@ -125,13 +128,13 @@ export class OAuth2TokenService {
     }
 
     const stored = String(authConfig.accessToken || '');
-    // A client_credentials connector has no token but the one it fetches. When
-    // that fetch fails, sending `Authorization: Bearer ` anyway only trades the
-    // token endpoint's precise answer for the API's vaguest one: Reddit
-    // answers an empty bearer with its HTML "Blocked" page, and 52 calls
-    // failed that way with nobody able to tell a wrong client secret from a
-    // bot wall. Stop here and say what the token endpoint said.
-    if (grant === 'client_credentials' && !stored) {
+    // A client_credentials or password connector has no token but the one it
+    // fetches. When that fetch fails, sending `Authorization: Bearer ` anyway
+    // only trades the token endpoint's precise answer for the API's vaguest
+    // one: Reddit answers an empty bearer with its HTML "Blocked" page, and 52
+    // calls failed that way with nobody able to tell a wrong client secret
+    // from a bot wall. Stop here and say what the token endpoint said.
+    if (isMachineGrant(grant) && !stored) {
       const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
       let host = 'the token endpoint';
       try {
@@ -140,9 +143,12 @@ export class OAuth2TokenService {
         // keep the generic wording
       }
       const err = new Error(
-        `OAuth2 client_credentials: could not obtain an access token from ${host}` +
+        `OAuth2 ${grant}: could not obtain an access token from ${host}` +
           (reason ? ` (${reason})` : '') +
-          '. No request was sent to the API. Check the client ID and client secret.',
+          '. No request was sent to the API. ' +
+          (grant === 'password'
+            ? 'Check the username and password, and the client ID and client secret if the provider needs them.'
+            : 'Check the client ID and client secret.'),
       ) as Error & { status?: number };
       // Lets the install-form probe classify this as rejected credentials.
       err.status = 401;
@@ -154,7 +160,7 @@ export class OAuth2TokenService {
     // looking at the token's format when the refresh token itself had been
     // refused. Only reached when there is no token at all, so a connector that
     // has one (stored, or cached) behaves exactly as before.
-    if (grant !== 'client_credentials' && !stored) {
+    if (!isMachineGrant(grant) && !stored) {
       if (refreshFailed) {
         const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
         throw unauthorized(
@@ -209,7 +215,12 @@ export class OAuth2TokenService {
     const clientSecret = authConfig.clientSecret
       ? String(authConfig.clientSecret)
       : undefined;
-    const scope = authConfig.scope ? String(authConfig.scope) : undefined;
+    // Adapters write `scope`; the connector form writes `scopes`.
+    const scope = authConfig.scope
+      ? String(authConfig.scope)
+      : authConfig.scopes
+        ? String(authConfig.scopes)
+        : undefined;
     // private_key_jwt: the client proves itself with a JWT signed by its own
     // key (RFC 7523), so there is no client secret to send or to require.
     const privateKeyJwt = isPrivateKeyJwt(authConfig.tokenAuthMethod);
@@ -231,6 +242,11 @@ export class OAuth2TokenService {
         );
         return null;
       }
+    } else if (grant === 'password') {
+      if (!authConfig.username || !authConfig.password) {
+        this.logger.warn('OAuth2 password: missing username/password');
+        return null;
+      }
     } else if (!refreshToken) {
       this.logger.warn('OAuth2 refresh: missing refreshToken');
       return null;
@@ -248,8 +264,15 @@ export class OAuth2TokenService {
       const userAgent = tokenEndpointUserAgent(authConfig, connectorHeaders);
       if (userAgent) headers['User-Agent'] = userAgent;
 
-      if (grant === 'client_credentials') {
-        body = { grant_type: 'client_credentials' };
+      if (isMachineGrant(grant)) {
+        body =
+          grant === 'password'
+            ? {
+                grant_type: 'password',
+                username: String(authConfig.username),
+                password: String(authConfig.password),
+              }
+            : { grant_type: 'client_credentials' };
         if (scope) body.scope = scope;
         if (privateKeyJwt) {
           Object.assign(
@@ -263,13 +286,18 @@ export class OAuth2TokenService {
           // client_secret_post — the other method RFC 6749 §2.3.1 allows,
           // and the only one some servers document: Amadeus's token
           // endpoint takes client_id/client_secret as form fields.
-          body.client_id = String(clientId);
-          body.client_secret = String(clientSecret);
-        } else {
+          if (clientId) body.client_id = String(clientId);
+          if (clientSecret) body.client_secret = String(clientSecret);
+        } else if (clientId && clientSecret) {
+          // Datto RMM's password grant takes its fixed client this way:
+          // Basic public-client:public.
           const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
             'base64',
           );
           headers.Authorization = `Basic ${basic}`;
+        } else if (clientId) {
+          // A public client on the password grant: identified, no secret.
+          body.client_id = String(clientId);
         }
       } else {
         body = {
@@ -338,8 +366,8 @@ export class OAuth2TokenService {
       });
 
       // Persist to DB if connectorId is available. For client_credentials
-      // there's no refresh_token to store — we just record the latest
-      // access_token + its expiry so a cold-start can reuse it briefly.
+      // and password there's no refresh_token to use — we just record the
+      // latest access_token + its expiry so a cold-start can reuse it.
       if (connectorId) {
         await this.persistRefreshedToken(
           connectorId,
@@ -399,9 +427,11 @@ export class OAuth2TokenService {
     if (!reason) return undefined;
     return unauthorized(
       `OAuth2: the API refused the access token (401) and it could not be renewed at ` +
-        `${hostOf(authConfig.tokenUrl)} (${reason}). If the refresh token was refused, ` +
-        'authorize the connector again (Authorize with Provider on its page in AnythingMCP) ' +
-        'or replace its refresh token.',
+        `${hostOf(authConfig.tokenUrl)} (${reason}). ` +
+        (isMachineGrant(authConfig.grant)
+          ? `Check the credentials the ${String(authConfig.grant)} grant sends to the token URL.`
+          : 'If the refresh token was refused, authorize the connector again ' +
+            '(Authorize with Provider on its page in AnythingMCP) or replace its refresh token.'),
     );
   }
 

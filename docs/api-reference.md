@@ -259,6 +259,23 @@ Response:
 }
 ```
 
+### Replay a Tool Call
+
+When viewing an audit log entry in the dashboard (`/logs`), click **Copy as cURL** in the expanded row to copy a command that replays the recorded MCP `tools/call` against the server's endpoint:
+
+```bash
+curl -sS -X POST 'http://localhost:4000/mcp/<serverId>' \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2025-06-18" \
+  -H "X-API-Key: $AMCP_MCP_API_KEY" \
+  --data-binary @- <<'JSON'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}
+JSON
+```
+
+Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server operates in OAuth2 mode) to run the command directly from your terminal. Arguments whose names look like credentials (passwords, tokens, keys) are replaced with `[REDACTED]`, and the command then starts with a comment saying so: fill them in before running it.
+
 ---
 
 ## Roles & Access Control

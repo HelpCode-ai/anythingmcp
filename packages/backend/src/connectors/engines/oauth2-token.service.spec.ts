@@ -569,6 +569,144 @@ describe('OAuth2TokenService', () => {
     });
   });
 
+  describe('password grant (Datto RMM)', () => {
+    // Datto RMM: the API key and secret are the username and password, the
+    // fixed client `public-client` / `public` goes in a Basic header, and the
+    // token lasts 100 hours with no refresh token.
+    const datto = (extra: Record<string, unknown> = {}) => ({
+      grant: 'password',
+      tokenUrl: 'https://merlot-api.centrastage.net/auth/oauth/token',
+      clientId: 'public-client',
+      clientSecret: 'public',
+      username: 'api-key',
+      password: 'api-secret',
+      ...extra,
+    });
+
+    it('posts grant_type=password with the credentials, the client as HTTP Basic', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'datto-at', token_type: 'bearer', expires_in: 359999 },
+      });
+
+      const token = await service.refreshToken(datto());
+
+      expect(token).toBe('datto-at');
+      const [url, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(url).toBe('https://merlot-api.centrastage.net/auth/oauth/token');
+      expect(new URLSearchParams(body)).toEqual(
+        new URLSearchParams('grant_type=password&username=api-key&password=api-secret'),
+      );
+      expect(opts.headers.Authorization).toBe(
+        'Basic ' + Buffer.from('public-client:public').toString('base64'),
+      );
+    });
+
+    it('gets a token on the first call, with nothing stored and no refresh token', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'first', expires_in: 359999 },
+      });
+
+      expect(await service.getAccessToken(datto(), 'conn-datto')).toBe('first');
+      expect(await service.getAccessToken(datto(), 'conn-datto')).toBe('first');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for a new token when the 100 hours run out, never with a refresh token', async () => {
+      const start = Date.now();
+      const now = jest.spyOn(Date, 'now').mockReturnValue(start);
+      try {
+        mockedAxios.post
+          .mockResolvedValueOnce({ data: { access_token: 'first', expires_in: 360000 } })
+          .mockResolvedValueOnce({ data: { access_token: 'second', expires_in: 360000 } });
+        // Left over from the authorization-code flow the connector used before.
+        const config = datto({ refreshToken: 'stale-rt', accessToken: 'old-at' });
+
+        expect(await service.getAccessToken(config, 'conn-datto')).toBe('first');
+        now.mockReturnValue(start + 100 * 3600 * 1000 - 60 * 1000);
+        expect(await service.getAccessToken(config, 'conn-datto')).toBe('second');
+
+        expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+        for (const call of mockedAxios.post.mock.calls) {
+          const body = new URLSearchParams((call as any)[1]);
+          expect(body.get('grant_type')).toBe('password');
+          expect(body.get('refresh_token')).toBeNull();
+        }
+      } finally {
+        now.mockRestore();
+      }
+    });
+
+    it('gets a new token after a 401', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'after-401', expires_in: 360000 },
+      });
+
+      const token = await service.renewAfterRejection(datto(), 'conn-datto', Date.now());
+
+      expect(token).toBe('after-401');
+      const body = new URLSearchParams((mockedAxios.post.mock.calls[0] as any)[1]);
+      expect(body.get('grant_type')).toBe('password');
+    });
+
+    it('sends the scopes typed in the connector form', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'at', expires_in: 60 } });
+
+      await service.refreshToken(datto({ scopes: 'read write' }));
+
+      const body = new URLSearchParams((mockedAxios.post.mock.calls[0] as any)[1]);
+      expect(body.get('scope')).toBe('read write');
+    });
+
+    it('identifies a public client in the body, with no secret and no Basic header', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'at', expires_in: 60 } });
+
+      await service.refreshToken(datto({ clientId: 'my-app', clientSecret: undefined }));
+
+      const [, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(new URLSearchParams(body).get('client_id')).toBe('my-app');
+      expect(new URLSearchParams(body).get('client_secret')).toBeNull();
+      expect(opts.headers.Authorization).toBeUndefined();
+    });
+
+    it('sends the client in the body when tokenAuthMethod says so', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'at', expires_in: 60 } });
+
+      await service.refreshToken(datto({ tokenAuthMethod: 'client_secret_post' }));
+
+      const [, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(new URLSearchParams(body).get('client_id')).toBe('public-client');
+      expect(new URLSearchParams(body).get('client_secret')).toBe('public');
+      expect(opts.headers.Authorization).toBeUndefined();
+    });
+
+    it('does not call the token endpoint without a username and password', async () => {
+      expect(await service.refreshToken(datto({ password: '' }))).toBeNull();
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('says what the token endpoint answered instead of sending an empty bearer', async () => {
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 400'), {
+          response: {
+            status: 400,
+            data: { error: 'invalid_grant', error_description: 'Bad credentials' },
+          },
+        }),
+      );
+
+      const call = service.getAccessToken(datto(), 'conn-datto-bad');
+
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining(
+          'OAuth2 password: could not obtain an access token from merlot-api.centrastage.net ' +
+            '(HTTP 400: invalid_grant: Bad credentials)',
+        ),
+      });
+      await expect(call).rejects.not.toThrow(/api-secret/);
+    });
+  });
+
   describe('rolling refresh tokens', () => {
     it('refreshes using the freshest refresh token from the DB, not the stale snapshot', async () => {
       // DB holds the rotated ("fresh") refresh token; the caller passes a stale

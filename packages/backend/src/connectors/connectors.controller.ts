@@ -55,6 +55,7 @@ import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolvePkce, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
+import { isMachineGrant } from './oauth-grant.util';
 import {
   DYNAMIC_CLIENT_KEY,
   planMcpAuthorization,
@@ -307,6 +308,34 @@ class UpdateOAuthConfigDto {
   @IsString()
   @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post', 'private_key_jwt'])
   tokenAuthMethod?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'How the connector obtains its access token. `authorization_code` ' +
+      '(default, also sent as an empty string) signs in at the provider with ' +
+      '"Authorize with Provider" and renews with the refresh token. ' +
+      '`client_credentials` asks the token endpoint with the client id and ' +
+      'secret alone. `password` (RFC 6749 §4.3) sends `username` and ' +
+      '`password` as well, and asks again whenever the token expires: for ' +
+      'APIs that issue no refresh token, such as Datto RMM (username = API ' +
+      'key, password = API secret, client `public-client` / `public` sent as ' +
+      'HTTP Basic).',
+    enum: ['', 'authorization_code', 'client_credentials', 'password'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['', 'authorization_code', 'client_credentials', 'password'])
+  grant?: string;
+
+  @ApiPropertyOptional({ description: 'Username for the password grant.' })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiPropertyOptional({ description: 'Password for the password grant.' })
+  @IsOptional()
+  @IsString()
+  password?: string;
 
   @ApiPropertyOptional({
     description:
@@ -1087,17 +1116,17 @@ export class ConnectorsController {
     const adapterSlug = (connector.config as { adapterSlug?: string } | null)?.adapterSlug;
     return {
       clientId: str(cfg.clientId),
+      grant: isMachineGrant(cfg.grant) ? String(cfg.grant) : 'authorization_code',
       authorizationUrl: str(cfg.authorizationUrl),
       tokenUrl: str(cfg.tokenUrl),
       scopes: str(cfg.scopes),
       // Report what the token service will actually do. With nothing stored,
-      // the client_credentials grant sends HTTP Basic, not body credentials;
-      // showing "in body" there made the form misstate every such connector.
+      // the client_credentials and password grants send HTTP Basic, not body
+      // credentials; showing "in body" there made the form misstate every
+      // such connector.
       tokenAuthMethod:
         str(cfg.tokenAuthMethod) ||
-        (cfg.grant === 'client_credentials'
-          ? 'client_secret_basic'
-          : 'client_secret_post'),
+        (isMachineGrant(cfg.grant) ? 'client_secret_basic' : 'client_secret_post'),
       // What the authorization will do: the row's own setting, else the
       // catalog adapter's (see resolvePkce).
       pkce: resolvePkce(
@@ -1105,6 +1134,10 @@ export class ConnectorsController {
         adapterSlug ? getAdapter(adapterSlug)?.connector.authConfig : undefined,
       ),
       hasClientSecret: !!cfg.clientSecret,
+      // The password grant's credentials (Datto's API key and secret) are
+      // never returned, like the client secret.
+      hasUsername: !!cfg.username,
+      hasPassword: !!cfg.password,
       hasAccessToken: !!cfg.accessToken,
       hasRefreshToken: !!cfg.refreshToken,
     };
@@ -1119,8 +1152,10 @@ export class ConnectorsController {
       'endpoints established during authorization are preserved. Omitted ' +
       'fields keep their current value; send an empty string to clear one. ' +
       'Use `tokenAuthMethod` when a provider rejects credentials sent in the ' +
-      'request body (RFC 6749 §2.3.1 client_secret_basic) — Datto RMM and ' +
-      'DATEV both require it.',
+      'request body (RFC 6749 §2.3.1 client_secret_basic) — DATEV requires ' +
+      'it. Use `grant` for APIs that issue tokens without a user sign-in: ' +
+      '`client_credentials`, or `password` with `username` and `password` ' +
+      '(Datto RMM, whose 100-hour tokens come with no refresh token).',
   })
   async updateOAuthConfig(
     @Req() req: any,
@@ -1143,20 +1178,27 @@ export class ConnectorsController {
       'authorizationUrl',
       'tokenUrl',
       'scopes',
+      'username',
+      'password',
     ] as const) {
       if (dto[key] !== undefined) patch[key] = dto[key];
     }
+    if (dto.grant !== undefined) {
+      // The authorization-code flow is the default and is stored as no grant
+      // at all, which is what every connector authorized so far carries.
+      patch.grant = isMachineGrant(dto.grant) ? dto.grant : undefined;
+    }
     if (dto.tokenAuthMethod !== undefined) {
       // Empty = back to the default (credentials in the body). Except that
-      // "in the body" is not the default of the client_credentials grant —
-      // the token service sends HTTP Basic there unless told otherwise — so
-      // for that grant the form's "in body" choice has to be stored as such,
-      // or saving the form would quietly switch e.g. Amadeus back to Basic.
+      // "in the body" is not the default of the client_credentials and
+      // password grants — the token service sends HTTP Basic there unless
+      // told otherwise — so for those the form's "in body" choice has to be
+      // stored as such, or saving the form would quietly switch e.g. Amadeus
+      // back to Basic.
+      const grant =
+        dto.grant !== undefined ? dto.grant : this.readOAuthGrant(connector.authConfig);
       patch.tokenAuthMethod =
-        dto.tokenAuthMethod ||
-        (this.readOAuthGrant(connector.authConfig) === 'client_credentials'
-          ? 'client_secret_post'
-          : undefined);
+        dto.tokenAuthMethod || (isMachineGrant(grant) ? 'client_secret_post' : undefined);
     }
     if (dto.pkce !== undefined) {
       // Stored either way: an explicit `true` must also beat a catalog
