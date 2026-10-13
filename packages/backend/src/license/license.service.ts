@@ -206,7 +206,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * is harmless (it simply expires unused). Every failure comes out as a
    * CheckoutUnavailableError; the upstream detail stays in our log.
    */
-  async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string }> {
+  async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string; trial: boolean }> {
     const headers = this.serviceHeaders();
     if (!headers['x-amcp-service-token']) {
       this.logger.error('Checkout link requested but LICENSE_SERVICE_TOKEN is not set.');
@@ -224,7 +224,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         if (!/^https?:\/\//i.test(url)) {
           throw new CheckoutUnavailableError('Checkout intent answered without a URL');
         }
-        return { url };
+        // The site says whether it granted the card trial: an address that had
+        // a subscription before is charged today even when a trial was asked.
+        return { url, trial: !!payload.trialEnd && data?.trial === true };
       } catch (err: any) {
         lastErr = err;
         if (

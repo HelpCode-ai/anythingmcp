@@ -520,6 +520,7 @@ describe('LoginController', () => {
     let cloud: LoginController;
     let productEvents: { log: jest.Mock };
     let licenseGuard: { getTrialState: jest.Mock };
+    let eligibility: { hadSubscription: jest.Mock };
     let cloudPrisma: {
       user: { findUnique: jest.Mock };
       organizationMember: { findFirst: jest.Mock };
@@ -541,7 +542,7 @@ describe('LoginController', () => {
       }
       cloudPrisma.user.findUnique.mockImplementation(({ select }: any) =>
         select?.organizationId
-          ? { organizationId: 'org-1' }
+          ? { organizationId: 'org-1', email: 'a@b.com' }
           : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' },
       );
       cloudPrisma.organizationMember.findFirst.mockResolvedValue({ role: opts.role ?? 'ADMIN' });
@@ -571,6 +572,7 @@ describe('LoginController', () => {
       };
       productEvents = { log: jest.fn().mockResolvedValue(undefined) };
       licenseGuard = { getTrialState: jest.fn().mockResolvedValue(null) };
+      eligibility = { hadSubscription: jest.fn().mockResolvedValue(false) };
       config.get.mockImplementation((key: string) =>
         key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
       );
@@ -584,6 +586,7 @@ describe('LoginController', () => {
         grants as any,
         productEvents as any,
         licenseGuard as any,
+        eligibility as any,
       );
     });
 
@@ -663,6 +666,29 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({ metadata: { client: 'Claude' } }),
         );
+      });
+
+      it('is left out for an address that had a subscription: it would pay today', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        eligibility.hadSubscription.mockResolvedValue(true);
+        const res = await login();
+
+        expect(eligibility.hadSubscription).toHaveBeenCalledWith('a@b.com');
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('start-trial');
+        expect(res._sent).not.toContain('Nothing is charged');
+      });
+
+      it('keeps the line when the history is unknown, and never waits long for it', async () => {
+        arrange();
+        licenseGuard.getTrialState.mockResolvedValue(trial());
+        eligibility.hadSubscription.mockReturnValue(new Promise(() => undefined));
+        const started = Date.now();
+        const res = await login();
+
+        expect(Date.now() - started).toBeLessThan(3000);
+        expect(res._sent).toContain('start-trial');
       });
 
       it('is never shown to an editor, whose licence is not looked up', async () => {

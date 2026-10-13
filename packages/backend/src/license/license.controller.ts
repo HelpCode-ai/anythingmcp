@@ -25,6 +25,7 @@ import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService } from '../audit/product-event.service';
+import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
@@ -84,6 +85,7 @@ export class LicenseController {
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
     private readonly productEvents: ProductEventService,
+    private readonly cardTrialEligibility: CardTrialEligibilityService,
   ) {}
 
   @Get('status')
@@ -250,7 +252,7 @@ export class LicenseController {
     summary:
       'Stripe Checkout link for a cloud plan, optionally as a card trial ending with the free trial (cloud, ADMIN)',
   })
-  async checkoutLink(@Req() req: any, @Body() dto: CheckoutLinkDto): Promise<{ url: string }> {
+  async checkoutLink(@Req() req: any, @Body() dto: CheckoutLinkDto): Promise<{ url: string; trial: boolean }> {
     // Cloud only. Self-hosted buys its licence on the pricing page and has no
     // workspace billing here; answer as if the route did not exist.
     if (!this.deployment.isCloud()) {
@@ -282,8 +284,13 @@ export class LicenseController {
     }
 
     // A card trial ends when the free trial would have. Asked for after the
-    // trial is over, it is a plain purchase: no trialEnd means pay now.
-    const trialEnd = dto.trial ? cardTrialEnd(current) : null;
+    // trial is over, it is a plain purchase: no trialEnd means pay now. An
+    // address that had a subscription before gets no trial from the licence
+    // site either; asking for one would only hide that it pays today.
+    const hadSubscription = dto.trial
+      ? await this.cardTrialEligibility.hadSubscription(email).catch(() => null)
+      : null;
+    const trialEnd = dto.trial && hadSubscription !== true ? cardTrialEnd(current) : null;
     const adMetadata = checkoutAdMetadata(
       await this.productEvents.clickIdForUser(req.user.sub).catch(() => null),
     );
@@ -305,6 +312,27 @@ export class LicenseController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Get('card-trial-eligibility')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud, ADMIN: whether this address can start a card trial (kind trial), must pay today because it had a subscription (pay), or neither applies (none)',
+  })
+  async cardTrialEligibilityForUser(
+    @Req() req: any,
+  ): Promise<{ kind: 'trial' | 'pay' | 'none'; trialEndsAt: string | null }> {
+    if (!this.deployment.isCloud()) throw new NotFoundException();
+    const result = await this.cardTrialEligibility
+      .forAdmin(req.user?.organizationId, req.user?.email)
+      .catch(() => ({ kind: 'none' as const }));
+    return {
+      kind: result.kind,
+      trialEndsAt: result.kind === 'trial' ? result.trialEndsAt.toISOString() : null,
+    };
   }
 
   @Post('verify')

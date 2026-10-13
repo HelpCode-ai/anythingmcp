@@ -1453,11 +1453,21 @@ export const license = {
       promo?: string;
     },
   ) =>
-    request<{ url: string }>('/api/license/checkout-link', {
+    /** `trial`: whether the licence site granted the card trial asked for. */
+    request<{ url: string; trial?: boolean }>('/api/license/checkout-link', {
       method: 'POST',
       body,
       token,
     }),
+  /**
+   * Cloud (ADMIN): can this address start a card trial? 'pay' = it had a
+   * subscription before, so a plan starts and is billed today.
+   */
+  cardTrialEligibility: (token: string) =>
+    request<{ kind: 'trial' | 'pay' | 'none'; trialEndsAt: string | null }>(
+      '/api/license/card-trial-eligibility',
+      { token },
+    ),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>
