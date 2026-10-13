@@ -1,0 +1,12 @@
+- Which REST services does our Zucchetti installation publish?
+- Find customer or supplier records matching "Mario Rossi".
+- Search the anagrafiche records for VAT number "IT12345678901".
+- List the first 20 articles matching "office chair".
+- Show the documents dated between 2026-09-01 and 2026-09-30.
+- List documents of type "invoice" for the period 2026-09-01 to 2026-09-30.
+- Find the record with ID "12345" in the documenti resource.
+- Search the dipendenti resource for records matching "Rossi".
+- List the next page of anagrafiche records, with 50 records per page.
+- Use `zucchetti_list_records` with resource `articoli`, company `01`, page 0 and size 25.
+- List the first page of documenti records, with 20 records.
+- Search articoli records for items matching "printer".
