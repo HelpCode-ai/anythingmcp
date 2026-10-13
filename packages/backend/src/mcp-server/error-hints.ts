@@ -80,6 +80,18 @@ const WECLAPP_RAW_FILTER_HINT =
   '-notin -null -notnull), joined with `&`. `-in` needs a bracketed list: ' +
   '`id-in=[1,2]`. Do not send an SQL-like expression.';
 
+const WECLAPP_READ_ONLY_HINT =
+  'weclapp refuses to write a read-only field (the error names it, e.g. statusHistory, ' +
+  'createdDate, an amount or a number the system assigns). Do not copy a record you read ' +
+  'back into an update: send only the fields that change, with ignoreMissingProperties=true ' +
+  '(the weclapp_edit_* tools do this), and leave the named field out.';
+
+const WECLAPP_OPTIMISTIC_LOCK_HINT =
+  'The record changed after it was read, so the `version` sent with the update is stale ' +
+  '(or someone saved the record at the same moment). Read the record again, take its ' +
+  'current `version`, check the change still makes sense, then retry once. Leaving ' +
+  '`version` out skips the check but can overwrite the other change.';
+
 const NEW_COUNTRY_HINT =
   'The service refused the sign-in because it came from a new location (the ' +
   'connector signs in from the AnythingMCP server, not from the user\'s device). ' +
@@ -314,6 +326,12 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     }
     if (/invalid parameter value|unknown query parameter|unexpected parameter/i.test(text)) {
       return WECLAPP_RAW_FILTER_HINT;
+    }
+    if (/read_only_property|property [\w.\[\]]+ is read-only/i.test(text)) {
+      return WECLAPP_READ_ONLY_HINT;
+    }
+    if (/optimistic[ _]lock/i.test(text)) {
+      return WECLAPP_OPTIMISTIC_LOCK_HINT;
     }
   }
 

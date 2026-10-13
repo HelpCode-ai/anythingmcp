@@ -88,6 +88,35 @@ describe('deriveErrorHint', () => {
       ).toBeDefined();
     });
 
+    it('tells the model to send only changed fields when weclapp refuses a read-only one', () => {
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 400,
+        body: {
+          detail: 'Validation failed',
+          validationErrors: [
+            {
+              detail: 'property statusHistory is read-only',
+              errorCode: 'platform.read_only_property',
+              location: 'statusHistory',
+            },
+          ],
+        },
+      });
+      expect(hint).toMatch(/send only the fields that change/);
+      expect(hint).toMatch(/ignoreMissingProperties=true/);
+    });
+
+    it('explains a stale version on an optimistic lock error', () => {
+      const hint = deriveErrorHint({
+        host: 'x.weclapp.com',
+        status: 409,
+        body: { detail: 'optimistic lock error', status: 409, type: '/webapp/view/api/errors.html#!/errors/optimistic_lock' },
+      });
+      expect(hint).toMatch(/Read the record again/);
+      expect(hint).toMatch(/`version`/);
+    });
+
     it('does not fire for another vendor that happens to say "unknown property"', () => {
       expect(
         deriveErrorHint({ host: 'api.other.com', body: 'unknown property: x' }),
