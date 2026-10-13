@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, withSecretsNotice, type ToolTestResult, type CatalogDiff } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -91,6 +91,16 @@ export default function ConnectorDetailPage() {
   const [editOauthAuthUrl, setEditOauthAuthUrl] = useState('');
   const [editOauthTokenUrl, setEditOauthTokenUrl] = useState('');
   const [editOauthScopes, setEditOauthScopes] = useState('');
+  // OAuth2 grant. `loadedOauthGrant` is what is stored: it decides whether the
+  // connector shows "Authorize with Provider" (a machine grant needs no
+  // sign-in), and saving sends the grant only when the user changed it.
+  const [editOauthGrant, setEditOauthGrant] = useState<OAuthGrant>('authorization_code');
+  const [loadedOauthGrant, setLoadedOauthGrant] = useState<OAuthGrant>('authorization_code');
+  // Password grant credentials (Datto RMM: API key and API secret). Never
+  // pre-filled; an empty field keeps the stored value.
+  const [editOauthUsername, setEditOauthUsername] = useState('');
+  const [editOauthPassword, setEditOauthPassword] = useState('');
+  const [oauthHasPasswordCreds, setOauthHasPasswordCreds] = useState(false);
   // OAuth 1.0a credentials. Never pre-filled (the server does not send them
   // back); an empty field keeps the stored value.
   const [editOauth1Key, setEditOauth1Key] = useState('');
@@ -191,6 +201,8 @@ export default function ConnectorDetailPage() {
       setEditAuthValue('');
       setEditWsPasswordType('PasswordText');
       resetOauth1Fields();
+      setEditOauthUsername('');
+      setEditOauthPassword('');
       // The auth method is not secret, so it can be shown. Without this the
       // select would always read "body" and saving any other field would
       // silently reset a connector configured for HTTP Basic.
@@ -204,6 +216,9 @@ export default function ConnectorDetailPage() {
             setEditOauthAuthUrl(r.authorizationUrl || '');
             setEditOauthTokenUrl(r.tokenUrl || '');
             setEditOauthScopes(r.scopes || '');
+            setEditOauthGrant(r.grant || 'authorization_code');
+            setLoadedOauthGrant(r.grant || 'authorization_code');
+            setOauthHasPasswordCreds(r.hasUsername && r.hasPassword);
           })
           .catch(() => setEditTokenAuthMethod('client_secret_post'));
       }
@@ -356,6 +371,14 @@ export default function ConnectorDetailPage() {
   const handleSave = async () => {
     if (!token) return;
     try {
+      if (
+        editAuthType === 'OAUTH2' &&
+        editOauthGrant === 'password' &&
+        !oauthHasPasswordCreds &&
+        (!editOauthUsername.trim() || !editOauthPassword)
+      ) {
+        throw new Error('Enter the username and password the password grant sends to the token URL.');
+      }
       const data: Record<string, unknown> = {
         name: editName,
         baseUrl: editBaseUrl,
@@ -428,6 +451,11 @@ export default function ConnectorDetailPage() {
         };
         if (editAuthKey) oauthPatch.clientId = editAuthKey;
         if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
+        if (editOauthGrant !== loadedOauthGrant) oauthPatch.grant = editOauthGrant;
+        if (editOauthGrant === 'password') {
+          if (editOauthUsername.trim()) oauthPatch.username = editOauthUsername.trim();
+          if (editOauthPassword) oauthPatch.password = editOauthPassword;
+        }
         // Endpoints are not secret, so the form always holds their current
         // value and can round-trip them.
         oauthPatch.authorizationUrl = editOauthAuthUrl.trim();
@@ -1252,6 +1280,38 @@ export default function ConnectorDetailPage() {
               )}
               {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
                 <div className="space-y-3">
+                  <div>
+                    <label htmlFor="edit-oauth-grant" className="block text-sm font-medium mb-1">Grant type</label>
+                    <select
+                      id="edit-oauth-grant"
+                      value={editOauthGrant}
+                      onChange={(e) => setEditOauthGrant(e.target.value as OAuthGrant)}
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    >
+                      <option value="authorization_code">Authorization code (sign in at the provider)</option>
+                      <option value="client_credentials">Client credentials</option>
+                      <option value="password">Password (username and password)</option>
+                    </select>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      {editOauthGrant === 'authorization_code'
+                        ? 'Authorize with Provider once; the refresh token renews the access token.'
+                        : editOauthGrant === 'password'
+                          ? 'For APIs that issue tokens with no refresh token: a new one is requested with the username and password whenever it expires. Datto RMM: username = API key, password = API secret, client public-client / public with HTTP Basic.'
+                          : 'The client ID and secret alone get the token, and a new one whenever it expires. No sign-in at the provider.'}
+                    </p>
+                  </div>
+                  {editOauthGrant === 'password' && (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="edit-oauth-username" className="block text-sm font-medium mb-1">Username</label>
+                        <input id="edit-oauth-username" type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthUsername} onChange={(e) => setEditOauthUsername(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      </div>
+                      <div>
+                        <label htmlFor="edit-oauth-password" className="block text-sm font-medium mb-1">Password</label>
+                        <input id="edit-oauth-password" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editOauthPassword} onChange={(e) => setEditOauthPassword(e.target.value)} placeholder={oauthHasPasswordCreds ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
@@ -1262,10 +1322,12 @@ export default function ConnectorDetailPage() {
                       <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
+                  {!isMachineGrant(editOauthGrant) && (
                   <div>
                     <label className="block text-sm font-medium mb-1">Authorization URL</label>
                     <input type="text" value={editOauthAuthUrl} onChange={(e) => setEditOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
                   </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium mb-1">Token URL</label>
                     <input type="text" value={editOauthTokenUrl} onChange={(e) => setEditOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
@@ -1290,9 +1352,12 @@ export default function ConnectorDetailPage() {
                     <p className="mt-1 text-xs text-[var(--text-3)]">
                       {editTokenAuthMethod === 'private_key_jwt'
                         ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
-                        : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
+                        : isMachineGrant(editOauthGrant)
+                          ? 'How the client ID and secret reach the token URL. HTTP Basic is the default for this grant.'
+                          : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
                     </p>
                   </div>
+                  {!isMachineGrant(editOauthGrant) && (
                   <div>
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <input type="checkbox" checked={editPkce} onChange={(e) => setEditPkce(e.target.checked)} />
@@ -1302,6 +1367,7 @@ export default function ConnectorDetailPage() {
                       On by default. Turn it off only if the provider refuses PKCE: LinkedIn&apos;s standard web flow answers 401 invalid_client to it. Re-authorize after changing it.
                     </p>
                   </div>
+                  )}
                   <p className="text-xs text-[var(--text-3)]">
                     Leave Client ID / Client Secret empty to keep the stored values. Endpoints
                     are shown as configured and can be corrected here — useful when a connector
@@ -1471,7 +1537,7 @@ export default function ConnectorDetailPage() {
         </Card>
 
         {/* OAuth2 Authorization */}
-        {connector.authType === 'OAUTH2' && (
+        {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">OAuth2 Authorization</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">

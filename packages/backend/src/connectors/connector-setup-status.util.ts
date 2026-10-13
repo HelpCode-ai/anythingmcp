@@ -1,4 +1,5 @@
 import { getAdapter } from '../adapters/catalog';
+import { isMachineGrant } from './oauth-grant.util';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import {
@@ -108,7 +109,7 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
   const authConfig = interpolateDeep(parseAuthConfig(input.authConfig), envVars, options);
   const isBrowserOAuth =
     input.authType === 'OAUTH2' &&
-    String(authConfig.grant ?? '') !== 'client_credentials' &&
+    !isMachineGrant(authConfig.grant) &&
     (!!browserAuthorizationUrl(authConfig, input.config) || isCatalogMcpBridge(input.config));
 
   // Tokens of a browser OAuth connector are written by the authorization; a

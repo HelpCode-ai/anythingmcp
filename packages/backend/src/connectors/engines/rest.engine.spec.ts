@@ -1721,6 +1721,35 @@ describe('RestEngine', () => {
       );
       expect(mockedAxios).toHaveBeenCalledTimes(1);
     });
+
+    it('gets a new token after a 401 on the password grant, which has no refresh token (Datto RMM)', async () => {
+      const err = new AxiosError('Unauthorized');
+      (err as any).response = { status: 401, data: {} };
+      mockedAxios.mockRejectedValueOnce(err).mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        {
+          ...oauthConfig({
+            grant: 'password',
+            refreshToken: undefined,
+            username: 'api-key',
+            password: 'api-secret',
+          }),
+          connectorId: 'conn-datto',
+        },
+        { method: 'GET', path: '/api/v2/account' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockOAuth2TokenService.renewAfterRejection).toHaveBeenCalledWith(
+        expect.objectContaining({ grant: 'password' }),
+        'conn-datto',
+        expect.any(Number),
+      );
+      const retried = mockedAxios.mock.calls[1][0] as any;
+      expect(retried.headers.Authorization).toBe('Bearer new-access-token');
+    });
   });
 
   describe('form-data file upload (__file)', () => {

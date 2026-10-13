@@ -283,6 +283,19 @@ export const mcpConnections = {
 
 // Connectors
 
+/**
+ * How an OAuth2 connector gets its access token. `authorization_code` signs in
+ * at the provider ("Authorize with Provider"); `client_credentials` and
+ * `password` ask the token endpoint with stored credentials, again whenever
+ * the token expires.
+ */
+export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'password';
+
+/** True for the grants that need no sign-in at the provider. */
+export function isMachineGrant(grant: string | undefined): boolean {
+  return grant === 'client_credentials' || grant === 'password';
+}
+
 export interface CatalogBaseUrlChange {
   from: string;
   to: string;
@@ -371,6 +384,8 @@ export const connectors = {
   getOAuthConfig: (id: string, token: string) =>
     request<{
       clientId: string;
+      /** How tokens are obtained: a sign-in at the provider, or a machine grant. */
+      grant: OAuthGrant;
       authorizationUrl: string;
       tokenUrl: string;
       scopes: string;
@@ -378,6 +393,8 @@ export const connectors = {
       /** Whether "Authorize with Provider" sends PKCE (on unless turned off). */
       pkce: boolean;
       hasClientSecret: boolean;
+      hasUsername: boolean;
+      hasPassword: boolean;
       hasAccessToken: boolean;
       hasRefreshToken: boolean;
     }>(`/api/connectors/${id}/oauth-config`, { token }),
@@ -390,6 +407,9 @@ export const connectors = {
     data: {
       clientId?: string;
       clientSecret?: string;
+      grant?: OAuthGrant;
+      username?: string;
+      password?: string;
       authorizationUrl?: string;
       tokenUrl?: string;
       scopes?: string;
