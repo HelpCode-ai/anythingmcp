@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsNumber, IsOptional, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsBoolean, IsArray, ValidateNested, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { SiteSettingsService } from './site-settings.service';
@@ -62,8 +62,13 @@ class FooterLinkDto {
   @IsString()
   label: string;
 
-  @ApiProperty({ description: 'Target URL.', example: 'https://example.com/privacy' })
+  // Shown as a link on the app's own origin to every member of the workspace,
+  // so only web and mail links: no javascript:, data: or other schemes.
+  @ApiProperty({ description: 'Target URL (https://, http:// or mailto:).', example: 'https://example.com/privacy' })
   @IsString()
+  @Matches(/^(https?:\/\/[^\s]+|mailto:[^\s]+)$/i, {
+    message: 'Footer link URLs must start with https://, http:// or mailto:',
+  })
   url: string;
 }
 
@@ -101,6 +106,33 @@ export class SiteSettingsPublicController {
   @ApiOperation({ summary: 'Get footer links (public)' })
   async getFooterLinks() {
     return this.siteSettings.getFooterLinks();
+  }
+}
+
+// ── Member endpoints ────────────────────────────────────────────────────────
+
+/**
+ * The footer of a signed-in member shows their workspace's links. Admins save
+ * them per workspace (PUT /api/admin/settings/footer-links), but the footer
+ * used to read only the instance-wide list from the public route above, so on
+ * Cloud a workspace's own links never appeared. Any member may read them: they
+ * are shown to everyone in the workspace anyway.
+ */
+@ApiTags('Site Settings')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'))
+@Controller('api/settings')
+export class SiteSettingsMemberController {
+  constructor(private readonly orgSettings: OrgSettingsService) {}
+
+  @Get('footer-links')
+  @ApiOperation({
+    summary: "Footer links of the caller's workspace, falling back to the instance-wide links",
+  })
+  async getFooterLinks(@Req() req: any) {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return [];
+    return (await this.orgSettings.getFooterLinks(orgId)) || [];
   }
 }
 

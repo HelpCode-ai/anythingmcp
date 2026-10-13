@@ -13,6 +13,7 @@ import { ConnectionCheck } from '@/components/connection-check';
 import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
 import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -352,6 +353,7 @@ export default function McpServerDetailPage() {
     { id: 'muse', name: 'Meta Muse', init: 'Mu', tone: 'info' },
     { id: 'gemini', name: 'Gemini CLI', init: 'Ge', tone: 'pink' },
     { id: 'windsurf', name: 'Windsurf', init: 'Wi', tone: 'success' },
+    { id: 'inspector', name: 'MCP Inspector', init: 'In', tone: 'neutral' },
   ];
 
   const codeBlock = (text: string, label: string) => (
@@ -615,6 +617,36 @@ Auth: OAuth`;
             {codeBlock(windsurfConfig, 'windsurf')}
           </div>
         );
+      case 'inspector': {
+        const cmd = inspectorCommand(endpointUrl);
+        return (
+          <div className="space-y-4">
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              Run this command in your terminal (Node 22.19 or later). It starts the Inspector already pointed at this server:
+            </p>
+            <div className="flex gap-2">
+              <code className="flex-1 break-all rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[9px] font-mono text-[12px] text-[var(--text-2)]">{cmd}</code>
+              <button
+                onClick={() => handleCopy(cmd, 'modal-inspector')}
+                className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'flex-shrink-0')}
+              >
+                {copied === 'modal-inspector' ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              The Inspector opens in your browser. If it doesn&apos;t, open it here:
+            </p>
+            {linkAction(INSPECTOR_URL, 'Open in MCP Inspector', true)}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              The Inspector hands its session token (<code className="rounded bg-[var(--surface-2)] px-1 font-mono">MCP_INSPECTOR_API_TOKEN</code>) to the page it opens, so you don&apos;t need to copy it.
+            </p>
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              Sign in with OAuth when the Inspector asks (connect, sign in and approve access), or use an API key: set an <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">X-API-Key</code> header in the server&apos;s settings in the Inspector. You can also add <code className="rounded bg-[var(--surface-2)] px-1 font-mono text-xs">--header &quot;X-API-Key: &lt;your key&gt;&quot;</code> to the command, but the key then stays in your shell history.
+            </p>
+            {endpointRow('modal-inspector-url')}
+          </div>
+        );
+      }
       default:
         return null;
     }

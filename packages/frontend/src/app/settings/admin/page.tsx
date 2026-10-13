@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { adminSettings, type AlertWebhookInput } from '@/lib/api';
+import { adminSettings, type AlertWebhookInput, FOOTER_LINKS_CHANGED } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AppSelect } from '@/components/ui/select';
@@ -207,6 +207,7 @@ export default function SettingsAdminPage() {
     if (!token) return;
     try {
       await adminSettings.updateFooterLinks(footerLinks.filter(l => l.label && l.url), token);
+      window.dispatchEvent(new Event(FOOTER_LINKS_CHANGED));
       setFooterMsg('Footer links saved');
       setTimeout(() => setFooterMsg(''), 3000);
     } catch (err: any) {
