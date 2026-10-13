@@ -95,6 +95,35 @@ export const ProductEvents = {
    * good). Server-only. Its presence is what stops a second report.
    */
   ADS_ACTIVATION_REPORTED: 'ads_activation_reported',
+  /**
+   * Cloud: a workspace on the no-card trial made its first successful tool
+   * call and is offered the card trial in the app and by email (see
+   * card-trial-offer.ts). Once per workspace; metadata.connectorId,
+   * adapterSlug and toolName = the call that did it. Server-only.
+   */
+  CARD_TRIAL_OFFER_ELIGIBLE: 'card_trial_offer_eligible',
+  /**
+   * The in-app offer, as an admin saw it (at most once a day per user and
+   * browser), clicked its button, or dismissed it. metadata.via = the page:
+   * 'dashboard', 'connectors' or 'connect'. Read against the eligible event.
+   */
+  CARD_TRIAL_OFFER_SHOWN: 'card_trial_offer_shown',
+  CARD_TRIAL_OFFER_CLICKED: 'card_trial_offer_clicked',
+  CARD_TRIAL_OFFER_DISMISSED: 'card_trial_offer_dismissed',
+  /**
+   * The offer email went out to the workspace's admins. metadata.connectorId,
+   * metadata.kind = 'trial' (linked to the card trial) or 'plan' (under 48 h
+   * of trial left, linked to the plans). Server-only.
+   */
+  CARD_TRIAL_OFFER_EMAILED: 'card_trial_offer_emailed',
+  /**
+   * The app minted a Stripe Checkout link (POST /api/license/checkout-link).
+   * metadata.via = where it came from ('first_success', or 'app' for every
+   * other entry point), metadata.kind = 'trial' (card trial) or 'pay'.
+   * Server-only. Answers how many clicks reach Checkout; Stripe says how
+   * many finish (metadata.trial_source).
+   */
+  CHECKOUT_LINK_CREATED: 'checkout_link_created',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -109,6 +138,9 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.ADS_ACTIVATION_REPORTED,
+  ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
+  ProductEvents.CARD_TRIAL_OFFER_EMAILED,
+  ProductEvents.CHECKOUT_LINK_CREATED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),

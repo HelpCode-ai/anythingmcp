@@ -24,17 +24,22 @@ import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
-import { ProductEventService } from '../audit/product-event.service';
+import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
+import { CardTrialOfferService } from './card-trial-offer.service';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
+  CHECKOUT_SOURCES,
   CheckoutBillingPeriod,
   CheckoutPlan,
+  CheckoutSource,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
 } from './license-checkout';
+
+type CardTrialOfferView = { connectorName: string | null; trialEndsAt: string };
 
 class SetLicenseKeyDto {
   @IsString()
@@ -44,7 +49,7 @@ class SetLicenseKeyDto {
   licenseKey: string;
 }
 
-class CheckoutLinkDto {
+export class CheckoutLinkDto {
   @IsIn(CHECKOUT_PLANS as unknown as string[])
   plan: CheckoutPlan;
 
@@ -60,6 +65,12 @@ class CheckoutLinkDto {
   @IsString()
   @Matches(/^[A-Za-z0-9_-]{1,64}$/)
   promo?: string;
+
+  // Which in-app offer led here (e.g. 'first_success', the card-trial offer
+  // after the first successful tool call). Lands in Stripe metadata.
+  @IsOptional()
+  @IsIn(CHECKOUT_SOURCES as unknown as string[])
+  source?: CheckoutSource;
 }
 
 class BillingPortalDto {
@@ -86,6 +97,7 @@ export class LicenseController {
     private readonly deployment: DeploymentService,
     private readonly productEvents: ProductEventService,
     private readonly cardTrialEligibility: CardTrialEligibilityService,
+    private readonly cardTrialOffer: CardTrialOfferService,
   ) {}
 
   @Get('status')
@@ -296,7 +308,7 @@ export class LicenseController {
     );
 
     try {
-      return await this.licenseService.createCheckoutIntent({
+      const link = await this.licenseService.createCheckoutIntent({
         email,
         plan: `cloud_${dto.plan}`,
         billingPeriod: dto.billingPeriod,
@@ -305,7 +317,15 @@ export class LicenseController {
         organizationId,
         ...(dto.promo && { promoCode: dto.promo.toUpperCase() }),
         ...(adMetadata && { adMetadata }),
+        ...(dto.source && { source: dto.source }),
       });
+      void this.productEvents.log({
+        event: ProductEvents.CHECKOUT_LINK_CREATED,
+        userId: req.user.sub,
+        organizationId,
+        metadata: { via: dto.source ?? 'app', kind: trialEnd ? 'trial' : 'pay' },
+      });
+      return link;
     } catch (err: any) {
       this.logger.warn(`Checkout link for org ${organizationId} failed: ${err?.message ?? err}`);
       throw new BadGatewayException(
@@ -333,6 +353,23 @@ export class LicenseController {
       kind: result.kind,
       trialEndsAt: result.kind === 'trial' ? result.trialEndsAt.toISOString() : null,
     };
+  }
+
+  @Get('card-trial-offer')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud: the card-trial offer after the first successful tool call, for admins of an eligible workspace (null otherwise)',
+  })
+  async cardTrialOfferForUser(@Req() req: any): Promise<{ offer: CardTrialOfferView | null }> {
+    // Null for everyone it does not apply to: self-hosted, members who are
+    // not admins (they cannot start a subscription), workspaces that pay or
+    // already run a card trial, and trials with under 48 hours left.
+    const offer = await this.cardTrialOffer
+      .currentOffer(req.user?.organizationId, req.user?.role)
+      .catch(() => null);
+    return { offer };
   }
 
   @Post('verify')

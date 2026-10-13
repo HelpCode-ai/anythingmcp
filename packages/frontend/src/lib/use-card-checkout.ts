@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { ApiError, license } from './api';
 import { useAuth } from './auth-context';
 import { readPromoCode, type PlanSelection } from './card-trial';
+import type { CheckoutSource } from './first-success-offer';
 
 const GENERIC_ERROR = 'We could not open the checkout. Please try again in a moment.';
 
@@ -20,7 +21,8 @@ export type CheckoutOutcome = 'redirected' | 'charges_today' | 'failed';
 /**
  * Opens Stripe Checkout for a Cloud plan (POST /api/license/checkout-link),
  * then leaves the page for it. `trial: true` is the card trial that ends with
- * the free trial; `false` is a plain purchase.
+ * the free trial; `false` is a plain purchase. `source` marks the in-app offer
+ * that led here, for Stripe metadata.
  */
 export function useCardCheckout() {
   const { token } = useAuth();
@@ -29,7 +31,7 @@ export function useCardCheckout() {
   const [chargesTodayUrl, setChargesTodayUrl] = useState<string | null>(null);
 
   const start = useCallback(
-    async (selection: PlanSelection, trial: boolean): Promise<CheckoutOutcome> => {
+    async (selection: PlanSelection, trial: boolean, source?: CheckoutSource | null): Promise<CheckoutOutcome> => {
       if (!token) return 'failed';
       setLoading(true);
       setError(null);
@@ -40,6 +42,7 @@ export function useCardCheckout() {
           billingPeriod: selection.period,
           trial,
           ...(promo && { promo }),
+          ...(source && { source }),
         });
         // A trial was asked for and the licence site did not grant it: never
         // send someone to a charge the page did not announce.

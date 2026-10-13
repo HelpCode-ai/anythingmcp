@@ -23,6 +23,15 @@ export const CARD_TRIAL_MIN_LEAD_MS = 48 * 60 * 60 * 1000;
 export type CheckoutPlan = (typeof CHECKOUT_PLANS)[number];
 
 export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
+
+/**
+ * Where in the app a checkout was started, when it is worth measuring. Sent
+ * to the licence site as `source`, which stores it on the Stripe Checkout
+ * Session and the subscription as `metadata.trial_source`. Allow-listed: the
+ * value ends up in Stripe.
+ */
+export const CHECKOUT_SOURCES = ['first_success'] as const;
+export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];
 export type CheckoutBillingPeriod = (typeof CHECKOUT_BILLING_PERIODS)[number];
 
 /** Body of POST {licence site}/api/stripe/checkout-intent (the agreed contract). */
@@ -36,6 +45,8 @@ export interface CheckoutIntentPayload {
   organizationId?: string;
   /** A Stripe promotion code the user arrived with; the site pre-applies it. */
   promoCode?: string;
+  /** The app entry point (CHECKOUT_SOURCES); Stripe metadata `trial_source`. */
+  source?: CheckoutSource;
   adMetadata?: {
     ad_consent: 'granted';
     gclid?: string;

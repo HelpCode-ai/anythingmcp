@@ -18,8 +18,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { RolesGuard } from '../auth/roles.guard';
-import { LicenseController } from './license.controller';
+import { CheckoutLinkDto, LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import {
   CHECKOUT_PLANS,
@@ -221,7 +223,10 @@ describe('LicenseController.checkoutLink', () => {
         return { url: 'https://anythingmcp.com/api/stripe/checkout/start?intent=i1' };
       }),
     };
-    const productEvents = { clickIdForUser: jest.fn(async () => opts.click ?? null) };
+    const productEvents = {
+      clickIdForUser: jest.fn(async () => opts.click ?? null),
+      log: jest.fn(async () => undefined),
+    };
     const eligibility = {
       hadSubscription: jest.fn(async () => (opts.hadSubscription === undefined ? false : opts.hadSubscription)),
     };
@@ -233,6 +238,7 @@ describe('LicenseController.checkoutLink', () => {
       { isCloud: () => opts.isCloud ?? true } as any,
       productEvents as any,
       eligibility as any,
+      {} as any,
     );
     return { controller, licenseService, productEvents, eligibility };
   }
@@ -408,6 +414,52 @@ describe('LicenseController.checkoutLink', () => {
     const { controller, eligibility } = makeController();
     await controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: false });
     expect(eligibility.hadSubscription).not.toHaveBeenCalled();
+  });
+
+  it('passes the in-app source through, and records the checkout link with where it came from', async () => {
+    const { controller, licenseService, productEvents } = makeController();
+    await controller.checkoutLink(adminReq, {
+      plan: 'starter',
+      billingPeriod: 'monthly',
+      trial: true,
+      source: 'first_success',
+    });
+    const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(payload.source).toBe('first_success');
+    expect(productEvents.log).toHaveBeenCalledWith({
+      event: 'checkout_link_created',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata: { via: 'first_success', kind: 'trial' },
+    });
+
+    const plain = makeController();
+    await plain.controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: false });
+    const [plainPayload] = plain.licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(plainPayload).not.toHaveProperty('source');
+    expect(plain.productEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { via: 'app', kind: 'pay' } }),
+    );
+  });
+
+  it('records no checkout link when the licence site fails', async () => {
+    const { controller, productEvents } = makeController({ fail: true });
+    await controller
+      .checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: true, source: 'first_success' })
+      .catch(() => undefined);
+    expect(productEvents.log).not.toHaveBeenCalled();
+  });
+
+  it('accepts only known sources: the value ends up in Stripe metadata', async () => {
+    const base = { plan: 'starter', billingPeriod: 'monthly', trial: true };
+    const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source: 'first_success' }));
+    expect(ok).toHaveLength(0);
+    const none = await validate(plainToInstance(CheckoutLinkDto, base));
+    expect(none).toHaveLength(0);
+    for (const source of ['newsletter', 'first_success; drop', '', 42]) {
+      const errors = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
+      expect(errors.map((e) => e.property)).toContain('source');
+    }
   });
 
   it('maps any licence-site failure to a generic 502', async () => {

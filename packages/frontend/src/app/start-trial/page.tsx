@@ -25,6 +25,7 @@ import {
 } from '@/lib/card-trial';
 import { useCardCheckout } from '@/lib/use-card-checkout';
 import { fetchCardTrialKind } from '@/lib/use-card-trial-eligibility';
+import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-offer';
 
 /**
  * Cloud only: the card-trial offer shown once after sign-up (see
@@ -52,6 +53,8 @@ export default function StartTrialPage() {
   const [promo, setPromo] = useState<string | null>(null);
   // 'pay': this address had a subscription, so the plan starts and is billed today.
   const [kind, setKind] = useState<'trial' | 'pay'>('trial');
+  // Which in-app offer sent the user here (?source=first_success), for Stripe.
+  const [source, setSource] = useState<CheckoutSource | null>(null);
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
@@ -69,7 +72,8 @@ export default function StartTrialPage() {
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
     if (!token || !user) {
-      router.replace('/login?redirect=/start-trial');
+      // Keep ?source= through the sign-in (the offer email links here).
+      router.replace(`/login?redirect=${encodeURIComponent(`/start-trial${window.location.search}`)}`);
       return;
     }
     if (deploymentMode !== 'cloud' || user.role !== 'ADMIN') {
@@ -89,6 +93,7 @@ export default function StartTrialPage() {
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
+        setSource(parseCheckoutSource(new URLSearchParams(window.location.search).get('source')));
         setReady(true);
       })
       .catch(() => {
@@ -109,7 +114,7 @@ export default function StartTrialPage() {
       window.location.assign(checkout.chargesTodayUrl);
       return;
     }
-    const outcome = await checkout.start(selection, !paysToday);
+    const outcome = await checkout.start(selection, !paysToday, source);
     if (outcome === 'redirected') writeCardTrialPrompt(user.id, 'checkout');
   };
 
