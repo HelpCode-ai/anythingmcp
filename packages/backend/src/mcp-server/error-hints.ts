@@ -252,6 +252,66 @@ const OPENAI_SAFETY_HINT =
   'content_policy_violation or content_filter). Retrying the same request will not help. Tell ' +
   'the user, and only rephrase if they want to and the request is acceptable.';
 
+// Web search APIs for agents (tavily, perplexity and serpapi adapters). Calls
+// spend the user's own credits or monthly searches, so these also say when a
+// retry cannot help.
+const TAVILY_KEY_HINT =
+  'Tavily refused the API key (401): it is wrong, revoked or missing. Retrying will not help. ' +
+  'Ask the user to copy the key (it starts with tvly-) from https://app.tavily.com and paste it ' +
+  'into TAVILY_API_KEY.';
+
+const TAVILY_CREDITS_HINT =
+  'The Tavily key or plan has used up its credits (432), or the pay-as-you-go limit is reached ' +
+  '(433). Retrying will not help: the user has to upgrade the plan or raise the limit at ' +
+  'https://app.tavily.com. tavily_get_usage shows what is left.';
+
+const TAVILY_RATE_HINT =
+  'Tavily rate limit reached (429). Wait a little before one retry, and send fewer requests at ' +
+  'once. Do not retry in a loop.';
+
+const TAVILY_BAD_REQUEST_HINT =
+  'Tavily rejected a parameter; the error names it. Fix that value instead of resending the same ' +
+  'call: a query needs at least 2 characters, dates are YYYY-MM-DD, chunks_per_source does not ' +
+  'work with search_depth ultra-fast, max_depth is at most 5, and a research model is mini, pro ' +
+  'or auto.';
+
+const PERPLEXITY_KEY_HINT =
+  'Perplexity answered 401: the API key is wrong or deleted, or the account has no API credits ' +
+  'left (Perplexity uses 401 for both). Retrying will not help. Ask the user to check Billing and ' +
+  'API Keys at https://console.perplexity.ai, top up or create a key, and paste it into ' +
+  'PERPLEXITY_API_KEY.';
+
+const PERPLEXITY_RATE_HINT =
+  'Perplexity rate limit reached (429) for the account\'s usage tier. Wait a little before one ' +
+  'retry, or use perplexity_start_research for long work instead of many quick calls. Do not ' +
+  'retry in a loop.';
+
+const PERPLEXITY_BAD_REQUEST_HINT =
+  'Perplexity rejected a parameter; the error names it. Fix that value instead of resending the ' +
+  'same call: model ids come from perplexity_list_models (provider/model), date filters are ' +
+  'MM/DD/YYYY, and search_domain_filter is either all included domains or all excluded ' +
+  '(-domain), never mixed, at most 20.';
+
+const SERPAPI_KEY_HINT =
+  'SerpApi refused the API key (401): it is wrong or was regenerated. Retrying will not help. Ask ' +
+  'the user to copy the private key from https://serpapi.com/manage-api-key and paste it into ' +
+  'SERPAPI_API_KEY.';
+
+const SERPAPI_QUOTA_HINT =
+  'SerpApi answered 429: the plan has no searches left this month, or the hourly throughput ' +
+  'limit is reached. serpapi_get_account (free) shows which. For the hourly limit wait for the ' +
+  'next hour; for the monthly one the user has to upgrade the plan. Do not retry in a loop.';
+
+const SERPAPI_BAD_REQUEST_HINT =
+  'SerpApi rejected a parameter value; the error names it (for example "Unsupported ... ' +
+  'parameter"). Use the documented values from the tool\'s parameter list; for location take an ' +
+  'exact name from serpapi_search_locations. Do not resend the same call.';
+
+const SERPAPI_FORBIDDEN_HINT =
+  'SerpApi says this account may not make the request (403), for example because it was ' +
+  'deleted or suspended. Retrying will not help: the user should check the account at ' +
+  'https://serpapi.com/dashboard.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -393,6 +453,44 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (hint) return hint;
   }
 
+  if (hostMatches(input.host, 'api.tavily.com')) {
+    const hint = tavilyHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'api.perplexity.ai')) {
+    const hint = perplexityHint(input.status, text);
+    if (hint) return hint;
+  }
+
+  if (hostMatches(input.host, 'serpapi.com')) {
+    const hint = serpapiHint(input.status);
+    if (hint) return hint;
+  }
+
+  return undefined;
+}
+
+function tavilyHint(status: number | undefined, text: string): string | undefined {
+  if (status === 432 || status === 433 || /usage limit|pay-as-you-go limit/i.test(text)) return TAVILY_CREDITS_HINT;
+  if (status === 429) return TAVILY_RATE_HINT;
+  if (status === 401) return TAVILY_KEY_HINT;
+  if (status === 400 || status === 422) return TAVILY_BAD_REQUEST_HINT;
+  return undefined;
+}
+
+function perplexityHint(status: number | undefined, text: string): string | undefined {
+  if (status === 401 || status === 402 || /invalid_api_key|insufficient.{0,20}credit/i.test(text)) return PERPLEXITY_KEY_HINT;
+  if (status === 429) return PERPLEXITY_RATE_HINT;
+  if (status === 400 || status === 422) return PERPLEXITY_BAD_REQUEST_HINT;
+  return undefined;
+}
+
+function serpapiHint(status: number | undefined): string | undefined {
+  if (status === 401) return SERPAPI_KEY_HINT;
+  if (status === 429) return SERPAPI_QUOTA_HINT;
+  if (status === 403) return SERPAPI_FORBIDDEN_HINT;
+  if (status === 400) return SERPAPI_BAD_REQUEST_HINT;
   return undefined;
 }
 
