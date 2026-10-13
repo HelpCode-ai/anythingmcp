@@ -407,6 +407,43 @@ describe('CatalogResyncService — the user\'s own tools are never touched', () 
     expect(tx.mcpTool.create.mock.calls[0][0].data.origin).toBe('catalog');
   });
 
+  it('adds a tool the catalog ships switched off as switched off, as an install would', async () => {
+    const off = getAdapter(SLUG)!.tools.find((t) => t.enabled === false)!;
+    expect(off).toBeDefined();
+    const { service, tx } = applySetup((tools) => {
+      const i = tools.findIndex((t) => t.name === off.name);
+      tools.splice(i, 1);
+    });
+    await service.resync('c1', 'full');
+    expect(tx.mcpTool.create).toHaveBeenCalledTimes(1);
+    expect(tx.mcpTool.create.mock.calls[0][0].data).toMatchObject({ name: off.name, isEnabled: false });
+  });
+
+  it('brings a read-only weclapp install up to date without touching the tools its users built', async () => {
+    // An install from before the write tools: the first 11 tools, plus the
+    // kind of tool workspaces build themselves on that connector.
+    const readOnly = new Set(getAdapter(SLUG)!.tools.slice(0, 11).map((t) => t.name));
+    const { service, tx } = applySetup((tools) => {
+      for (let i = tools.length - 1; i >= 0; i--) if (!readOnly.has(tools[i].name)) tools.splice(i, 1);
+      tools.push(userTool({ id: 'own1', name: 'weclapp_update_sales_invoice', origin: 'user' }));
+      tools.push(userTool({ id: 'own2', name: 'rechnung_verantwortlichen_setzen', origin: null }));
+    });
+    const diff = await service.computeDiff('c1');
+    expect(diff!.added.length).toBe(getAdapter(SLUG)!.tools.length - 11);
+    expect(diff!.custom.sort()).toEqual(['rechnung_verantwortlichen_setzen', 'weclapp_update_sales_invoice']);
+    await service.resync('c1', 'full');
+    const touched = [
+      ...tx.mcpTool.update.mock.calls.map((c: any) => c[0].where.id),
+    ];
+    expect(touched).not.toContain('own1');
+    expect(touched).not.toContain('own2');
+    const created = tx.mcpTool.create.mock.calls.map((c: any) => c[0].data);
+    expect(created.map((d: any) => d.name)).not.toContain('weclapp_update_sales_invoice');
+    expect(created.filter((d: any) => d.isEnabled === false).map((d: any) => d.name).sort()).toEqual(
+      getAdapter(SLUG)!.tools.filter((t) => t.enabled === false).map((t) => t.name).sort(),
+    );
+  });
+
   it('safe mode applies description fixes even when a new tool is also pending', async () => {
     const { service, tx } = applySetup((tools) => {
       tools[1] = { ...tools[1], description: 'stale description' };

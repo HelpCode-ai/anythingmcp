@@ -367,6 +367,10 @@ export class CatalogResyncService {
               endpointMapping: ct.endpointMapping as any,
               responseMapping: (ct.responseMapping as any) ?? undefined,
               useProxy: ct.useProxy === true,
+              // A tool the catalog ships switched off (a delete, say) arrives
+              // switched off here too, as it does on a fresh install. Without
+              // this an update turned on what an install would have left off.
+              isEnabled: ct.enabled !== false,
               // Only on create: on an existing tool this column may hold the
               // operator's own override.
               annotations: (ct.annotations as any) ?? undefined,
