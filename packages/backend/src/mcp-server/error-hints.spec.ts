@@ -340,3 +340,46 @@ describe('deriveErrorHint: generative AI APIs', () => {
     expect(deriveErrorHint({ host: 'api.example.com', status: 400, message: 'SAFETY' })).toBeUndefined();
   });
 });
+
+describe('deriveErrorHint: web search APIs for agents', () => {
+  const tavily = 'api.tavily.com';
+  const perplexity = 'api.perplexity.ai';
+  const serpapi = 'serpapi.com';
+
+  it('reads the Tavily answers documented in its OpenAPI document', () => {
+    expect(deriveErrorHint({ host: tavily, status: 401, body: { detail: { error: 'Unauthorized: missing or invalid API key.' } } })).toContain('app.tavily.com');
+    expect(
+      deriveErrorHint({ host: tavily, status: 432, body: { detail: { error: "This request exceeds your plan's set usage limit." } } }),
+    ).toMatch(/used up its credits/);
+    expect(deriveErrorHint({ host: tavily, status: 433, body: { detail: { error: 'This request exceeds the pay-as-you-go limit.' } } })).toMatch(/pay-as-you-go/);
+    expect(deriveErrorHint({ host: tavily, status: 429, body: { detail: { error: 'Your request has been blocked due to excessive requests.' } } })).toMatch(
+      /Do not retry in a loop/,
+    );
+    expect(deriveErrorHint({ host: tavily, status: 400, body: { detail: { error: 'Query is too short. Min query length is 2 characters.' } } })).toMatch(
+      /at least 2 characters/,
+    );
+    expect(deriveErrorHint({ host: tavily, status: 422, body: { detail: [{ loc: ['body', 'extract_depth'] }] } })).toMatch(/names it/);
+  });
+
+  it('reads Perplexity 401 as a wrong key or no credits, and its rate and validation errors', () => {
+    expect(
+      deriveErrorHint({ host: perplexity, status: 401, body: { error: { message: 'Invalid API key provided.', type: 'invalid_api_key', code: 401 } } }),
+    ).toMatch(/no API credits left/);
+    expect(deriveErrorHint({ host: perplexity, status: 429, body: { error: { message: 'Too many requests' } } })).toMatch(/usage tier/);
+    expect(deriveErrorHint({ host: perplexity, status: 400, body: { error: { message: 'Invalid model' } } })).toMatch(/perplexity_list_models/);
+  });
+
+  it('reads the SerpApi status codes', () => {
+    expect(
+      deriveErrorHint({ host: serpapi, status: 401, body: { error: 'Invalid API key. Your API key should be here: https://serpapi.com/manage-api-key' } }),
+    ).toContain('serpapi.com/manage-api-key');
+    expect(deriveErrorHint({ host: serpapi, status: 429, body: { error: 'Your account has run out of searches.' } })).toMatch(/serpapi_get_account/);
+    expect(deriveErrorHint({ host: serpapi, status: 400, body: { error: 'Unsupported `NOPE` data type parameter.' } })).toMatch(/serpapi_search_locations/);
+    expect(deriveErrorHint({ host: serpapi, status: 403, body: { error: 'Forbidden' } })).toMatch(/dashboard/);
+  });
+
+  it('stays quiet for these statuses on other hosts', () => {
+    expect(deriveErrorHint({ host: 'api.example.com', status: 432 })).toBeUndefined();
+    expect(deriveErrorHint({ host: 'example-serpapi.com', status: 401 })).toBeUndefined();
+  });
+});

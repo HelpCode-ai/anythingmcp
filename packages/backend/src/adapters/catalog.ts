@@ -258,6 +258,7 @@ import * as orderful from './intl/orderful.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as paypal from './intl/paypal.json';
+import * as perplexity from './intl/perplexity.json';
 import * as pexels from './intl/pexels.json';
 import * as phorest from './intl/phorest.json';
 import * as pinterest from './intl/pinterest.json';
@@ -296,6 +297,7 @@ import * as savvycal from './intl/savvycal.json';
 import * as seamlessAi from './intl/seamless-ai.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
+import * as serpapi from './intl/serpapi.json';
 import * as serply from './intl/serply.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
@@ -316,6 +318,7 @@ import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
 import * as tally from './intl/tally.json';
+import * as tavily from './intl/tavily.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
@@ -854,6 +857,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
+  perplexity as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
   phorest as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
@@ -892,6 +896,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   seamlessAi as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
+  serpapi as unknown as AdapterDefinition,
   serply as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
@@ -912,6 +917,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
+  tavily as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
   ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
