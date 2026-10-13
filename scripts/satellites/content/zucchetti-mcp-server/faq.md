@@ -1,39 +1,23 @@
 ### Is there a Zucchetti MCP server?
+AnythingMCP can connect Zucchetti to Claude, ChatGPT and other MCP clients through the API of your Zucchetti installation. A ready-made catalog connector is not generally available yet: Zucchetti does not publish its API documentation, and each product and installation exposes its own API, made available through Zucchetti or your Zucchetti partner. Until that changes, the connection is set up for your installation, from the API your vendor gives you.
 
-AnythingMCP provides an adapter for accessing a Zucchetti Infinity-style REST endpoint through MCP. It exposes tools for discovering services, listing records, reading an individual record, and listing anagrafiche, documenti and articoli. The adapter is unlisted and has not been verified against a live installation.
+### Which Zucchetti products can be connected?
+Any Zucchetti product whose installation offers API access under your licence. Zucchetti is not one product: Infinity Zucchetti, Ad Hoc Revolution, HR Zucchetti, Mago and others each have their own API, versions and authentication. Your Zucchetti partner can tell you which API your installation has and what it exposes.
 
-### How do I connect my Zucchetti installation?
+### What Zucchetti data can an AI work with?
+Whatever your installation's API exposes and your API user is allowed to read. In the ERP products that usually means anagrafiche (customers and suppliers), documents such as invoices, orders and delivery notes, and articoli; in the HR products, employee and attendance records. Claude can then answer questions across them, such as which orders are still open or which invoices are overdue.
 
-Ask your Zucchetti partner for the REST endpoint, service path prefix, API user and documentation for your licensed product and version. Configure `ZUCCHETTI_URL`, `ZUCCHETTI_USERNAME` and `ZUCCHETTI_PASSWORD`. Set `ZUCCHETTI_COMPANY` when your installation hosts multiple companies and requires a company code.
+### What do I need from Zucchetti or my partner?
+- The API module or licence enabled for your installation.
+- The base URL of your installation's API.
+- Credentials for an API user, and the authentication method your product uses.
+- The API description, ideally as an OpenAPI (Swagger) file.
 
-Zucchetti offers multiple products and API surfaces. Do not assume that every installation uses the same endpoint or resource names.
-
-### How should I check the connection?
-
-Start with the `zucchetti_list_services` tool. It sends a GET request to `/services`. If the request returns 404, confirm the endpoint URL and service path prefix with your partner before troubleshooting individual resources.
-
-### Which records can I query?
-
-The adapter includes tools for anagrafiche (customer and supplier master records), documenti (documents such as invoices, orders and delivery notes), and articoli (catalogue items). The generic `zucchetti_list_records` and `zucchetti_get_record` tools accept a resource name, such as `anagrafiche`, `documenti`, `articoli` or `dipendenti`.
-
-Available resources, fields, search behavior and document type codes depend on your specific installation. Follow your partner's API documentation.
+### How do I connect it today?
+Two ways. [Contact us](https://anythingmcp.com/contact) and we set up the connector for your installation with you. Or build it yourself: create a REST connector in AnythingMCP, import the OpenAPI description your vendor gave you, and each operation becomes a tool. Then add the MCP server URL to Claude as a custom connector or to ChatGPT as an app.
 
 ### Can the AI change data in Zucchetti?
+Only if you let it. Give the MCP server a role that whitelists only the read operations, and the others are invisible to the AI client. Ask your partner for an API user with read-only rights, so Zucchetti enforces the same limit. HR records are personal data: expose only the operations a team actually needs.
 
-The six tools declared by this adapter use HTTP GET requests to read data. They do not declare create, update or delete operations. Access is still limited by the permissions of the configured API account, so use an account with only the necessary read permissions.
-
-### Why do I get a 401, 403 or 404 response?
-
-- **401 Unauthorized:** Check the username, password and authentication requirements for your installation.
-- **403 Forbidden:** Check the API user's permissions and whether the required API access has been enabled.
-- **404 Not Found:** Check the endpoint URL, service prefix, resource name and the API paths supported by your product version.
-
-These are general troubleshooting suggestions, not confirmed behavior for every Zucchetti product.
-
-### Does this adapter work with every Zucchetti product?
-
-No compatibility guarantee is made. The adapter is deliberately generic and unverified against live tenants. Confirm the supported API paths and fields with your partner before relying on the results in production.
-
-### Can I use this adapter with AnythingMCP Cloud or self-hosted AnythingMCP?
-
-The adapter is intended to be used through an AnythingMCP deployment. For Cloud, the configured endpoint must be reachable from the service and use a valid TLS certificate; self-signed certificates are not supported by this adapter's connection setup. For private or internal endpoints, a self-hosted deployment on the appropriate network may be necessary, and outbound-host restrictions may need configuration.
+### Does Zucchetti data leave my network?
+Self-hosted, the credentials and the audit log stay on your server; only the fields a tool returns go to the AI model you use, and response mapping can remove fields before they do. If your Zucchetti installation is only reachable inside your network, run AnythingMCP on that network; AnythingMCP Cloud can only reach an API published on the internet with a valid HTTPS certificate.
