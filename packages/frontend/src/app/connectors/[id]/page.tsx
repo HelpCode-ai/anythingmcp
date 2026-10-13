@@ -60,22 +60,77 @@ function slimHarHeaders(headers: unknown): any[] {
   return headers.filter((h: any) => h && typeof h.name === 'string' && !isHarCredentialHeader(h.name));
 }
 
+function slimHarQueryString(qs: unknown): any[] {
+  if (!Array.isArray(qs)) return [];
+  return qs.filter((q: any) => q && typeof q.name === 'string' && !HAR_CREDENTIAL_HEADER_RE.test(q.name));
+}
+
+/** `{"user":{"password":"…"}}` → the same shape with every credential-named key's value removed, at any depth. */
+function scrubJsonCredentials(value: any, depth = 0): any {
+  if (depth > 10 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((v) => scrubJsonCredentials(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = HAR_CREDENTIAL_HEADER_RE.test(key) ? '[removed before upload]' : scrubJsonCredentials(v, depth + 1);
+  }
+  return out;
+}
+
+function slimHarPostData(postData: unknown): any {
+  if (!postData || typeof postData !== 'object') return postData;
+  const pd = postData as any;
+  if (Array.isArray(pd.params)) {
+    return { ...pd, params: pd.params.filter((p: any) => !(p && typeof p.name === 'string' && HAR_CREDENTIAL_HEADER_RE.test(p.name))) };
+  }
+  if (typeof pd.text === 'string' && typeof pd.mimeType === 'string' && pd.mimeType.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(pd.text);
+      if (parsed && typeof parsed === 'object') {
+        return { ...pd, text: JSON.stringify(scrubJsonCredentials(parsed)) };
+      }
+    } catch {
+      // Not parseable JSON — leave it for the backend, which drops anything it can't scrub.
+    }
+  }
+  return pd;
+}
+
+/** Same origin as the connector's base URL, treating `wss:`/`ws:` as `https:`/`http:` like the backend parser does. */
+function matchesHarOrigin(urlStr: string, base: URL | null): boolean {
+  if (!base) return true;
+  try {
+    const u = new URL(urlStr);
+    const scheme = (p: string) => (p === 'wss:' ? 'https:' : p === 'ws:' ? 'http:' : p);
+    return scheme(u.protocol) === scheme(base.protocol) && u.host === base.host;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Strips response bodies, cookies and credential headers from a HAR before
- * it ever leaves the browser — a raw capture carries full response bodies
- * and session cookies that must never be uploaded at all, on top of the
- * credential headers/query/body fields the backend parser also scrubs.
+ * Strips response data, cookies and credential headers/query/body fields
+ * from a HAR before it ever leaves the browser, and drops entries outside
+ * the connector's own origin — a raw capture carries full response bodies,
+ * session cookies and requests to other sites that must never be uploaded at
+ * all, on top of the credential fields the backend parser also scrubs.
  */
-function slimHarForUpload(rawText: string): { json: string; byteLength: number } {
+function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; byteLength: number; droppedOtherOrigin: number } {
   const har = JSON.parse(rawText);
   const entries = har?.log?.entries;
   if (!Array.isArray(entries)) {
     throw new Error('Not a valid HAR file (expected a log.entries array)');
   }
+  let base: URL | null = null;
+  try {
+    base = baseUrl ? new URL(baseUrl) : null;
+  } catch {
+    base = null;
+  }
+  const inScope = entries.filter((entry: any) => matchesHarOrigin(entry?.request?.url ?? '', base));
   const slimmed = {
     log: {
       version: har.log.version,
-      entries: entries.map((entry: any) => ({
+      entries: inScope.map((entry: any) => ({
         _resourceType: entry?._resourceType,
         request: entry?.request
           ? {
@@ -83,24 +138,20 @@ function slimHarForUpload(rawText: string): { json: string; byteLength: number }
               url: entry.request.url,
               httpVersion: entry.request.httpVersion,
               headers: slimHarHeaders(entry.request.headers),
-              queryString: entry.request.queryString,
-              postData: entry.request.postData,
+              queryString: slimHarQueryString(entry.request.queryString),
+              postData: slimHarPostData(entry.request.postData),
             }
           : undefined,
-        response: entry?.response
-          ? {
-              status: entry.response.status,
-              headers: slimHarHeaders(entry.response.headers),
-              content: entry.response.content
-                ? { mimeType: entry.response.content.mimeType, size: entry.response.content.size }
-                : undefined,
-            }
-          : undefined,
+        // The backend never reads response data — dropped entirely, not just its body.
       })),
     },
   };
   const json = JSON.stringify(slimmed);
-  return { json, byteLength: new TextEncoder().encode(json).length };
+  return {
+    json,
+    byteLength: new TextEncoder().encode(json).length,
+    droppedOtherOrigin: entries.length - inScope.length,
+  };
 }
 
 export default function ConnectorDetailPage() {
@@ -554,10 +605,16 @@ export default function ConnectorDetailPage() {
     setHarFileName(file.name);
     try {
       const text = await file.text();
-      const { json, byteLength } = slimHarForUpload(text);
+      const { json, byteLength, droppedOtherOrigin } = slimHarForUpload(text, connector?.baseUrl);
       if (byteLength > HAR_MAX_UPLOAD_BYTES) {
         setHarError(
           `This capture is still ${formatBytes(byteLength)} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.`,
+        );
+        return;
+      }
+      if (droppedOtherOrigin > 0 && JSON.parse(json).log.entries.length === 0) {
+        setHarError(
+          `None of the ${droppedOtherOrigin} request(s) in this capture were made to ${connector?.baseUrl ?? 'the connector\'s base URL'}. Capture a session against that host and try again.`,
         );
         return;
       }

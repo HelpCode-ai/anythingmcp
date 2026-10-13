@@ -68,7 +68,7 @@
           "cookies": [{ "name": "session", "value": "deadbeef" }],
           "postData": {
             "mimeType": "application/json",
-            "text": "{\"username\":\"bob\",\"password\":\"hunter2\"}"
+            "text": "{\"username\":\"bob\",\"password\":\"hunter2\",\"account\":{\"email\":\"bob@example.com\",\"password\":\"hunter2nested\"}}"
           }
         },
         "response": {
@@ -132,6 +132,40 @@
           "postData": null
         },
         "response": { "status": 101, "statusText": "Switching Protocols", "headers": [], "content": {}, "cookies": [] }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:07.000Z",
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.com/v2/search?q=widgets&key=AIzaExampleKeyValue1234567890xyz",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "Accept", "value": "application/json" },
+            { "name": "Ocp-Apim-Subscription-Key", "value": "abcdef0123456789abcdef0123456789" },
+            { "name": "X-Custom", "value": "Bearer abcDEF1234567890xyzLongEnough" },
+            { "name": "X-Firebase-AppCheck", "value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123signaturepart" }
+          ],
+          "queryString": [
+            { "name": "q", "value": "widgets" },
+            { "name": "key", "value": "AIzaExampleKeyValue1234567890xyz" }
+          ],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 200, "statusText": "OK", "headers": [], "content": {}, "cookies": [] }
+      },
+      {
+        "startedDateTime": "2026-10-12T10:00:08.000Z",
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.com/v2beta/widgets",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "postData": null
+        },
+        "response": { "status": 200, "statusText": "OK", "headers": [], "content": {}, "cookies": [] }
       }
     ]
   }

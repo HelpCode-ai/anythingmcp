@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
 import { capToolName, pathForToolName, MAX_TOOL_NAME_LENGTH } from './tool-name.util';
+import {
+  findSecretLiterals,
+  findSecretInQueryParam,
+  isCredentialHeaderName as isSharedCredentialHeaderName,
+  isSecretQueryName,
+} from '../../common/secret-literals.util';
 
 /**
  * HAR (HTTP Archive) parser.
@@ -9,9 +15,16 @@ import { capToolName, pathForToolName, MAX_TOOL_NAME_LENGTH } from './tool-name.
  * recorded session.
  *
  * A HAR is live captured traffic, not a hand-written spec: it carries the
- * browser's own session cookies, bearer tokens and auth headers. Those never
- * become tool parameters or header mappings — the connector's own auth
- * settings supply credentials at call time. Response bodies are never read.
+ * browser's own session cookies, bearer tokens and auth headers, in forms the
+ * issue's own naming regex does not anticipate (`Ocp-Apim-Subscription-Key`,
+ * `?key=AIza…`, a bare JWT in a vendor-specific header). None of that becomes
+ * a tool parameter, default or header mapping — the connector's own auth
+ * settings supply credentials at call time, and a captured value belongs to
+ * the user's browser session, never to the connector. Credentials are
+ * dropped outright here, not promoted into connector variables the way the
+ * generic import pipeline moves a hand-typed key: that pipeline still runs
+ * after this parser (defense in depth), but by then nothing should be left
+ * for it to find. Response bodies are never read.
  */
 
 export interface HarParseResult {
@@ -48,30 +61,43 @@ interface HarEntry {
   _webSocketMessages?: unknown[];
 }
 
-/** Fields whose name alone is enough to treat the value as a credential. */
+/** Fields whose name alone is enough to treat the value as a credential (query params, body fields). */
 const CREDENTIAL_NAME_RE = /(token|secret|password|passwd|api[-_]?key|session|csrf|xsrf|auth|signature|sig)/i;
 
-const EXPLICIT_CREDENTIAL_HEADERS = new Set(['cookie', 'authorization', 'proxy-authorization']);
+function isCredentialFieldName(name: string): boolean {
+  return CREDENTIAL_NAME_RE.test(name);
+}
 
-/** Headers that describe the browser/request, not the API, and the API's own content metadata (redundant with postData). */
-const NOISE_HEADERS = new Set(['user-agent', 'origin', 'referer', 'content-length', 'content-type']);
+/** A value shaped like a bearer/basic/etc. credential, whatever its header or field is named. */
+const AUTH_SCHEME_VALUE_RE = /^(Bearer|Basic|Token|Bot|ApiKey|Api-Key|Key|OAuth|SSWS|Digest)\s+\S+$/i;
+
+/** A string value that looks like a credential by its shape, not just its name: a JWT, a known vendor key prefix, a bot token, or an auth-scheme value. */
+function looksLikeCredentialValue(value: unknown): boolean {
+  if (typeof value !== 'string' || !value) return false;
+  if (AUTH_SCHEME_VALUE_RE.test(value.trim())) return true;
+  return findSecretLiterals(value, { query: false }).length > 0;
+}
+
+/**
+ * Headers worth replaying as static tool headers: `Accept` and vendor-specific
+ * `X-…` headers, once those pass the credential checks below. Everything else
+ * — conditional/caching headers (`If-None-Match`, `Cache-Control`), tracing
+ * headers (`traceparent`, `baggage`), and ordinary browser noise — is left
+ * out. An allowlist, not a denylist: a header this parser has never seen is
+ * excluded by default, not included by default.
+ */
+const HEADER_ALLOW_RE = /^(accept|x-[a-z0-9-]+)$/i;
 
 function isPseudoHeader(name: string): boolean {
   return name.startsWith(':');
 }
 
-function isNoiseHeader(name: string): boolean {
-  const n = name.toLowerCase();
-  return NOISE_HEADERS.has(n) || n.startsWith('accept') || n.startsWith('sec-');
-}
-
-function isCredentialHeaderName(name: string): boolean {
-  const n = name.toLowerCase();
-  return EXPLICIT_CREDENTIAL_HEADERS.has(n) || isPseudoHeader(n) || CREDENTIAL_NAME_RE.test(n);
-}
-
-function isCredentialFieldName(name: string): boolean {
-  return CREDENTIAL_NAME_RE.test(name);
+function shouldKeepHeader(name: string, value: string): boolean {
+  if (isPseudoHeader(name)) return false;
+  if (!HEADER_ALLOW_RE.test(name)) return false;
+  if (CREDENTIAL_NAME_RE.test(name) || isSharedCredentialHeaderName(name)) return false;
+  if (looksLikeCredentialValue(value)) return false;
+  return true;
 }
 
 const STATIC_EXTENSION_RE = /\.(?:js|mjs|css|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|map|mp4|mp3|webm)(?:[?#]|$)/i;
@@ -92,6 +118,12 @@ function normalizedOrigin(url: URL): string {
   return `${scheme}//${url.host}`;
 }
 
+/** Whether `pathname` is `prefix` or sits under it on a `/` boundary — `/v1` must not match into `/v1beta/x`. */
+function pathHasPrefix(pathname: string, prefix: string): boolean {
+  if (!prefix) return true;
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NUMERIC_RE = /^\d+$/;
 const LONG_HEX_RE = /^[0-9a-f]{16,}$/i;
@@ -107,6 +139,17 @@ function sanitizeIdent(raw: string): string {
     .replace(/^_+|_+$/g, '')
     .toLowerCase();
   return cleaned;
+}
+
+/** First unused name among `base`, `base_2`, `base_3`, … in `used`, reserving it. */
+function ensureUniqueParamName(base: string, used: Set<string>): string {
+  let name = base || 'param';
+  let n = 2;
+  while (used.has(name)) {
+    name = `${base || 'param'}_${n++}`;
+  }
+  used.add(name);
+  return name;
 }
 
 /**
@@ -143,6 +186,23 @@ function inferType(value: unknown): string {
   return 'string';
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Whether any string anywhere inside `value` (object, array or scalar) looks like a credential. */
+function containsCredentialValue(value: unknown, depth = 0): boolean {
+  if (depth > 10) return false;
+  if (typeof value === 'string') return looksLikeCredentialValue(value);
+  if (Array.isArray(value)) return value.some((v) => containsCredentialValue(v, depth + 1));
+  if (isPlainObject(value)) {
+    return Object.entries(value).some(
+      ([k, v]) => isCredentialFieldName(k) || containsCredentialValue(v, depth + 1),
+    );
+  }
+  return false;
+}
+
 function generateToolName(method: string, template: string): string {
   const cleanPath = pathForToolName(template)
     .replace(/\{[^{}]+\}/g, '')
@@ -162,6 +222,52 @@ function uniqueName(base: string, used: Map<string, number>): string {
   return `${capped.slice(0, keep)}${suffix}`;
 }
 
+const MAX_BODY_WALK_DEPTH = 6;
+
+/**
+ * Recursively walks one JSON body value, writing scrubbed leaves into
+ * `properties`/`bodyTemplate`. A plain object is never itself a leaf — it is
+ * always walked into — so a nested secret (`user.password`) is caught and
+ * dropped individually instead of the whole `user` object surviving as one
+ * opaque default, and no object ever reaches `inferType` to be mistyped as a
+ * `string`. Arrays and scalars are leaves: an array is scrubbed as a whole
+ * (dropped if any element looks like a credential) rather than indexed.
+ */
+function walkJsonBody(
+  value: unknown,
+  keyChain: string[],
+  properties: Record<string, any>,
+  usedParamNames: Set<string>,
+  depth: number,
+): unknown {
+  if (isPlainObject(value) && depth < MAX_BODY_WALK_DEPTH) {
+    const template: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      template[key] = walkJsonBody(child, [...keyChain, key], properties, usedParamNames, depth + 1);
+    }
+    return template;
+  }
+
+  const lastKey = keyChain[keyChain.length - 1] ?? 'field';
+  const label = keyChain.join('.');
+  const isCredential = isCredentialFieldName(lastKey) || containsCredentialValue(value);
+  const paramName = ensureUniqueParamName(sanitizeIdent(keyChain.join('_')) || 'field', usedParamNames);
+
+  if (isCredential) {
+    properties[paramName] = {
+      type: 'string',
+      description: `Body field: ${label} (credential — value not captured from the recording)`,
+    };
+  } else {
+    properties[paramName] = {
+      type: inferType(value),
+      description: `Body field: ${label}`,
+      default: value,
+    };
+  }
+  return `$${paramName}`;
+}
+
 function buildTool(
   method: string,
   template: string,
@@ -172,8 +278,9 @@ function buildTool(
   const properties: Record<string, any> = {};
   const required: string[] = [];
   const queryParamsMapping: Record<string, string> = {};
-  const bodyMapping: Record<string, string> = {};
+  const bodyMapping: Record<string, unknown> = {};
   const headerMapping: Record<string, string> = {};
+  const usedParamNames = new Set<string>(paramNames);
 
   for (const paramName of paramNames) {
     properties[paramName] = { type: 'string', description: `Path parameter: ${paramName}` };
@@ -182,18 +289,26 @@ function buildTool(
 
   for (const header of entry.request?.headers ?? []) {
     if (!header?.name || header.value == null) continue;
-    if (isCredentialHeaderName(header.name) || isNoiseHeader(header.name)) continue;
+    if (!shouldKeepHeader(header.name, header.value)) continue;
     headerMapping[header.name] = header.value;
   }
 
   for (const query of entry.request?.queryString ?? []) {
     if (!query?.name) continue;
-    if (isCredentialFieldName(query.name)) continue;
-    const paramName = sanitizeIdent(query.name) || 'param';
+    const value = query.value ?? '';
+    if (
+      isCredentialFieldName(query.name) ||
+      isSecretQueryName(query.name) ||
+      findSecretInQueryParam(query.name, value).length > 0 ||
+      looksLikeCredentialValue(value)
+    ) {
+      continue;
+    }
+    const paramName = ensureUniqueParamName(sanitizeIdent(query.name) || 'param', usedParamNames);
     properties[paramName] = {
       type: 'string',
       description: `Query parameter: ${query.name}`,
-      default: query.value,
+      default: value,
     };
     queryParamsMapping[query.name] = `$${paramName}`;
   }
@@ -202,22 +317,9 @@ function buildTool(
   if (postData?.mimeType?.includes('application/json') && postData.text) {
     try {
       const parsed = JSON.parse(postData.text);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (isPlainObject(parsed)) {
         for (const [key, value] of Object.entries(parsed)) {
-          const paramName = sanitizeIdent(key) || 'field';
-          if (isCredentialFieldName(key)) {
-            properties[paramName] = {
-              type: 'string',
-              description: `Body field: ${key} (credential — value not captured from the recording)`,
-            };
-          } else {
-            properties[paramName] = {
-              type: inferType(value),
-              description: `Body field: ${key}`,
-              default: value,
-            };
-          }
-          bodyMapping[key] = `$${paramName}`;
+          bodyMapping[key] = walkJsonBody(value, [key], properties, usedParamNames, 1);
         }
       }
     } catch {
@@ -226,8 +328,9 @@ function buildTool(
   } else if (postData?.mimeType?.includes('application/x-www-form-urlencoded') && Array.isArray(postData.params)) {
     for (const field of postData.params) {
       if (!field?.name) continue;
-      const paramName = sanitizeIdent(field.name) || 'field';
-      if (isCredentialFieldName(field.name)) {
+      const value = field.value ?? '';
+      const paramName = ensureUniqueParamName(sanitizeIdent(field.name) || 'field', usedParamNames);
+      if (isCredentialFieldName(field.name) || looksLikeCredentialValue(value)) {
         properties[paramName] = {
           type: 'string',
           description: `Body field: ${field.name} (credential — value not captured from the recording)`,
@@ -236,7 +339,7 @@ function buildTool(
         properties[paramName] = {
           type: 'string',
           description: `Body field: ${field.name}`,
-          default: field.value,
+          default: value,
         };
       }
       bodyMapping[field.name] = `$${paramName}`;
@@ -302,7 +405,7 @@ export class HarParser {
         continue;
       }
 
-      if (normalizedOrigin(url) !== normalizedOrigin(base) || !url.pathname.startsWith(basePrefix)) {
+      if (normalizedOrigin(url) !== normalizedOrigin(base) || !pathHasPrefix(url.pathname, basePrefix)) {
         skipped.otherOrigin++;
         continue;
       }
