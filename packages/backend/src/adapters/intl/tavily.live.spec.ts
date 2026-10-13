@@ -138,7 +138,7 @@ describe('tavily adapter: static spec conformance', () => {
   it('probes with the usage counters and explains the documented error codes', () => {
     expect(a.probe).toEqual({ tool: 'tavily_get_usage' });
     for (const status of ['400', '401', '429', '432', '433']) expect(a.verifyHints[status]).toBeTruthy();
-    expect(a.verifyHints['401']).toMatch(/app\.tavily\.com/);
+    expect(a.verifyHints['401']).toContain('app.tavily.com');
   });
 
   it('prefixes every tool with tavily_ and shares no tool name with another adapter', () => {

@@ -387,7 +387,7 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (/invalid parameter value|unknown query parameter|unexpected parameter/i.test(text)) {
       return WECLAPP_RAW_FILTER_HINT;
     }
-    if (/read_only_property|property [\w.\[\]]+ is read-only/i.test(text)) {
+    if (/read_only_property|property [\w.[\]]+ is read-only/i.test(text)) {
       return WECLAPP_READ_ONLY_HINT;
     }
     if (/optimistic[ _]lock/i.test(text)) {
