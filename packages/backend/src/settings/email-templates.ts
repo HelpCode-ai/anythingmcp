@@ -558,7 +558,7 @@ export function cardTrialOfferEmail(input: CardTrialOfferEmailInput, ctx: Market
   const keep = input.cardTrial
     ? 'To keep it running after that, start your trial on the plan that fits you. It takes a minute, in the app.'
     : 'To keep it running after that, choose the plan that fits you. It takes a minute, in the app.';
-  const cta = input.cardTrial ? 'Keep it running' : 'Choose a plan';
+  const cta = input.cardTrial ? 'Start your trial' : 'Choose a plan';
 
   const stepsHtml = input.nextSteps.length
     ? p('A few things to ask your AI next, in the same chat:') +

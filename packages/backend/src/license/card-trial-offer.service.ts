@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { EmailService } from '../settings/email.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
+import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import {
   FIRST_SUCCESS_SOURCE,
   OFFER_ELIGIBLE_KEY,
@@ -59,16 +60,21 @@ export class CardTrialOfferService {
     private readonly deployment: DeploymentService,
     private readonly email: EmailService,
     private readonly productEvents: ProductEventService,
+    private readonly eligibility: CardTrialEligibilityService,
   ) {}
 
   /**
    * The offer for this signed-in user, or null. Only admins (the only role
    * that can start a subscription), only on Cloud, only while the workspace
-   * is eligible and a card trial can still start (48 h of trial left).
+   * is eligible and a card trial can still start (48 h of trial left), and
+   * never to an address that had a subscription before: the licence site
+   * would charge it today (an unknown answer still shows it; /start-trial
+   * says the truth either way).
    */
   async currentOffer(
     organizationId: string | null | undefined,
     role: string | null | undefined,
+    email: string | null | undefined,
     now: Date = new Date(),
   ): Promise<CardTrialOffer | null> {
     if (!this.deployment.isCloud() || !organizationId || role !== 'ADMIN') return null;
@@ -80,6 +86,7 @@ export class CardTrialOfferService {
 
     const trialEndsAt = offerTrialEnd(await this.licences(organizationId), now);
     if (!cardTrialStillAvailable(trialEndsAt, now)) return null;
+    if (email && (await this.eligibility.hadSubscription(email).catch(() => null)) === true) return null;
 
     const { connector } = await this.firstSuccessConnector(organizationId);
     return { connectorName: connector?.name ?? null, trialEndsAt: trialEndsAt!.toISOString() };
@@ -189,6 +196,17 @@ export class CardTrialOfferService {
     );
     if (nudgedRecently) return 'postponed';
 
+    // An admin whose address had a subscription gets no card trial: the
+    // site would charge today. Without an answer nothing is sent yet; the
+    // next run asks again inside the window.
+    const history = await this.eligibility.hadSubscriptions(recipients.map((r) => r.email));
+    if (!history) return 'postponed';
+    const trialRecipients = recipients.filter((r) => history.get(r.email.trim().toLowerCase()) === false);
+    if (trialRecipients.length === 0) {
+      await this.settle(organizationId, 'skipped:no_trial_recipient');
+      return 'skipped';
+    }
+
     const trialEndsAt = offerTrialEnd(licences, now)!;
     const cardTrial = cardTrialStillAvailable(trialEndsAt, now);
     const { connector, toolName } = await this.firstSuccessConnector(organizationId, true);
@@ -198,7 +216,7 @@ export class CardTrialOfferService {
       : `/settings/license?source=${FIRST_SUCCESS_SOURCE}`;
 
     let sentAny = false;
-    for (const r of recipients) {
+    for (const r of trialRecipients) {
       const ok = await this.email.sendCardTrialOfferEmail(r.email, {
         name: r.name || 'there',
         connectorName: connector?.name ?? null,

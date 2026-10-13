@@ -192,6 +192,8 @@ describe('trial win-back', () => {
     for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-discount-final', 'winback-help']) {
       const email = render(id);
       expect(`${email.subject}\n${email.text}`).not.toContain('—');
+      // The card trial ends with the free trial: no length is promised.
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/7-day|seven days/i);
     }
   });
 });
@@ -213,7 +215,7 @@ describe('card-trial offer after the first success', () => {
   it('dates the end of the trial and links to the card trial with its source', () => {
     const email = render('card-trial-offer');
     for (const part of [email.html, email.text]) expect(part).toContain('18 October');
-    expect(email.text).toContain('Keep it running: https://cloud.anythingmcp.com/start-trial?source=first_success');
+    expect(email.text).toContain('Start your trial: https://cloud.anythingmcp.com/start-trial?source=first_success');
     expect(email.html).toContain('href="https://cloud.anythingmcp.com/start-trial?source=first_success"');
     expect(email.marketing).toBe(true);
   });

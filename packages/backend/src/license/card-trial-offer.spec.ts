@@ -54,6 +54,8 @@ function makeService(
     admins?: Admin[];
     connector?: { id: string; name: string; tools?: typeof TOOLS } | null;
     sendOk?: boolean;
+    /** Addresses the licence site says had a subscription; null = no answer. */
+    hadSubscription?: string[] | null;
   } = {},
 ) {
   const eligibleAt = opts.eligibleAt === undefined ? new Date(NOW.getTime() - 40 * MIN) : opts.eligibleAt;
@@ -120,11 +122,18 @@ function makeService(
   };
   const email = { sendCardTrialOfferEmail: jest.fn(async () => opts.sendOk ?? true) };
   const deployment = { isCloud: () => opts.isCloud ?? true };
+  const had = (e: string) => (opts.hadSubscription ?? []).includes(e.trim().toLowerCase());
+  const eligibility = {
+    hadSubscription: jest.fn(async (e: string) => (opts.hadSubscription === null ? null : had(e))),
+    hadSubscriptions: jest.fn(async (emails: string[]) =>
+      opts.hadSubscription === null ? null : new Map(emails.map((e) => [e.trim().toLowerCase(), had(e)]))),
+  };
   const svc = new CardTrialOfferService(
     prisma as any,
     deployment as any,
     email as any,
     new ProductEventService(prisma as any),
+    eligibility as any,
   );
   const emailFlag = () => settings.find((s) => s.key === OFFER_EMAIL_KEY)?.value;
   const emailedEvents = () => events.filter((e) => e.event === 'card_trial_offer_emailed');
@@ -173,7 +182,7 @@ describe('next steps for the email', () => {
 describe('CardTrialOfferService.currentOffer (in-app)', () => {
   it('shows an admin of an eligible workspace the connector and the trial end', async () => {
     const { svc } = makeService();
-    await expect(svc.currentOffer('org-1', 'ADMIN', NOW)).resolves.toEqual({
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.toEqual({
       connectorName: 'My Shopify store',
       trialEndsAt: new Date(NOW.getTime() + 5 * DAY).toISOString(),
     });
@@ -182,20 +191,20 @@ describe('CardTrialOfferService.currentOffer (in-app)', () => {
   it('shows nothing to members who cannot start a trial', async () => {
     const { svc, prisma } = makeService();
     for (const role of ['EDITOR', 'VIEWER', undefined]) {
-      await expect(svc.currentOffer('org-1', role, NOW)).resolves.toBeNull();
+      await expect(svc.currentOffer('org-1', role, 'ada@example.com', NOW)).resolves.toBeNull();
     }
     expect(prisma.orgSettings.findUnique).not.toHaveBeenCalled();
   });
 
   it('shows nothing on a self-hosted instance', async () => {
     const { svc, prisma } = makeService({ isCloud: false });
-    await expect(svc.currentOffer('org-1', 'ADMIN', NOW)).resolves.toBeNull();
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.toBeNull();
     expect(prisma.orgSettings.findUnique).not.toHaveBeenCalled();
   });
 
   it('shows nothing to a workspace that never became eligible', async () => {
     const { svc } = makeService({ eligibleAt: null });
-    await expect(svc.currentOffer('org-1', 'ADMIN', NOW)).resolves.toBeNull();
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.toBeNull();
   });
 
   it.each([
@@ -205,12 +214,24 @@ describe('CardTrialOfferService.currentOffer (in-app)', () => {
     ['has under 48 hours of trial left', [trial({ expiresAt: new Date(NOW.getTime() + 30 * HOUR) })]],
   ])('hides the offer once the workspace %s', async (_label, licences) => {
     const { svc } = makeService({ licences: licences as OfferLicence[] });
-    await expect(svc.currentOffer('org-1', 'ADMIN', NOW)).resolves.toBeNull();
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.toBeNull();
+  });
+
+  it('is never offered to an admin whose address had a subscription: it would pay today', async () => {
+    const { svc } = makeService({ hadSubscription: ['ada@example.com'] });
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'Ada@Example.com', NOW)).resolves.toBeNull();
+    // Another admin of the same workspace still gets it.
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'bob@example.com', NOW)).resolves.not.toBeNull();
+  });
+
+  it('still offers when the licence site cannot answer: /start-trial checks again', async () => {
+    const { svc } = makeService({ hadSubscription: null });
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.not.toBeNull();
   });
 
   it('still offers when the connector was deleted, without its name', async () => {
     const { svc } = makeService({ connector: null });
-    await expect(svc.currentOffer('org-1', 'ADMIN', NOW)).resolves.toMatchObject({ connectorName: null });
+    await expect(svc.currentOffer('org-1', 'ADMIN', 'ada@example.com', NOW)).resolves.toMatchObject({ connectorName: null });
   });
 });
 
@@ -318,6 +339,31 @@ describe('CardTrialOfferService.runEmailPass', () => {
     });
     await svc.runEmailPass(NOW);
     expect(email.sendCardTrialOfferEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['ada@example.com']);
+  });
+
+  it('writes only to admins who can start a card trial', async () => {
+    const { svc, email, emailFlag } = makeService({
+      admins: [
+        { email: 'ada@example.com', name: 'Ada' },
+        { email: 'back@example.com', name: 'Back' },
+      ],
+      hadSubscription: ['back@example.com'],
+    });
+    expect((await svc.runEmailPass(NOW)).sent).toBe(1);
+    expect(email.sendCardTrialOfferEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['ada@example.com']);
+    expect(emailFlag()).toBe(NOW.toISOString());
+
+    const none = makeService({ hadSubscription: ['ada@example.com'] });
+    expect((await none.svc.runEmailPass(NOW)).skipped).toBe(1);
+    expect(none.email.sendCardTrialOfferEmail).not.toHaveBeenCalled();
+    expect(none.emailFlag()).toBe('skipped:no_trial_recipient');
+  });
+
+  it('waits for an answer about past subscriptions instead of guessing', async () => {
+    const { svc, email, emailFlag } = makeService({ hadSubscription: null });
+    expect((await svc.runEmailPass(NOW)).postponed).toBe(1);
+    expect(email.sendCardTrialOfferEmail).not.toHaveBeenCalled();
+    expect(emailFlag()).toBeUndefined();
   });
 
   it('settles a workspace with nobody to write to', async () => {

@@ -66,8 +66,8 @@ export function offerHeadline(connectorName: string | null | undefined): string 
 export function offerDetail(connectorName: string | null | undefined, trialEnd: string | null): string {
   const what = connectorName?.trim() || 'your connection';
   return trialEnd
-    ? `Keep it running: start your 7-day trial, and ${what} keeps working after your free trial ends on ${trialEnd}.`
-    : `Keep it running: start your 7-day trial, and ${what} keeps working after your free trial ends.`;
+    ? `Keep it running: start your trial, and ${what} keeps working after your free trial ends on ${trialEnd}.`
+    : `Keep it running: start your trial, and ${what} keeps working after your free trial ends.`;
 }
 
 /** Where the offer's button leads: the existing card-trial page, marked. */

@@ -50,9 +50,13 @@ test.describe('first-success offer helpers', () => {
     expect(offerHeadline(null)).toBe('Your AI just ran its first action.');
     const detail = offerDetail('Shopify', '18 October 2026');
     expect(detail).toBe(
-      'Keep it running: start your 7-day trial, and Shopify keeps working after your free trial ends on 18 October 2026.',
+      'Keep it running: start your trial, and Shopify keeps working after your free trial ends on 18 October 2026.',
     );
-    for (const text of [detail, offerDetail(null, null), offerHeadline('x')]) expect(text).not.toMatch(/[—–]/);
+    for (const text of [detail, offerDetail(null, null), offerHeadline('x')]) {
+      expect(text).not.toMatch(/[—–]/);
+      // The card trial ends with the free trial: no length is promised.
+      expect(text).not.toMatch(/7-day/);
+    }
   });
 });
 
@@ -151,9 +155,9 @@ test.describe('first-success offer (cloud)', () => {
     await page.goto('/');
     await expect(offerCard(page)).toBeVisible({ timeout: 15_000 });
     await expect(offerCard(page)).toContainText('Your AI just ran its first My Shopify store action.');
-    await expect(offerCard(page)).toContainText('Keep it running: start your 7-day trial');
+    await expect(offerCard(page)).toContainText('Keep it running: start your trial, and My Shopify store keeps working');
 
-    await page.getByRole('button', { name: 'Start your 7-day trial' }).click();
+    await page.getByRole('button', { name: 'Start your trial' }).click();
     await expect(page).toHaveURL(/\/start-trial\?source=first_success$/, { timeout: 15_000 });
     expect(events.map((e) => e.event)).toEqual(['card_trial_offer_shown', 'card_trial_offer_clicked']);
     expect(events[0].metadata).toEqual({ via: 'dashboard' });
@@ -186,6 +190,25 @@ test.describe('first-success offer (cloud)', () => {
     await expect(page.getByText('Active connectors')).toBeVisible({ timeout: 15_000 });
     await expect(offerCard(page)).toHaveCount(0);
     expect(session.offerCalls()).toBe(calls);
+  });
+
+  test('one call to action at a time: the trial banner drops its payment link while the card is up', async ({ page }) => {
+    await cloudSession(page);
+    await page.goto('/connectors');
+    await expect(offerCard(page)).toBeVisible({ timeout: 15_000 });
+    // The banner keeps its countdown, without its own link.
+    await expect(page.getByText('Trial: 5 days left.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add a payment method/ })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Not now' }).click();
+    await expect(offerCard(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Add a payment method/ })).toBeVisible();
+  });
+
+  test('without the card, the banner keeps its payment link', async ({ page }) => {
+    await cloudSession(page, { offer: null });
+    await page.goto('/connectors');
+    await expect(page.getByRole('button', { name: /Add a payment method/ })).toBeVisible({ timeout: 15_000 });
   });
 
   test('is never shown to a member who is not an admin', async ({ page }) => {

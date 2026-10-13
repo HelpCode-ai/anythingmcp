@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { storage } from '@/lib/storage';
 import { formatTrialEnd } from '@/lib/card-trial';
 import { Button } from '@/components/ui/button';
+import { markFirstSuccessOfferVisible } from '@/lib/first-success-offer-visibility';
 import {
   OFFER_START_PATH,
   isOfferDismissed,
@@ -67,7 +68,11 @@ export function FirstSuccessOffer({ via, refreshKey = 0 }: { via: OfferVia; refr
     productEvents.track('card_trial_offer_shown', token, { via });
   }, [offer, userId, token, via]);
 
-  if (!applies || !offer || dismissed) return null;
+  // While the card is up, the top trial banner drops its own payment link.
+  const shown = applies && !!offer && !dismissed;
+  useEffect(() => (shown ? markFirstSuccessOfferVisible() : undefined), [shown]);
+
+  if (!shown || !offer) return null;
 
   const trialEnd = formatTrialEnd(offer.trialEndsAt, 'long');
 
@@ -110,7 +115,7 @@ export function FirstSuccessOffer({ via, refreshKey = 0 }: { via: OfferVia; refr
         >
           Not now
         </button>
-        <Button onClick={start}>Start your 7-day trial</Button>
+        <Button onClick={start}>Start your trial</Button>
       </div>
     </div>
   );

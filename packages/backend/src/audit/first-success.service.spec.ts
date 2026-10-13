@@ -30,6 +30,9 @@ function makeService(
     licences?: OfferLicence[];
     firstSuccessAt?: Date | null;
     settings?: Array<{ organizationId: string; key: string; value: string }>;
+    /** Admin addresses the licence site says had a subscription; null = no answer. */
+    hadSubscription?: string[] | null;
+    admins?: string[];
   } = {},
 ) {
   const settings = [...(opts.settings ?? [])];
@@ -60,9 +63,24 @@ function makeService(
     connector: { findFirst: jest.fn(async () => ({ config: { adapterSlug: 'shopify' } })) },
     mcpTool: { findUnique: jest.fn(async () => ({ name: 'shopify_list_orders' })) },
     productEvent: { create: jest.fn(async ({ data }: any) => events.push(data)) },
+    organizationMember: {
+      findMany: jest.fn(async () => (opts.admins ?? ['ada@example.com']).map((email) => ({ user: { email } }))),
+    },
   };
   const deployment = { isCloud: () => opts.isCloud ?? true };
-  const svc = new FirstSuccessService(prisma as any, deployment as any, new ProductEventService(prisma as any));
+  const eligibility = {
+    hadSubscriptions: jest.fn(async (emails: string[]) =>
+      opts.hadSubscription === null
+        ? null
+        : new Map(emails.map((e) => [e.toLowerCase(), (opts.hadSubscription ?? []).includes(e.toLowerCase())]))),
+  };
+  const moduleRef = { get: jest.fn(() => eligibility) };
+  const svc = new FirstSuccessService(
+    prisma as any,
+    deployment as any,
+    new ProductEventService(prisma as any),
+    moduleRef as any,
+  );
   return { svc, prisma, settings, events };
 }
 
@@ -172,6 +190,26 @@ describe('FirstSuccessService', () => {
     await svc.onSuccessfulInvocation('org-1');
     expect(settings.map((s) => s.key)).toEqual([FIRST_SUCCESS_KEY]);
     expect(events).toHaveLength(0);
+  });
+
+  it('does not make a workspace eligible when every admin had a subscription: they would pay today', async () => {
+    const { svc, settings, events } = makeService({
+      admins: ['ada@example.com', 'bob@example.com'],
+      hadSubscription: ['ada@example.com', 'bob@example.com'],
+    });
+    await svc.onSuccessfulInvocation('org-1');
+    expect(settings.map((s) => s.key)).toEqual([FIRST_SUCCESS_KEY]);
+    expect(events).toHaveLength(0);
+  });
+
+  it('stays eligible when one admin can start a trial, or when the licence site cannot answer', async () => {
+    const one = makeService({ admins: ['ada@example.com', 'bob@example.com'], hadSubscription: ['ada@example.com'] });
+    await one.svc.onSuccessfulInvocation('org-1');
+    expect(one.events).toHaveLength(1);
+
+    const unknown = makeService({ hadSubscription: null });
+    await unknown.svc.onSuccessfulInvocation('org-1');
+    expect(unknown.events).toHaveLength(1);
   });
 
   it('does not make a workspace eligible whose first success is more than a day old', async () => {

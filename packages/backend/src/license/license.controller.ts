@@ -367,7 +367,7 @@ export class LicenseController {
     // not admins (they cannot start a subscription), workspaces that pay or
     // already run a card trial, and trials with under 48 hours left.
     const offer = await this.cardTrialOffer
-      .currentOffer(req.user?.organizationId, req.user?.role)
+      .currentOffer(req.user?.organizationId, req.user?.role, req.user?.email)
       .catch(() => null);
     return { offer };
   }

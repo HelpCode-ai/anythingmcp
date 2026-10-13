@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { ProductEvents, ProductEventService } from './product-event.service';
@@ -8,6 +9,7 @@ import {
   OFFER_ELIGIBLE_KEY,
   offerLicenceState,
 } from '../license/card-trial-offer';
+import { CardTrialEligibilityService } from '../license/card-trial-eligibility.service';
 
 /** Workspaces remembered as settled; forgetting one only costs one indexed read. */
 const SETTLED_MAX = 50_000;
@@ -45,7 +47,36 @@ export class FirstSuccessService {
     private readonly prisma: PrismaService,
     private readonly deployment: DeploymentService,
     private readonly productEvents: ProductEventService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
+
+  /** LicenseModule's service, resolved lazily (this one lives in the global AuditModule). */
+  private cardTrialEligibility(): CardTrialEligibilityService | null {
+    try {
+      return this.moduleRef?.get(CardTrialEligibilityService, { strict: false }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * False only when the licence site says every active admin's address had a
+   * subscription: none of them could start a card trial (it would charge
+   * today). Unknown counts as yes; the offer and /start-trial check again.
+   */
+  private async anyAdminCanTrial(organizationId: string): Promise<boolean> {
+    const eligibility = this.cardTrialEligibility();
+    if (!eligibility) return true;
+    const admins = await this.prisma.organizationMember.findMany({
+      where: { organizationId, role: 'ADMIN', deactivatedAt: null },
+      select: { user: { select: { email: true } } },
+    });
+    const emails = admins.map((a) => a.user.email);
+    if (emails.length === 0) return true;
+    const history = await eligibility.hadSubscriptions(emails).catch(() => null);
+    if (!history) return true;
+    return emails.some((e) => history.get(e.trim().toLowerCase()) !== true);
+  }
 
   /**
    * A SUCCESS invocation of this workspace was stored. Returns at once; the
@@ -98,6 +129,7 @@ export class FirstSuccessService {
       select: { plan: true, status: true, expiresAt: true, createdAt: true },
     });
     if (offerLicenceState(licences, now) !== 'eligible') return;
+    if (!(await this.anyAdminCanTrial(organizationId))) return;
 
     // The unique (organizationId, key) row is the lock: of two processes
     // that get here together, only the one that creates it logs the event.

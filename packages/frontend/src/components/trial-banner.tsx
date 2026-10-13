@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useCardCheckout } from '@/lib/use-card-checkout';
 import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
+import { useFirstSuccessOfferVisible } from '@/lib/first-success-offer-visibility';
 import {
   cardTrialDisplayEnd,
   cardTrialEligible,
@@ -44,6 +45,9 @@ export function TrialBanner() {
 
   const isTrialAdmin = deploymentMode === 'cloud' && user?.role === 'ADMIN' && plan === 'trial' && status === 'active';
   const cardTrialKind = useCardTrialKind(token, isTrialAdmin);
+  // The first-success offer on this page asks for the same thing: one call
+  // to action at a time, so the banner keeps only its countdown then.
+  const offerOnScreen = useFirstSuccessOfferVisible();
 
   // An ended trial is reported too (status 'expired'); the licence wall
   // covers that case, so the countdown banner stays out of the way.
@@ -101,9 +105,8 @@ export function TrialBanner() {
         color: `var(--t-${tone}-fg)`,
       }}
     >
-      <span>{countdown}{value}</span>
-      {' '}
-      {offerCard ? (
+      <span>{countdown}{value}</span>{' '}
+      {offerOnScreen ? null : offerCard ? (
         <button
           type="button"
           onClick={addPaymentMethod}
