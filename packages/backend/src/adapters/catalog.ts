@@ -170,6 +170,7 @@ import * as googleAnalytics4 from './intl/google-analytics-4.json';
 import * as googleCalendar from './intl/google-calendar.json';
 import * as googleDocs from './intl/google-docs.json';
 import * as googleDrive from './intl/google-drive.json';
+import * as googleMaps from './intl/google-maps.json';
 import * as googleSearchConsole from './intl/google-search-console.json';
 import * as googleSheets from './intl/google-sheets.json';
 import * as googleTasks from './intl/google-tasks.json';
@@ -297,6 +298,7 @@ import * as seamlessAi from './intl/seamless-ai.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
 import * as serply from './intl/serply.json';
+import * as servicenow from './intl/servicenow.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopify from './intl/shopify.json';
@@ -766,6 +768,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   googleCalendar as unknown as AdapterDefinition,
   googleDocs as unknown as AdapterDefinition,
   googleDrive as unknown as AdapterDefinition,
+  googleMaps as unknown as AdapterDefinition,
   googleSearchConsole as unknown as AdapterDefinition,
   googleSheets as unknown as AdapterDefinition,
   googleTasks as unknown as AdapterDefinition,
@@ -893,6 +896,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
   serply as unknown as AdapterDefinition,
+  servicenow as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopify as unknown as AdapterDefinition,

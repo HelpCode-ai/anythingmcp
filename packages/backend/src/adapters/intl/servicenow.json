@@ -1,0 +1,2032 @@
+{
+  "slug": "servicenow",
+  "name": "ServiceNow",
+  "description": "Work in ServiceNow ITSM from your AI: find, open, update, resolve and close incidents, handle change requests and problems, follow service catalog requests and order items, search the knowledge base, look up users, groups and CMDB configuration items, and query any table.",
+  "aliases": [
+    "Service-Now",
+    "SNOW",
+    "ServiceNow ITSM",
+    "Now Platform"
+  ],
+  "instructions": "## ServiceNow\nThis connector calls the REST APIs of one ServiceNow instance (`https://<instance>.service-now.com/api`): the **Table API** (`/now/table/{table}`) for incidents, change requests, problems, requests and requested items, knowledge articles, users, groups and any other table, the **Aggregate API** (`/now/stats`) for counts, the **Service Catalog API** (`/sn_sc/servicecatalog`) for ordering, the **CMDB Instance API** (`/now/cmdb/instance`) for a configuration item with its relationships, and the **Attachment API**. It works on every release and edition, including free personal developer instances.\n\n**Setup (about 10 minutes, by a ServiceNow admin)**\n1. Create an integration user: **User Administration, Users, New**. Give it a user ID and a strong password, tick **Web service access only** (it cannot log in to the UI), and leave **Password needs reset** unticked.\n2. Give it the roles the work needs:\n   - `itil`: read and write incidents, problems, change requests, requests, requested items and catalog tasks, and read the CMDB (the CMDB Instance API requires `itil`).\n   - Knowledge: published articles are readable by the users the knowledge base's user criteria allow; `knowledge` is needed only to write articles.\n   - `snc_platform_rest_api_access`: grant it when your instance restricts REST access to that role (REST API access policies); without the restriction it changes nothing.\n   - `rest_api_explorer` is **not** needed for this connector; it only opens the REST API Explorer in the UI, which is handy for an admin to try a call.\n   - For a read-only connector give `snc_read_only` together with `itil`: every write is then refused by the instance. Do not use `admin`.\n3. Access is still decided by **ACLs**: a user with `itil` sees and changes what the instance's ACLs allow, and records it may not read are silently left out of lists rather than refused. If a list is unexpectedly empty, check the ACLs and the domain (domain separation) of the integration user.\n4. In AnythingMCP set `SERVICENOW_INSTANCE` to the instance name only (`dev123456` for `https://dev123456.service-now.com`), `SERVICENOW_USERNAME` and `SERVICENOW_PASSWORD`, and install. The install check lists one incident.\n\n**OAuth instead of a password**: on the instance open **System OAuth, Application Registry, New, Create an OAuth API endpoint for external clients**, set the redirect URL to `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`) and save. In AnythingMCP open the connector, switch **Authentication** to **OAuth 2.0**, enter the client ID and secret, authorization URL `https://<instance>.service-now.com/oauth_auth.do` and token URL `https://<instance>.service-now.com/oauth_token.do`, save and click **Authorize with Provider**. Whoever signs in is then the ServiceNow user for everyone using the connector, with that user's roles. ServiceNow's refresh tokens last 100 days by default (Refresh Token Lifespan on the registry); authorize again when they expire. Accounts with multi-factor sign-in must use OAuth, because Basic auth cannot answer the second factor.\n\n**Encoded queries** (`query` parameters, `sysparm_query`): conditions joined with `^` (AND) and `^OR`, e.g. `active=true^priority=1^assignment_group.name=Service Desk^ORDERBYDESCsys_updated_on`. Operators: `=`, `!=`, `LIKE`, `STARTSWITH`, `IN`, `ISEMPTY`, `ISNOTEMPTY`, `<`, `>`, `>=`. Dates: `opened_at>=javascript:gs.daysAgoStart(7)`. Dot-walking follows references (`caller_id.email=a@b.com`). The easiest source is the UI: filter a list, right-click the breadcrumb, **Copy query**.\n\n**Values**: with `display_value` true (default) results show labels and names; writes take stored values (state `2`, sys_ids) unless `input_display_value` is true. Codes on a standard instance (check `servicenow_list_choices` when unsure, instances customise them):\n- Incident `state`: 1 New, 2 In Progress, 3 On Hold (needs `hold_reason`), 6 Resolved, 7 Closed, 8 Canceled. `impact` and `urgency`: 1 High, 2 Medium, 3 Low; `priority` (1 Critical to 5 Planning) is calculated from them.\n- Resolving (6) and closing (7) need `close_code` (Resolution code) and `close_notes` (Resolution notes); `servicenow_resolve_incident` and `servicenow_close_incident` send them. Resolved incidents close automatically after 7 days by default; a closed incident is read-only.\n- Change request `state`: -5 New, -4 Assess, -3 Authorize, -2 Scheduled, -1 Implement, 0 Review, 3 Closed, 4 Canceled; `type` normal, standard, emergency.\n- Problem `state`: 101 New, 102 Assess, 103 Root Cause Analysis, 104 Fix in Progress, 106 Resolved, 107 Closed.\n- Requested item (RITM) `state`: -5 Pending, 1 Open, 2 Work in Progress, 3 Closed Complete, 4 Closed Incomplete, 7 Closed Skipped. Request (REQ) `request_state`: requested, in_process, closed_complete, closed_incomplete, closed_cancelled, closed_rejected.\n- Knowledge `workflow_state`: draft, review, published, pending_retirement, retired, outdated.\n\n**Tools**\n- Incidents: `servicenow_list_incidents`, `servicenow_get_incident` (by number, gives the sys_id), `servicenow_create_incident`, `servicenow_update_incident`, `servicenow_add_note` (work note or customer comment on any task record), `servicenow_resolve_incident`, `servicenow_close_incident`.\n- Changes: `servicenow_list_change_requests`, `servicenow_get_change_request`, `servicenow_create_change_request`, `servicenow_update_change_request`.\n- Problems: `servicenow_list_problems`, `servicenow_get_problem`, `servicenow_create_problem`, `servicenow_update_problem`.\n- Service catalog: `servicenow_list_requests` (REQ), `servicenow_list_requested_items` (RITM), `servicenow_get_requested_item`, `servicenow_get_requested_item_variables` (the answers of the order form), `servicenow_search_catalog_items`, `servicenow_get_catalog_item`, `servicenow_order_catalog_item`.\n- Knowledge: `servicenow_search_knowledge`, `servicenow_get_knowledge_article`.\n- People: `servicenow_find_users`, `servicenow_find_groups`, `servicenow_list_group_members`.\n- CMDB: `servicenow_find_configuration_items`, `servicenow_get_configuration_item` (with relationships).\n- Any table: `servicenow_query_table`, `servicenow_get_record`, `servicenow_count_records`, `servicenow_list_choices`, `servicenow_update_record`, `servicenow_delete_record`.\n- Attachments: `servicenow_list_attachments`.\n\n**Safety**: every tool that writes says so; show the user what will change and get a yes first. Customer comments (`comments`) are usually e-mailed to the caller. `servicenow_delete_record` installs switched off. Writes run the instance's business rules, workflows, SLAs and notifications exactly like a change in the UI, under the integration user's name; to record who asked, add it to the work note.\n\n**Paging and limits**: lists return `limit` records (default 20, up to 1000 per call) and the total in `_headers.x-total-count`; ask for the next page with `offset`. Keep `fields` narrow: a full incident has more than 80 fields. ServiceNow may rate-limit REST calls per user (429); wait and retry once.\n\n**Common errors**\n- 401 `User is not authenticated` or `User Not Authenticated`: wrong user name or password, the user is locked out or inactive, or (OAuth) the token expired and must be authorized again.\n- 403 `Failed API level ACL Validation` or `Insufficient rights`: the user lacks the role or ACL for that table or API, or the REST access policy blocks it.\n- 404 `No Record found`: the sys_id does not exist in that table, or the ACLs hide it. A wrong table name answers 400 `Invalid table`.\n- A personal developer instance that sleeps answers with a wake-up page instead of data: open it once in the browser at developer.servicenow.com. Instances unused for some days are released and their name stops resolving.\n\n**Custom domains**: an instance served under its own host name (or `servicenowservices.com`) needs its base URL changed in the connector settings to `https://<host>/api`.",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "servicenow",
+  "docsUrl": "https://www.servicenow.com/docs/r/api-reference/rest-apis/c_TableAPI.html",
+  "requiredEnvVars": [
+    "SERVICENOW_INSTANCE",
+    "SERVICENOW_USERNAME",
+    "SERVICENOW_PASSWORD"
+  ],
+  "envVarMeta": {
+    "SERVICENOW_INSTANCE": {
+      "label": "Instance name",
+      "kind": "address",
+      "help": "Only the first part of your instance's address: dev123456 for https://dev123456.service-now.com, or acme for https://acme.service-now.com.",
+      "example": "dev123456",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$",
+      "patternMessage": "Enter only the instance name, e.g. dev123456, without https:// or .service-now.com."
+    },
+    "SERVICENOW_USERNAME": {
+      "label": "Integration user ID",
+      "kind": "credential",
+      "help": "The User ID of the integration user (User Administration, Users), with the itil role and Web service access only ticked.",
+      "example": "amcp.integration"
+    },
+    "SERVICENOW_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The integration user's password. Untick Password needs reset on the user, or the first call fails."
+    }
+  },
+  "verifyHints": {
+    "401": "ServiceNow refused the user ID or password. Check SERVICENOW_USERNAME and SERVICENOW_PASSWORD, that the user is active and not locked out, and that Password needs reset is unticked. Accounts with multi-factor sign-in need OAuth instead (see the connector instructions).",
+    "403": "The user signed in but may not read incidents through REST. Give it the itil role, and snc_platform_rest_api_access if your instance restricts REST access to that role.",
+    "unreachable": "No ServiceNow instance answers at https://<SERVICENOW_INSTANCE>.service-now.com. Check the instance name (only the first part of the address). Personal developer instances are released after some days without use; a sleeping one must be woken up at developer.servicenow.com."
+  },
+  "probe": {
+    "tool": "servicenow_list_incidents",
+    "params": {
+      "limit": 1,
+      "fields": "number,sys_id"
+    }
+  },
+  "prerequisites": "A ServiceNow instance and an admin who can create an integration user with the itil role (and snc_platform_rest_api_access where REST access is restricted). A free personal developer instance from developer.servicenow.com works for trying it out. About 10 minutes.",
+  "connector": {
+    "name": "ServiceNow",
+    "type": "REST",
+    "baseUrl": "https://{{SERVICENOW_INSTANCE}}.service-now.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SERVICENOW_USERNAME}}",
+      "password": "{{SERVICENOW_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "servicenow_list_incidents",
+      "description": "List incidents from the incident table, newest first by default. Filter with an encoded query (sysparm_query), e.g. active=true^assignment_group.name=Service Desk^priority<=2. Returns up to limit records with the fields given; _headers.x-total-count is the total number of matches, page with offset. State codes: 1 New, 2 In Progress, 3 On Hold, 6 Resolved, 7 Closed, 8 Canceled; priority 1 Critical to 5 Planning. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Encoded query. Default: active=true^ORDERBYDESCsys_updated_on. Combine conditions with ^ (AND) and ^OR, sort with ^ORDERBY<field> or ^ORDERBYDESC<field>.",
+            "default": "active=true^ORDERBYDESCsys_updated_on"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; dot-walking works (caller_id.email). Default: the usual list columns.",
+            "default": "number,sys_id,short_description,state,priority,impact,urgency,category,assignment_group,assigned_to,caller_id,cmdb_ci,opened_at,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/incident",
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_incident",
+      "description": "Read one incident by its number (INC0010023) with all its fields, including sys_id, which the update tools need. Returns result as a list with zero or one record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The record number, e.g. INC0010023."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Leave out for all fields."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/incident",
+        "queryParams": {
+          "sysparm_query": "number=${number}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "1",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_create_incident",
+      "description": "Open a new incident. short_description is required; impact and urgency (1 High, 2 Medium, 3 Low) set the priority. Reference fields (caller_id, assignment_group, assigned_to, cmdb_ci) take sys_ids, or names with input_display_value true. Returns the new number and sys_id. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "short_description": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description."
+          },
+          "caller_id": {
+            "type": "string",
+            "description": "The affected user (sys_user sys_id, or name with input_display_value)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value, e.g. inquiry, software, hardware, network, database."
+          },
+          "subcategory": {
+            "type": "string",
+            "description": "Subcategory value, depends on category."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value); must be a member of assignment_group."
+          },
+          "cmdb_ci": {
+            "type": "string",
+            "description": "Affected configuration item sys_id (or name with input_display_value)."
+          },
+          "contact_type": {
+            "type": "string",
+            "description": "Channel, e.g. email, phone, self-service, walk-in."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "short_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/now/table/incident",
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "short_description": "$short_description",
+          "description": "$description",
+          "caller_id": "$caller_id",
+          "category": "$category",
+          "subcategory": "$subcategory",
+          "impact": "$impact",
+          "urgency": "$urgency",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "cmdb_ci": "$cmdb_ci",
+          "contact_type": "$contact_type",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_update_incident",
+      "description": "Change fields of an incident by sys_id (from servicenow_get_incident): reassign, change state, impact or urgency, put on hold (state 3 needs hold_reason: 1 Awaiting Caller, 3 Awaiting Problem, 4 Awaiting Vendor, 5 Awaiting Change). To resolve or close use servicenow_resolve_incident or servicenow_close_incident, which send the fields ServiceNow requires. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The incident's sys_id (32 hex characters)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "8"
+            ],
+            "description": "1 New, 2 In Progress, 3 On Hold, 8 Canceled."
+          },
+          "hold_reason": {
+            "type": "string",
+            "description": "With state 3: 1 Awaiting Caller, 3 Awaiting Problem, 4 Awaiting Vendor, 5 Awaiting Change."
+          },
+          "short_description": {
+            "type": "string",
+            "description": "New summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description (replaces the old one)."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value."
+          },
+          "subcategory": {
+            "type": "string",
+            "description": "Subcategory value."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value)."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Internal work note to add with the change (visible to fulfillers only)."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Additional comment to add (visible to the caller)."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/incident/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "state": "$state",
+          "hold_reason": "$hold_reason",
+          "short_description": "$short_description",
+          "description": "$description",
+          "impact": "$impact",
+          "urgency": "$urgency",
+          "category": "$category",
+          "subcategory": "$subcategory",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "work_notes": "$work_notes",
+          "comments": "$comments",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_add_note",
+      "description": "Add a work note (internal, fulfillers only) or an additional comment (visible to the caller or requester, and usually e-mailed to them) to an incident or any other task record: change_request, problem, sc_req_item, sc_task, incident_task, change_task. The journal keeps every entry; nothing is overwritten. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table of the record. Default incident.",
+            "default": "incident"
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The record's sys_id."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Internal work note."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Customer-visible comment."
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/{table}/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_fields": "number,sys_id,sys_updated_on",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "work_notes": "$work_notes",
+          "comments": "$comments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "servicenow_resolve_incident",
+      "description": "Resolve an incident: sets state 6 (Resolved) with the resolution code (close_code) and resolution notes (close_notes), which ServiceNow requires for this state. The caller is notified and can reopen it; ServiceNow closes resolved incidents automatically after a few days (7 by default). Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The incident's sys_id."
+          },
+          "close_code": {
+            "type": "string",
+            "description": "Resolution code, exactly as the instance defines it. Recent releases: Solution provided, Workaround provided, Resolved by caller, Resolved by change, Resolved by problem, Resolved by request, Known error, Duplicate, User error, No resolution provided. Older instances: Solved (Permanently), Solved (Work Around), Solved Remotely (Permanently), Solved Remotely (Work Around), Not Solved (Not Reproducible), Not Solved (Too Costly), Closed/Resolved by Caller. If unsure, read them with servicenow_list_choices (table incident, field close_code)."
+          },
+          "close_notes": {
+            "type": "string",
+            "description": "Resolution notes: what was done, as the caller should read it."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Optional internal work note added with the change."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "number,sys_id,state,close_code,close_notes,resolved_at,resolved_by,closed_at"
+          }
+        },
+        "required": [
+          "sys_id",
+          "close_code",
+          "close_notes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/incident/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "state": "6",
+          "close_code": "$close_code",
+          "close_notes": "$close_notes",
+          "work_notes": "$work_notes"
+        }
+      }
+    },
+    {
+      "name": "servicenow_close_incident",
+      "description": "Close an incident: sets state 7 (Closed) with the resolution code (close_code) and resolution notes (close_notes), which ServiceNow requires for this state. Closed incidents are read-only and cannot be reopened; many instances only let the caller or the auto-close job close, so prefer servicenow_resolve_incident unless the user asks to close. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The incident's sys_id."
+          },
+          "close_code": {
+            "type": "string",
+            "description": "Resolution code, exactly as the instance defines it. Recent releases: Solution provided, Workaround provided, Resolved by caller, Resolved by change, Resolved by problem, Resolved by request, Known error, Duplicate, User error, No resolution provided. Older instances: Solved (Permanently), Solved (Work Around), Solved Remotely (Permanently), Solved Remotely (Work Around), Not Solved (Not Reproducible), Not Solved (Too Costly), Closed/Resolved by Caller. If unsure, read them with servicenow_list_choices (table incident, field close_code)."
+          },
+          "close_notes": {
+            "type": "string",
+            "description": "Resolution notes: what was done, as the caller should read it."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Optional internal work note added with the change."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "number,sys_id,state,close_code,close_notes,resolved_at,resolved_by,closed_at"
+          }
+        },
+        "required": [
+          "sys_id",
+          "close_code",
+          "close_notes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/incident/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "state": "7",
+          "close_code": "$close_code",
+          "close_notes": "$close_notes",
+          "work_notes": "$work_notes"
+        }
+      }
+    },
+    {
+      "name": "servicenow_list_change_requests",
+      "description": "List change requests from the change_request table, newest first by default. Filter with an encoded query (sysparm_query), e.g. active=true^assignment_group.name=Service Desk^priority<=2. Returns up to limit records with the fields given; _headers.x-total-count is the total number of matches, page with offset. State codes: -5 New, -4 Assess, -3 Authorize, -2 Scheduled, -1 Implement, 0 Review, 3 Closed, 4 Canceled; type normal, standard or emergency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Encoded query. Default: active=true^ORDERBYDESCsys_updated_on. Combine conditions with ^ (AND) and ^OR, sort with ^ORDERBY<field> or ^ORDERBYDESC<field>.",
+            "default": "active=true^ORDERBYDESCsys_updated_on"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; dot-walking works (caller_id.email). Default: the usual list columns.",
+            "default": "number,sys_id,short_description,type,state,risk,impact,priority,assignment_group,assigned_to,cmdb_ci,start_date,end_date,approval,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/change_request",
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_change_request",
+      "description": "Read one change request by its number (CHG0030001) with all its fields, including sys_id, which the update tools need. Includes the plans (implementation_plan, backout_plan, test_plan), the planned window (start_date, end_date) and approval. Returns result as a list with zero or one record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The record number, e.g. CHG0030001."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Leave out for all fields."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/change_request",
+        "queryParams": {
+          "sysparm_query": "number=${number}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "1",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_create_change_request",
+      "description": "Create a change request (type normal or emergency) in state New. Standard changes come from a template in the Standard Change Catalog and are better ordered there. The change then follows the instance's change workflow (assessment, approvals); this tool does not approve anything. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "emergency"
+            ],
+            "description": "Change type. Default normal.",
+            "default": "normal"
+          },
+          "short_description": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value, e.g. Hardware, Software, Network."
+          },
+          "cmdb_ci": {
+            "type": "string",
+            "description": "Configuration item sys_id (or name with input_display_value)."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value)."
+          },
+          "risk": {
+            "type": "string",
+            "description": "2 High, 3 Moderate, 4 Low (the instance's own values may differ)."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Planned start, yyyy-MM-dd HH:mm:ss in the integration user's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Planned end, same format."
+          },
+          "justification": {
+            "type": "string",
+            "description": "Why the change is needed."
+          },
+          "implementation_plan": {
+            "type": "string",
+            "description": "How it will be done."
+          },
+          "backout_plan": {
+            "type": "string",
+            "description": "How to roll it back."
+          },
+          "test_plan": {
+            "type": "string",
+            "description": "How it will be verified."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "short_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/now/table/change_request",
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "type": "$type",
+          "short_description": "$short_description",
+          "description": "$description",
+          "category": "$category",
+          "cmdb_ci": "$cmdb_ci",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "risk": "$risk",
+          "impact": "$impact",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "justification": "$justification",
+          "implementation_plan": "$implementation_plan",
+          "backout_plan": "$backout_plan",
+          "test_plan": "$test_plan",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_update_change_request",
+      "description": "Change fields of a change request by sys_id: plans, planned window, assignment, risk, or the state (-5 New, -4 Assess, -3 Authorize, -2 Scheduled, -1 Implement, 0 Review, 3 Closed, 4 Canceled). State moves usually need the approvals and fields the instance's change model asks for; closing needs close_code (successful, successful_issues, unsuccessful) and close_notes. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The change request's sys_id."
+          },
+          "state": {
+            "type": "string",
+            "description": "-5 New, -4 Assess, -3 Authorize, -2 Scheduled, -1 Implement, 0 Review, 3 Closed, 4 Canceled."
+          },
+          "close_code": {
+            "type": "string",
+            "description": "With state 3: successful, successful_issues or unsuccessful."
+          },
+          "close_notes": {
+            "type": "string",
+            "description": "With state 3: close notes."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Internal work note to add."
+          },
+          "short_description": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value, e.g. Hardware, Software, Network."
+          },
+          "cmdb_ci": {
+            "type": "string",
+            "description": "Configuration item sys_id (or name with input_display_value)."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value)."
+          },
+          "risk": {
+            "type": "string",
+            "description": "2 High, 3 Moderate, 4 Low (the instance's own values may differ)."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Planned start, yyyy-MM-dd HH:mm:ss in the integration user's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Planned end, same format."
+          },
+          "justification": {
+            "type": "string",
+            "description": "Why the change is needed."
+          },
+          "implementation_plan": {
+            "type": "string",
+            "description": "How it will be done."
+          },
+          "backout_plan": {
+            "type": "string",
+            "description": "How to roll it back."
+          },
+          "test_plan": {
+            "type": "string",
+            "description": "How it will be verified."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/change_request/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "state": "$state",
+          "close_code": "$close_code",
+          "close_notes": "$close_notes",
+          "work_notes": "$work_notes",
+          "short_description": "$short_description",
+          "description": "$description",
+          "category": "$category",
+          "cmdb_ci": "$cmdb_ci",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "risk": "$risk",
+          "impact": "$impact",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "justification": "$justification",
+          "implementation_plan": "$implementation_plan",
+          "backout_plan": "$backout_plan",
+          "test_plan": "$test_plan",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_list_problems",
+      "description": "List problems from the problem table, newest first by default. Filter with an encoded query (sysparm_query), e.g. active=true^assignment_group.name=Service Desk^priority<=2. Returns up to limit records with the fields given; _headers.x-total-count is the total number of matches, page with offset. State codes: 101 New, 102 Assess, 103 Root Cause Analysis, 104 Fix in Progress, 106 Resolved, 107 Closed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Encoded query. Default: active=true^ORDERBYDESCsys_updated_on. Combine conditions with ^ (AND) and ^OR, sort with ^ORDERBY<field> or ^ORDERBYDESC<field>.",
+            "default": "active=true^ORDERBYDESCsys_updated_on"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; dot-walking works (caller_id.email). Default: the usual list columns.",
+            "default": "number,sys_id,short_description,state,priority,impact,urgency,assignment_group,assigned_to,cmdb_ci,known_error,opened_at,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/problem",
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_problem",
+      "description": "Read one problem by its number (PRB0040001) with all its fields, including sys_id, which the update tools need. Includes cause_notes, fix_notes, workaround and known_error. Returns result as a list with zero or one record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The record number, e.g. PRB0040001."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Leave out for all fields."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/problem",
+        "queryParams": {
+          "sysparm_query": "number=${number}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "1",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_create_problem",
+      "description": "Open a problem record for the root cause behind one or more incidents. Link incidents afterwards by setting their problem_id with servicenow_update_incident (additional_fields). Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "short_description": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "cmdb_ci": {
+            "type": "string",
+            "description": "Configuration item sys_id (or name with input_display_value)."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value)."
+          },
+          "workaround": {
+            "type": "string",
+            "description": "Known workaround."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "short_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/now/table/problem",
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "short_description": "$short_description",
+          "description": "$description",
+          "category": "$category",
+          "impact": "$impact",
+          "urgency": "$urgency",
+          "cmdb_ci": "$cmdb_ci",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "workaround": "$workaround",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_update_problem",
+      "description": "Change fields of a problem by sys_id: assignment, root cause (cause_notes), fix (fix_notes), workaround, known_error, or the state (101 New, 102 Assess, 103 Root Cause Analysis, 104 Fix in Progress, 106 Resolved, 107 Closed). Resolving needs resolution_code (fix_applied, risk_accepted, duplicate, canceled) and the notes the instance asks for. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The problem's sys_id."
+          },
+          "state": {
+            "type": "string",
+            "description": "101 New, 102 Assess, 103 Root Cause Analysis, 104 Fix in Progress, 106 Resolved, 107 Closed."
+          },
+          "resolution_code": {
+            "type": "string",
+            "description": "With state 106 or 107: fix_applied, risk_accepted, duplicate or canceled."
+          },
+          "cause_notes": {
+            "type": "string",
+            "description": "Root cause."
+          },
+          "fix_notes": {
+            "type": "string",
+            "description": "The fix."
+          },
+          "known_error": {
+            "type": "boolean",
+            "description": "true to mark the problem as a known error."
+          },
+          "work_notes": {
+            "type": "string",
+            "description": "Internal work note to add."
+          },
+          "short_description": {
+            "type": "string",
+            "description": "One-line summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category value."
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "description": "1 High, 2 Medium, 3 Low."
+          },
+          "cmdb_ci": {
+            "type": "string",
+            "description": "Configuration item sys_id (or name with input_display_value)."
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Group sys_id (or name with input_display_value)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User sys_id (or name with input_display_value)."
+          },
+          "workaround": {
+            "type": "string",
+            "description": "Known workaround."
+          },
+          "additional_fields": {
+            "type": "object",
+            "description": "Any other fields of the record as {\"field_name\": value}, e.g. {\"u_custom_field\": \"x\", \"business_service\": \"<sys_id>\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          },
+          "return_fields": {
+            "type": "string",
+            "description": "Fields to return from the saved record.",
+            "default": "number,sys_id,state,short_description,priority,assignment_group,assigned_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/problem/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_fields": "$return_fields",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "state": "$state",
+          "resolution_code": "$resolution_code",
+          "cause_notes": "$cause_notes",
+          "fix_notes": "$fix_notes",
+          "known_error": "$known_error",
+          "work_notes": "$work_notes",
+          "short_description": "$short_description",
+          "description": "$description",
+          "category": "$category",
+          "impact": "$impact",
+          "urgency": "$urgency",
+          "cmdb_ci": "$cmdb_ci",
+          "assignment_group": "$assignment_group",
+          "assigned_to": "$assigned_to",
+          "workaround": "$workaround",
+          "__merge": "$additional_fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_list_requests",
+      "description": "List service catalog requests (REQ numbers) from the sc_request table, newest first by default. Filter with an encoded query (sysparm_query), e.g. active=true^assignment_group.name=Service Desk^priority<=2. Returns up to limit records with the fields given; _headers.x-total-count is the total number of matches, page with offset. request_state: requested, in_process, closed_complete, closed_incomplete, closed_cancelled, closed_rejected. The items of a request are its RITMs: servicenow_list_requested_items with query request.number=REQ0010001. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Encoded query. Default: active=true^ORDERBYDESCsys_updated_on. Combine conditions with ^ (AND) and ^OR, sort with ^ORDERBY<field> or ^ORDERBYDESC<field>.",
+            "default": "active=true^ORDERBYDESCsys_updated_on"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; dot-walking works (caller_id.email). Default: the usual list columns.",
+            "default": "number,sys_id,short_description,request_state,state,approval,requested_for,opened_by,opened_at,price,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sc_request",
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_list_requested_items",
+      "description": "List requested items (RITM numbers, one per ordered catalog item) from the sc_req_item table, newest first by default. Filter with an encoded query (sysparm_query), e.g. active=true^assignment_group.name=Service Desk^priority<=2. Returns up to limit records with the fields given; _headers.x-total-count is the total number of matches, page with offset. State codes: -5 Pending, 1 Open, 2 Work in Progress, 3 Closed Complete, 4 Closed Incomplete, 7 Closed Skipped; stage shows the fulfilment step. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Encoded query. Default: active=true^ORDERBYDESCsys_updated_on. Combine conditions with ^ (AND) and ^OR, sort with ^ORDERBY<field> or ^ORDERBYDESC<field>.",
+            "default": "active=true^ORDERBYDESCsys_updated_on"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; dot-walking works (caller_id.email). Default: the usual list columns.",
+            "default": "number,sys_id,short_description,cat_item,request,requested_for,state,stage,approval,assignment_group,assigned_to,opened_at,due_date,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sc_req_item",
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_requested_item",
+      "description": "Read one requested item by its number (RITM0010001) with all its fields, including sys_id, which the update tools need. The answers to the item's form are not fields of the record: read them with servicenow_get_requested_item_variables. Returns result as a list with zero or one record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The record number, e.g. RITM0010001."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Leave out for all fields."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sc_req_item",
+        "queryParams": {
+          "sysparm_query": "number=${number}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "1",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_get_requested_item_variables",
+      "description": "Read the variables (the questions of the catalog form and the requester's answers) of one requested item by its sys_id. Returns one row per variable with its name, question and value. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ritm_sys_id": {
+            "type": "string",
+            "description": "The requested item's sys_id (from servicenow_get_requested_item)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Variables to return. Default 100.",
+            "default": 100
+          }
+        },
+        "required": [
+          "ritm_sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sc_item_option_mtom",
+        "queryParams": {
+          "sysparm_query": "request_item=${ritm_sys_id}",
+          "sysparm_fields": "sc_item_option.item_option_new.name,sc_item_option.item_option_new.question_text,sc_item_option.value",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true",
+          "sysparm_limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "servicenow_search_catalog_items",
+      "description": "Search the service catalog for items the integration user may order (\"laptop\", \"VPN access\", \"new hire\"). Returns sys_id, name, short_description, category and price per item; use the sys_id with servicenow_get_catalog_item to see its form. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Words to search for in the item names and descriptions."
+          },
+          "category": {
+            "type": "string",
+            "description": "Only items in this category (sys_id)."
+          },
+          "catalog": {
+            "type": "string",
+            "description": "Only items in this catalog (sys_id)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items to return. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sn_sc/servicecatalog/items",
+        "queryParams": {
+          "sysparm_text": "$text",
+          "sysparm_category": "$category",
+          "sysparm_catalog": "$catalog",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "servicenow_get_catalog_item",
+      "description": "Read one catalog item by sys_id with its order form: variables (name, label, type, mandatory, choices), price and description. Use the variable names as keys when ordering with servicenow_order_catalog_item. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The catalog item's sys_id."
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sn_sc/servicecatalog/items/{sys_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "servicenow_order_catalog_item",
+      "description": "Order a catalog item right away (Order Now): creates a request (REQ) with a requested item (RITM) and starts its approvals and fulfilment, which may cost money or grant access. Fill every mandatory variable of the item's form (servicenow_get_catalog_item). Returns the request number and sys_id. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "description": "The catalog item's sys_id."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Answers to the item's form as {\"variable_name\": \"value\"}; references take sys_ids, choices their values."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "How many. Default 1.",
+            "default": 1
+          },
+          "requested_for": {
+            "type": "string",
+            "description": "sys_id of the user the item is for. Leave out to order for the integration user; ordering for someone else needs that right on the instance."
+          }
+        },
+        "required": [
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sn_sc/servicecatalog/items/{sys_id}/order_now",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "sysparm_quantity": "$quantity",
+          "variables": "$variables",
+          "sysparm_requested_for": "$requested_for"
+        }
+      }
+    },
+    {
+      "name": "servicenow_search_knowledge",
+      "description": "Search knowledge articles by keywords with ServiceNow's text index (the same search as the knowledge portal, on title and body). Returns number, title (short_description), knowledge base, category and views; read an article with servicenow_get_knowledge_article. Only published articles by default. The integration user sees only articles its user criteria allow. If nothing comes back on an instance without a text index, use servicenow_query_table on kb_knowledge with short_descriptionLIKE<word>. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keywords, e.g. reset VPN password."
+          },
+          "workflow_state": {
+            "type": "string",
+            "enum": [
+              "published",
+              "draft",
+              "review",
+              "retired"
+            ],
+            "description": "Article state. Default published.",
+            "default": "published"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "number,sys_id,short_description,kb_knowledge_base,kb_category,workflow_state,sys_view_count,valid_to,sys_updated_on"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Articles to return. Default 10.",
+            "default": 10
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Articles to skip, for the next page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/kb_knowledge",
+        "queryParams": {
+          "sysparm_query": "workflow_state=${workflow_state}^123TEXTQUERY321=${query}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_knowledge_article",
+      "description": "Read one knowledge article by its number (KB0010001): title, body (text, HTML), knowledge base, category, author, state and validity. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Article number, e.g. KB0010001."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "number,sys_id,short_description,text,kb_knowledge_base,kb_category,author,workflow_state,valid_to,sys_updated_on"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/kb_knowledge",
+        "queryParams": {
+          "sysparm_query": "number=${number}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "1",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_find_users",
+      "description": "Find active users by part of their name, e-mail or user ID. Returns sys_id (for caller_id, assigned_to, requested_for), name, e-mail, title, department and manager. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the name, e-mail or user ID, e.g. tuter or abel.tuter@example.com."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "sys_id,user_name,name,email,title,department,manager,phone,active"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Users to return. Default 20.",
+            "default": 20
+          }
+        },
+        "required": [
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sys_user",
+        "queryParams": {
+          "sysparm_query": "active=true^nameLIKE${search}^ORemailLIKE${search}^ORuser_nameLIKE${search}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_find_groups",
+      "description": "Find active groups (assignment groups, approval groups) by part of their name. Returns sys_id (for assignment_group), name, description, manager and e-mail. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the group name, e.g. service desk or network."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Groups to return. Default 20.",
+            "default": 20
+          }
+        },
+        "required": [
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sys_user_group",
+        "queryParams": {
+          "sysparm_query": "active=true^nameLIKE${search}",
+          "sysparm_fields": "sys_id,name,description,manager,email,type",
+          "sysparm_limit": "$limit",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_list_group_members",
+      "description": "List the members of a group by the group's sys_id (from servicenow_find_groups): user sys_id, name, user ID and e-mail. Use it to pick an assigned_to that belongs to the assignment group. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_sys_id": {
+            "type": "string",
+            "description": "The group's sys_id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Members to return. Default 100.",
+            "default": 100
+          }
+        },
+        "required": [
+          "group_sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sys_user_grmember",
+        "queryParams": {
+          "sysparm_query": "group=${group_sys_id}",
+          "sysparm_fields": "user.sys_id,user.name,user.user_name,user.email,user.active",
+          "sysparm_limit": "$limit",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_find_configuration_items",
+      "description": "Find configuration items (servers, applications, network gear, services) in the CMDB by part of their name, IP address, FQDN or serial number. ci_class narrows the search to one class (cmdb_ci_server, cmdb_ci_win_server, cmdb_ci_linux_server, cmdb_ci_appl, cmdb_ci_service, cmdb_ci_netgear, cmdb_ci_computer...); the default cmdb_ci searches all. Returns sys_id, name, class and status, each field as value (stored) and display_value (label): pass sys_class_name.value as ci_class to servicenow_get_configuration_item. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the name, IP address, FQDN or serial number."
+          },
+          "ci_class": {
+            "type": "string",
+            "description": "CMDB class (table). Default cmdb_ci.",
+            "default": "cmdb_ci"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return.",
+            "default": "sys_id,name,sys_class_name,operational_status,install_status,ip_address,fqdn,serial_number,support_group,assigned_to,location"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items to return. Default 20.",
+            "default": 20
+          }
+        },
+        "required": [
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/{ci_class}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_query": "nameLIKE${search}^ORip_addressLIKE${search}^ORfqdnLIKE${search}^ORserial_numberLIKE${search}",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_display_value": "all",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_get_configuration_item",
+      "description": "Read one configuration item with the CMDB Instance API: all its attributes plus its outbound and inbound relationships (Runs on, Depends on, Hosted on...), to see what a server hosts or what an application depends on. Needs the class (the stored value of sys_class_name, e.g. cmdb_ci_linux_server, not its label) and sys_id from servicenow_find_configuration_items. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ci_class": {
+            "type": "string",
+            "description": "The item's class, e.g. cmdb_ci_linux_server (sys_class_name stored value)."
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The item's sys_id."
+          }
+        },
+        "required": [
+          "ci_class",
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/cmdb/instance/{ci_class}/{sys_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "servicenow_query_table",
+      "description": "Query any table the integration user may read with the Table API: sysparm_query (encoded query), sysparm_fields, sysparm_limit, sysparm_offset and sysparm_display_value. For tables without a dedicated tool: sc_task, incident_task, change_task, task_sla, sysapproval_approver, cmn_location, core_company, cmdb_rel_ci, sys_journal_field, kb_knowledge and custom u_ tables. Copy an encoded query from a list in the UI (right-click the filter breadcrumb, Copy query). _headers.x-total-count is the number of matches. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, e.g. sc_task."
+          },
+          "query": {
+            "type": "string",
+            "description": "Encoded query, e.g. active=true^assigned_toISEMPTY^ORDERBYDESCsys_created_on. Leave out for all records."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields; dot-walking works. Leave out for all fields (large)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, up to 1000. Default 20.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/{table}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_query": "$query",
+          "sysparm_fields": "$fields",
+          "sysparm_limit": "$limit",
+          "sysparm_offset": "$offset",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "exposeHeaders": [
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "servicenow_get_record",
+      "description": "Read one record of any table by sys_id, with all fields or the ones given. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, e.g. sc_task."
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The record's sys_id."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields. Leave out for all fields."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "table",
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/{table}/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_fields": "$fields",
+          "sysparm_display_value": "$display_value",
+          "sysparm_exclude_reference_link": "true"
+        }
+      }
+    },
+    {
+      "name": "servicenow_count_records",
+      "description": "Count records with the Aggregate API instead of fetching them, optionally grouped by a field: open incidents per assignment group, changes per state, RITMs per catalog item. Returns result.stats.count, or one row per group with groupby_fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, e.g. incident."
+          },
+          "query": {
+            "type": "string",
+            "description": "Encoded query, e.g. active=true^priority=1."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Field(s) to group by, comma-separated, e.g. assignment_group."
+          },
+          "display_value": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true (default): labels and names (\"In Progress\", \"Service Desk\"); false: stored values (state 2, sys_ids); all: both.",
+            "default": "true"
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/stats/{table}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_count": "true",
+          "sysparm_query": "$query",
+          "sysparm_group_by": "$group_by",
+          "sysparm_display_value": "$display_value"
+        }
+      }
+    },
+    {
+      "name": "servicenow_list_choices",
+      "description": "List the allowed values of a choice field on this instance (sys_choice): state, close_code, category, subcategory, hold_reason, impact, risk and so on. Each row has value (what to send), label and, for dependent fields like subcategory, dependent_value. Use it before writing a state or code you are not sure of; instances customise these. If a field returns nothing, try table task (fields inherited from it). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table, e.g. incident."
+          },
+          "field": {
+            "type": "string",
+            "description": "Field (element), e.g. close_code."
+          },
+          "language": {
+            "type": "string",
+            "description": "Label language. Default en.",
+            "default": "en"
+          }
+        },
+        "required": [
+          "table",
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/table/sys_choice",
+        "queryParams": {
+          "sysparm_query": "name=${table}^element=${field}^inactive=false^language=${language}^ORDERBYsequence",
+          "sysparm_fields": "value,label,sequence,dependent_value",
+          "sysparm_limit": "200"
+        }
+      }
+    },
+    {
+      "name": "servicenow_update_record",
+      "description": "Change fields of any record by table and sys_id with a PATCH (only the fields given change), e.g. close a catalog task (sc_task state 3) or update a change task. Business rules, workflows and notifications run as for a change in the UI. For incidents, changes and problems prefer their own tools. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, e.g. sc_task."
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The record's sys_id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to set as {\"field_name\": value}, e.g. {\"state\": \"3\", \"work_notes\": \"Done\"}."
+          },
+          "input_display_value": {
+            "type": "boolean",
+            "description": "true: reference fields take names instead of sys_ids (assignment_group \"Service Desk\", caller_id \"Abel Tuter\") and choice fields take their labels. Default false: sys_ids and stored values."
+          }
+        },
+        "required": [
+          "table",
+          "sys_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/now/table/{table}/{sys_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "sysparm_input_display_value": "$input_display_value",
+          "sysparm_display_value": "true",
+          "sysparm_exclude_reference_link": "true"
+        },
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "servicenow_delete_record",
+      "description": "Delete a record of any table by sys_id. Permanent: ServiceNow keeps deleted records only in the admin's Deleted Records list, and deleting a task does not close it in any process. Prefer cancelling or closing. Installed switched off; turn it on per tool only if the integration user really must delete. Changes data in ServiceNow: show the user what will be sent and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name."
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The record's sys_id."
+          }
+        },
+        "required": [
+          "table",
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/now/table/{table}/{sys_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "servicenow_list_attachments",
+      "description": "List the files attached to a record (any table): file_name, content_type, size_bytes, sys_id, created on and by, and download_link. The download link needs the same ServiceNow credentials, so it does not open for the user without a login. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table of the record, e.g. incident."
+          },
+          "sys_id": {
+            "type": "string",
+            "description": "The record's sys_id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Attachments to return. Default 50.",
+            "default": 50
+          }
+        },
+        "required": [
+          "table",
+          "sys_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/now/attachment",
+        "queryParams": {
+          "sysparm_query": "table_name=${table}^table_sys_id=${sys_id}^ORDERBYDESCsys_created_on",
+          "sysparm_limit": "$limit"
+        }
+      }
+    }
+  ]
+}
