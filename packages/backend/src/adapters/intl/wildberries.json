@@ -1,8 +1,8 @@
 {
   "slug": "wildberries",
   "name": "Wildberries",
-  "description": "Run a Wildberries seller account from an AI agent: FBS orders and their statuses, seller warehouses and stock levels, statistics on orders and sales, stock on WB warehouses, the sales report detail, product cards and prices. 22 tools across the WB API hosts, one API token.",
-  "instructions": "This connector uses the Wildberries seller API (WB API). The API is split over several hosts, one per token category: `marketplace-api` (FBS orders, seller warehouses, seller stock), `statistics-api` (orders and sales statistics), `seller-analytics-api` (stock on WB warehouses), `finance-api` (sales report detail), `content-api` (product cards), `discounts-prices-api` (prices) and `common-api` (connection check, seller information). Every tool already calls the right host; the connector's base URL is the marketplace host.\n\n**Setup**:\n1. In the seller portal open **Settings > API integrations** (Настройки > Доступ к API) and click **Create token**.\n2. Choose the token type. For a cloud service such as this one use a **Base token**; a Personal token must not be used in cloud services according to Wildberries. A Base token has lower limits on statistics and finance methods (see below).\n3. Tick the categories you need: **Marketplace** for orders, warehouses and stock, **Statistics** for the statistics tools, **Analytics** for stock on WB warehouses, **Finance** for the sales report, **Content** for product cards, **Prices and Discounts** for prices. Choose **Read only** unless you want to update stock or prices.\n4. Copy the token (it is shown once) into `WILDBERRIES_API_TOKEN`. Tokens are valid for 180 days.\n\n**Authentication**: the token goes into the `Authorization` header as is, without `Bearer`. A 401 means the token is wrong or expired; a 403 means the token lacks the category of that host, or the method is not available for its token type.\n\n**Rate limits (strict, per seller account, token bucket)**: Marketplace methods allow 300 requests a minute with a burst of 20; any 4xx answer counts as 10 requests. Statistics orders and sales: 1 request a minute (burst 10), and with a Base token only 1 request every 3 hours. Sales report detail: 1 a minute, Base token 2 a day. Stock on WB warehouses: 3 a minute, burst 1. Product cards: 100 a minute, burst 5 (card limits: Base token 2 an hour). Prices: 10 per 6 seconds, Base token 4 an hour. Seller information: Base token once a day. On a 429 the response headers `X-Ratelimit-Retry` (seconds to wait) and `X-Ratelimit-Reset` tell you when to retry; do not retry immediately, and do not loop over statistics tools.\n\n**Where to start**: `wildberries_ping` checks the token cheaply. For live FBS work call `wildberries_list_new_orders`, then `wildberries_get_order_statuses` with the order ids. For history use `wildberries_list_orders` (up to 30 days per call, 3 months back). For figures use `wildberries_list_statistics_orders` and `wildberries_list_statistics_sales` once, with a `date_from`, and work from that result.\n\n**Ids**: `warehouse_id` comes from `wildberries_list_warehouses` (seller warehouses, not WB offices). Stock is keyed by size id `chrtId`, found in `sizes[].chrtID` of `wildberries_list_product_cards`. `nmID` is the WB article of a product.\n\n**Pagination**: `wildberries_list_orders` and `wildberries_list_supplies` start with `next` = 0 and continue with the `next` value of the previous answer. Statistics tools return up to 80,000 rows; for more, call again with `date_from` = `lastChangeDate` of the last row. Product cards use a cursor (`updated_at` + `nm_id` from the previous `cursor`). Prices use `limit` + `offset`.\n\n**Writes**: `wildberries_update_stocks` overwrites stock on a seller warehouse and `wildberries_set_prices` changes prices and discounts; both act on the live shop. Wrong field names in a stock update still return 204 without changing anything, so read the stock back afterwards.\n\n**Removed by Wildberries**: the old statistics stock report (`/api/v1/supplier/stocks`) and `/api/v5/supplier/reportDetailByPeriod` were switched off in June 2026. Use `wildberries_get_sales_report_detail` for the report, and for stock on WB warehouses either `wildberries_get_wb_warehouse_stocks` (Personal, Service or Base-with-secret token only; a Base token gets 403) or the report flow `wildberries_create_stock_report` > `wildberries_get_stock_report_status` > `wildberries_download_stock_report`, which works with a Base token (4 calls an hour).",
+  "description": "Run a Wildberries seller account from an AI agent: FBS orders and their statuses, seller warehouses and stock levels, statistics on orders and sales, stock on WB warehouses, the sales report detail, product cards and prices, product feedbacks and buyer questions with answers, and buyer return claims. 34 tools across the WB API hosts, one API token.",
+  "instructions": "This connector uses the Wildberries seller API (WB API). The API is split over several hosts, one per token category: `marketplace-api` (FBS orders, seller warehouses, seller stock), `statistics-api` (orders and sales statistics), `seller-analytics-api` (stock on WB warehouses), `finance-api` (sales report detail), `content-api` (product cards), `discounts-prices-api` (prices), `feedbacks-api` (product feedbacks and buyer questions), `returns-api` (buyer return claims) and `common-api` (connection check, seller information). Every tool already calls the right host; the connector's base URL is the marketplace host.\n\n**Setup**:\n1. In the seller portal open **Settings > API integrations** (Настройки > Доступ к API) and click **Create token**.\n2. Choose the token type. For a cloud service such as this one use a **Base token**; a Personal token must not be used in cloud services according to Wildberries. A Base token has lower limits on statistics and finance methods (see below).\n3. Tick the categories you need: **Marketplace** for orders, warehouses and stock, **Statistics** for the statistics tools, **Analytics** for stock on WB warehouses, **Finance** for the sales report, **Content** for product cards, **Prices and Discounts** for prices, **Feedbacks and Questions** for feedbacks and questions, **Buyers Returns** for return claims. Choose **Read only** unless you want to update stock or prices, answer feedbacks and questions, or decide on returns.\n4. Copy the token (it is shown once) into `WILDBERRIES_API_TOKEN`. Tokens are valid for 180 days.\n\n**Authentication**: the token goes into the `Authorization` header as is, without `Bearer`. A 401 means the token is wrong or expired; a 403 means the token lacks the category of that host, or the method is not available for its token type.\n\n**Rate limits (strict, per seller account, token bucket)**: Marketplace methods allow 300 requests a minute with a burst of 20; any 4xx answer counts as 10 requests. Statistics orders and sales: 1 request a minute (burst 10), and with a Base token only 1 request every 3 hours. Sales report detail: 1 a minute, Base token 2 a day. Stock on WB warehouses: 3 a minute, burst 1. Product cards: 100 a minute, burst 5 (card limits: Base token 2 an hour). Prices: 10 per 6 seconds, Base token 4 an hour. Seller information: Base token once a day. Feedbacks and questions (all of them together): 3 requests a second with a burst of 6, but with a Base token only 5 an hour, one every 12 minutes. Return claims: 20 a minute, Base token 1 an hour. On a 429 the response headers `X-Ratelimit-Retry` (seconds to wait) and `X-Ratelimit-Reset` tell you when to retry; do not retry immediately, and do not loop over statistics tools.\n\n**Where to start**: `wildberries_ping` checks the token cheaply. For live FBS work call `wildberries_list_new_orders`, then `wildberries_get_order_statuses` with the order ids. For history use `wildberries_list_orders` (up to 30 days per call, 3 months back). For figures use `wildberries_list_statistics_orders` and `wildberries_list_statistics_sales` once, with a `date_from`, and work from that result.\n\n**Feedbacks, questions and returns**: `wildberries_count_unanswered_feedbacks` and `wildberries_count_unanswered_questions` say whether there is work. `wildberries_list_feedbacks` / `wildberries_list_questions` with `is_answered` = false, `skip` = 0 and a large `take` fetch everything waiting in one call; then `wildberries_answer_feedback` and `wildberries_answer_question` for each, after the user approved the text. With a Base token the 5-an-hour limit allows only a few answers per hour: plan the batch with the user, and on a 429 stop and resume after the time in `X-Ratelimit-Retry` instead of retrying. A Personal or Service token has the full limit. `wildberries_list_return_claims` shows the open return applications with the decisions allowed for each (`actions`); `wildberries_answer_return_claim` sends one of them.\n\n**Ids**: `warehouse_id` comes from `wildberries_list_warehouses` (seller warehouses, not WB offices). Stock is keyed by size id `chrtId`, found in `sizes[].chrtID` of `wildberries_list_product_cards`. `nmID` is the WB article of a product.\n\n**Pagination**: `wildberries_list_orders` and `wildberries_list_supplies` start with `next` = 0 and continue with the `next` value of the previous answer. Statistics tools return up to 80,000 rows; for more, call again with `date_from` = `lastChangeDate` of the last row. Product cards use a cursor (`updated_at` + `nm_id` from the previous `cursor`). Prices use `limit` + `offset`.\n\n**Writes**: `wildberries_update_stocks` overwrites stock on a seller warehouse and `wildberries_set_prices` changes prices and discounts; both act on the live shop. Wrong field names in a stock update still return 204 without changing anything, so read the stock back afterwards. Answers to feedbacks and questions are public on the product page, and a return decision cannot be undone; `wildberries_reject_question` is installed switched off.\n\n**Removed by Wildberries**: the old statistics stock report (`/api/v1/supplier/stocks`) and `/api/v5/supplier/reportDetailByPeriod` were switched off in June 2026. Use `wildberries_get_sales_report_detail` for the report, and for stock on WB warehouses either `wildberries_get_wb_warehouse_stocks` (Personal, Service or Base-with-secret token only; a Base token gets 403) or the report flow `wildberries_create_stock_report` > `wildberries_get_stock_report_status` > `wildberries_download_stock_report`, which works with a Base token (4 calls an hour).",
   "region": "intl",
   "category": "e-commerce",
   "icon": "wildberries",
@@ -14,7 +14,7 @@
     "WILDBERRIES_API_TOKEN": {
       "label": "API token",
       "kind": "credential",
-      "help": "Seller portal > Settings > API integrations > Create token. Pick the Base token type, tick the categories you need (Marketplace, Statistics, Analytics, Finance, Content, Prices and Discounts) and copy the token, which is shown once.",
+      "help": "Seller portal > Settings > API integrations > Create token. Pick the Base token type, tick the categories you need (Marketplace, Statistics, Analytics, Finance, Content, Prices and Discounts, Feedbacks and Questions, Buyers Returns) and copy the token, which is shown once.",
       "link": "https://seller.wildberries.ru/supplier-settings/access-to-api",
       "pattern": "^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
       "patternMessage": "A Wildberries token is a JWT: three dot-separated parts starting with eyJ. Paste it without Bearer."
@@ -22,7 +22,7 @@
   },
   "verifyHints": {
     "401": "Wildberries refused the token. Check that it was copied whole, without Bearer in front, and that it has not expired (tokens last 180 days).",
-    "403": "The token works but lacks the category for this part of the API. Create a token with the Marketplace, Statistics, Content or Prices categories you need.",
+    "403": "The token works but lacks the category for this part of the API. Create a token with the Marketplace, Statistics, Content, Prices, Feedbacks and Questions or Buyers Returns categories you need.",
     "rate_limited": "Wildberries limits requests per seller account. Wait for the time in X-Ratelimit-Retry and try again; statistics methods allow only one call a minute, or one every 3 hours with a Base token."
   },
   "connector": {
@@ -737,6 +737,409 @@
       "endpointMapping": {
         "method": "GET",
         "path": "https://content-api.wildberries.ru/content/v2/cards/limits"
+      }
+    },
+    {
+      "name": "wildberries_count_unanswered_feedbacks",
+      "description": "Count the feedbacks (product reviews) still waiting for the seller's answer: countUnanswered over all time and countUnansweredToday. The cheapest way to see whether there is work. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/feedbacks/count-unanswered"
+      }
+    },
+    {
+      "name": "wildberries_count_unanswered_questions",
+      "description": "Count the buyer questions still waiting for the seller's answer: countUnanswered over all time and countUnansweredToday. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/questions/count-unanswered"
+      }
+    },
+    {
+      "name": "wildberries_check_new_feedbacks_questions",
+      "description": "Tell whether there are feedbacks or questions the seller has not seen yet (hasNewFeedbacks, hasNewQuestions). Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/new-feedbacks-questions"
+      }
+    },
+    {
+      "name": "wildberries_list_feedbacks",
+      "description": "List product feedbacks (reviews) with their id, text, pros, cons, rating (productValuation), product (nmId, name), date and the seller's answer if any. Use is_answered=false for the ones to answer. Ask for many at once (take up to 5000) instead of paging in small steps. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_answered": {
+            "type": "boolean",
+            "description": "false for feedbacks waiting for an answer, true for answered ones."
+          },
+          "take": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Number of feedbacks to return (max 5000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 199990,
+            "description": "Number of feedbacks to skip, for paging (0 for the first page)."
+          },
+          "nm_id": {
+            "type": "integer",
+            "description": "Only feedbacks on this WB article (nmID)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "dateAsc",
+              "dateDesc"
+            ],
+            "description": "Sort by date."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Period start as a Unix timestamp in seconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Period end as a Unix timestamp in seconds."
+          }
+        },
+        "required": [
+          "is_answered",
+          "take",
+          "skip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/feedbacks",
+        "queryParams": {
+          "isAnswered": "$is_answered",
+          "take": "$take",
+          "skip": "$skip",
+          "nmId": "$nm_id",
+          "order": "$order",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "wildberries_get_feedback",
+      "description": "Read one feedback by its id: text, pros, cons, rating, photos, product and the seller's answer. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Feedback id (from wildberries_list_feedbacks)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/feedback",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "wildberries_answer_feedback",
+      "description": "Publish the seller's answer to a feedback; buyers see it on the product page. Wildberries does not check the id, so a wrong id answers nothing without an error: take it from wildberries_list_feedbacks. Show the user the text and wait for confirmation first. With a Base token only 5 feedback or question calls an hour are allowed, so answer one feedback per call and stop at a 429.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Feedback id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 5000,
+            "description": "Answer text, 2 to 5000 characters, normally in Russian."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/feedbacks/answer",
+        "bodyMapping": {
+          "id": "$id",
+          "text": "$text"
+        }
+      }
+    },
+    {
+      "name": "wildberries_edit_feedback_answer",
+      "description": "Replace the seller's published answer to a feedback. Wildberries allows this once per answer, within 60 days of it. Show the user the new text and wait for confirmation first. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Feedback id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 5000,
+            "description": "New answer text, 2 to 5000 characters."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/feedbacks/answer",
+        "bodyMapping": {
+          "id": "$id",
+          "text": "$text"
+        }
+      }
+    },
+    {
+      "name": "wildberries_list_questions",
+      "description": "List buyer questions about products with their id, text, product (nmId, name), date and the seller's answer if any. Use is_answered=false for the ones to answer. take + skip may not exceed 10000. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_answered": {
+            "type": "boolean",
+            "description": "false for questions waiting for an answer, true for answered ones."
+          },
+          "take": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Number of questions to return (take + skip at most 10000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "Number of questions to skip, for paging (0 for the first page)."
+          },
+          "nm_id": {
+            "type": "integer",
+            "description": "Only questions on this WB article (nmID)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "dateAsc",
+              "dateDesc"
+            ],
+            "description": "Sort by date."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Period start as a Unix timestamp in seconds."
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Period end as a Unix timestamp in seconds."
+          }
+        },
+        "required": [
+          "is_answered",
+          "take",
+          "skip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/questions",
+        "queryParams": {
+          "isAnswered": "$is_answered",
+          "take": "$take",
+          "skip": "$skip",
+          "nmId": "$nm_id",
+          "order": "$order",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "wildberries_answer_question",
+      "description": "Answer a buyer question, or change an answer already given (once, within 60 days); the question is then shown with the answer on the product page after Wildberries moderation. Show the user the text and wait for confirmation first. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Question id (from wildberries_list_questions)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Answer text, normally in Russian."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/questions",
+        "bodyMapping": {
+          "id": "$id",
+          "answer": {
+            "text": "$text"
+          },
+          "state": "wbRu"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "wildberries_reject_question",
+      "description": "Reject a buyer question so it does not appear on the product page (state none). Use for spam or off-topic questions only. Installed switched off; confirm with the user first. Feedbacks and questions share one limit: 3 requests a second, but only 5 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Question id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Short reason for the rejection."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://feedbacks-api.wildberries.ru/api/v1/questions",
+        "bodyMapping": {
+          "id": "$id",
+          "answer": {
+            "text": "$text"
+          },
+          "state": "none"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "wildberries_list_return_claims",
+      "description": "List buyer return applications (claims) of the last 14 days: id, product (nm_id, imt_name), buyer comment, photos, status, dates and actions, the decisions allowed for each claim. Needs a token with the Buyers Returns category. Limit: 20 requests a minute, only 1 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_archive": {
+            "type": "boolean",
+            "description": "false for claims under review, true for archived ones."
+          },
+          "id": {
+            "type": "string",
+            "description": "Only this claim id."
+          },
+          "nm_id": {
+            "type": "integer",
+            "description": "Only claims on this WB article (nmID)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Number of claims (1 to 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Claims to skip, for paging (default 0)."
+          }
+        },
+        "required": [
+          "is_archive"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://returns-api.wildberries.ru/api/v1/claims",
+        "queryParams": {
+          "is_archive": "$is_archive",
+          "id": "$id",
+          "nm_id": "$nm_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "wildberries_answer_return_claim",
+      "description": "Decide on a buyer return application: send one of the values in the claim's actions array from wildberries_list_return_claims, such as approve1 (refund once the item is back and checked), approve2 (refund, item goes to the seller), autorefund1 (refund, buyer keeps the item), reject1 to reject3 (Wildberries answer templates) or rejectcustom. rejectcustom needs a comment of 10 to 1000 characters for the buyer. The decision cannot be undone; confirm the claim and the action with the user first. Limit: 20 requests a minute, 1 an hour with a Base token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Claim id (UUID) from wildberries_list_return_claims."
+          },
+          "action": {
+            "type": "string",
+            "description": "One of the claim's actions values, exactly as listed."
+          },
+          "comment": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 1000,
+            "description": "Comment for the buyer; required with rejectcustom, allowed with approvecc1, otherwise leave out."
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://returns-api.wildberries.ru/api/v1/claim",
+        "bodyMapping": {
+          "id": "$id",
+          "action": "$action",
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
       }
     }
   ]

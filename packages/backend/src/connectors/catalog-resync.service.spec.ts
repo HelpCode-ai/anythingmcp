@@ -407,6 +407,46 @@ describe('CatalogResyncService — the user\'s own tools are never touched', () 
     expect(tx.mcpTool.create.mock.calls[0][0].data.origin).toBe('catalog');
   });
 
+  it('a full update adds a tool the catalog ships switched off as switched off', async () => {
+    // mercado_libre_close_listing is installed disabled; an existing connector
+    // that takes the update must get it disabled too, not the column default.
+    const adapter = getAdapter('mercado-libre')!;
+    const kept = adapter.tools.filter(
+      (t: any) => !['mercado_libre_close_listing', 'mercado_libre_create_listing'].includes(t.name),
+    );
+    const connector: any = {
+      id: 'c1',
+      name: adapter.connector.name,
+      instructions: adapter.instructions ?? null,
+      config: { adapterSlug: 'mercado-libre', adapterVersion: 'old-version', instructionsBaseline: hashInstructions(adapter.instructions) },
+      tools: kept.map((t: any, i: number) => ({
+        id: `tool${i}`,
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        endpointMapping: t.endpointMapping,
+        responseMapping: null,
+        useProxy: false,
+        isEnabled: true,
+        deprecatedAt: null,
+        origin: 'catalog',
+      })),
+    };
+    const tx = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector), update: jest.fn().mockResolvedValue({}) },
+      mcpTool: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    await new CatalogResyncService(prisma).resync('c1', 'full');
+    const created = Object.fromEntries(
+      tx.mcpTool.create.mock.calls.map((c: any) => [c[0].data.name, c[0].data.isEnabled]),
+    );
+    expect(created).toEqual({ mercado_libre_close_listing: false, mercado_libre_create_listing: true });
+  });
+
   it('safe mode applies description fixes even when a new tool is also pending', async () => {
     const { service, tx } = applySetup((tools) => {
       tools[1] = { ...tools[1], description: 'stale description' };
