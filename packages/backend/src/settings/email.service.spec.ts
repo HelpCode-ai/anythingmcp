@@ -59,7 +59,9 @@ describe('EmailService', () => {
     await expect(service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1')).resolves.toBe(true);
     const mail = sent();
     expect(mail.subject).toBe('123456 is your AnythingMCP verification code');
-    expect(mail.html).toContain('123 456');
+    // Shown exactly as typed: a space between the halves was copied with them.
+    expect(mail.html).toContain('>123456<');
+    expect(mail.html).not.toContain('123 456');
     expect(mail.text).toContain('123456');
     expect(mail.headers).toBeUndefined();
     expect(mail.html).not.toContain('Unsubscribe');

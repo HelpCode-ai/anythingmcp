@@ -29,6 +29,8 @@ describe('LicenseController — activate-trial is idempotent', () => {
       { findById: jest.fn(async () => user) } as any,
       { isCloud: () => true } as any,
       {} as any,
+      {} as any,
+      {} as any,
     );
     return { controller, licenseService };
   }
@@ -97,6 +99,8 @@ describe('LicenseController — status reports an ended licence', () => {
       { verifyToken: () => ({ organizationId: 'org-1' }) } as any,
       {} as any,
       { isCloud: () => opts.cloud ?? true } as any,
+      {} as any,
+      {} as any,
       {} as any,
     );
     return { controller, licenseService };

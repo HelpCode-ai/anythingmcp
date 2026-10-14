@@ -28,6 +28,7 @@ import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { CardTrialEligibilityService } from '../license/card-trial-eligibility.service';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
   claudeMark,
@@ -94,6 +95,7 @@ export class LoginController {
     private readonly grants: McpConnectionGrantService,
     @Optional() private readonly productEvents?: ProductEventService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
+    @Optional() private readonly cardTrialEligibility?: CardTrialEligibilityService,
   ) {}
 
   /** The trust row under every page of the flow. */
@@ -386,7 +388,7 @@ export class LoginController {
     if (typeof requestedServerId === 'string' && requestedServerId) return false;
     const account = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { organizationId: true },
+      select: { organizationId: true, email: true },
     });
     const organizationId = account?.organizationId;
     if (!organizationId) return false;
@@ -422,7 +424,10 @@ export class LoginController {
       member?.role === 'ADMIN'
         ? await this.licenseGuard?.getTrialState(organizationId).catch(() => null)
         : null;
-    const trialEndsAt = trial?.active && trial.cardTrialAvailable ? trial.endsAt : null;
+    const trialEndsAt =
+      trial?.active && trial.cardTrialAvailable && !(await this.hadSubscriptionQuickly(account?.email))
+        ? trial.endsAt
+        : null;
 
     await this.productEvents
       ?.log({
@@ -445,6 +450,21 @@ export class LoginController {
       }),
     );
     return true;
+  }
+
+  /**
+   * Whether this address had a subscription before (it would be charged
+   * today, so "nothing is charged before" would be false). The authorization
+   * waits for this page, so the licence site gets 1.5 s; no answer counts as
+   * no, as the page always said, and the site checks again at checkout.
+   */
+  private async hadSubscriptionQuickly(email: string | null | undefined): Promise<boolean> {
+    if (!email || !this.cardTrialEligibility) return false;
+    const answer = await Promise.race([
+      this.cardTrialEligibility.hadSubscription(email).catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500).unref?.()),
+    ]);
+    return answer === true;
   }
 
   private renderFirstConnectorOffer(params: {

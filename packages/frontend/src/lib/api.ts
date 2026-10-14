@@ -1451,13 +1451,35 @@ export const license = {
       billingPeriod: 'monthly' | 'yearly';
       trial: boolean;
       promo?: string;
+      /** The in-app offer that led here; reaches Stripe as metadata.trial_source. */
+      source?: 'first_success';
     },
   ) =>
-    request<{ url: string }>('/api/license/checkout-link', {
+    /** `trial`: whether the licence site granted the card trial asked for. */
+    request<{ url: string; trial?: boolean }>('/api/license/checkout-link', {
       method: 'POST',
       body,
       token,
     }),
+  /**
+   * Cloud (ADMIN): can this address start a card trial? 'pay' = it had a
+   * subscription before, so a plan starts and is billed today.
+   */
+  cardTrialEligibility: (token: string) =>
+    request<{ kind: 'trial' | 'pay' | 'none'; trialEndsAt: string | null }>(
+      '/api/license/card-trial-eligibility',
+      { token },
+    ),
+  /**
+   * Cloud: the card-trial offer after the workspace's first successful tool
+   * call. Null unless the caller is an admin of an eligible workspace with a
+   * card trial still possible (48 hours of free trial left).
+   */
+  cardTrialOffer: (token: string) =>
+    request<{ offer: { connectorName: string | null; trialEndsAt: string } | null }>(
+      '/api/license/card-trial-offer',
+      { token },
+    ),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>

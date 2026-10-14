@@ -3,6 +3,7 @@ import type { TrustStats } from '../public-stats/trust-stats.format';
 import {
   RenderedEmail,
   activationReminderEmail,
+  cardTrialOfferEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -22,6 +23,8 @@ export const SAMPLE_CLOUD_URL = 'https://cloud.anythingmcp.com';
 export const SAMPLE_MARKETING_URL = 'https://anythingmcp.com';
 /** When the sample trials ended: the first win-back goes out a day later. */
 const SAMPLE_TRIAL_ENDED_AT = new Date('2026-10-07T09:30:00Z');
+/** When the sample trial of the card-trial offer ends. */
+const SAMPLE_TRIAL_ENDS_AT = new Date('2026-10-18T09:30:00Z');
 
 /** Placeholder numbers for previews only; real emails use TrustStatsService. */
 export const SAMPLE_TRUST_STATS: TrustStats = {
@@ -201,6 +204,42 @@ export const EMAIL_SAMPLES: EmailSample[] = [
         unsub(ctx),
       ),
   },
+  {
+    // A day after sign-up the sample workspace made its first successful call.
+    id: 'card-trial-offer',
+    render: (ctx, n) =>
+      cardTrialOfferEmail(
+        {
+          name: n.name,
+          connectorName: n.other,
+          nextSteps: [
+            { name: 'shopify_get_product', text: 'Get one product with its variants and stock.' },
+            { name: 'shopify_search_customers', text: 'Search customers by name, email or tag.' },
+            { name: n.other, text: n.name },
+          ],
+          trialEndsAt: SAMPLE_TRIAL_ENDS_AT,
+          ctaUrl: `${SAMPLE_CLOUD_URL}/start-trial?source=first_success`,
+          cardTrial: true,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    // Under 48 hours of trial left: no card trial, the plans instead. Connector gone.
+    id: 'card-trial-offer-plans',
+    render: (ctx, n) =>
+      cardTrialOfferEmail(
+        {
+          name: n.name,
+          connectorName: null,
+          nextSteps: [],
+          trialEndsAt: SAMPLE_TRIAL_ENDS_AT,
+          ctaUrl: `${SAMPLE_CLOUD_URL}/settings/license?source=first_success`,
+          cardTrial: false,
+        },
+        unsub(ctx),
+      ),
+  },
 ];
 
 /** Ids of the samples that must carry an unsubscribe line. */
@@ -214,4 +253,6 @@ export const MARKETING_SAMPLE_IDS = new Set([
   'winback-discount-first-month',
   'winback-discount-final',
   'winback-help',
+  'card-trial-offer',
+  'card-trial-offer-plans',
 ]);

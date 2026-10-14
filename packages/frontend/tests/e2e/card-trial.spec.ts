@@ -102,6 +102,8 @@ async function cloudSession(
     seed?: Record<string, string>;
     license?: Record<string, unknown>;
     checkout?: (body: unknown) => { status: number; body: unknown };
+    /** GET /license/card-trial-eligibility: 'pay' = the address had a subscription. */
+    eligibility?: 'trial' | 'pay' | 'none';
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
@@ -132,6 +134,9 @@ async function cloudSession(
         : { status: 200, body: { url: 'https://checkout.example.test/start?intent=i1' } };
       return json(reply.body, reply.status);
     }
+    if (p.endsWith('/license/card-trial-eligibility')) {
+      return json({ kind: opts.eligibility ?? 'trial', trialEndsAt: opts.eligibility === 'trial' ? TRIAL_END : null });
+    }
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: null });
     if (p.endsWith('/users/me')) return json(user);
     if (p.endsWith('/license/status')) {
@@ -157,7 +162,10 @@ test.describe('card-trial offer (cloud)', () => {
     await cloudSession(page);
     await page.goto('/');
     await expect(page).toHaveURL(/\/start-trial$/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Your 7-day free trial' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your free trial' })).toBeVisible();
+    // The real end date, never a length the user may no longer have.
+    await expect(page.getByText(/^Free until \d{1,2} \w+ \d{4}$/)).toBeVisible();
+    await expect(page.getByText(/7-day/)).toHaveCount(0);
     await expect(page.getByText('€0 today.')).toBeVisible();
     // Starter is preselected without an intent from the pricing page.
     await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
@@ -243,7 +251,7 @@ test.describe('card-trial entry points (cloud)', () => {
   test('the trial banner offers a card and, without a picked plan, opens the picker', async ({ page }) => {
     const { posted } = await cloudSession(page, { seed: SHOWN });
     await page.goto('/connectors');
-    const cta = page.getByRole('button', { name: /Add a payment method — no charge before/ });
+    const cta = page.getByRole('button', { name: /Add a payment method: no charge before/ });
     await expect(cta).toBeVisible({ timeout: 15_000 });
     await cta.click();
     await expect(page).toHaveURL(/\/start-trial$/);
@@ -278,5 +286,51 @@ test.describe('card-trial entry points (cloud)', () => {
     await page.goto('/connectors');
     await expect(page.getByRole('link', { name: 'Upgrade now' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /Add a payment method/ })).toHaveCount(0);
+  });
+});
+
+test.describe('an address that had a subscription (cloud)', () => {
+  const SHOWN = { 'amcp_card_trial_prompt:u1': 'shown' };
+
+  test('is told before checkout that the plan starts and is billed today, with its price', async ({ page }) => {
+    const { posted } = await cloudSession(page, { seed: SHOWN, eligibility: 'pay' });
+    await page.goto('/start-trial');
+    await expect(page.getByRole('heading', { name: 'Keep your workspace running' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
+    await expect(page.getByText(/Starter, 19\s€\/month, billed today and then every month\./)).toBeVisible();
+    await expect(page.getByText('€0 today', { exact: false })).toHaveCount(0);
+    await expect(page.getByText(/free trial with card/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Continue to checkout' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false }]);
+  });
+
+  test('if the licence site still refuses the trial at checkout, the page says so before sending anyone on', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      seed: SHOWN,
+      checkout: () => ({ status: 200, body: { url: 'https://checkout.example.test/start?intent=i9', trial: false } }),
+    });
+    await page.goto('/start-trial');
+    await page.getByRole('button', { name: 'Start free trial with card' }).click({ timeout: 15_000 });
+    await expect(page.getByRole('status')).toContainText('the checkout will charge 19 € today');
+    await expect(page).toHaveURL(/\/start-trial$/);
+    await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Continue to checkout' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i9');
+    expect(posted).toHaveLength(1);
+  });
+
+  test('the trial banner offers "Choose a plan", not "no charge before"', async ({ page }) => {
+    const intent = JSON.stringify({ plan: 'team', period: 'monthly', savedAt: Date.now() });
+    const { posted } = await cloudSession(page, { seed: { ...SHOWN, amcp_plan_intent: intent }, eligibility: 'pay' });
+    await page.goto('/connectors');
+    const cta = page.getByRole('button', { name: 'Choose a plan' });
+    await expect(cta).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/no charge before/)).toHaveCount(0);
+    await cta.click();
+    await expect(page).toHaveURL(/\/start-trial$/);
+    expect(posted).toEqual([]);
   });
 });
