@@ -1,0 +1,1482 @@
+{
+  "slug": "telnyx",
+  "name": "Telnyx",
+  "description": "Let your AI work with Telnyx: check balance and usage, list and search phone numbers, send SMS and MMS, place calls that speak a message, read call recordings and detail records, look up numbers, send and check one-time codes with Verify, and review your AI assistants.",
+  "instructions": "## Telnyx\nThis connector works with one Telnyx account through the **Telnyx API v2** (`https://api.telnyx.com/v2`) with an API key: balance, phone numbers (owned and available), SMS and MMS, Call Control calls, call recordings, detail records and usage reports, number lookup, Verify one-time codes and AI assistants.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Mission Control Portal at https://portal.telnyx.com.\n2. Open **Account settings, Keys & Credentials, API Keys** (https://portal.telnyx.com/#/app/api-keys) and click **Create API Key**. The key starts with `KEY` and is shown only once.\n3. Paste it into `TELNYX_API_KEY` and install. The key is sent as `Authorization: Bearer <key>` to api.telnyx.com only, and it acts for the whole account: share the MCP server only with people allowed to spend money on it.\n4. Check the setup with `telnyx_get_balance`.\n\n**Sending, calling and buying cost money and reach real people: confirm first.** `telnyx_send_message`, `telnyx_dial_call`, `telnyx_speak_text` and `telnyx_send_verification` are billed per message, minute, use or verification. Before calling them, show the user recipient, sender and content and wait for the user's yes. `telnyx_order_phone_numbers` buys numbers with an upfront and a monthly fee and is installed switched off; an administrator turns it on deliberately. Number lookups (`telnyx_lookup_number`) are billed per lookup.\n\n**How to work**\n1. Account and numbers: `telnyx_get_balance`, `telnyx_list_phone_numbers`, `telnyx_get_phone_number`. Find numbers to buy with `telnyx_search_available_numbers` (free); buy them with `telnyx_order_phone_numbers` and follow the order with `telnyx_get_number_order`.\n2. Messaging: a number sends SMS only when it is assigned to a messaging profile (`telnyx_list_messaging_profiles`). Send with `telnyx_send_message` and read the delivery status with `telnyx_get_message`.\n3. Calls: `telnyx_list_call_control_applications` gives the connection_id. `telnyx_dial_call` returns a call_control_id; poll `telnyx_get_call_status` until the call is answered, then `telnyx_speak_text`, and end it with `telnyx_hangup_call`. Set time_limit_secs on the dial to cap the cost. Call events (answered, speak ended, hangup) are sent to the application's webhook URL, which this connector does not receive. Recordings: `telnyx_list_recordings` and `telnyx_get_recording`.\n4. Reporting: `telnyx_search_detail_records` for single messages and calls with cost, `telnyx_get_usage_report_options` and `telnyx_get_usage_report` for totals per product.\n5. Verify: create a Verify profile once in the portal, list it with `telnyx_list_verify_profiles`, send a code with `telnyx_send_verification`, check it with `telnyx_check_verification_code` and read it with `telnyx_get_verification`.\n6. AI assistants: `telnyx_list_ai_assistants` and `telnyx_get_ai_assistant` (read-only).\n\n**Numbers** are E.164: `+`, country code and number without spaces (`+4915112345678`).\n\n**Paging**: lists answer with `meta.total_pages` and `meta.page_number`; pass `page_number` (from 1) and `page_size` for more.\n\n**Common errors**\n- 401 (10009): the API key is wrong, deleted or was pasted with a prefix. Create a new key in the portal.\n- 403: the account may not use this feature yet (for example sending to a country or buying numbers before account verification), or the key lacks permission.\n- 404 (10005): no such resource on this account.\n- 422 (10015 and others): a parameter is invalid, e.g. the from number has no messaging profile, the call is not answered yet, or the number is not in E.164.\n- 429: too many requests; wait and retry.\n\n**Out of scope here**: porting, number configuration and release, SIP trunking, TeXML, conferences, fax, WhatsApp templates, 10DLC brand and campaign registration, creating or changing AI assistants, and webhooks.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "telnyx",
+  "docsUrl": "https://developers.telnyx.com/api-reference",
+  "prerequisites": "A Telnyx account with an API key from the Mission Control Portal (Account settings, Keys & Credentials, API Keys). Sending, calling and buying numbers need a funded account. About 3 minutes.",
+  "requiredEnvVars": [
+    "TELNYX_API_KEY"
+  ],
+  "appRegistrationUrl": "https://portal.telnyx.com/#/app/api-keys",
+  "envVarMeta": {
+    "TELNYX_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Mission Control Portal, Account settings, Keys & Credentials, API Keys, Create API Key. The key starts with KEY and is shown only once. Paste it without the Bearer prefix.",
+      "link": "https://portal.telnyx.com/#/app/api-keys",
+      "pattern": "^KEY\\S{16,}$",
+      "patternMessage": "Paste the API key as Telnyx shows it: it starts with KEY and has no spaces or Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Telnyx refused the API key (error 10009): it is wrong, deleted or was pasted with a prefix. Create a new key under Account settings, Keys & Credentials, API Keys.",
+    "403": "Telnyx accepted the key but refused this request: the key may be restricted (for example without access to the balance), or the feature needs account verification or a funded balance.",
+    "429": "Telnyx is rate limiting this key. Wait a moment and verify again."
+  },
+  "connector": {
+    "name": "Telnyx API v2",
+    "type": "REST",
+    "baseUrl": "https://api.telnyx.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TELNYX_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/balance"
+  },
+  "tools": [
+    {
+      "name": "telnyx_get_balance",
+      "description": "Read the account balance: balance, pending, credit_limit, available_credit and currency. Free, and the quickest check that the API key works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/balance"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "balance": "$.data.balance",
+            "pending": "$.data.pending",
+            "credit_limit": "$.data.credit_limit",
+            "available_credit": "$.data.available_credit",
+            "currency": "$.data.currency"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_phone_numbers",
+      "description": "List the phone numbers the account owns, newest first: id, phone_number (E.164), status, phone_number_type, country, the voice connection (connection_id) and messaging profile the number uses, tags and purchase date. Use these numbers as from in telnyx_send_message and telnyx_dial_call. The answer has data[] and meta with total_results and total_pages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "Only numbers containing these digits (at least three), e.g. 4930 or 555."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only numbers with this status.",
+            "enum": [
+              "purchase-pending",
+              "purchase-failed",
+              "port-pending",
+              "active",
+              "deleted",
+              "port-failed",
+              "emergency-only",
+              "ported-out",
+              "port-out-pending"
+            ]
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only numbers of this country, ISO alpha-2 code such as DE or US."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only numbers with this tag."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 250).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/phone_numbers",
+        "queryParams": {
+          "filter[phone_number]": "$phone_number",
+          "filter[status]": "$status",
+          "filter[country_iso_alpha2]": "$country_code",
+          "filter[tag]": "$tag",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "phone_number": "phone_number",
+                "status": "status",
+                "phone_number_type": "phone_number_type",
+                "country_iso_alpha2": "country_iso_alpha2",
+                "connection_id": "connection_id",
+                "connection_name": "connection_name",
+                "messaging_profile_id": "messaging_profile_id",
+                "messaging_profile_name": "messaging_profile_name",
+                "tags": "tags",
+                "customer_reference": "customer_reference",
+                "emergency_enabled": "emergency_enabled",
+                "purchased_at": "purchased_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_get_phone_number",
+      "description": "Read one owned phone number by its id (from telnyx_list_phone_numbers): status, type, country, voice connection, messaging profile, emergency settings, call forwarding, caller id name and recording flags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The phone number id (a numeric string), not the number itself."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/phone_numbers/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data"
+          },
+          "exclude": [
+            "data.external_pin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "telnyx_search_available_numbers",
+      "description": "Search phone numbers that can be bought, by country, area, digits, type and features. Each result has phone_number, cost_information (upfront and monthly cost with currency), features, region_information, quickship and reservable. Searching is free and buys nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_code": {
+            "type": "string",
+            "description": "Country, ISO alpha-2 code such as US, DE or GB."
+          },
+          "contains": {
+            "type": "string",
+            "description": "Only numbers containing these digits."
+          },
+          "starts_with": {
+            "type": "string",
+            "description": "Only numbers starting with these digits (after the country code)."
+          },
+          "ends_with": {
+            "type": "string",
+            "description": "Only numbers ending with these digits."
+          },
+          "locality": {
+            "type": "string",
+            "description": "City, e.g. Chicago or Berlin."
+          },
+          "administrative_area": {
+            "type": "string",
+            "description": "US state or Canadian province, e.g. IL."
+          },
+          "national_destination_code": {
+            "type": "string",
+            "description": "Area code or national destination code, e.g. 312 or 30."
+          },
+          "phone_number_type": {
+            "type": "string",
+            "description": "Type of number.",
+            "enum": [
+              "local",
+              "toll_free",
+              "mobile",
+              "national",
+              "shared_cost"
+            ]
+          },
+          "features": {
+            "type": "string",
+            "description": "Required features, comma-separated: sms, mms, voice, fax, emergency, hd_voice, international_sms, local_calling (e.g. sms,voice)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results (default 10).",
+            "default": 10
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/available_phone_numbers",
+        "queryParams": {
+          "filter[country_code]": "$country_code",
+          "filter[phone_number][contains]": "$contains",
+          "filter[phone_number][starts_with]": "$starts_with",
+          "filter[phone_number][ends_with]": "$ends_with",
+          "filter[locality]": "$locality",
+          "filter[administrative_area]": "$administrative_area",
+          "filter[national_destination_code]": "$national_destination_code",
+          "filter[phone_number_type]": "$phone_number_type",
+          "filter[features]": "$features",
+          "filter[limit]": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "phone_number": "phone_number",
+                "vanity_format": "vanity_format",
+                "cost_information": "cost_information",
+                "features": "features",
+                "region_information": "region_information",
+                "quickship": "quickship",
+                "reservable": "reservable",
+                "best_effort": "best_effort"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_order_phone_numbers",
+      "description": "Buy phone numbers found with telnyx_search_available_numbers. This costs money: the upfront price and a monthly fee per number are charged to the account until the number is released. Installed switched off. Before calling, show the user every number with its upfront and monthly cost from the search and call only after the user confirms. Some countries need regulatory documents first (requirements_met false in the answer). Returns the order with id and status (pending, success, failure); check it with telnyx_get_number_order.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Numbers to buy, each as an object: [{\"phone_number\": \"+13125550123\"}]."
+          },
+          "connection_id": {
+            "type": "string",
+            "description": "Voice connection (Call Control application) id to attach the numbers to, from telnyx_list_call_control_applications."
+          },
+          "messaging_profile_id": {
+            "type": "string",
+            "description": "Messaging profile id to attach the numbers to, from telnyx_list_messaging_profiles."
+          },
+          "customer_reference": {
+            "type": "string",
+            "description": "Your own reference for the order."
+          }
+        },
+        "required": [
+          "phone_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/number_orders",
+        "bodyMapping": {
+          "phone_numbers": "$phone_numbers",
+          "connection_id": "$connection_id",
+          "messaging_profile_id": "$messaging_profile_id",
+          "customer_reference": "$customer_reference"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "status": "$.data.status",
+              "phone_numbers_count": "$.data.phone_numbers_count",
+              "requirements_met": "$.data.requirements_met",
+              "phone_numbers": {
+                "$from": "$.data.phone_numbers[*]",
+                "$select": {
+                  "id": "id",
+                  "phone_number": "phone_number",
+                  "status": "status",
+                  "requirements_met": "requirements_met",
+                  "requirements_status": "requirements_status"
+                }
+              },
+              "created_at": "$.data.created_at"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_get_number_order",
+      "description": "Read a number order by its id: status (pending, success, failure), the numbers with their own status and whether the regulatory requirements are met. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number_order_id": {
+            "type": "string",
+            "description": "The number order id from telnyx_order_phone_numbers."
+          }
+        },
+        "required": [
+          "number_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/number_orders/{number_order_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "status": "$.data.status",
+              "phone_numbers_count": "$.data.phone_numbers_count",
+              "requirements_met": "$.data.requirements_met",
+              "phone_numbers": {
+                "$from": "$.data.phone_numbers[*]",
+                "$select": {
+                  "id": "id",
+                  "phone_number": "phone_number",
+                  "status": "status",
+                  "requirements_met": "requirements_met",
+                  "requirements_status": "requirements_status",
+                  "regulatory_requirements": "regulatory_requirements"
+                }
+              },
+              "connection_id": "$.data.connection_id",
+              "messaging_profile_id": "$.data.messaging_profile_id",
+              "customer_reference": "$.data.customer_reference",
+              "created_at": "$.data.created_at",
+              "updated_at": "$.data.updated_at"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_send_message",
+      "description": "Send an SMS or MMS from a Telnyx number. This sends a real message to a real person and costs money: before calling, show the user the recipient, the sender and the text, and call only after the user confirms. Set from (a Telnyx number in E.164 with messaging enabled, or an alphanumeric sender id together with messaging_profile_id), or only messaging_profile_id to send from the profile's number pool. Adding media_urls sends an MMS (US and Canada). Returns the message with id and to[].status (usually queued); read the delivery status later with telnyx_get_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient in E.164, e.g. +4915112345678."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender: a Telnyx number in E.164 with messaging, a short code, or an alphanumeric sender id (needs messaging_profile_id)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Long texts are split into several parts, each billed."
+          },
+          "messaging_profile_id": {
+            "type": "string",
+            "description": "Messaging profile id from telnyx_list_messaging_profiles; required for alphanumeric senders and number pool sending."
+          },
+          "media_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Public URLs of images or files to send as MMS (US and Canada only, extra cost)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "MMS subject."
+          },
+          "type": {
+            "type": "string",
+            "description": "SMS or MMS; detected from media_urls when left out.",
+            "enum": [
+              "SMS",
+              "MMS"
+            ]
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "URL that receives delivery status webhooks for this message instead of the profile's."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "text": "$text",
+          "messaging_profile_id": "$messaging_profile_id",
+          "media_urls": "$media_urls",
+          "subject": "$subject",
+          "type": "$type",
+          "webhook_url": "$webhook_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "type": "$.data.type",
+              "direction": "$.data.direction",
+              "from": "$.data.from.phone_number",
+              "to": {
+                "$from": "$.data.to[*]",
+                "$select": {
+                  "phone_number": "phone_number",
+                  "status": "status",
+                  "carrier": "carrier",
+                  "line_type": "line_type"
+                }
+              },
+              "text": "$.data.text",
+              "subject": "$.data.subject",
+              "media": "$.data.media",
+              "parts": "$.data.parts",
+              "encoding": "$.data.encoding",
+              "cost": "$.data.cost",
+              "messaging_profile_id": "$.data.messaging_profile_id",
+              "received_at": "$.data.received_at",
+              "sent_at": "$.data.sent_at",
+              "completed_at": "$.data.completed_at",
+              "errors": "$.data.errors"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_get_message",
+      "description": "Read one message by its id: direction, from, to with per-recipient delivery status (queued, sending, sent, delivered, sending_failed, delivery_failed, delivery_unconfirmed, expired), text, parts, cost and errors. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The message id (UUID) from telnyx_send_message or a webhook."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "type": "$.data.type",
+              "direction": "$.data.direction",
+              "from": "$.data.from.phone_number",
+              "to": {
+                "$from": "$.data.to[*]",
+                "$select": {
+                  "phone_number": "phone_number",
+                  "status": "status",
+                  "carrier": "carrier",
+                  "line_type": "line_type"
+                }
+              },
+              "text": "$.data.text",
+              "subject": "$.data.subject",
+              "media": "$.data.media",
+              "parts": "$.data.parts",
+              "encoding": "$.data.encoding",
+              "cost": "$.data.cost",
+              "messaging_profile_id": "$.data.messaging_profile_id",
+              "received_at": "$.data.received_at",
+              "sent_at": "$.data.sent_at",
+              "completed_at": "$.data.completed_at",
+              "errors": "$.data.errors"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_messaging_profiles",
+      "description": "List the messaging profiles: id, name, enabled, webhook_url, whitelisted_destinations (countries the profile may send to), daily spend limit and number pool settings. A number needs a messaging profile to send SMS. The webhook signing secret is left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name_contains": {
+            "type": "string",
+            "description": "Only profiles whose name contains this text."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 250).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messaging_profiles",
+        "queryParams": {
+          "filter[name][contains]": "$name_contains",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "enabled": "enabled",
+                "webhook_url": "webhook_url",
+                "webhook_failover_url": "webhook_failover_url",
+                "whitelisted_destinations": "whitelisted_destinations",
+                "daily_spend_limit": "daily_spend_limit",
+                "daily_spend_limit_enabled": "daily_spend_limit_enabled",
+                "number_pool_settings": "number_pool_settings",
+                "alpha_sender": "alpha_sender",
+                "mms_fall_back_to_sms": "mms_fall_back_to_sms",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_call_control_applications",
+      "description": "List the Call Control applications (voice connections): id, application_name, active, webhook_event_url and outbound settings. telnyx_dial_call needs one of these ids as connection_id, and the from number should be assigned to it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name_contains": {
+            "type": "string",
+            "description": "Only applications whose name contains this text (at least three characters)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 250).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call_control_applications",
+        "queryParams": {
+          "filter[application_name][contains]": "$name_contains",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "application_name": "application_name",
+                "active": "active",
+                "webhook_event_url": "webhook_event_url",
+                "webhook_api_version": "webhook_api_version",
+                "outbound": "outbound",
+                "inbound": "inbound",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_dial_call",
+      "description": "Place an outbound phone call through a Call Control application. This calls a real person and costs money per minute: before calling, show the user the number to call, the caller id and what will happen, and call only after the user confirms. Returns call_control_id; then use telnyx_get_call_status to see whether the call is still alive, telnyx_speak_text once it is answered, and telnyx_hangup_call to end it. Call events (answered, hangup) go to the application's webhook URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "description": "Call Control application id from telnyx_list_call_control_applications."
+          },
+          "to": {
+            "type": "string",
+            "description": "Number to call in E.164 (e.g. +4930123456) or a SIP URI."
+          },
+          "from": {
+            "type": "string",
+            "description": "Caller id: a Telnyx number in E.164 assigned to that application."
+          },
+          "from_display_name": {
+            "type": "string",
+            "description": "Caller name shown where supported."
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "description": "Seconds to wait for an answer, 5 to 600 (default 30)."
+          },
+          "time_limit_secs": {
+            "type": "integer",
+            "description": "Maximum call length in seconds, 30 to 14400. Set a short limit (e.g. 300) to cap the cost."
+          },
+          "audio_url": {
+            "type": "string",
+            "description": "Public URL of a WAV or MP3 file to play when the call is answered."
+          },
+          "answering_machine_detection": {
+            "type": "string",
+            "description": "Detect answering machines (billed extra).",
+            "enum": [
+              "detect",
+              "detect_beep",
+              "detect_words",
+              "greeting_end",
+              "premium",
+              "disabled"
+            ]
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "URL that receives this call's events instead of the application's."
+          }
+        },
+        "required": [
+          "connection_id",
+          "to",
+          "from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calls",
+        "bodyMapping": {
+          "connection_id": "$connection_id",
+          "to": "$to",
+          "from": "$from",
+          "from_display_name": "$from_display_name",
+          "timeout_secs": "$timeout_secs",
+          "time_limit_secs": "$time_limit_secs",
+          "audio_url": "$audio_url",
+          "answering_machine_detection": "$answering_machine_detection",
+          "webhook_url": "$webhook_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_control_id": "$.data.call_control_id",
+            "call_leg_id": "$.data.call_leg_id",
+            "call_session_id": "$.data.call_session_id",
+            "is_alive": "$.data.is_alive",
+            "start_time": "$.data.start_time"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_get_call_status",
+      "description": "Read the status of a call by its call_control_id: is_alive (false once it ended), call_duration in seconds, start_time and end_time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_control_id": {
+            "type": "string",
+            "description": "The call_control_id from telnyx_dial_call (starts with v3:)."
+          }
+        },
+        "required": [
+          "call_control_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calls/{call_control_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "call_control_id": "$.data.call_control_id",
+            "is_alive": "$.data.is_alive",
+            "call_duration": "$.data.call_duration",
+            "start_time": "$.data.start_time",
+            "end_time": "$.data.end_time",
+            "call_leg_id": "$.data.call_leg_id",
+            "call_session_id": "$.data.call_session_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_speak_text",
+      "description": "Speak text to the other party on an answered call. Text to speech costs money (billed per use) and a real person hears it: show the user the text and call only after the user confirms. The call must be answered (telnyx_get_call_status shows is_alive true); otherwise Telnyx answers 422. Returns result ok when the command was accepted; speaking takes place afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_control_id": {
+            "type": "string",
+            "description": "The call_control_id from telnyx_dial_call."
+          },
+          "payload": {
+            "type": "string",
+            "description": "Text (or SSML with payload_type ssml) to speak, up to 3,000 characters."
+          },
+          "voice": {
+            "type": "string",
+            "description": "Voice: female or male (default female), or a provider voice such as AWS.Polly.Joanna-Neural, AWS.Polly.Vicki-Neural (German) or Telnyx.KokoroTTS.af.",
+            "default": "female"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for female or male voices, e.g. en-US, de-DE, it-IT, fr-FR, es-ES (ignored for AWS.Polly voices).",
+            "default": "en-US"
+          },
+          "payload_type": {
+            "type": "string",
+            "description": "text (default) or ssml.",
+            "enum": [
+              "text",
+              "ssml"
+            ]
+          },
+          "service_level": {
+            "type": "string",
+            "description": "premium (default) or basic (en-US text only).",
+            "enum": [
+              "basic",
+              "premium"
+            ]
+          }
+        },
+        "required": [
+          "call_control_id",
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calls/{call_control_id}/actions/speak",
+        "bodyMapping": {
+          "payload": "$payload",
+          "voice": "$voice",
+          "language": "$language",
+          "payload_type": "$payload_type",
+          "service_level": "$service_level"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.data.result"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_hangup_call",
+      "description": "Hang up a call that is still in progress. Confirm with the user before ending a call that someone is on. Returns result ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_control_id": {
+            "type": "string",
+            "description": "The call_control_id of the call to end."
+          }
+        },
+        "required": [
+          "call_control_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calls/{call_control_id}/actions/hangup"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.data.result"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "telnyx_search_detail_records",
+      "description": "Search detail records (CDRs and MDRs): one record per message, call leg, verification, recording and so on, with direction, numbers, status, duration and cost. record_type is required; date_range narrows the period. Results are capped at 60 KB; use page_size and page_number for more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "type": "string",
+            "description": "Kind of record: messaging (SMS and MMS), call-control (calls), verify, recording, sip-trunking, conference, tts, stt, ai-voice-assistant and others.",
+            "enum": [
+              "messaging",
+              "call-control",
+              "sip-trunking",
+              "verify",
+              "recording",
+              "conference",
+              "conference-participant",
+              "fax",
+              "tts",
+              "stt",
+              "ai-voice-assistant",
+              "amd",
+              "media-streaming",
+              "webrtc",
+              "wireless",
+              "inference",
+              "embedding"
+            ]
+          },
+          "date_range": {
+            "type": "string",
+            "description": "Period: yesterday, today, last_week, this_week, last_month, this_month, or last_N_days such as last_7_days.",
+            "default": "last_7_days"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, minus for descending: -created_at for messaging, -started_at for calls."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, up to 50 (default 20).",
+            "default": 20
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/detail_records",
+        "queryParams": {
+          "filter[record_type]": "$record_type",
+          "filter[date_range]": "$date_range",
+          "sort": "$sort",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data",
+            "meta": "$.meta"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "telnyx_get_usage_report_options",
+      "description": "List the products of the usage report and, for each, the dimensions and metrics telnyx_get_usage_report accepts (for example product messaging with dimension direction and metric cost). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "description": "Only this product, e.g. messaging, call-control or verify."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/usage_reports/options",
+        "queryParams": {
+          "product": "$product"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "telnyx_get_usage_report",
+      "description": "Get aggregated usage and cost for one product over at most 31 days, broken out by dimensions (e.g. date, direction, country) with metrics such as cost or count. Find valid product, dimensions and metrics with telnyx_get_usage_report_options first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "description": "Product, e.g. messaging or call-control."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Comma-separated dimensions to break out by, e.g. date,direction."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, e.g. cost,count."
+          },
+          "date_range": {
+            "type": "string",
+            "description": "Period such as today, yesterday, last_7_days or last_30_days; or use start_date and end_date."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start, YYYY-MM-DDTHH:mm:ssZ (at most 31 days before end_date)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, YYYY-MM-DDTHH:mm:ssZ."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20).",
+            "default": 20
+          }
+        },
+        "required": [
+          "product",
+          "dimensions",
+          "metrics"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/usage_reports",
+        "queryParams": {
+          "product": "$product",
+          "dimensions": "$dimensions",
+          "metrics": "$metrics",
+          "date_range": "$date_range",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data",
+            "meta": "$.meta"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_recordings",
+      "description": "List call recordings, newest first: id, from, to, duration_millis, channels, status, start and end time and download_urls (mp3 and wav links that expire after a few minutes; read them again with telnyx_get_recording when needed). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_control_id": {
+            "type": "string",
+            "description": "Only recordings of this call."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only recordings whose from matches exactly."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only recordings whose to matches exactly."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only recordings created at or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only recordings created at or before this time, ISO 8601."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 250).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recordings",
+        "queryParams": {
+          "filter[call_control_id]": "$call_control_id",
+          "filter[from]": "$from",
+          "filter[to]": "$to",
+          "filter[created_at][gte]": "$created_after",
+          "filter[created_at][lte]": "$created_before",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "call_control_id": "call_control_id",
+                "call_session_id": "call_session_id",
+                "conference_id": "conference_id",
+                "from": "from",
+                "to": "to",
+                "channels": "channels",
+                "duration_millis": "duration_millis",
+                "status": "status",
+                "source": "source",
+                "recording_started_at": "recording_started_at",
+                "recording_ended_at": "recording_ended_at",
+                "download_urls": "download_urls",
+                "created_at": "created_at"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_get_recording",
+      "description": "Read one call recording by its id with fresh download_urls (mp3, wav), duration, channels and the call it belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "description": "The recording id from telnyx_list_recordings."
+          }
+        },
+        "required": [
+          "recording_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recordings/{recording_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "call_control_id": "$.data.call_control_id",
+              "call_session_id": "$.data.call_session_id",
+              "conference_id": "$.data.conference_id",
+              "from": "$.data.from",
+              "to": "$.data.to",
+              "channels": "$.data.channels",
+              "duration_millis": "$.data.duration_millis",
+              "status": "$.data.status",
+              "source": "$.data.source",
+              "recording_started_at": "$.data.recording_started_at",
+              "recording_ended_at": "$.data.recording_ended_at",
+              "download_urls": "$.data.download_urls",
+              "created_at": "$.data.created_at"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_lookup_number",
+      "description": "Look up a phone number: country, national format, E.164 form, and with type carrier the carrier name, line type (mobile, landline, voip) and portability data, or with type caller-name the registered caller name (US). Each lookup is billed by Telnyx (fractions of a cent to about a cent, caller name costs more): tell the user and confirm before looking up many numbers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number in E.164, e.g. +4915112345678."
+          },
+          "type": {
+            "type": "string",
+            "description": "carrier for carrier and line type, caller-name for the caller name (US).",
+            "enum": [
+              "carrier",
+              "caller-name"
+            ]
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/number_lookup/{phone_number}",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": "$.data"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_verify_profiles",
+      "description": "List the Verify profiles: id, name, language and the settings per channel (sms, call, whatsapp, flashcall) such as code length and validity. telnyx_send_verification needs a profile id; create a profile once in the Mission Control Portal under Verify. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the profile with this name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 250).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/verify_profiles",
+        "queryParams": {
+          "filter[name]": "$name",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "language": "language",
+                "webhook_url": "webhook_url",
+                "daily_spend_limit": "daily_spend_limit",
+                "daily_spend_limit_enabled": "daily_spend_limit_enabled",
+                "sms": "sms",
+                "call": "call",
+                "whatsapp": "whatsapp",
+                "flashcall": "flashcall",
+                "created_at": "created_at"
+              }
+            },
+            "meta": "$.meta"
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_send_verification",
+      "description": "Send a one-time code to a phone number by SMS, voice call or WhatsApp through a Verify profile. This contacts a real person and each verification costs money: before calling, show the user the number and channel and call only after the user confirms. Returns the verification with id and status pending; check the code the person received with telnyx_check_verification_code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "How to send the code.",
+            "enum": [
+              "sms",
+              "call",
+              "whatsapp"
+            ],
+            "default": "sms"
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Recipient in E.164, e.g. +4915112345678."
+          },
+          "verify_profile_id": {
+            "type": "string",
+            "description": "Verify profile id from telnyx_list_verify_profiles."
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "description": "Seconds the code stays valid (default from the profile)."
+          }
+        },
+        "required": [
+          "phone_number",
+          "verify_profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/verifications/{channel}",
+        "bodyMapping": {
+          "phone_number": "$phone_number",
+          "verify_profile_id": "$verify_profile_id",
+          "timeout_secs": "$timeout_secs"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "type": "$.data.type",
+              "phone_number": "$.data.phone_number",
+              "verify_profile_id": "$.data.verify_profile_id",
+              "status": "$.data.status",
+              "timeout_secs": "$.data.timeout_secs",
+              "created_at": "$.data.created_at",
+              "updated_at": "$.data.updated_at"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_check_verification_code",
+      "description": "Check the code a person entered against the latest verification sent to that number. Returns response_code accepted when the code is right, rejected when it is wrong or expired.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number the code was sent to, in E.164 exactly as in telnyx_send_verification."
+          },
+          "code": {
+            "type": "string",
+            "description": "The code the person entered."
+          },
+          "verify_profile_id": {
+            "type": "string",
+            "description": "The Verify profile id used to send the code."
+          }
+        },
+        "required": [
+          "phone_number",
+          "code",
+          "verify_profile_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/verifications/by_phone_number/{phone_number}/actions/verify",
+        "bodyMapping": {
+          "code": "$code",
+          "verify_profile_id": "$verify_profile_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "phone_number": "$.data.phone_number",
+            "response_code": "$.data.response_code"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "telnyx_get_verification",
+      "description": "Read a verification by its id: phone_number, channel type, status (pending, accepted, invalid, expired, error) and when it was created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "verification_id": {
+            "type": "string",
+            "description": "The verification id from telnyx_send_verification."
+          }
+        },
+        "required": [
+          "verification_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/verifications/{verification_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "id": "$.data.id",
+              "type": "$.data.type",
+              "phone_number": "$.data.phone_number",
+              "verify_profile_id": "$.data.verify_profile_id",
+              "status": "$.data.status",
+              "timeout_secs": "$.data.timeout_secs",
+              "created_at": "$.data.created_at",
+              "updated_at": "$.data.updated_at"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "telnyx_list_ai_assistants",
+      "description": "List the account's Telnyx AI assistants (voice and chat agents): id, name, description, model, greeting, enabled features and creation date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ai/assistants"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "model": "model",
+                "greeting": "greeting",
+                "enabled_features": "enabled_features",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "telnyx_get_ai_assistant",
+      "description": "Read one AI assistant by its id: name, model, instructions (system prompt), greeting, tools, voice and transcription settings, telephony and messaging settings and enabled features. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant id from telnyx_list_ai_assistants (starts with assistant-)."
+          }
+        },
+        "required": [
+          "assistant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ai/assistants/{assistant_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "description": "$.description",
+            "model": "$.model",
+            "instructions": "$.instructions",
+            "greeting": "$.greeting",
+            "tools": "$.tools",
+            "voice_settings": "$.voice_settings",
+            "transcription": "$.transcription",
+            "telephony_settings": "$.telephony_settings",
+            "messaging_settings": "$.messaging_settings",
+            "enabled_features": "$.enabled_features",
+            "created_at": "$.created_at"
+          },
+          "maxBytes": 60000
+        }
+      }
+    }
+  ]
+}
