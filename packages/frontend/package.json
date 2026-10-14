@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/frontend",
-  "version": "0.30.1",
+  "version": "0.31.0",
   "description": "AnythingMCP — Next.js Admin UI",
   "private": true,
   "license": "AGPL-3.0-only",
