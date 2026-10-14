@@ -124,8 +124,8 @@ const SWITCHED_OFF = [
 describe('seal-subscriptions adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been run against a real shop', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified read-only on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.region).toBe('intl');
     expect(a.category).toBe('e-commerce');
     expect(a.icon).toBe('seal-subscriptions');

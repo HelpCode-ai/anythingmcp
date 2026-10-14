@@ -103,8 +103,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('goaffpro adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been run against a real store', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified read-only on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.region).toBe('intl');
     expect(a.icon).toBe('goaffpro');
   });

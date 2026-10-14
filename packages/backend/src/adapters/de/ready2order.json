@@ -2,7 +2,6 @@
   "slug": "ready2order",
   "name": "ready2order",
   "description": "Connect the ready2order POS (Registrierkasse) to your AI: products, prices and stock, product groups, bills and daily sales, open orders, customers, payment methods and VAT rates, with confirmed writes for products, stock and customers.",
-  "unlisted": true,
   "aliases": [
     "r2o"
   ],

@@ -104,8 +104,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('ready2order adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been run against a real account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified read-only on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.region).toBe('de');
     expect(a.icon).toBe('ready2order');
   });

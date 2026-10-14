@@ -2,20 +2,13 @@
   "slug": "daftra",
   "name": "Daftra",
   "description": "Work with Daftra, the cloud accounting and ERP of the Middle East, from your AI: look up invoices, clients, products, stock and the ledger, and create invoices, payments, expenses, purchases and journal entries with confirmation.",
-  "unlisted": true,
-  "aliases": [
-    "Daftara",
-    "دفترة"
-  ],
-  "instructions": "## Daftra\nThis connector calls the **Daftra REST API** (`https://<subdomain>.daftra.com/api2`) of one Daftra account with an API key: sales invoices, estimates, credit notes and refunds, payments, clients and suppliers, products and stock, purchase invoices, expenses and incomes, treasuries, taxes and the general ledger (journals and chart of accounts).\n\n**Getting credentials (about 2 minutes)**\n1. Sign in to Daftra as an administrator.\n2. Open **Settings > API > API Keys** and click **Generate API key**; give it a name such as AnythingMCP.\n3. Paste the key into `DAFTRA_API_KEY` and the first part of your Daftra address into `DAFTRA_SUBDOMAIN` (`acme` for `acme.daftra.com`). The key is sent in the `APIKEY` header, only to your Daftra account, and acts with that account's permissions.\n\n**Request shape**: Daftra wraps every record in its model name. Writes send `{\"Invoice\": {...}, \"InvoiceItem\": [...]}`, `{\"PurchaseOrder\": {...}, \"PurchaseOrderItem\": [...]}` or `{\"Journal\": {...}, \"JournalTransaction\": [...]}`; the tools build that envelope. Lists answer with `data` (each row under its model name) and a pagination block; page with `page` and `limit` (up to 1000).\n\n**Ids**: every tool takes the internal `id`, not the printed number (an invoice `no` such as 000123). Find ids with the list tools; `daftra_list_stores`, `daftra_list_treasuries`, `daftra_list_taxes` and `daftra_list_journal_accounts` give the ids that documents refer to.\n\n**Writes change the books.** Invoices, payments, expenses, journals, purchases, refunds and stock movements post to the ledger and to stock. Describe the change and wait for the user's yes before any write. Deletes (`daftra_delete_invoice`, `daftra_delete_invoice_payment`, `daftra_delete_expense`) are installed switched off.\n\n**Dates** are `YYYY-MM-DD`; amounts are in the document currency.\n\n**Common errors**\n- 401 or 403: the API key is wrong, deleted or lacks permission. Generate a new one under Settings > API > API Keys.\n- 404 on every call: the subdomain is wrong. It is the part before `.daftra.com` in the address you sign in at.\n- 400 or 422: a required field is missing or an id does not exist; the message names it.\n\n**Cloud and self-hosted**: both call the account's own `daftra.com` subdomain over the internet; nothing else differs.\n\n**Out of scope here**: OAuth sign-in, work orders, appointments, staff, time tracking, notes and attachments.",
+  "aliases": ["Daftara", "دفترة"],
+  "instructions": "## Daftra\nThis connector calls the **Daftra REST API** (`https://<subdomain>.daftra.com/api2`) of one Daftra account with an API key: sales invoices, credit notes and refunds, payments, clients and suppliers, products and stock, purchase invoices, expenses, treasuries and the general ledger (journals and chart of accounts).\n\n**Getting credentials (about 2 minutes)**\n1. Sign in to Daftra as an administrator.\n2. Open **Settings > API > API Keys** and click **Generate API key**; give it a name such as AnythingMCP.\n3. Paste the key into `DAFTRA_API_KEY` and the first part of your Daftra address into `DAFTRA_SUBDOMAIN` (`acme` for `acme.daftra.com`). The key is sent in the `APIKEY` header, only to your Daftra account, and acts with that account's permissions.\n\n**Request shape**: Daftra wraps every record in its model name. Writes send `{\"Invoice\": {...}, \"InvoiceItem\": [...]}`, `{\"PurchaseOrder\": {...}, \"PurchaseOrderItem\": [...]}` or `{\"Journal\": {...}, \"JournalTransaction\": [...]}`; the tools build that envelope. Lists answer with `data` (each row under its model name) and a pagination block; page with `page` and `limit` (up to 1000).\n\n**Ids**: every tool takes the internal `id`, not the printed number (an invoice `no` such as 000123). Find ids with the list tools; `daftra_list_stores`, `daftra_list_treasuries` and `daftra_list_journal_accounts` give the ids that documents refer to; tax ids appear on existing invoice lines.\n\n**Writes change the books.** Invoices, payments, expenses, journals, purchases, refunds and stock movements post to the ledger and to stock. Describe the change and wait for the user's yes before any write. Deletes (`daftra_delete_invoice`, `daftra_delete_invoice_payment`, `daftra_delete_expense`) are installed switched off.\n\n**Dates** are `YYYY-MM-DD`; amounts are in the document currency.\n\n**Common errors**\n- 401 or 403: the API key is wrong, deleted or lacks permission. Generate a new one under Settings > API > API Keys.\n- 404 on every call: the subdomain is wrong. It is the part before `.daftra.com` in the address you sign in at.\n- 400 or 422: a required field is missing or an id does not exist; the message names it.\n\n**Cloud and self-hosted**: both call the account's own `daftra.com` subdomain over the internet; nothing else differs.\n\n**Out of scope here**: estimates, incomes and taxes (405 through the API key), OAuth sign-in, work orders, appointments, staff, time tracking, notes and attachments.",
   "region": "intl",
   "category": "accounting",
   "icon": "daftra",
   "docsUrl": "https://docs.daftara.dev/",
-  "requiredEnvVars": [
-    "DAFTRA_SUBDOMAIN",
-    "DAFTRA_API_KEY"
-  ],
+  "requiredEnvVars": ["DAFTRA_SUBDOMAIN", "DAFTRA_API_KEY"],
   "envVarMeta": {
     "DAFTRA_SUBDOMAIN": {
       "label": "Daftra subdomain",
@@ -42,7 +35,7 @@
     "404": "No Daftra account answers at this subdomain. It is the part before .daftra.com in the address you sign in at."
   },
   "probe": {
-    "tool": "daftra_get_site_info"
+    "tool": "daftra_list_stores"
   },
   "prerequisites": "A Daftra account and an administrator who can create API keys under Settings > API. About 2 minutes.",
   "connector": {
@@ -59,21 +52,9 @@
       "Content-Type": "application/json",
       "User-Agent": "AnythingMCP"
     },
-    "healthcheckPath": "/site_info.json"
+    "healthcheckPath": "/stores.json"
   },
   "tools": [
-    {
-      "name": "daftra_get_site_info",
-      "description": "Get the Daftra account this API key belongs to: business name, subdomain, default currency, country and similar site settings. Takes no input and is the cheapest call, so use it to check the connection. Read-only.",
-      "parameters": {
-        "type": "object",
-        "properties": {}
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/site_info.json"
-      }
-    },
     {
       "name": "daftra_list_invoices",
       "description": "List sales invoices, newest first, each with its client, totals and payment status. Filter by client, invoice date range, payment status or warehouse; page with page and limit. Use daftra_get_invoice for the lines, taxes and payments of one invoice. Read-only.",
@@ -107,14 +88,7 @@
           },
           "payment_status": {
             "type": "integer",
-            "enum": [
-              -1,
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "enum": [-1, 0, 1, 2, 3, 4],
             "description": "Payment status: 0 unpaid, 1 partially paid, 2 paid, 3 refunded, 4 overpaid, -1 draft."
           },
           "store_id": {
@@ -123,10 +97,7 @@
           },
           "recursive": {
             "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
+            "enum": [0, 1],
             "description": "1 also returns the line items, taxes and payments of every invoice in the page. Makes the answer much longer; prefer daftra_get_invoice for one invoice."
           }
         }
@@ -158,64 +129,11 @@
             "description": "Internal Daftra id of the invoice (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/invoices/{id}.json"
-      }
-    },
-    {
-      "name": "daftra_list_estimates",
-      "description": "List estimates (quotations) sent to clients, newest first, with client, totals and status. Page with page and limit. Read-only.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 1,
-            "description": "Page number, starting at 1."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 20,
-            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/estimates.json",
-        "queryParams": {
-          "page": "$page",
-          "limit": "$limit"
-        }
-      }
-    },
-    {
-      "name": "daftra_get_estimate",
-      "description": "Get one estimate (quotation) by its internal id with client and line items. Read-only.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Internal Daftra id of the estimate (the id field, not the printed document number)."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/estimates/{id}.json"
       }
     },
     {
@@ -350,9 +268,7 @@
             "description": "Internal Daftra id of the client (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -401,9 +317,7 @@
             "description": "Internal Daftra id of the supplier (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -452,9 +366,7 @@
             "description": "Internal Daftra id of the product (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -593,9 +505,7 @@
             "description": "Internal Daftra id of the purchase invoice (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -633,36 +543,6 @@
       }
     },
     {
-      "name": "daftra_list_incomes",
-      "description": "List other incomes (money received outside sales invoices) with amount, date, category and treasury. Page with page and limit. Read-only.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 1,
-            "description": "Page number, starting at 1."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 20,
-            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/incomes.json",
-        "queryParams": {
-          "page": "$page",
-          "limit": "$limit"
-        }
-      }
-    },
-    {
       "name": "daftra_list_treasuries",
       "description": "List treasuries: cash boxes, bank accounts and wallets, with id, name, type and currency. Payments and expenses refer to a treasury_id from here. Read-only.",
       "parameters": {
@@ -686,36 +566,6 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/treasuries.json",
-        "queryParams": {
-          "page": "$page",
-          "limit": "$limit"
-        }
-      }
-    },
-    {
-      "name": "daftra_list_taxes",
-      "description": "List the taxes defined in the account (for example VAT) with id, name and rate. Line items refer to them as tax1 and tax2. Read-only.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 1,
-            "description": "Page number, starting at 1."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000,
-            "default": 20,
-            "description": "Records per page, 1 to 1000 (default 20). Keep it small unless the user needs a full export."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/taxes.json",
         "queryParams": {
           "page": "$page",
           "limit": "$limit"
@@ -764,9 +614,7 @@
             "description": "Internal Daftra id of the journal entry (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
@@ -861,10 +709,7 @@
               },
               "draft": {
                 "type": "integer",
-                "enum": [
-                  0,
-                  1
-                ],
+                "enum": [0, 1],
                 "description": "1 saves a draft, 0 issues the invoice."
               },
               "notes": {
@@ -872,23 +717,18 @@
                 "description": "Notes printed on the invoice."
               }
             },
-            "required": [
-              "client_id"
-            ]
+            "required": ["client_id"]
           },
           "InvoiceItem": {
             "type": "array",
-            "description": "Invoice lines, sent next to Invoice. Each: product_id or item (free text name), quantity, unit_price (before tax); optional description, discount, discount_type (1 percent, 2 amount), tax1 and tax2 (tax ids from daftra_list_taxes).",
+            "description": "Invoice lines, sent next to Invoice. Each: product_id or item (free text name), quantity, unit_price (before tax); optional description, discount, discount_type (1 percent, 2 amount), tax1 and tax2 (tax ids as set up in Daftra; read them from the lines of an existing invoice with daftra_get_invoice).",
             "items": {
               "type": "object"
             },
             "minItems": 1
           }
         },
-        "required": [
-          "Invoice",
-          "InvoiceItem"
-        ]
+        "required": ["Invoice", "InvoiceItem"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -938,10 +778,7 @@
             "description": "Currency code; leave out to use the invoice currency."
           }
         },
-        "required": [
-          "invoice_id",
-          "amount"
-        ]
+        "required": ["invoice_id", "amount"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1019,9 +856,7 @@
             "description": "Internal notes."
           }
         },
-        "required": [
-          "business_name"
-        ]
+        "required": ["business_name"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1100,9 +935,7 @@
             "description": "Internal notes."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "PUT",
@@ -1179,9 +1012,7 @@
             "description": "Currency used with this supplier, for example SAR."
           }
         },
-        "required": [
-          "business_name"
-        ]
+        "required": ["business_name"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1219,9 +1050,7 @@
                 "description": "Product name."
               }
             },
-            "required": [
-              "name"
-            ]
+            "required": ["name"]
           },
           "ProductBundle": {
             "type": "array",
@@ -1231,9 +1060,7 @@
             }
           }
         },
-        "required": [
-          "Product"
-        ]
+        "required": ["Product"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1266,10 +1093,7 @@
             }
           }
         },
-        "required": [
-          "id",
-          "Product"
-        ]
+        "required": ["id", "Product"]
       },
       "endpointMapping": {
         "method": "PUT",
@@ -1295,9 +1119,7 @@
                 "description": "Supplier id from daftra_list_suppliers."
               }
             },
-            "required": [
-              "supplier_id"
-            ]
+            "required": ["supplier_id"]
           },
           "PurchaseOrderItem": {
             "type": "array",
@@ -1308,10 +1130,7 @@
             "minItems": 1
           }
         },
-        "required": [
-          "PurchaseOrder",
-          "PurchaseOrderItem"
-        ]
+        "required": ["PurchaseOrder", "PurchaseOrderItem"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1344,10 +1163,7 @@
             }
           }
         },
-        "required": [
-          "id",
-          "PurchaseOrder"
-        ]
+        "required": ["id", "PurchaseOrder"]
       },
       "endpointMapping": {
         "method": "PUT",
@@ -1398,16 +1214,11 @@
           },
           "tax1_included": {
             "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
+            "enum": [0, 1],
             "description": "1 when amount already includes that tax."
           }
         },
-        "required": [
-          "amount"
-        ]
+        "required": ["amount"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1462,9 +1273,7 @@
             "description": "Description."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "PUT",
@@ -1510,10 +1319,7 @@
             "minItems": 2
           }
         },
-        "required": [
-          "Journal",
-          "JournalTransaction"
-        ]
+        "required": ["Journal", "JournalTransaction"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1544,18 +1350,11 @@
           },
           "type": {
             "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
+            "enum": [0, 1],
             "description": "Nature of the account: 0 credit, 1 debit."
           }
         },
-        "required": [
-          "name",
-          "code",
-          "journal_cat_id"
-        ]
+        "required": ["name", "code", "journal_cat_id"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1593,16 +1392,10 @@
                 "description": "Quantity moved, in the product's base unit."
               }
             },
-            "required": [
-              "product_id",
-              "store_id",
-              "quantity"
-            ]
+            "required": ["product_id", "store_id", "quantity"]
           }
         },
-        "required": [
-          "StockTransaction"
-        ]
+        "required": ["StockTransaction"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1631,10 +1424,7 @@
                 "description": "Client id of that invoice."
               }
             },
-            "required": [
-              "subscription_id",
-              "client_id"
-            ]
+            "required": ["subscription_id", "client_id"]
           },
           "InvoiceItem": {
             "type": "array",
@@ -1645,10 +1435,7 @@
             "minItems": 1
           }
         },
-        "required": [
-          "RefundReceipt",
-          "InvoiceItem"
-        ]
+        "required": ["RefundReceipt", "InvoiceItem"]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1672,9 +1459,7 @@
             "description": "Internal Daftra id of the invoice (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "DELETE",
@@ -1694,9 +1479,7 @@
             "description": "Internal Daftra id of the payment (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "DELETE",
@@ -1716,9 +1499,7 @@
             "description": "Internal Daftra id of the expense (the id field, not the printed document number)."
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "endpointMapping": {
         "method": "DELETE",

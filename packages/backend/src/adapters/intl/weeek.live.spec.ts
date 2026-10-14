@@ -16,7 +16,7 @@ type Tool = {
 const a = adapter as unknown as {
   slug: string;
   region: string;
-  unlisted: boolean;
+  unlisted?: boolean;
   icon: string;
   instructions: string;
   requiredEnvVars: string[];
@@ -31,7 +31,7 @@ describe('Weeek adapter — static contract', () => {
   it('calls the public v1 API with the token as a bearer token', () => {
     expect(a.slug).toBe('weeek');
     expect(a.region).toBe('intl');
-    expect(a.unlisted).toBe(true);
+    expect(a.unlisted).toBeFalsy();
     expect(a.icon).toBe('weeek');
     expect(a.requiredEnvVars).toEqual(['WEEEK_API_TOKEN']);
     expect(a.connector.baseUrl).toBe('https://api.weeek.net/public/v1');
