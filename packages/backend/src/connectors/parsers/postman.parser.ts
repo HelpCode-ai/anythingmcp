@@ -34,6 +34,31 @@ function isSafeFieldName(key: unknown): key is string {
   );
 }
 
+/** One form field of a request body, as it becomes a tool parameter. */
+interface FormField {
+  key: string;
+  schema: Record<string, unknown>;
+  mapping: unknown;
+  required: boolean;
+}
+
+/**
+ * Add form fields (names already checked with isSafeFieldName) to the tool's
+ * parameters and body mapping. False when there were none.
+ */
+function addFormFields(
+  fields: FormField[],
+  properties: Record<string, any>,
+  required: string[],
+  bodyMapping: Record<string, unknown>,
+): boolean {
+  if (fields.length === 0) return false;
+  Object.assign(properties, Object.fromEntries(fields.map((f) => [f.key, f.schema])));
+  Object.assign(bodyMapping, Object.fromEntries(fields.map((f) => [f.key, f.mapping])));
+  for (const f of fields) if (f.required) required.push(f.key);
+  return true;
+}
+
 @Injectable()
 export class PostmanParser {
   private readonly logger = new Logger(PostmanParser.name);
@@ -409,41 +434,40 @@ export class PostmanParser {
       // has to be told how to send form fields; without it they went out as
       // JSON (the HAR importer had the same bug).
       case 'urlencoded': {
+        const fields: FormField[] = [];
         for (const field of body.urlencoded || []) {
           if (field.disabled || !isSafeFieldName(field.key)) continue;
-          properties[field.key] = {
-            type: 'string',
-            description: field.description || `Form field: ${field.key}`,
-          };
-          bodyMapping[field.key] = `$${field.key}`;
-          if (field.value?.includes('{{')) required.push(field.key);
+          fields.push({
+            key: field.key,
+            schema: { type: 'string', description: field.description || `Form field: ${field.key}` },
+            mapping: `$${field.key}`,
+            required: Boolean(field.value?.includes('{{')),
+          });
         }
-        return Object.keys(bodyMapping).length > 0 ? 'form-urlencoded' : undefined;
+        return addFormFields(fields, properties, required, bodyMapping) ? 'form-urlencoded' : undefined;
       }
       case 'formdata': {
         // multipart/form-data. A file part cannot come from the model as text:
         // the engine downloads it from the URL the caller passes (the
         // `__file` marker, as Etsy's image upload uses).
+        const fields: FormField[] = [];
         for (const field of body.formdata || []) {
           if (field.disabled || !isSafeFieldName(field.key)) continue;
-          if (field.type === 'file') {
-            properties[field.key] = {
+          const file = field.type === 'file';
+          fields.push({
+            key: field.key,
+            schema: {
               type: 'string',
-              description:
-                (field.description ? `${field.description}. ` : '') +
-                `Public https URL of the file to send as "${field.key}". AnythingMCP downloads it and uploads it as the file part.`,
-            };
-            bodyMapping[field.key] = { __file: `$${field.key}` };
-          } else {
-            properties[field.key] = {
-              type: 'string',
-              description: field.description || `Form field: ${field.key}`,
-            };
-            bodyMapping[field.key] = `$${field.key}`;
-            if (field.value?.includes('{{')) required.push(field.key);
-          }
+              description: file
+                ? (field.description ? `${field.description}. ` : '') +
+                  `Public https URL of the file to send as "${field.key}". AnythingMCP downloads it and uploads it as the file part.`
+                : field.description || `Form field: ${field.key}`,
+            },
+            mapping: file ? { __file: `$${field.key}` } : `$${field.key}`,
+            required: !file && Boolean(field.value?.includes('{{')),
+          });
         }
-        return Object.keys(bodyMapping).length > 0 ? 'form-data' : undefined;
+        return addFormFields(fields, properties, required, bodyMapping) ? 'form-data' : undefined;
       }
     }
     return undefined;
