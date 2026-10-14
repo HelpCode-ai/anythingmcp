@@ -1,0 +1,571 @@
+{
+  "slug": "microsoft-planner",
+  "name": "Microsoft Planner",
+  "description": "Let your AI work with Microsoft Planner: see your tasks across plans, browse team plans and buckets, create and assign tasks, update progress, due dates and checklists. Microsoft 365 work or school accounts through Microsoft Graph.",
+  "instructions": "## Microsoft Planner\nThis connector works with **Microsoft Planner** through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`, `/planner`, `/me/planner`): the user's tasks across plans, the plans of their Microsoft 365 groups and teams, buckets, tasks with assignees, dates, priority, progress and labels, and task details (description, checklist, links). Planner needs a work or school account; personal Microsoft accounts have no Planner. Everything runs as the user who authorized the connector and sees only plans of groups the user belongs to.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) \u2192 **Applications \u2192 App registrations \u2192 New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: not for this connector: Planner does not support personal Microsoft accounts, so `consumers` does not work. With `common` only work or school accounts can use it.\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions \u2192 Add a permission \u2192 Microsoft Graph \u2192 Delegated permissions**: add `offline_access`, `User.Read`, `Tasks.ReadWrite`.\n5. **Certificates & secrets \u2192 New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the work or school account whose plans the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\n- OneNote: `Notes.ReadWrite`\n- Microsoft To Do: `Tasks.ReadWrite`\n- Planner: `Tasks.ReadWrite`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration \u2192 **API permissions \u2192 Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Tasks.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. `Tasks.ReadWrite` is all Planner needs for delegated access and needs no admin consent by itself; `Group.Read.All` or `Group.ReadWrite.All` also work but need an administrator, so they are not asked for. `User.Read` also covers `microsoft_planner_list_my_groups`. The Microsoft To Do connector uses the same `Tasks.ReadWrite` permission. For a read-only setup, use `offline_access User.Read Tasks.Read`, authorize again, and disable `microsoft_planner_create_task`, `microsoft_planner_update_task`, `microsoft_planner_update_task_details` and `microsoft_planner_create_bucket`.\n\n**Confirm writes**: before creating, changing or moving a task or bucket, tell the user what you are about to do and wait for a yes. Plans are shared: a change is visible to everyone in the group.\n\n**Switched off at install**: `microsoft_planner_delete_task`. Turn it on only if the AI should delete tasks; deleting removes the task for the whole team.\n\n**Finding things**: `microsoft_planner_list_my_tasks` gives the tasks assigned to the user across all plans. `microsoft_planner_list_my_plans` lists plans shared with the user; for a team's plan, find the group with `microsoft_planner_list_my_groups` (`groupTypes` contains `Unified`) and call `microsoft_planner_list_group_plans`. A plan holds buckets (`microsoft_planner_list_buckets`) and tasks (`microsoft_planner_list_plan_tasks`, `microsoft_planner_list_bucket_tasks`). Label names (category1 ... category25) are in `microsoft_planner_get_plan_details`.\n\n**Progress and priority**: `percentComplete` 0 is not started, 50 in progress, 100 completed; open tasks are the ones below 100. `priority` 1 is Urgent, 3 Important, 5 Medium, 9 Low (0-10, lower is more urgent).\n\n**Changing a task (etag)**: Planner only accepts a change together with the item's current version tag. Read the task with `microsoft_planner_get_task` (or take it from a task list), pass its `@odata.etag` exactly as returned (e.g. `W/\"JzEtVGFzayAg...\"`) as `etag` to `microsoft_planner_update_task`. The description, checklist and links live in the task's *details*, which have their own etag: read them with `microsoft_planner_get_task_details` and pass that etag to `microsoft_planner_update_task_details`. Updates return the item with its new etag; use that for the next change. 412 means someone changed the item in between: read it again and retry.\n\n**Assignments**: keyed by Microsoft Entra user id, e.g. `{\"fbab97d0-4932-4511-b675-204639209557\": {\"@odata.type\": \"#microsoft.graph.plannerAssignment\", \"orderHint\": \" !\"}}`. The signed-in user's id comes from `microsoft_planner_get_me`; other people's ids from the `assignments` of tasks they already have. `{\"<id>\": null}` removes someone. This connector cannot look up colleagues by name.\n\n**Dates**: `dueDateTime` and `startDateTime` are UTC timestamps (`2026-10-31T16:00:00Z`). Convert the user's local time before sending, and convert back before quoting.\n\n**Rate limits**: Microsoft Graph throttles Planner per user and per app. A throttled call answers 429 with Retry-After; wait and retry.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403: `Tasks.ReadWrite` is missing or not consented, the user is not a member of the plan's group, or a limit was reached (e.g. too many tasks or buckets in the plan). Personal Microsoft accounts always get 403 or 400 here.\n- 404: the id is wrong or the item was deleted.\n- 409 or 412: the etag is outdated; read the item again and retry with its new `@odata.etag`.\n- 400: a value has the wrong shape, e.g. a bucket of another plan, an assignment without `@odata.type`, or a date without a time zone designator.\n\n**Out of scope here**: creating or deleting plans, task comments (they live in the group's conversations), attachments uploaded as files, Planner premium (Project) plans, and looking up people in the directory.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "microsoft-planner",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/planner-overview",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center \u2192 App registrations \u2192 your app \u2192 Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app \u2192 Certificates & secrets \u2192 New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it, or the account has no Planner. Add Tasks.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again with a work or school account.",
+    "400": "Microsoft Graph refused the request. Planner needs a Microsoft 365 work or school account; personal Microsoft accounts have no Planner.",
+    "rate_limited": "Microsoft Graph is throttling Planner for this account. Wait a minute and try again."
+  },
+  "unlisted": true,
+  "aliases": [
+    "MS Planner",
+    "Office 365 Planner"
+  ],
+  "probe": {
+    "tool": "microsoft_planner_list_my_tasks"
+  },
+  "prerequisites": "A Microsoft 365 work or school account and an app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read` and `Tasks.ReadWrite`, and a client secret. The app registration of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "Microsoft Planner (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Tasks.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me/planner/tasks"
+  },
+  "tools": [
+    {
+      "name": "microsoft_planner_get_me",
+      "description": "Get the signed-in user's id, displayName, mail and userPrincipalName. The id is what assignments use to give a task to the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": {
+          "$select": "id,displayName,mail,userPrincipalName"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_list_my_tasks",
+      "description": "List the Planner tasks assigned to the signed-in user, across all plans: id, title, planId, bucketId, percentComplete (0, 50, 100), priority, dueDateTime, startDateTime, assignments, appliedCategories and @odata.etag. Start here for \"what are my tasks\".",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/planner/tasks"
+      }
+    },
+    {
+      "name": "microsoft_planner_list_my_plans",
+      "description": "List the plans shared with the signed-in user: id, title, owner (the group id), container, createdDateTime. Plans of groups the user belongs to that are missing here can be found with microsoft_planner_list_my_groups and microsoft_planner_list_group_plans.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/planner/plans"
+      }
+    },
+    {
+      "name": "microsoft_planner_list_my_groups",
+      "description": "List the groups the signed-in user is a direct member of: id, displayName, groupTypes (Unified for Microsoft 365 groups, which can own plans), mail. Directory roles appear too, with @odata.type #microsoft.graph.directoryRole; ignore them. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken value from @odata.nextLink of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/memberOf",
+        "queryParams": {
+          "$select": "id,displayName,groupTypes,mail",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_list_group_plans",
+      "description": "List the plans owned by a Microsoft 365 group (a team's plans live in its group): id, title, createdDateTime.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Microsoft 365 group id (a GUID) from microsoft_planner_list_my_groups."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/planner/plans",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_get_plan",
+      "description": "Get one plan: id, title, owner, container, createdBy, createdDateTime, @odata.etag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          }
+        },
+        "required": [
+          "plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/plans/{plan_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_get_plan_details",
+      "description": "Get a plan's details: categoryDescriptions (the label names behind category1 ... category25) and sharedWith (user ids the plan is shared with).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          }
+        },
+        "required": [
+          "plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/plans/{plan_id}/details",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_list_buckets",
+      "description": "List a plan's buckets (the board columns, e.g. To do, Doing, Done): id, name, planId, orderHint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          }
+        },
+        "required": [
+          "plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/plans/{plan_id}/buckets",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_list_plan_tasks",
+      "description": "List all tasks of a plan: id, title, bucketId, percentComplete, priority, dueDateTime, assignments, appliedCategories, @odata.etag. Completed tasks are included (percentComplete 100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          }
+        },
+        "required": [
+          "plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/plans/{plan_id}/tasks",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_list_bucket_tasks",
+      "description": "List the tasks in one bucket, with the same fields as microsoft_planner_list_plan_tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bucket_id": {
+            "type": "string",
+            "description": "Bucket id (28 characters) from microsoft_planner_list_buckets or a task's bucketId."
+          }
+        },
+        "required": [
+          "bucket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/buckets/{bucket_id}/tasks",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_get_task",
+      "description": "Get one task with its current @odata.etag, which microsoft_planner_update_task needs. Fields: title, planId, bucketId, percentComplete, priority, startDateTime, dueDateTime, completedDateTime, assignments, appliedCategories, hasDescription, checklistItemCount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id (28 characters) from microsoft_planner_list_my_tasks, microsoft_planner_list_plan_tasks or microsoft_planner_list_bucket_tasks."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/tasks/{task_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_get_task_details",
+      "description": "Get a task's details: description (the notes), checklist (items keyed by id, each with title and isChecked), references (attached links) and the details' own @odata.etag, which microsoft_planner_update_task_details needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id (28 characters) from microsoft_planner_list_my_tasks, microsoft_planner_list_plan_tasks or microsoft_planner_list_bucket_tasks."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/planner/tasks/{task_id}/details",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_planner_create_task",
+      "description": "Create a task in a plan and bucket, with assignees, dates, priority and labels. Returns the task with its id and @odata.etag. Add a description or checklist afterwards with microsoft_planner_update_task_details. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title.",
+            "minLength": 1
+          },
+          "bucket_id": {
+            "type": "string",
+            "description": "Bucket (column) for the task, from microsoft_planner_list_buckets. Pass one so the task lands in the intended column."
+          },
+          "assignments": {
+            "type": "object",
+            "description": "Who does the task, keyed by Microsoft Entra user id: {\"<user id>\": {\"@odata.type\": \"#microsoft.graph.plannerAssignment\", \"orderHint\": \" !\"}}. The signed-in user's id comes from microsoft_planner_get_me; other people's ids from the assignments of existing tasks. In an update, {\"<user id>\": null} removes that person."
+          },
+          "due_date_time": {
+            "type": "string",
+            "description": "Due date and time in UTC, ISO 8601, e.g. 2026-10-31T16:00:00Z."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Start date and time in UTC, ISO 8601, e.g. 2026-10-20T08:00:00Z."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "0-10, lower is more urgent. Planner shows 1 as Urgent, 3 Important, 5 Medium, 9 Low.",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "percent_complete": {
+            "type": "integer",
+            "description": "Progress: 0 not started, 50 in progress, 100 completed.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "applied_categories": {
+            "type": "object",
+            "description": "Labels to set or clear, e.g. {\"category1\": true, \"category3\": false}. category1 to category25; their names per plan come from microsoft_planner_get_plan_details (categoryDescriptions)."
+          }
+        },
+        "required": [
+          "plan_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/planner/tasks",
+        "bodyMapping": {
+          "planId": "$plan_id",
+          "bucketId": "$bucket_id",
+          "title": "$title",
+          "assignments": "$assignments",
+          "dueDateTime": "$due_date_time",
+          "startDateTime": "$start_date_time",
+          "priority": "$priority",
+          "percentComplete": "$percent_complete",
+          "appliedCategories": "$applied_categories"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_update_task",
+      "description": "Change a task: only the fields you pass are changed. Complete it with percent_complete 100, move it to another bucket with bucket_id, (un)assign people with assignments. Needs the task's current etag from microsoft_planner_get_task; returns the updated task with its new @odata.etag. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id (28 characters) from microsoft_planner_list_my_tasks, microsoft_planner_list_plan_tasks or microsoft_planner_list_bucket_tasks."
+          },
+          "etag": {
+            "type": "string",
+            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (412) when the task changed since; read it again then.",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "description": "New title.",
+            "minLength": 1
+          },
+          "bucket_id": {
+            "type": "string",
+            "description": "Move the task to this bucket of the same plan."
+          },
+          "assignments": {
+            "type": "object",
+            "description": "Who does the task, keyed by Microsoft Entra user id: {\"<user id>\": {\"@odata.type\": \"#microsoft.graph.plannerAssignment\", \"orderHint\": \" !\"}}. The signed-in user's id comes from microsoft_planner_get_me; other people's ids from the assignments of existing tasks. In an update, {\"<user id>\": null} removes that person."
+          },
+          "due_date_time": {
+            "type": "string",
+            "description": "Due date and time in UTC, ISO 8601, e.g. 2026-10-31T16:00:00Z."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Start date and time in UTC, ISO 8601, e.g. 2026-10-20T08:00:00Z."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "0-10, lower is more urgent. Planner shows 1 as Urgent, 3 Important, 5 Medium, 9 Low.",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "percent_complete": {
+            "type": "integer",
+            "description": "Progress: 0 not started, 50 in progress, 100 completed.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "applied_categories": {
+            "type": "object",
+            "description": "Labels to set or clear, e.g. {\"category1\": true, \"category3\": false}. category1 to category25; their names per plan come from microsoft_planner_get_plan_details (categoryDescriptions)."
+          }
+        },
+        "required": [
+          "task_id",
+          "etag"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/planner/tasks/{task_id}",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag",
+          "Prefer": "return=representation"
+        },
+        "bodyMapping": {
+          "title": "$title",
+          "bucketId": "$bucket_id",
+          "assignments": "$assignments",
+          "dueDateTime": "$due_date_time",
+          "startDateTime": "$start_date_time",
+          "priority": "$priority",
+          "percentComplete": "$percent_complete",
+          "appliedCategories": "$applied_categories"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_update_task_details",
+      "description": "Change a task's description, checklist or links. Needs the details' current etag from microsoft_planner_get_task_details (not the task's etag); returns the updated details. A checklist item is added with a new GUID as key: {\"<new guid>\": {\"@odata.type\": \"microsoft.graph.plannerChecklistItem\", \"title\": \"Draft\", \"isChecked\": false}}; tick one with {\"<its id>\": {\"@odata.type\": \"microsoft.graph.plannerChecklistItem\", \"isChecked\": true}}; remove one with {\"<its id>\": null}. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id (28 characters) from microsoft_planner_list_my_tasks, microsoft_planner_list_plan_tasks or microsoft_planner_list_bucket_tasks."
+          },
+          "etag": {
+            "type": "string",
+            "description": "The details' current @odata.etag from microsoft_planner_get_task_details. Planner refuses the change (412) when they changed since; read them again then.",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "New description (plain text, replaces the old one)."
+          },
+          "checklist": {
+            "type": "object",
+            "description": "Checklist changes keyed by item id (a GUID); see the tool description. Items not named stay as they are."
+          },
+          "references": {
+            "type": "object",
+            "description": "Links keyed by the URL with % . : # @ encoded (https://contoso.com/a.docx becomes https%3A//contoso%2Ecom/a%2Edocx): {\"<encoded url>\": {\"@odata.type\": \"microsoft.graph.plannerExternalReference\", \"alias\": \"Spec\", \"type\": \"Word\"}}; null removes a link."
+          },
+          "preview_type": {
+            "type": "string",
+            "description": "What the board card shows: automatic, noPreview, checklist, description or reference.",
+            "enum": [
+              "automatic",
+              "noPreview",
+              "checklist",
+              "description",
+              "reference"
+            ]
+          }
+        },
+        "required": [
+          "task_id",
+          "etag"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/planner/tasks/{task_id}/details",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag",
+          "Prefer": "return=representation"
+        },
+        "bodyMapping": {
+          "description": "$description",
+          "checklist": "$checklist",
+          "references": "$references",
+          "previewType": "$preview_type"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_create_bucket",
+      "description": "Create a bucket (board column) in a plan. Returns the bucket with its id. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "description": "Plan id (28 characters) from microsoft_planner_list_my_plans, microsoft_planner_list_group_plans or a task's planId."
+          },
+          "name": {
+            "type": "string",
+            "description": "Bucket name, e.g. \"Waiting for customer\".",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "plan_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/planner/buckets",
+        "bodyMapping": {
+          "name": "$name",
+          "planId": "$plan_id"
+        }
+      }
+    },
+    {
+      "name": "microsoft_planner_delete_task",
+      "description": "Delete a task for everyone in the plan. Needs the task's current etag. This connector cannot undo it. Installed switched off. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id (28 characters) from microsoft_planner_list_my_tasks, microsoft_planner_list_plan_tasks or microsoft_planner_list_bucket_tasks."
+          },
+          "etag": {
+            "type": "string",
+            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (412) when the task changed since; read it again then.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "task_id",
+          "etag"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/planner/tasks/{task_id}",
+        "encodePathParams": true,
+        "headers": {
+          "If-Match": "$etag"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

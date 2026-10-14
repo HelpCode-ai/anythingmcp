@@ -1,0 +1,735 @@
+{
+  "slug": "people-data-labs",
+  "name": "People Data Labs",
+  "aliases": [
+    "PDL",
+    "PeopleDataLabs"
+  ],
+  "unlisted": true,
+  "description": "Give your AI B2B people and company data from People Data Labs: enrich a person or company from an email, profile or website, identify people from loose details, search people and companies with SQL, find the company behind an IP address, and clean names, locations and job titles.",
+  "instructions": "## People Data Labs\nThis connector calls the **People Data Labs API** (`https://api.peopledatalabs.com/v5`) with the user's own API key: person and company enrichment, person identification, person and company search with SQL or Elasticsearch, IP-to-company enrichment, job title enrichment, and the free cleaner and autocomplete helpers.\n\n**Personal data and GDPR.** Person results describe real people: names, employers, work history, locations and, depending on the plan, emails and phone numbers. Use them only for a legitimate purpose the user can justify (for example B2B sales or recruiting under legitimate interest), keep only what is needed, and remember that people in the EU have the right to be informed and to object. Do not look up private individuals out of curiosity, and do not combine results to profile someone beyond the user's stated purpose.\n\n**Every lookup can cost credits.** PDL bills from the account's monthly credits (Free plan: up to 100 a month; Pro from $98 a month with 350 credits and up), separately per API:\n- Person and company enrichment, IP enrichment and job title enrichment: 1 credit **only when a match is found** (HTTP 200). A 404 means no match and is free.\n- Person identify: 1 credit **per call**, also when nothing is found (404), whatever the number of profiles returned.\n- Person and company search: 1 credit **per record returned**. `size` defaults to 1 here; check `total` before asking for more.\n- Company, location and school cleaners and autocomplete: free (cleaners up to 10,000 calls a month; autocomplete 1,000 a day on self-serve).\nAsk the user before a search with a large `size` or a long series of lookups.\n\n**Setup (about 2 minutes)**\n1. Sign up at https://dashboard.peopledatalabs.com (the Free plan needs no card).\n2. Open **API Keys** in the dashboard and copy the key.\n3. Paste it into `PEOPLE_DATA_LABS_API_KEY` and install. It is sent as the `X-Api-Key` header and only to People Data Labs.\n\n**Which tool**\n- `people_data_labs_enrich_person`: one person from an email, phone (+country code), LinkedIn URL, or a name plus company, school or location. Raise `min_likelihood` when inputs are thin, use `required` (e.g. `emails`) to only pay for matches that have what the user needs, and `data_include` to keep the answer short.\n- `people_data_labs_identify_person`: up to 20 candidates for loose inputs; costs a credit even without a result.\n- `people_data_labs_search_people` and `people_data_labs_search_companies`: lists by criteria, with `sql` (`SELECT * FROM person WHERE ...`) or an Elasticsearch `query`. Values in PDL are lower case. Use `people_data_labs_autocomplete` and the cleaners to find the exact values first (titles, companies, locations), and `scroll_token` for the next page.\n- `people_data_labs_enrich_company`: one company from website, name, profile or ticker.\n- `people_data_labs_enrich_ip`: the company behind an IP address.\n- `people_data_labs_enrich_job_title`: similar titles and skills for a title.\n- `people_data_labs_clean_company`, `people_data_labs_clean_location`, `people_data_labs_clean_school`, `people_data_labs_autocomplete`: free helpers for canonical values.\n\n**Rate limits** (defaults): enrichment 100 a minute on Free and 1,000 on paid plans (company enrichment 10 a minute on Free); identify, searches and cleaners 10 a minute.\n\n**Common errors** (`status` and `error.type`, `error.message` in the body)\n- 404 `not_found`: no match. Not an error of the request and, except for identify, not charged.\n- 401 `authentication_error`: the key is wrong, revoked or missing.\n- 402 `payment_required`: the credits of this API are used up for the month; upgrade or wait for the reset.\n- 400 `invalid_request_error`: too few inputs (e.g. a name without company or location), a malformed SQL or Elasticsearch query, or an IP that belongs to a hosting provider or proxy.\n- 429 `rate_limit_error`: too many calls a minute; wait and retry once.\n\n**Out of scope here**: bulk enrichment, person changelog, job posting search, skill enrichment, preview APIs and the sandbox.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "people-data-labs",
+  "docsUrl": "https://docs.peopledatalabs.com/docs/intro",
+  "prerequisites": "A People Data Labs account and an API key from dashboard.peopledatalabs.com. The Free plan includes up to 100 credits a month; enrichment matches and search records spend them. About 2 minutes.",
+  "requiredEnvVars": [
+    "PEOPLE_DATA_LABS_API_KEY"
+  ],
+  "envVarMeta": {
+    "PEOPLE_DATA_LABS_API_KEY": {
+      "label": "People Data Labs API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.peopledatalabs.com, API Keys. Enrichment matches and search records spend this account's credits.",
+      "link": "https://dashboard.peopledatalabs.com",
+      "pattern": "^[A-Za-z0-9]{20,128}$",
+      "patternMessage": "Paste the key as the dashboard shows it, letters and digits only, without X-Api-Key or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "People Data Labs refused the API key: it is wrong, revoked or incomplete. Copy it again from https://dashboard.peopledatalabs.com.",
+    "402": "The People Data Labs account has used up its credits for this API. Upgrade or wait for the monthly reset, then verify again.",
+    "429": "People Data Labs is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "people_data_labs_autocomplete",
+    "params": {
+      "field": "country",
+      "text": "germ",
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "People Data Labs",
+    "type": "REST",
+    "baseUrl": "https://api.peopledatalabs.com/v5",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{PEOPLE_DATA_LABS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/autocomplete?field=country&text=germ&size=1"
+  },
+  "tools": [
+    {
+      "name": "people_data_labs_enrich_person",
+      "description": "Find one person in People Data Labs from what you know about them and get their profile: name, current job title and company, work history, education, location, social profiles and, depending on the plan, emails and phone numbers. Give at least one of email, phone, profile, lid, email_hash, or a name (name, or first_name plus last_name) together with company, school, location, locality, region or postal_code; more inputs give a better match. Returns status, likelihood (1 to 10, how sure PDL is that it is the same person) and data. Costs 1 Person Enrichment credit only when a person is found (200); 404 means no match and costs nothing. Read-only. Returns personal data: use it only for a legitimate purpose and handle it under GDPR and similar laws.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "An email address the person has used."
+          },
+          "phone": {
+            "type": "string",
+            "description": "A phone number the person has used, starting with +country code (e.g. +49 761 1234567), otherwise it never matches."
+          },
+          "profile": {
+            "type": "string",
+            "description": "A social profile URL, e.g. linkedin.com/in/username."
+          },
+          "lid": {
+            "type": "string",
+            "description": "The person's numeric LinkedIn ID."
+          },
+          "email_hash": {
+            "type": "string",
+            "description": "SHA-256 or MD5 hash of an email address."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, at least first and last, e.g. Anna Maria Schmidt. Needs a second data point such as company, school, location, locality, region or postal_code."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (with last_name, instead of name)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (with first_name, instead of name)."
+          },
+          "middle_name": {
+            "type": "string",
+            "description": "Middle name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Name, website or social URL of a company the person has worked at."
+          },
+          "school": {
+            "type": "string",
+            "description": "Name, website or social URL of a school or university the person attended."
+          },
+          "location": {
+            "type": "string",
+            "description": "Where the person lives, anything from a street address to a country, e.g. Freiburg, Germany."
+          },
+          "street_address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "locality": {
+            "type": "string",
+            "description": "City or town."
+          },
+          "region": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code (assumed US when country is missing)."
+          },
+          "birth_date": {
+            "type": "string",
+            "description": "Birth year or full date, YYYY or YYYY-MM-DD."
+          },
+          "pdl_id": {
+            "type": "string",
+            "description": "A PDL person ID from an earlier result. When given, every other input is ignored."
+          },
+          "min_likelihood": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Only return a match at least this confident, 1 to 10 (PDL default 2). Raise it (e.g. 6) when only a few weak inputs are known, to avoid paying for the wrong person."
+          },
+          "required": {
+            "type": "string",
+            "description": "Fields the match must have, otherwise 404 and no charge, e.g. emails, phone_numbers or education AND (emails OR phone_numbers)."
+          },
+          "data_include": {
+            "type": "string",
+            "description": "Only return these fields, comma-separated, e.g. full_name,job_title,job_company_name,linkedin_url,emails. Start with - to exclude fields instead. Keeps the answer short; the charge is the same."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          },
+          "include_if_matched": {
+            "type": "boolean",
+            "description": "Add a matched field listing which inputs PDL matched on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/person/enrich",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone",
+          "profile": "$profile",
+          "lid": "$lid",
+          "email_hash": "$email_hash",
+          "name": "$name",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "middle_name": "$middle_name",
+          "company": "$company",
+          "school": "$school",
+          "location": "$location",
+          "street_address": "$street_address",
+          "locality": "$locality",
+          "region": "$region",
+          "country": "$country",
+          "postal_code": "$postal_code",
+          "birth_date": "$birth_date",
+          "pdl_id": "$pdl_id",
+          "min_likelihood": "$min_likelihood",
+          "required": "$required",
+          "data_include": "$data_include",
+          "titlecase": "$titlecase",
+          "include_if_matched": "$include_if_matched"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_identify_person",
+      "description": "Find up to 20 people who could match loose information (for example only a name and a city), ranked by match score, when people_data_labs_enrich_person is too strict. Give at least a name (or first_name plus last_name) with a location, company or school, or a direct identifier (email, phone, profile, lid). Returns matches with match_score and each person's data. Costs 1 Person Identify credit per call, also when nothing is found (404), whatever the number of profiles returned; PDL allows 10 calls a minute. Read-only. Returns personal data: use it only for a legitimate purpose and handle it under GDPR and similar laws.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "An email address the person has used."
+          },
+          "phone": {
+            "type": "string",
+            "description": "A phone number the person has used, starting with +country code (e.g. +49 761 1234567), otherwise it never matches."
+          },
+          "profile": {
+            "type": "string",
+            "description": "A social profile URL, e.g. linkedin.com/in/username."
+          },
+          "lid": {
+            "type": "string",
+            "description": "The person's numeric LinkedIn ID."
+          },
+          "email_hash": {
+            "type": "string",
+            "description": "SHA-256 or MD5 hash of an email address."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, at least first and last, e.g. Anna Maria Schmidt. Needs a second data point such as company, school, location, locality, region or postal_code."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (with last_name, instead of name)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (with first_name, instead of name)."
+          },
+          "middle_name": {
+            "type": "string",
+            "description": "Middle name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Name, website or social URL of a company the person has worked at."
+          },
+          "school": {
+            "type": "string",
+            "description": "Name, website or social URL of a school or university the person attended."
+          },
+          "location": {
+            "type": "string",
+            "description": "Where the person lives, anything from a street address to a country, e.g. Freiburg, Germany."
+          },
+          "street_address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "locality": {
+            "type": "string",
+            "description": "City or town."
+          },
+          "region": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code (assumed US when country is missing)."
+          },
+          "birth_date": {
+            "type": "string",
+            "description": "Birth year or full date, YYYY or YYYY-MM-DD."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          },
+          "include_if_matched": {
+            "type": "boolean",
+            "description": "Add a matched field listing which inputs PDL matched on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/person/identify",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone",
+          "profile": "$profile",
+          "lid": "$lid",
+          "email_hash": "$email_hash",
+          "name": "$name",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "middle_name": "$middle_name",
+          "company": "$company",
+          "school": "$school",
+          "location": "$location",
+          "street_address": "$street_address",
+          "locality": "$locality",
+          "region": "$region",
+          "country": "$country",
+          "postal_code": "$postal_code",
+          "birth_date": "$birth_date",
+          "titlecase": "$titlecase",
+          "include_if_matched": "$include_if_matched"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_search_people",
+      "description": "Search the People Data Labs person dataset with SQL or an Elasticsearch query, e.g. everyone with a given job title at a company or in a country. Pass exactly one of sql or query. SQL form: SELECT * FROM person WHERE job_company_name='people data labs' AND location_country='germany' (column selection and LIMIT are ignored; use size). Field values are lower case. Returns status, total (how many match), data (the records) and scroll_token for the next page. Costs 1 Person Search credit per record returned, so start with a small size and check total first. Read-only. Returns personal data: use it only for a legitimate purpose and handle it under GDPR and similar laws.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "A query of the form SELECT * FROM person WHERE ..., with PDL person fields such as job_title, job_title_role, job_company_name, job_company_website, location_country, location_locality, skills, industry."
+          },
+          "query": {
+            "type": "object",
+            "description": "An Elasticsearch 7.7 query object instead of sql, e.g. {\"bool\": {\"must\": [{\"term\": {\"location_country\": \"germany\"}}, {\"term\": {\"job_title_role\": \"engineering\"}}]}}."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1,
+            "description": "How many records to return, 1 to 100 (default 1). Every record returned costs 1 credit, so ask for only what the user needs."
+          },
+          "scroll_token": {
+            "type": "string",
+            "description": "scroll_token from the previous page, to fetch the next size records of the same query (pass the same query or sql again)."
+          },
+          "dataset": {
+            "type": "string",
+            "description": "Which slices to search, comma-separated: resume (default), email, phone, mobile_phone, street_address, consumer_social, developer or all; a leading - excludes one."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/person/search",
+        "bodyMapping": {
+          "sql": "$sql",
+          "query": "$query",
+          "size": "$size",
+          "scroll_token": "$scroll_token",
+          "dataset": "$dataset",
+          "titlecase": "$titlecase"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "people_data_labs_enrich_company",
+      "description": "Find one company in People Data Labs and get its profile: name, website, industry, size and employee count, founding year, headquarters and locations, social profiles, tags and, on some plans, funding and revenue estimates. Give at least one of name, website, profile or ticker (website or profile match best). Returns status, likelihood and the company fields. Costs 1 Company Enrichment credit only when a company is found (200); 404 means no match and costs nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Company name, e.g. Google."
+          },
+          "website": {
+            "type": "string",
+            "description": "Company website, e.g. google.com (the most reliable input)."
+          },
+          "profile": {
+            "type": "string",
+            "description": "Company social profile, e.g. linkedin.com/company/google."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Stock ticker of a listed company, e.g. GOOGL."
+          },
+          "pdl_id": {
+            "type": "string",
+            "description": "A PDL company ID from an earlier result. When given, every other input is ignored."
+          },
+          "location": {
+            "type": "string",
+            "description": "Full or partial company location, to tell apart companies with the same name."
+          },
+          "street_address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "locality": {
+            "type": "string",
+            "description": "City."
+          },
+          "region": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "min_likelihood": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Only return a match at least this confident, 1 to 10 (PDL default 2)."
+          },
+          "required": {
+            "type": "string",
+            "description": "Fields the match must have, otherwise 404 and no charge, e.g. ticker."
+          },
+          "data_include": {
+            "type": "string",
+            "description": "Only return these fields, comma-separated, e.g. name,website,size,employee_count,industry,location. Start with - to exclude fields instead."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          },
+          "include_if_matched": {
+            "type": "boolean",
+            "description": "Add a matched field listing which inputs PDL matched on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/enrich",
+        "queryParams": {
+          "name": "$name",
+          "website": "$website",
+          "profile": "$profile",
+          "ticker": "$ticker",
+          "pdl_id": "$pdl_id",
+          "location": "$location",
+          "street_address": "$street_address",
+          "locality": "$locality",
+          "region": "$region",
+          "country": "$country",
+          "postal_code": "$postal_code",
+          "min_likelihood": "$min_likelihood",
+          "required": "$required",
+          "data_include": "$data_include",
+          "titlecase": "$titlecase",
+          "include_if_matched": "$include_if_matched"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_search_companies",
+      "description": "Search the People Data Labs company dataset with SQL or an Elasticsearch query, e.g. software companies in Germany with 51 to 200 employees. Pass exactly one of sql or query. SQL form: SELECT * FROM company WHERE industry='computer software' AND location_country='germany' AND size='51-200' (column selection and LIMIT are ignored; use size). Field values are lower case. Returns status, total, data and scroll_token for the next page. Costs 1 Company Search credit per record returned, so start with a small size. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "A query of the form SELECT * FROM company WHERE ..., with PDL company fields such as name, website, industry, size, employee_count, founded, location_country, location_locality, tags."
+          },
+          "query": {
+            "type": "object",
+            "description": "An Elasticsearch 7.7 query object instead of sql, e.g. {\"bool\": {\"must\": [{\"term\": {\"location_country\": \"germany\"}}, {\"term\": {\"industry\": \"computer software\"}}]}}."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1,
+            "description": "How many records to return, 1 to 100 (default 1). Every record returned costs 1 credit, so ask for only what the user needs."
+          },
+          "scroll_token": {
+            "type": "string",
+            "description": "scroll_token from the previous page, to fetch the next size records of the same query (pass the same query or sql again)."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company/search",
+        "bodyMapping": {
+          "sql": "$sql",
+          "query": "$query",
+          "size": "$size",
+          "scroll_token": "$scroll_token",
+          "titlecase": "$titlecase"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "people_data_labs_clean_company",
+      "description": "Normalize a messy company name, website or profile URL to PDL's canonical company: name, website, linkedin_url, size, industry, location and the PDL id to use in searches (e.g. job_company_id). Give at least one of name, website or profile. Free: does not use credits (default 10,000 calls a month, 10 a minute). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Company name as written anywhere, e.g. people data LABS inc."
+          },
+          "website": {
+            "type": "string",
+            "description": "Company website, e.g. www.peopledatalabs.com."
+          },
+          "profile": {
+            "type": "string",
+            "description": "Company social profile URL."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/clean",
+        "queryParams": {
+          "name": "$name",
+          "website": "$website",
+          "profile": "$profile"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_clean_location",
+      "description": "Normalize free-text location to PDL's canonical form: name, locality, region, country, continent and geo coordinates, as used by the location fields in searches. Free: does not use credits (default 10,000 calls a month, 10 a minute). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The location as written, e.g. sf ca or Freiburg im Breisgau."
+          }
+        },
+        "required": [
+          "location"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/location/clean",
+        "queryParams": {
+          "location": "$location"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_clean_school",
+      "description": "Normalize a school or university name, website or profile URL to PDL's canonical school: name, type, website, location, profiles and the PDL id. Give at least one of name, website or profile. Free: does not use credits (default 10,000 calls a month, 10 a minute). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "School name as written, e.g. uni freiburg."
+          },
+          "website": {
+            "type": "string",
+            "description": "School website."
+          },
+          "profile": {
+            "type": "string",
+            "description": "School social profile URL."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/school/clean",
+        "queryParams": {
+          "name": "$name",
+          "website": "$website",
+          "profile": "$profile"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_autocomplete",
+      "description": "Suggest the exact values PDL uses for a field, from a few letters, with how many person records carry each: companies, schools, titles, skills, industries, locations, countries, regions, majors, job roles and subroles. Use it to write searches with values that really exist (e.g. field title, text sales dir). Free: does not use credits (self-serve limit 60 calls a minute, 1,000 a day). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "all_location",
+              "class",
+              "company",
+              "country",
+              "industry",
+              "location_name",
+              "major",
+              "region",
+              "role",
+              "school",
+              "skill",
+              "sub_role",
+              "title",
+              "website"
+            ],
+            "description": "Which kind of value to suggest."
+          },
+          "text": {
+            "type": "string",
+            "description": "The beginning of the value, e.g. goog or data sci. Empty returns the most common values."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "How many suggestions, 1 to 100 (default 10)."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autocomplete",
+        "queryParams": {
+          "field": "$field",
+          "text": "$text",
+          "size": "$size",
+          "titlecase": "$titlecase"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_enrich_job_title",
+      "description": "Clean a job title and get up to five similar titles and the most relevant skills for it, from PDL's resume data, e.g. for widening a people search. Costs 1 credit only when the title is found (200); 404 costs nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_title": {
+            "type": "string",
+            "description": "The job title, e.g. head of procurement."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          }
+        },
+        "required": [
+          "job_title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job_title/enrich",
+        "queryParams": {
+          "job_title": "$job_title",
+          "titlecase": "$titlecase"
+        }
+      }
+    },
+    {
+      "name": "people_data_labs_enrich_ip",
+      "description": "Find the company behind an IP address (for example a website visitor) and optionally its location and network metadata (mobile, hosting, proxy, VPN, Tor). Returns data.company with a confidence (very high to very low) and, when asked, data.ip.location and data.ip.metadata. Costs 1 IP Enrichment credit only on a match (200); 404 costs nothing. IPs of hosting providers, proxies, Tor or relays answer 400 because they cannot be tied to a company. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "An IPv4 or IPv6 address, e.g. 72.212.42.169."
+          },
+          "return_ip_location": {
+            "type": "boolean",
+            "description": "Also return where the IP is located."
+          },
+          "return_ip_metadata": {
+            "type": "boolean",
+            "description": "Also return network metadata (mobile, hosting, proxy, Tor, VPN, relay, ASN domain)."
+          },
+          "return_if_unmatched": {
+            "type": "boolean",
+            "description": "Return the location or metadata even when no company matches."
+          },
+          "return_person": {
+            "type": "boolean",
+            "description": "Also return the likely job role and level of the person behind the IP."
+          },
+          "min_confidence": {
+            "type": "string",
+            "enum": [
+              "very high",
+              "high",
+              "moderate",
+              "low",
+              "very low"
+            ],
+            "description": "Only return a company match at least this confident."
+          },
+          "titlecase": {
+            "type": "boolean",
+            "description": "Return names and text in title case instead of PDL's default lower case."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ip/enrich",
+        "queryParams": {
+          "ip": "$ip",
+          "return_ip_location": "$return_ip_location",
+          "return_ip_metadata": "$return_ip_metadata",
+          "return_if_unmatched": "$return_if_unmatched",
+          "return_person": "$return_person",
+          "min_confidence": "$min_confidence",
+          "titlecase": "$titlecase"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,785 @@
+{
+  "slug": "microsoft-todo",
+  "name": "Microsoft To Do",
+  "description": "Let your AI manage Microsoft To Do: list your task lists and open tasks, create tasks with due dates, reminders and notes, tick them off, and add checklist steps and links. Work or school and personal Microsoft accounts through Microsoft Graph.",
+  "instructions": "## Microsoft To Do\nThis connector works with the signed-in user's **Microsoft To Do** through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`, `/me/todo/lists`): task lists, tasks with due dates, reminders, notes and categories, checklist steps and linked resources. To Do is the same task store as Outlook tasks, so tasks appear in the To Do app, in Outlook and in Teams. It works with work or school accounts (Microsoft 365) and with personal Microsoft accounts. Everything runs as the user who authorized the connector.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) \u2192 **Applications \u2192 App registrations \u2192 New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions \u2192 Add a permission \u2192 Microsoft Graph \u2192 Delegated permissions**: add `offline_access`, `User.Read`, `Tasks.ReadWrite`.\n5. **Certificates & secrets \u2192 New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose tasks the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\n- OneNote: `Notes.ReadWrite`\n- Microsoft To Do: `Tasks.ReadWrite`\n- Planner: `Tasks.ReadWrite`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration \u2192 **API permissions \u2192 Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Tasks.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. The Planner connector uses the same `Tasks.ReadWrite` permission. For a read-only setup, use `offline_access User.Read Tasks.Read`, authorize again, and disable every tool that creates, changes or completes something.\n\n**Confirm writes**: before creating, changing or completing a list, task or step, tell the user what you are about to do and wait for a yes.\n\n**Switched off at install**: `microsoft_todo_delete_task` and `microsoft_todo_delete_list`. Turn them on per tool only if the AI should delete.\n\n**Lists**: `microsoft_todo_list_lists` first. The list with `wellknownListName` `defaultList` is the user's standard \"Tasks\" list; use it when the user does not name a list. `flaggedEmails` holds the mails flagged in Outlook.\n\n**Finding tasks**: `microsoft_todo_list_tasks` with `filter` `status ne 'completed'` gives the open tasks; `importance eq 'high'` the important ones. To answer \"what is due this week\", list the open tasks and compare `dueDateTime` yourself.\n\n**Dates**: due, start and reminder are objects `{\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}` without an offset in dateTime. To Do keeps only the day of a due date, so send it as `T00:00:00` in the user's time zone. A reminder also needs `is_reminder_on` true. Answers carry dates in UTC unless stated otherwise; convert before quoting a time to the user.\n\n**Status**: `notStarted`, `inProgress`, `completed`, `waitingOnOthers`, `deferred`. `microsoft_todo_complete_task` ticks a task off; reopen it with `microsoft_todo_update_task` and `status` `notStarted`.\n\n**Steps and links**: checklist steps belong to one task (`microsoft_todo_list_checklist_items`, `microsoft_todo_add_checklist_item`, `microsoft_todo_update_checklist_item`). Linked resources attach a URL from another app (`microsoft_todo_add_linked_resource`).\n\n**Pagination**: `microsoft_todo_list_tasks` answers carry `@odata.nextLink` while more tasks exist. Call it again with `skip` set to the `$skip` value in that link (and the same other arguments).\n\n**Rate limits**: Microsoft Graph throttles per user and per app. A throttled call answers 429 with Retry-After; wait and retry.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403: `Tasks.ReadWrite` is missing or was not consented, or the list is shared with the user without edit rights. A write on a read-only setup also ends here.\n- 404: the list or task id is wrong, the item was deleted, or the task moved to another list (a task's id changes when it moves).\n- 400: a field has the wrong shape, e.g. a date without timeZone, or a rename of a built-in list.\n- A work or school account without an Exchange Online mailbox has no To Do; Graph then answers with an error about the mailbox.\n\n**Out of scope here**: file attachments on tasks, recurrence patterns, sharing lists with other people, and other users' tasks.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "microsoft-todo",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/todo-overview",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center \u2192 App registrations \u2192 your app \u2192 Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app \u2192 Certificates & secrets \u2192 New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Tasks.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "404": "Microsoft Graph found no To Do for this account. Work or school accounts need an Exchange Online mailbox for Microsoft To Do.",
+    "rate_limited": "Microsoft Graph is throttling this account. Wait a minute and try again."
+  },
+  "unlisted": true,
+  "aliases": [
+    "Microsoft ToDo",
+    "MS To Do",
+    "Outlook Tasks"
+  ],
+  "probe": {
+    "tool": "microsoft_todo_list_lists"
+  },
+  "prerequisites": "An app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read` and `Tasks.ReadWrite`, and a client secret. The app registration of the Outlook connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "Microsoft To Do (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Tasks.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me/todo/lists"
+  },
+  "tools": [
+    {
+      "name": "microsoft_todo_list_lists",
+      "description": "List the user's Microsoft To Do task lists: id, displayName, isOwner, isShared and wellknownListName (defaultList is the standard \"Tasks\" list, flaggedEmails holds flagged Outlook mails, none for lists the user made). Start here to find a list id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/todo/lists"
+      }
+    },
+    {
+      "name": "microsoft_todo_create_list",
+      "description": "Create a new task list. Returns the list with its id. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Name of the list.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/todo/lists",
+        "bodyMapping": {
+          "displayName": "$display_name"
+        }
+      }
+    },
+    {
+      "name": "microsoft_todo_rename_list",
+      "description": "Rename a task list the user made. The built-in lists (wellknownListName defaultList or flaggedEmails) cannot be renamed. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "New name.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "list_id",
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/todo/lists/{list_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "displayName": "$display_name"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "microsoft_todo_delete_list",
+      "description": "Delete a task list with all its tasks. This connector cannot undo it. Installed switched off. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/me/todo/lists/{list_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "microsoft_todo_list_tasks",
+      "description": "List the tasks in a list: id, title, status, importance, dueDateTime, reminderDateTime, completedDateTime, categories, body (the note), checklist and linked resources flags, dates. Open tasks only: filter \"status ne 'completed'\". Paginate with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. \"status ne 'completed'\", \"importance eq 'high'\", \"status eq 'completed'\"."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"createdDateTime desc\" or \"importance desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many tasks to return per page.",
+            "minimum": 1
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/todo/lists/{list_id}/tasks",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "microsoft_todo_get_task",
+      "description": "Get one task with all its fields, including the body (note), recurrence and linked resources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_todo_create_task",
+      "description": "Create a task in a list with a title and, optionally, a note, due date, reminder, importance, status and categories. Returns the new task with its id. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the task is, e.g. \"Send the Q4 report to Anna\".",
+            "minLength": 1
+          },
+          "body": {
+            "type": "object",
+            "description": "Task note as {\"content\": \"Bring the signed contract\", \"contentType\": \"text\"} (contentType text or html).",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "The note text."
+              },
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "html"
+                ],
+                "description": "text (default) or html."
+              }
+            },
+            "required": [
+              "content"
+            ]
+          },
+          "importance": {
+            "type": "string",
+            "description": "low, normal or high.",
+            "enum": [
+              "low",
+              "normal",
+              "high"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "notStarted, inProgress, completed, waitingOnOthers or deferred.",
+            "enum": [
+              "notStarted",
+              "inProgress",
+              "completed",
+              "waitingOnOthers",
+              "deferred"
+            ]
+          },
+          "due": {
+            "type": "object",
+            "description": "Due date. To Do keeps only the day; use T00:00:00 as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "start": {
+            "type": "object",
+            "description": "Start date as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "reminder": {
+            "type": "object",
+            "description": "Reminder time; also set is_reminder_on true as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "is_reminder_on": {
+            "type": "boolean",
+            "description": "Whether the reminder is on."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category names, each the name of one of the user's Outlook categories (e.g. \"Red category\")."
+          }
+        },
+        "required": [
+          "list_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/todo/lists/{list_id}/tasks",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "body": "$body",
+          "importance": "$importance",
+          "status": "$status",
+          "dueDateTime": "$due",
+          "startDateTime": "$start",
+          "reminderDateTime": "$reminder",
+          "isReminderOn": "$is_reminder_on",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "microsoft_todo_update_task",
+      "description": "Change a task: only the fields you pass are changed (title, note, due date, reminder, importance, status, categories). To tick a task off, use microsoft_todo_complete_task. Returns the updated task. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title.",
+            "minLength": 1
+          },
+          "body": {
+            "type": "object",
+            "description": "Task note as {\"content\": \"Bring the signed contract\", \"contentType\": \"text\"} (contentType text or html).",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "The note text."
+              },
+              "contentType": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "html"
+                ],
+                "description": "text (default) or html."
+              }
+            },
+            "required": [
+              "content"
+            ]
+          },
+          "importance": {
+            "type": "string",
+            "description": "low, normal or high.",
+            "enum": [
+              "low",
+              "normal",
+              "high"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "notStarted, inProgress, completed, waitingOnOthers or deferred.",
+            "enum": [
+              "notStarted",
+              "inProgress",
+              "completed",
+              "waitingOnOthers",
+              "deferred"
+            ]
+          },
+          "due": {
+            "type": "object",
+            "description": "Due date. To Do keeps only the day; use T00:00:00 as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "start": {
+            "type": "object",
+            "description": "Start date as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "reminder": {
+            "type": "object",
+            "description": "Reminder time; also set is_reminder_on true as {\"dateTime\": \"2026-10-20T09:00:00\", \"timeZone\": \"Europe/Berlin\"}. dateTime has no offset; timeZone is a Windows (\"W. Europe Standard Time\") or IANA name, or \"UTC\".",
+            "properties": {
+              "dateTime": {
+                "type": "string",
+                "description": "Local date and time, e.g. 2026-10-20T09:00:00."
+              },
+              "timeZone": {
+                "type": "string",
+                "description": "Time zone of dateTime, e.g. Europe/Berlin or UTC."
+              }
+            },
+            "required": [
+              "dateTime",
+              "timeZone"
+            ]
+          },
+          "is_reminder_on": {
+            "type": "boolean",
+            "description": "Whether the reminder is on."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category names, each the name of one of the user's Outlook categories (e.g. \"Red category\")."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "title": "$title",
+          "body": "$body",
+          "importance": "$importance",
+          "status": "$status",
+          "dueDateTime": "$due",
+          "startDateTime": "$start",
+          "reminderDateTime": "$reminder",
+          "isReminderOn": "$is_reminder_on",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "microsoft_todo_complete_task",
+      "description": "Mark a task as completed (status completed; To Do records completedDateTime). Reopen it with microsoft_todo_update_task and status notStarted. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "status": "completed"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "microsoft_todo_delete_task",
+      "description": "Delete a task. This connector cannot undo it. Installed switched off. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "microsoft_todo_list_checklist_items",
+      "description": "List a task's checklist items (steps): id, displayName, isChecked, createdDateTime, checkedDateTime.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}/checklistItems",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_todo_add_checklist_item",
+      "description": "Add a step to a task's checklist. Returns the item with its id. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Text of the step.",
+            "minLength": 1
+          },
+          "is_checked": {
+            "type": "boolean",
+            "description": "Add it already ticked."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id",
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}/checklistItems",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "displayName": "$display_name",
+          "isChecked": "$is_checked"
+        }
+      }
+    },
+    {
+      "name": "microsoft_todo_update_checklist_item",
+      "description": "Tick, untick or rename a checklist step. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          },
+          "checklist_item_id": {
+            "type": "string",
+            "description": "Checklist item id from microsoft_todo_list_checklist_items."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "New text of the step.",
+            "minLength": 1
+          },
+          "is_checked": {
+            "type": "boolean",
+            "description": "true to tick the step, false to untick it."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id",
+          "checklist_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}/checklistItems/{checklist_item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "displayName": "$display_name",
+          "isChecked": "$is_checked"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "microsoft_todo_list_linked_resources",
+      "description": "List the links attached to a task (linked resources): id, webUrl, displayName, applicationName, externalId. A task made from a flagged Outlook mail links back to that mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}/linkedResources",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_todo_add_linked_resource",
+      "description": "Attach a link to a task, e.g. the ticket, document or web page the task is about. To Do shows it on the task with the given name. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Task list id from microsoft_todo_list_lists."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from microsoft_todo_list_tasks."
+          },
+          "web_url": {
+            "type": "string",
+            "description": "The link, e.g. https://example.atlassian.net/browse/OPS-42.",
+            "format": "uri"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Title shown for the link, e.g. \"OPS-42 Printer setup\"."
+          },
+          "application_name": {
+            "type": "string",
+            "description": "Name of the app the link belongs to, e.g. \"Jira\"."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "The item's id in that app, e.g. OPS-42."
+          }
+        },
+        "required": [
+          "list_id",
+          "task_id",
+          "web_url",
+          "application_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/todo/lists/{list_id}/tasks/{task_id}/linkedResources",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "webUrl": "$web_url",
+          "displayName": "$display_name",
+          "applicationName": "$application_name",
+          "externalId": "$external_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    }
+  ]
+}

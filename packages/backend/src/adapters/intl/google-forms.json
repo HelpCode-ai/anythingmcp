@@ -1,0 +1,731 @@
+{
+  "slug": "google-forms",
+  "name": "Google Forms",
+  "description": "Let your AI build and read Google Forms: create forms and quizzes, add text, choice, scale, date and other questions, publish or close a form, and read the responses with their answers. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Forms\nThis connector builds Google Forms and reads their responses through the **Google Forms API v1** (`https://forms.googleapis.com/v1`): it reads a form's questions and settings, creates forms, adds questions of every type, changes title, description, quiz and email settings, publishes or closes a form, reads responses and sets up push notifications. It works with personal Google accounts and Google Workspace, on forms the authorizing Google account owns or can edit.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Forms API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose forms the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Slides, Google Forms, Google Contacts, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scopes**: the connector asks for `https://www.googleapis.com/auth/forms.body` (create and edit forms the user can edit) and `https://www.googleapis.com/auth/forms.responses.readonly` (read their responses). It does not include Google Drive, so it cannot list, search, share or delete form files. For a read-only setup, change the scopes to `https://www.googleapis.com/auth/forms.body.readonly https://www.googleapis.com/auth/forms.responses.readonly` in the connector's OAuth settings, authorize again, and disable `google_forms_create_form`, `google_forms_add_text_question`, `google_forms_add_choice_question`, `google_forms_add_item`, `google_forms_update_form_info`, `google_forms_update_settings` and `google_forms_set_publish_settings`.\n\n**Switched off at install**: `google_forms_batch_update` (it can change and delete questions) and `google_forms_delete_watch`. Turn them on per tool if the AI needs them.\n\n**Before every change**: tell the user what will be created or changed and in which form, and wait for a yes. A published form is live: respondents see edits at once.\n\n**Finding a form**: the id is in the edit link, `https://docs.google.com/forms/d/<id>/edit`. The link respondents get (`/forms/d/e/<other id>/viewform`) carries a different id that the API does not accept. To find a form by name, use the Google Drive connector's `gdrive_search_files` with `mimeType = 'application/vnd.google-apps.form' and name contains '...'`, or ask the user for the edit link. Forms the user can only fill in cannot be read.\n\n**Building a form**\n1. `google_forms_create_form` takes only a title: Google refuses questions, description and settings on creation.\n2. Add questions in order with `google_forms_add_text_question`, `google_forms_add_choice_question` and `google_forms_add_item` (scale, date, time, rating, grid, section break, text block, image, video). `index` is the 0-based position: 0 for the first question, then 1, 2... To append to an existing form, pass its current number of items.\n3. Set the description with `google_forms_update_form_info`, and quiz or email collection with `google_forms_update_settings`.\n4. Forms created through the API start **unpublished** (Google's default since 30 June 2026): publish with `google_forms_set_publish_settings` (`is_published` and `is_accepting_responses` true), then share `responderUri` from `google_forms_get_form`. The same tool closes a form to new responses.\n- `google_forms_batch_update` (switched off) changes or removes existing items: `updateItem` (with an `updateMask` such as `title` or `questionItem.question.choiceQuestion.options`), `moveItem`, `deleteItem`. Pass `write_control` `{\"requiredRevisionId\": \"<revisionId>\"}` to fail instead of editing a form someone changed in between.\n\n**Reading responses**: `google_forms_list_responses` returns `answers` keyed by `questionId`; read the form once with `google_forms_get_form` to match each questionId to its question title. Choice answers are the option texts (several for checkboxes), scales the chosen number as text, dates `YYYY-MM-DD` (`MM-DD` when the question hides the year, plus ` HH:MM` with a time), file uploads Google Drive file ids. `submitted_since` filters by submission time. For large forms, page through with `page_token`, or point the user at the linked Google Sheet (`linkedSheetId`, readable with the Google Sheets connector).\n\n**Notifications (optional)**: `google_forms_create_watch` sends a Cloud Pub/Sub message when a response arrives (`RESPONSES`) or the form changes (`SCHEMA`). It needs the **Cloud Pub/Sub API** and a topic in the same Cloud project as the OAuth client, with the role *Pub/Sub Publisher* granted to `forms-notifications@system.gserviceaccount.com`. A form can have one watch per event type per project; watches expire after 7 days, so renew them with `google_forms_renew_watch`.\n\n**Checking the connection**: `google_forms_check_authorization` shows whether the authorization is valid and which scopes it carries. It does not prove that the Forms API is enabled; the first form call does.\n\n**Quotas**: Google allows 390 reads and 150 writes per minute per user (975 and 375 per project); listing responses counts as an expensive read, 180 per minute per user. Over the limit it answers 429 `RESOURCE_EXHAUSTED`: wait a minute and retry. Several edits in one `google_forms_batch_update` count as one write.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED`: the account cannot edit that form, or the scope does not allow the call. 403 \"Forms API has not been used in project\": enable the Google Forms API in the Cloud project.\n- 404: the form id is wrong (often the respondent link's id instead of the edit link's), or the form was deleted.\n- 400 on add: `index` is larger than the number of items, or a choice question has duplicate or empty options. 400 on publishing: an old form without publish settings.\n\n**Out of scope here**: sharing, copying and deleting forms (Google Drive connector), editing or deleting responses (the API cannot), and Apps Script.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "google-forms",
+  "docsUrl": "https://developers.google.com/workspace/forms/api/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Forms API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Forms is throttling this account or project (150 writes per minute per user). Wait a minute and try again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "google_forms_check_authorization"
+  },
+  "prerequisites": "A Google Cloud project with the **Google Forms API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Forms",
+    "type": "REST",
+    "baseUrl": "https://forms.googleapis.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/forms.body https://www.googleapis.com/auth/forms.responses.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "https://www.googleapis.com/oauth2/v3/tokeninfo"
+  },
+  "tools": [
+    {
+      "name": "google_forms_get_form",
+      "description": "Read a form: info (title, description), settings (quiz, email collection), publishSettings (published, accepting responses), responderUri (the link to fill it in), revisionId, linkedSheetId and every item with its itemId, title and question (questionId, type, options, required). Needed to read responses, whose answers are keyed by questionId. Output over 200 KB is cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          }
+        },
+        "required": [
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_forms_create_form",
+      "description": "Create a new, empty Google Form with a title, owned by the user in the root of My Drive. Google accepts only the title here: add questions afterwards with google_forms_add_text_question, google_forms_add_choice_question or google_forms_add_item, set a description with google_forms_update_form_info, then publish it with google_forms_set_publish_settings (forms created through the API start unpublished). Returns formId and responderUri. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title shown to respondents."
+          },
+          "document_title": {
+            "type": "string",
+            "description": "Optional file name in Google Drive; the title when omitted."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms",
+        "bodyMapping": {
+          "info": {
+            "title": "$title",
+            "documentTitle": "$document_title"
+          }
+        }
+      }
+    },
+    {
+      "name": "google_forms_add_text_question",
+      "description": "Add a text question: short answer, or paragraph when paragraph is true. Returns replies[0].createItem.itemId and questionId. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based position of the new item. To add at the end, pass the number of items the form has now (0 for a new form); read it with google_forms_get_form."
+          },
+          "title": {
+            "type": "string",
+            "description": "The question."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional help text under the question."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "true if respondents must answer (default false)."
+          },
+          "paragraph": {
+            "type": "boolean",
+            "description": "true for a long, multi-line answer (default false, short answer)."
+          }
+        },
+        "required": [
+          "form_id",
+          "index",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createItem": {
+                "item": {
+                  "title": "$title",
+                  "description": "$description",
+                  "questionItem": {
+                    "question": {
+                      "required": "$required",
+                      "textQuestion": {
+                        "paragraph": "$paragraph"
+                      }
+                    }
+                  }
+                },
+                "location": {
+                  "index": "$index"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_forms_add_choice_question",
+      "description": "Add a multiple-choice (RADIO), checkbox (CHECKBOX) or drop-down (DROP_DOWN) question with its options. Returns replies[0].createItem.itemId and questionId. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based position of the new item. To add at the end, pass the number of items the form has now (0 for a new form); read it with google_forms_get_form."
+          },
+          "title": {
+            "type": "string",
+            "description": "The question."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional help text under the question."
+          },
+          "choice_type": {
+            "type": "string",
+            "enum": [
+              "RADIO",
+              "CHECKBOX",
+              "DROP_DOWN"
+            ],
+            "default": "RADIO",
+            "description": "RADIO: pick one (default); CHECKBOX: pick several; DROP_DOWN: pick one from a list."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The choices, each {\"value\": \"Yes\"}; add {\"isOther\": true} for an \"Other:\" field with free text (not for DROP_DOWN). Values must be unique."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "true if respondents must answer (default false)."
+          },
+          "shuffle": {
+            "type": "boolean",
+            "description": "true to show the options in random order (default false)."
+          }
+        },
+        "required": [
+          "form_id",
+          "index",
+          "title",
+          "options"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createItem": {
+                "item": {
+                  "title": "$title",
+                  "description": "$description",
+                  "questionItem": {
+                    "question": {
+                      "required": "$required",
+                      "choiceQuestion": {
+                        "type": "$choice_type",
+                        "options": "$options",
+                        "shuffle": "$shuffle"
+                      }
+                    }
+                  }
+                },
+                "location": {
+                  "index": "$index"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_forms_add_item",
+      "description": "Add any other item as a Forms API Item: a linear scale, date, time or rating question, a grid, a section break (pageBreakItem), a title and description block (textItem), an image or a YouTube video, or a quiz question with grading. Returns replies[0].createItem. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based position of the new item. To add at the end, pass the number of items the form has now (0 for a new form); read it with google_forms_get_form."
+          },
+          "item": {
+            "type": "object",
+            "description": "Forms API Item without itemId, e.g. {\"title\": \"How satisfied are you?\", \"questionItem\": {\"question\": {\"required\": true, \"scaleQuestion\": {\"low\": 1, \"high\": 5, \"lowLabel\": \"Not at all\", \"highLabel\": \"Very\"}}}}, {\"title\": \"Date of visit\", \"questionItem\": {\"question\": {\"dateQuestion\": {\"includeYear\": true}}}} or {\"title\": \"Part 2\", \"pageBreakItem\": {}}. A quiz question adds \"grading\": {\"pointValue\": 1, \"correctAnswers\": {\"answers\": [{\"value\": \"Paris\"}]}} to the question."
+          }
+        },
+        "required": [
+          "form_id",
+          "index",
+          "item"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createItem": {
+                "item": "$item",
+                "location": {
+                  "index": "$index"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_forms_update_form_info",
+      "description": "Change the form's title or description (the text under the title). update_mask names what changes: \"title\", \"description\" or \"title,description\"; a field in the mask but left out is cleared. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "update_mask": {
+            "type": "string",
+            "description": "Fields to change, comma-separated: title, description."
+          }
+        },
+        "required": [
+          "form_id",
+          "update_mask"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "updateFormInfo": {
+                "info": {
+                  "title": "$title",
+                  "description": "$description"
+                },
+                "updateMask": "$update_mask"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_forms_update_settings",
+      "description": "Turn the form into a quiz (or back) and choose whether respondents' emails are collected. update_mask names what changes: \"quizSettings.isQuiz\", \"emailCollectionType\" or both, comma-separated. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "is_quiz": {
+            "type": "boolean",
+            "description": "true to make the form a quiz with points and correct answers."
+          },
+          "email_collection_type": {
+            "type": "string",
+            "enum": [
+              "DO_NOT_COLLECT",
+              "VERIFIED",
+              "RESPONDER_INPUT"
+            ],
+            "description": "DO_NOT_COLLECT; VERIFIED: respondents sign in with Google and their address is recorded; RESPONDER_INPUT: they type an address."
+          },
+          "update_mask": {
+            "type": "string",
+            "description": "Fields to change, comma-separated: quizSettings.isQuiz, emailCollectionType."
+          }
+        },
+        "required": [
+          "form_id",
+          "update_mask"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "updateSettings": {
+                "settings": {
+                  "quizSettings": {
+                    "isQuiz": "$is_quiz"
+                  },
+                  "emailCollectionType": "$email_collection_type"
+                },
+                "updateMask": "$update_mask"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_forms_set_publish_settings",
+      "description": "Publish or unpublish a form and open or close it for responses. Respondents can only fill in a published form that accepts responses; closing keeps the responses received so far. Not available on old forms without publishSettings. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "is_published": {
+            "type": "boolean",
+            "description": "true to publish the form."
+          },
+          "is_accepting_responses": {
+            "type": "boolean",
+            "description": "true to accept responses; needs is_published true."
+          }
+        },
+        "required": [
+          "form_id",
+          "is_published",
+          "is_accepting_responses"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:setPublishSettings",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "publishSettings": {
+            "publishState": {
+              "isPublished": "$is_published",
+              "isAcceptingResponses": "$is_accepting_responses"
+            }
+          },
+          "updateMask": "publishState"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_forms_batch_update",
+      "description": "Run Forms API batchUpdate requests the other tools do not cover: change a question (updateItem with updateMask), move one (moveItem) or delete one (deleteItem), several edits at once. Requests run in order and atomically. Always confirm with the user first; a deleted question cannot be restored through the API. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Forms API Request objects, e.g. [{\"deleteItem\": {\"location\": {\"index\": 3}}}] or [{\"moveItem\": {\"originalLocation\": {\"index\": 4}, \"newLocation\": {\"index\": 0}}}]."
+          },
+          "write_control": {
+            "type": "object",
+            "description": "Optional {\"requiredRevisionId\": \"<revisionId>\"} to fail if the form changed since it was read."
+          },
+          "include_form_in_response": {
+            "type": "boolean",
+            "description": "true to get the updated form back."
+          }
+        },
+        "required": [
+          "form_id",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": "$requests",
+          "writeControl": "$write_control",
+          "includeFormInResponse": "$include_form_in_response"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_forms_list_responses",
+      "description": "List a form's responses, newest submissions included: responseId, createTime, lastSubmittedTime, respondentEmail (when collected), totalScore (quizzes) and answers keyed by questionId, each with textAnswers.answers[].value or fileUploadAnswers. Match questionIds to question titles with google_forms_get_form. Pages of page_size; call again with page_token = nextPageToken until it is missing. Output over 200 KB is cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "submitted_since": {
+            "type": "string",
+            "description": "Only responses submitted at or after this time, RFC 3339 in UTC, e.g. 2026-10-01T00:00:00Z."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 100,
+            "description": "Responses per page (default 100, up to 5000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken of the previous page; keep the other arguments the same."
+          }
+        },
+        "required": [
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}/responses",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "timestamp >= ${submitted_since}",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_forms_get_response",
+      "description": "Read one response by its responseId: times, respondentEmail, totalScore and answers keyed by questionId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "response_id": {
+            "type": "string",
+            "description": "responseId from google_forms_list_responses."
+          }
+        },
+        "required": [
+          "form_id",
+          "response_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}/responses/{response_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_forms_list_watches",
+      "description": "List the push-notification watches this Google Cloud project has on a form: id, eventType (SCHEMA or RESPONSES), Pub/Sub topic, state, expireTime and errorType.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          }
+        },
+        "required": [
+          "form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{form_id}/watches",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_forms_create_watch",
+      "description": "Get a Pub/Sub message each time the form receives a response (RESPONSES) or its questions or settings change (SCHEMA). The topic must exist in the same Google Cloud project as the OAuth client and allow forms-notifications@system.gserviceaccount.com to publish. One watch per event type per form; it expires after 7 days unless renewed with google_forms_renew_watch. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "topic_name": {
+            "type": "string",
+            "description": "Full Pub/Sub topic name: projects/<project-id>/topics/<topic>."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "RESPONSES",
+              "SCHEMA"
+            ],
+            "description": "RESPONSES: a response was submitted; SCHEMA: the form's content or settings changed."
+          },
+          "watch_id": {
+            "type": "string",
+            "description": "Optional id, 4 to 63 characters of a-z, 0-9 and -; generated when omitted."
+          }
+        },
+        "required": [
+          "form_id",
+          "topic_name",
+          "event_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}/watches",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "watch": {
+            "target": {
+              "topic": {
+                "topicName": "$topic_name"
+              }
+            },
+            "eventType": "$event_type"
+          },
+          "watchId": "$watch_id"
+        }
+      }
+    },
+    {
+      "name": "google_forms_renew_watch",
+      "description": "Extend a watch to 7 days from now. Returns the watch with its new expireTime. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "watch_id": {
+            "type": "string",
+            "description": "Watch id from google_forms_list_watches."
+          }
+        },
+        "required": [
+          "form_id",
+          "watch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}/watches/{watch_id}:renew",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_forms_delete_watch",
+      "description": "Delete a watch: its Pub/Sub topic stops receiving form notifications. Always confirm with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id, the long string in the edit link: https://docs.google.com/forms/d/<id>/edit (not the /forms/d/e/... link respondents get)."
+          },
+          "watch_id": {
+            "type": "string",
+            "description": "Watch id from google_forms_list_watches."
+          }
+        },
+        "required": [
+          "form_id",
+          "watch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/forms/{form_id}/watches/{watch_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_forms_check_authorization",
+      "description": "Check that the Google authorization works and which scopes it carries, without reading any form: returns scope (space-separated) and expiresIn (seconds). Use it when a call fails with 401 or 403, or to confirm the connection; the Forms API has no call that works without a form id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://www.googleapis.com/oauth2/v3/tokeninfo"
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{scope: scope, expiresIn: expires_in}"
+        }
+      }
+    }
+  ]
+}

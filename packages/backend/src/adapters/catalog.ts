@@ -175,11 +175,16 @@ import * as gong from './intl/gong.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
 import * as googleCalendar from './intl/google-calendar.json';
+import * as googleContacts from './intl/google-contacts.json';
 import * as googleDocs from './intl/google-docs.json';
 import * as googleDrive from './intl/google-drive.json';
+import * as googleForms from './intl/google-forms.json';
 import * as googleMaps from './intl/google-maps.json';
+import * as googleMeet from './intl/google-meet.json';
+import * as googlePhotos from './intl/google-photos.json';
 import * as googleSearchConsole from './intl/google-search-console.json';
 import * as googleSheets from './intl/google-sheets.json';
+import * as googleSlides from './intl/google-slides.json';
 import * as googleTasks from './intl/google-tasks.json';
 import * as gorgias from './intl/gorgias.json';
 import * as greenhouse from './intl/greenhouse.json';
@@ -232,9 +237,12 @@ import * as metaAds from './intl/meta-ads.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as microsoftExcel from './intl/microsoft-excel.json';
 import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
+import * as microsoftOnenote from './intl/microsoft-onenote.json';
 import * as microsoftOutlook from './intl/microsoft-outlook.json';
+import * as microsoftPlanner from './intl/microsoft-planner.json';
 import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
+import * as microsoftTodo from './intl/microsoft-todo.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mirakl from './intl/mirakl.json';
 import * as miro from './intl/miro.json';
@@ -266,6 +274,7 @@ import * as orderful from './intl/orderful.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as paypal from './intl/paypal.json';
+import * as peopleDataLabs from './intl/people-data-labs.json';
 import * as perplexity from './intl/perplexity.json';
 import * as pexels from './intl/pexels.json';
 import * as phorest from './intl/phorest.json';
@@ -366,6 +375,7 @@ import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
 import * as x from './intl/x.json';
 import * as xero from './intl/xero.json';
+import * as yandexDisk from './intl/yandex-disk.json';
 import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
@@ -374,6 +384,7 @@ import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
 import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
+import * as zohoMail from './intl/zoho-mail.json';
 import * as zoom from './intl/zoom.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
@@ -787,11 +798,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
   googleCalendar as unknown as AdapterDefinition,
+  googleContacts as unknown as AdapterDefinition,
   googleDocs as unknown as AdapterDefinition,
   googleDrive as unknown as AdapterDefinition,
+  googleForms as unknown as AdapterDefinition,
   googleMaps as unknown as AdapterDefinition,
+  googleMeet as unknown as AdapterDefinition,
+  googlePhotos as unknown as AdapterDefinition,
   googleSearchConsole as unknown as AdapterDefinition,
   googleSheets as unknown as AdapterDefinition,
+  googleSlides as unknown as AdapterDefinition,
   googleTasks as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
@@ -844,9 +860,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftBookings as unknown as AdapterDefinition,
   microsoftExcel as unknown as AdapterDefinition,
   microsoftOnedrive as unknown as AdapterDefinition,
+  microsoftOnenote as unknown as AdapterDefinition,
   microsoftOutlook as unknown as AdapterDefinition,
+  microsoftPlanner as unknown as AdapterDefinition,
   microsoftSharepoint as unknown as AdapterDefinition,
   microsoftTeams as unknown as AdapterDefinition,
+  microsoftTodo as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mirakl as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
@@ -878,6 +897,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
+  peopleDataLabs as unknown as AdapterDefinition,
   perplexity as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
   phorest as unknown as AdapterDefinition,
@@ -978,6 +998,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wufoo as unknown as AdapterDefinition,
   x as unknown as AdapterDefinition,
   xero as unknown as AdapterDefinition,
+  yandexDisk as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
@@ -986,6 +1007,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zenhub as unknown as AdapterDefinition,
   zohoBooks as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
+  zohoMail as unknown as AdapterDefinition,
   zoom as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,

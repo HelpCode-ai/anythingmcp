@@ -1,0 +1,700 @@
+{
+  "slug": "google-contacts",
+  "name": "Google Contacts",
+  "aliases": [
+    "Google People",
+    "Gmail contacts"
+  ],
+  "description": "Let your AI work with Google Contacts: search and read contacts with emails, phones, companies and addresses, create and update contacts, organise labels, and find people you emailed but never saved. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Contacts\nThis connector reads and manages the signed-in user's Google Contacts through the **Google People API v1** (`https://people.googleapis.com/v1`): it lists and searches contacts, reads one in full, creates and updates contacts, manages contact groups (labels), and reads the \"Other contacts\" Google saves from email. It works with personal Google accounts and Google Workspace, as the Google account that authorized the connector. The Workspace company directory is not included.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google People API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose contacts the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Slides, Google Forms, Google Contacts, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scopes**: the connector asks for `https://www.googleapis.com/auth/contacts` (read and edit the user's contacts and labels) and `https://www.googleapis.com/auth/contacts.other.readonly` (read \"Other contacts\"). Both are sensitive scopes: outside your own Workspace organisation Google shows the unverified-app warning until the app is verified. For a read-only setup, change the scopes to `https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly` in the connector's OAuth settings, authorize again, and disable `google_contacts_create_contact`, `google_contacts_update_contact`, `google_contacts_create_contact_group`, `google_contacts_modify_group_members` and `google_contacts_save_other_contact`. Without \"Other contacts\", drop the second scope and disable `google_contacts_list_other_contacts`, `google_contacts_search_other_contacts` and `google_contacts_save_other_contact`.\n\n**Switched off at install**: `google_contacts_delete_contact`. Turn it on if the AI should delete contacts.\n\n**Before every change**: show the user the contact and the change, and wait for a yes. Contacts sync to the user's phone and Gmail at once.\n\n**Ids**: a contact's `resourceName` is `people/<id>`; tools take the part after `people/` as `person_id`. Groups are `contactGroups/<id>` (`myContacts`, `starred` or a label's id) and other contacts `otherContacts/<id>`.\n\n**Finding people**\n- `google_contacts_search_contacts` matches the beginning of names, emails, phone numbers and organizations. It reads a cache that Google refreshes on request: call `google_contacts_warm_up_search` once before the first search of a session, wait a few seconds, then search. If a contact created minutes ago is missing, warm up again or list with `google_contacts_list_contacts` and `sort_order` `LAST_MODIFIED_DESCENDING`.\n- `google_contacts_list_contacts` pages through everything; ask only for the fields you need (`person_fields`).\n- \"Other contacts\" (`google_contacts_list_other_contacts`, `google_contacts_search_other_contacts`, warm up with `search` `otherContacts:search`) are addresses the user emailed but never saved; `google_contacts_save_other_contact` copies one into My Contacts.\n- Answers leave out Google's per-entry metadata (source and primary flags) and are cut at 200 KB.\n\n**Writing**\n- `google_contacts_create_contact` takes lists in People API form, e.g. `names` `[{\"givenName\": \"Ana\", \"familyName\": \"García\"}]`, `email_addresses` `[{\"value\": \"ana@example.com\", \"type\": \"work\"}]`. Names, notes (`biographies`) and birthdays hold one entry each. Google does not prevent duplicates: search first.\n- `google_contacts_update_contact` replaces each field named in `update_person_fields` as a whole, so read the contact first and send the full new list. It needs the contact's current `etag`; after an update, use the etag from the reply for the next one.\n- Send changes for the same user one after the other, not in parallel: Google asks for this and may otherwise fail or slow down. Changes can take a few minutes to show up in lists and search.\n- Labels: `google_contacts_create_contact_group`, then `google_contacts_modify_group_members` with resourceNames. Removing a contact from a label keeps the contact.\n- `google_contacts_delete_contact` (switched off) deletes a contact; the API cannot restore it, so name the contact and get a clear yes first.\n\n**Quotas**: Google limits reads, searches and writes per minute per user and per project. Over the limit it answers 429 `RESOURCE_EXHAUSTED`: wait a minute and retry, and prefer one search over many single reads.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED`: the scope does not allow the call (a read-only or missing \"Other contacts\" scope). 403 \"People API has not been used in project\": enable the Google People API in the Cloud project.\n- 404: the id is wrong or the contact was deleted; pass only the part after `people/`.\n- 400 `failedPrecondition` on update: the etag is stale; read the contact again and retry. 400 `Invalid personFields`: a field name is misspelled (they are camelCase: `emailAddresses`, `phoneNumbers`). 400 on create: more than one name, note or birthday.\n\n**Out of scope here**: the Google Workspace directory, contact photos upload, and merging duplicates.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "google-contacts",
+  "docsUrl": "https://developers.google.com/people/api/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google People API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Contacts is throttling this account or project. Wait a minute and try again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "google_contacts_list_contacts",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google People API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Contacts",
+    "type": "REST",
+    "baseUrl": "https://people.googleapis.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/contacts.other.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/people/me/connections?personFields=names&pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "google_contacts_list_contacts",
+      "description": "List the user's saved Google Contacts with the fields asked for (names, emails, phones and organizations by default): resourceName, etag and the fields, plus totalItems. Pages of page_size; call again with page_token = nextPageToken until it is missing. To find someone, google_contacts_search_contacts is faster.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_fields": {
+            "type": "string",
+            "default": "names,emailAddresses,phoneNumbers,organizations",
+            "description": "Comma-separated person fields to return, e.g. names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,biographies,urls,memberships,photos,relations,events,userDefined. Default: names,emailAddresses,phoneNumbers,organizations."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Contacts per page (default 100, up to 1000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken of the previous page; keep the other arguments the same."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "LAST_MODIFIED_ASCENDING",
+              "LAST_MODIFIED_DESCENDING",
+              "FIRST_NAME_ASCENDING",
+              "LAST_NAME_ASCENDING"
+            ],
+            "description": "Order of the list; Google's default is LAST_MODIFIED_ASCENDING."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/me/connections",
+        "queryParams": {
+          "personFields": "$person_fields",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "sortOrder": "$sort_order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "connections[*][*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_get_contact",
+      "description": "Read one contact in full: names, emails, phones, organizations, addresses, birthday, notes, websites, relations, events, group memberships and custom fields, plus the etag that google_contacts_update_contact needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "description": "The contact's id: the part after people/ in its resourceName, e.g. c1234567890123456789 for people/c1234567890123456789."
+          },
+          "person_fields": {
+            "type": "string",
+            "default": "names,nicknames,emailAddresses,phoneNumbers,organizations,addresses,birthdays,biographies,urls,relations,events,memberships,userDefined",
+            "description": "Comma-separated person fields to return, e.g. names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,biographies,urls,memberships,photos,relations,events,userDefined."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{person_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "personFields": "$person_fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_search_contacts",
+      "description": "Search the user's saved contacts by the start of a name, nickname, email address, phone number or organization, e.g. \"ana\" or \"acme\". Returns results[].person with resourceName, etag and the fields asked for. The search runs on a cache: if a contact you expect is missing, call google_contacts_warm_up_search once, wait a few seconds and search again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to look for; matches the beginning of words."
+          },
+          "read_mask": {
+            "type": "string",
+            "default": "names,emailAddresses,phoneNumbers,organizations",
+            "description": "Comma-separated person fields to return, e.g. names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,biographies,urls,memberships,photos,relations,events,userDefined. Default: names,emailAddresses,phoneNumbers,organizations."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 10,
+            "description": "Results to return (default 10, up to 30)."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people:searchContacts",
+        "queryParams": {
+          "query": "$query",
+          "readMask": "$read_mask",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results[*].person[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_warm_up_search",
+      "description": "Refresh the cache behind contact search with the empty request Google asks for, so the next search sees recent changes. Call it before the first search in a session or when a search misses a contact that exists, then wait a few seconds. Returns no useful data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "enum": [
+              "people:searchContacts",
+              "otherContacts:search"
+            ],
+            "default": "people:searchContacts",
+            "description": "people:searchContacts for saved contacts (default), otherContacts:search for other contacts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{search}",
+        "queryParams": {
+          "query": "",
+          "readMask": "names"
+        }
+      }
+    },
+    {
+      "name": "google_contacts_create_contact",
+      "description": "Create a contact in the user's Google Contacts (My Contacts). Give at least a name or an email address. Returns the new contact's resourceName and etag. Search first to avoid duplicates; Google does not check. Show the user the details and get a yes before calling, and never retry a call that succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Name, at most one: [{\"givenName\": \"Ana\", \"familyName\": \"García\"}] (also middleName, honorificPrefix, honorificSuffix)."
+          },
+          "email_addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"ana@example.com\", \"type\": \"work\"}]; type is home, work, other or any label."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"+49 761 1234567\", \"type\": \"mobile\"}]; type is home, work, mobile, homeFax, workFax, main, other or any label."
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"name\": \"Acme GmbH\", \"title\": \"Head of Sales\", \"department\": \"Sales\"}]."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"streetAddress\": \"Hauptstr. 1\", \"postalCode\": \"79098\", \"city\": \"Freiburg\", \"country\": \"Germany\", \"type\": \"work\"}]."
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"https://example.com\", \"type\": \"work\"}]."
+          },
+          "biographies": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Notes, at most one: [{\"value\": \"Met at the trade fair\", \"contentType\": \"TEXT_PLAIN\"}]."
+          },
+          "birthdays": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "At most one: [{\"date\": {\"year\": 1985, \"month\": 4, \"day\": 12}}]; leave year out if unknown."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people:createContact",
+        "queryParams": {
+          "personFields": "names,emailAddresses,phoneNumbers,organizations,addresses,urls,biographies,birthdays,memberships"
+        },
+        "bodyMapping": {
+          "names": "$names",
+          "emailAddresses": "$email_addresses",
+          "phoneNumbers": "$phone_numbers",
+          "organizations": "$organizations",
+          "addresses": "$addresses",
+          "urls": "$urls",
+          "biographies": "$biographies",
+          "birthdays": "$birthdays"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_update_contact",
+      "description": "Change a contact. update_person_fields lists the fields to change, and each listed field is replaced as a whole: to add a second phone number, send the existing numbers plus the new one; a listed field left out is cleared. Needs the etag from the latest google_contacts_get_contact (or the previous update's reply); a stale etag fails with 400 failedPrecondition, then read the contact again. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "description": "The contact's id: the part after people/ in its resourceName, e.g. c1234567890123456789 for people/c1234567890123456789."
+          },
+          "etag": {
+            "type": "string",
+            "description": "etag of the contact as last read."
+          },
+          "update_person_fields": {
+            "type": "string",
+            "description": "Comma-separated fields to replace: names, emailAddresses, phoneNumbers, organizations, addresses, urls, biographies, birthdays."
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Name, at most one: [{\"givenName\": \"Ana\", \"familyName\": \"García\"}] (also middleName, honorificPrefix, honorificSuffix)."
+          },
+          "email_addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"ana@example.com\", \"type\": \"work\"}]; type is home, work, other or any label."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"+49 761 1234567\", \"type\": \"mobile\"}]; type is home, work, mobile, homeFax, workFax, main, other or any label."
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"name\": \"Acme GmbH\", \"title\": \"Head of Sales\", \"department\": \"Sales\"}]."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"streetAddress\": \"Hauptstr. 1\", \"postalCode\": \"79098\", \"city\": \"Freiburg\", \"country\": \"Germany\", \"type\": \"work\"}]."
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "[{\"value\": \"https://example.com\", \"type\": \"work\"}]."
+          },
+          "biographies": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Notes, at most one: [{\"value\": \"Met at the trade fair\", \"contentType\": \"TEXT_PLAIN\"}]."
+          },
+          "birthdays": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "At most one: [{\"date\": {\"year\": 1985, \"month\": 4, \"day\": 12}}]; leave year out if unknown."
+          }
+        },
+        "required": [
+          "person_id",
+          "etag",
+          "update_person_fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/people/{person_id}:updateContact",
+        "encodePathParams": true,
+        "queryParams": {
+          "updatePersonFields": "$update_person_fields",
+          "personFields": "names,emailAddresses,phoneNumbers,organizations,addresses,urls,biographies,birthdays,memberships"
+        },
+        "bodyMapping": {
+          "etag": "$etag",
+          "names": "$names",
+          "emailAddresses": "$email_addresses",
+          "phoneNumbers": "$phone_numbers",
+          "organizations": "$organizations",
+          "addresses": "$addresses",
+          "urls": "$urls",
+          "biographies": "$biographies",
+          "birthdays": "$birthdays"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_delete_contact",
+      "description": "Delete a contact from the user's Google Contacts; it disappears from their phone and Gmail too. Always confirm with the user first, naming the contact. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "description": "The contact's id: the part after people/ in its resourceName, e.g. c1234567890123456789 for people/c1234567890123456789."
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/people/{person_id}:deleteContact",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_contacts_list_contact_groups",
+      "description": "List the user's contact groups (labels) and the system groups: resourceName, name, formattedName, groupType (USER_CONTACT_GROUP or SYSTEM_CONTACT_GROUP) and memberCount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Groups per page (default 100, up to 1000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contactGroups",
+        "queryParams": {
+          "groupFields": "name,groupType,memberCount",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_contacts_get_contact_group",
+      "description": "Read a contact group (label) with the resourceNames of its members (memberResourceNames), up to max_members. Read a member with google_contacts_get_contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "The group's id: the part after contactGroups/ in its resourceName, e.g. myContacts, starred or 1a2b3c4d5e6f."
+          },
+          "max_members": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 200,
+            "description": "How many member resourceNames to return (default 200)."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contactGroups/{group_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "maxMembers": "$max_members",
+          "groupFields": "name,groupType,memberCount"
+        }
+      }
+    },
+    {
+      "name": "google_contacts_create_contact_group",
+      "description": "Create a contact group (label) with a name. Returns its resourceName; add contacts with google_contacts_modify_group_members. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new label; must be unique among the user's groups."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contactGroups",
+        "bodyMapping": {
+          "contactGroup": {
+            "name": "$name"
+          }
+        }
+      }
+    },
+    {
+      "name": "google_contacts_modify_group_members",
+      "description": "Add contacts to a label or remove them from it (up to 1,000 together). Of the system groups only myContacts and starred accept new members. Returns notFoundResourceNames and canNotRemoveLastContactGroupResourceNames for contacts that could not be changed. Removing a contact from a label does not delete it. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "The group's id: the part after contactGroups/ in its resourceName, e.g. myContacts, starred or 1a2b3c4d5e6f."
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "resourceNames to add, e.g. [\"people/c1234567890123456789\"]."
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "resourceNames to remove."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contactGroups/{group_id}/members:modify",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "resourceNamesToAdd": "$add",
+          "resourceNamesToRemove": "$remove"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_contacts_list_other_contacts",
+      "description": "List the user's \"Other contacts\": people Google saved automatically because the user emailed them, which are not in My Contacts. Names, email addresses and phone numbers only. Pages of page_size; call again with page_token = nextPageToken until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "read_mask": {
+            "type": "string",
+            "default": "names,emailAddresses,phoneNumbers",
+            "description": "Fields to return, from names, emailAddresses, phoneNumbers, photos, metadata (default names,emailAddresses,phoneNumbers)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Contacts per page (default 100, up to 1000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken of the previous page; keep the other arguments the same."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/otherContacts",
+        "queryParams": {
+          "readMask": "$read_mask",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "otherContacts[*][*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_search_other_contacts",
+      "description": "Search the user's \"Other contacts\" (people they emailed but never saved) by the start of a name, email address or phone number. Returns results[].person. Runs on a cache: if someone you expect is missing, call google_contacts_warm_up_search with search otherContacts:search, wait a few seconds and search again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to look for; matches the beginning of words."
+          },
+          "read_mask": {
+            "type": "string",
+            "default": "names,emailAddresses,phoneNumbers",
+            "description": "Fields to return, from names, emailAddresses, phoneNumbers, metadata (default names,emailAddresses,phoneNumbers)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 10,
+            "description": "Results to return (default 10, up to 30)."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/otherContacts:search",
+        "queryParams": {
+          "query": "$query",
+          "readMask": "$read_mask",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results[*].person[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_contacts_save_other_contact",
+      "description": "Save an \"Other contact\" into My Contacts, copying its name, email addresses and phone numbers. Returns the new contact with its people/ resourceName. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "other_contact_id": {
+            "type": "string",
+            "description": "The part after otherContacts/ in the other contact's resourceName, e.g. c1234567890123456789."
+          }
+        },
+        "required": [
+          "other_contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/otherContacts/{other_contact_id}:copyOtherContactToMyContactsGroup",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "copyMask": "names,emailAddresses,phoneNumbers",
+          "readMask": "names,emailAddresses,phoneNumbers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*][*].metadata"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    }
+  ]
+}

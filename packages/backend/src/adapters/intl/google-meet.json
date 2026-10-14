@@ -1,0 +1,555 @@
+{
+  "slug": "google-meet",
+  "name": "Google Meet",
+  "description": "Let your AI work with Google Meet: create meeting links with access, moderation and automatic recording or transcript settings, add co-hosts, and after a meeting see who joined and for how long, find its recordings and read the full transcript or Gemini notes. For meetings the signed-in user organises.",
+  "instructions": "## Google Meet\nThis connector works with **Google Meet** through the **Google Meet REST API v2** (`https://meet.googleapis.com/v2`): it creates meeting spaces (a Meet link), reads and changes their settings, adds co-hosts, and after a meeting reads its conference record: who joined and when, recordings, transcripts with the full spoken text, and Gemini smart notes. Everything runs as the Google account that authorized the connector.\n\n**What the API can see, and what it cannot**\n- `google_meet_list_conference_records` returns only meetings **the signed-in user organised** (the owner of the Calendar event or of the Meet link), newest first. Meetings the user only attended are not listed.\n- A conference record exists for every call held in a space, from the moment the first person joins. Google deletes conference records, participants and **transcript entries 30 days after the meeting ends**. Recordings, transcript documents and smart notes stay in the organiser's Google Drive under Drive's rules.\n- Recordings, transcripts and smart notes exist only if someone turned them on in that meeting (or the space has them set to start automatically) and the user's Google plan includes them. Smart notes are Gemini's \"Take notes for me\".\n- The API cannot join a call, see chat messages, read live captions or download the video. A recording's MP4 and a transcript's Google Doc are files in the organiser's Drive: open them with the Google Drive or Google Docs connectors (`driveDestination.file`, `docsDestination.document`).\n- The connector cannot list or find meetings by date in a calendar: use the Google Calendar connector for the schedule, then match its Meet link's code here with the `space.meeting_code` filter.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Meet REST API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. The Meet scopes are *sensitive*, so an External app that Google has not verified shows an \"unverified app\" warning; for your own use it can be clicked through (Advanced → Go to ...).\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account that organises the meetings. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Docs, Google Meet, Google Photos and the others). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scopes**: the connector asks for\n- `https://www.googleapis.com/auth/meetings.space.readonly`: read the spaces, conference records, participants and artifacts of every meeting the user can access, including meetings created in Google Calendar.\n- `https://www.googleapis.com/auth/meetings.space.created`: create spaces and change, end or manage members of the spaces **this connector created**.\n- `https://www.googleapis.com/auth/meetings.space.settings`: change settings (access, moderation, automatic recording, transcripts and smart notes) of any space the user owns, Calendar meetings included. Automatic artifacts need this scope even on a space the connector created.\nFor a read-only setup, keep only `meetings.space.readonly` in the connector's OAuth settings, authorize again, and disable `google_meet_create_space`, `google_meet_update_space` and `google_meet_add_member`.\n\n**Switched off at install**: `google_meet_end_active_conference` (ends a running call for everyone) and `google_meet_remove_member`. Turn them on per tool if the AI should do that. Before any write, confirm with the user what will change.\n\n**Names and ids**\n- Conference records, participants, transcripts and recordings are passed by their full resource `name` as the API returns it: `conferenceRecords/<id>`, `conferenceRecords/<id>/participants/<id>`, `conferenceRecords/<id>/transcripts/<id>`. Copy the value; do not shorten it.\n- Spaces are passed by `space_id`, the part after `spaces/` (`jQCFfuBOdN5z`). `google_meet_get_space` also accepts the meeting code from a link (`abc-mnop-xyz` in https://meet.google.com/abc-mnop-xyz); updating, ending and members need the real id from the space's `name`.\n\n**Reading what was said in a meeting**\n1. `google_meet_list_conference_records` with `filter` `space.meeting_code = \"abc-mnop-xyz\"`, or `start_time >= \"2026-10-01T00:00:00Z\"` (times in UTC, RFC 3339), to find the meeting.\n2. `google_meet_list_transcripts` with its `name`. A transcript in state `STARTED` or `ENDED` is still being written; wait for `FILE_GENERATED` (usually a few minutes after the call).\n3. `google_meet_read_transcript` with the transcript's `name` returns entries in spoken order: `participant`, `startTime`, `endTime`, `languageCode` and `text`. Up to 100 entries per call: keep calling with `page_token` = `nextPageToken` until it is missing.\n4. Entries name the speaker as a participant resource; `google_meet_list_participants` maps those names to `displayName`.\nEntries can differ slightly from the transcript document if someone edited the document. For a summary, `google_meet_list_smart_notes` gives the Gemini notes document id (`docsDestination.document`), readable with the Google Docs connector's `gdocs_get_document_text`.\n\n**Creating a meeting**: `google_meet_create_space` returns `meetingUri` (the link to share) and `meetingCode`. The space has no time or title: to put it in a calendar, create an event with the Google Calendar connector and paste the link in its description, or let Calendar add its own Meet link. `config` sets `accessType` (`OPEN` anyone with the link, `TRUSTED` people in the organisation and invited guests, `RESTRICTED` invited people only), `moderation`, and automatic artifacts `{\"artifactConfig\": {\"transcriptionConfig\": {\"autoTranscriptionGeneration\": \"ON\"}}}`.\n\n**Filters**: conference records filter on `space.meeting_code`, `space.name`, `start_time` and `end_time` (`end_time IS NULL` for calls running now), participants on `earliest_start_time` and `latest_end_time`, participant sessions on `start_time` and `end_time`. Combine with `AND`.\n\n**Pagination**: list responses carry `nextPageToken` while more results exist; call the same tool with the same arguments and `page_token` set to it.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED`: the scope does not cover the call (changing a space this connector did not create needs `meetings.space.settings`; members and ending a call work only on spaces the connector created), or the user is not the organiser. 403 \"Meet REST API has not been used in project\": enable the API in the Cloud project.\n- 404: a wrong or shortened resource name, a conference older than 30 days, or a meeting code that expired.\n- 400 `INVALID_ARGUMENT`: a malformed `filter` (strings in double quotes, times as RFC 3339 in UTC) or an unknown field in `config`.\n\n**Out of scope here**: live events (Google Workspace Events API), the Meet Media API, Meet add-ons, downloading recordings, and calendar scheduling.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "google-meet",
+  "docsUrl": "https://developers.google.com/workspace/meet/api/reference/rest/v2",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Meet REST API is not enabled in the Google Cloud project, or the authorized scopes do not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Meet is throttling this account or project. Wait a minute and try again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "google_meet_list_conference_records",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google Meet REST API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Meet",
+    "type": "REST",
+    "baseUrl": "https://meet.googleapis.com/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/meetings.space.settings"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/conferenceRecords?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "google_meet_create_space",
+      "description": "Create a new Google Meet meeting space and return its name (spaces/<id>), meetingUri (the link to share), meetingCode and config. Optional config sets access, moderation and automatic recording, transcripts or smart notes. Confirm with the user before creating it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "type": "object",
+            "description": "SpaceConfig fields to set, e.g. {\"accessType\": \"TRUSTED\", \"moderation\": \"ON\", \"moderationRestrictions\": {\"chatRestriction\": \"HOSTS_ONLY\"}, \"artifactConfig\": {\"recordingConfig\": {\"autoRecordingGeneration\": \"ON\"}, \"transcriptionConfig\": {\"autoTranscriptionGeneration\": \"ON\"}, \"smartNotesConfig\": {\"autoSmartNotesGeneration\": \"ON\"}}, \"attendanceReportGenerationType\": \"GENERATE_REPORT\"}. accessType is OPEN, TRUSTED or RESTRICTED; entryPointAccess ALL or CREATOR_APP_ONLY. Send only the fields to set."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/spaces",
+        "bodyMapping": {
+          "config": "$config"
+        }
+      }
+    },
+    {
+      "name": "google_meet_get_space",
+      "description": "Get a meeting space: name, meetingUri, meetingCode, config (access type, moderation, automatic artifacts) and activeConference.conferenceRecord while a call is running. Accepts the space id or the meeting code from a link (abc-mnop-xyz).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id (after spaces/, e.g. jQCFfuBOdN5z) or the meeting code from the link, e.g. abc-mnop-xyz."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{space_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_meet_update_space",
+      "description": "Change a meeting space's settings: access type, moderation and its restrictions, automatic recording, transcripts and smart notes, attendance report. Only the fields given change. Works on spaces the connector created and, with the settings scope, on the user's own Calendar meetings. Confirm with the user before changing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Meeting space id: the part after spaces/ in a space's `name` (e.g. jQCFfuBOdN5z). A meeting code is not accepted here: read the id with google_meet_get_space first."
+          },
+          "config": {
+            "type": "object",
+            "description": "SpaceConfig fields to set, e.g. {\"accessType\": \"TRUSTED\", \"moderation\": \"ON\", \"moderationRestrictions\": {\"chatRestriction\": \"HOSTS_ONLY\"}, \"artifactConfig\": {\"recordingConfig\": {\"autoRecordingGeneration\": \"ON\"}, \"transcriptionConfig\": {\"autoTranscriptionGeneration\": \"ON\"}, \"smartNotesConfig\": {\"autoSmartNotesGeneration\": \"ON\"}}, \"attendanceReportGenerationType\": \"GENERATE_REPORT\"}. accessType is OPEN, TRUSTED or RESTRICTED; entryPointAccess ALL or CREATOR_APP_ONLY. Send only the fields to set."
+          },
+          "update_mask": {
+            "type": "string",
+            "description": "Optional comma-separated fields to change, e.g. config.accessType,config.artifactConfig.transcriptionConfig.autoTranscriptionGeneration. Without it every field given in config is changed and nothing else."
+          }
+        },
+        "required": [
+          "space_id",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/spaces/{space_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "updateMask": "$update_mask"
+        },
+        "bodyMapping": {
+          "config": "$config"
+        }
+      }
+    },
+    {
+      "name": "google_meet_end_active_conference",
+      "description": "End the call running in a meeting space now, for every participant. Only for spaces this connector created; does nothing if no call is running. Installed switched off. Always confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Meeting space id: the part after spaces/ in a space's `name` (e.g. jQCFfuBOdN5z)."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/spaces/{space_id}:endActiveConference",
+        "encodePathParams": true,
+        "bodyMapping": {}
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_meet_list_members",
+      "description": "List the members of a meeting space: people configured to join without knocking, with their email and role (COHOST). Not the people who attended: for those use google_meet_list_participants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Meeting space id: the part after spaces/ in a space's `name` (e.g. jQCFfuBOdN5z)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Members per page, 1 to 500 (default 250).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{space_id}/members",
+        "encodePathParams": true,
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_meet_add_member",
+      "description": "Add a person to a meeting space by email so they join without knocking, optionally as co-host (role COHOST). Only for spaces this connector created. Confirm the email and role with the user before adding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Meeting space id: the part after spaces/ in a space's `name` (e.g. jQCFfuBOdN5z)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the person to add."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "COHOST"
+            ],
+            "description": "COHOST to let them co-manage the call (they cannot change automatic artifacts or moderation). Leave out for a plain member."
+          }
+        },
+        "required": [
+          "space_id",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/spaces/{space_id}/members",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "email": "$email",
+          "role": "$role"
+        }
+      }
+    },
+    {
+      "name": "google_meet_remove_member",
+      "description": "Remove a member (and their co-host role) from a meeting space. Only for spaces this connector created. Installed switched off. Confirm with the user before removing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_name": {
+            "type": "string",
+            "description": "Member resource name from google_meet_list_members, e.g. spaces/jQCFfuBOdN5z/members/abc123."
+          }
+        },
+        "required": [
+          "member_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{member_name}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_meet_list_conference_records",
+      "description": "List past and running calls (conference records) the signed-in user organised, newest first, with name, space, startTime and endTime (missing while the call runs). Records are deleted 30 days after the call. Filter by meeting code or time. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. space.meeting_code = \"abc-mnop-xyz\", space.name = \"spaces/jQCFfuBOdN5z\", start_time >= \"2026-10-01T00:00:00Z\" AND start_time <= \"2026-10-02T00:00:00Z\", or end_time IS NULL for running calls."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conferenceRecords",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_meet_get_conference_record",
+      "description": "Get one conference record (one call held in a space): its space, startTime, endTime and expireTime, when Google deletes it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conference_record": {
+            "type": "string",
+            "description": "Conference record name exactly as returned in `name` by google_meet_list_conference_records, e.g. conferenceRecords/abc123-def. Not the meeting code."
+          }
+        },
+        "required": [
+          "conference_record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conference_record}"
+      }
+    },
+    {
+      "name": "google_meet_list_participants",
+      "description": "List who joined a call: each participant's name (the resource that transcript entries point to), displayName, kind (signed-in, anonymous or phone), user id, earliestStartTime and latestEndTime. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conference_record": {
+            "type": "string",
+            "description": "Conference record name exactly as returned in `name` by google_meet_list_conference_records, e.g. conferenceRecords/abc123-def. Not the meeting code."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter on earliest_start_time and latest_end_time, e.g. latest_end_time IS NULL for people still in the call."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Participants per page, 1 to 250 (default 100).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "conference_record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conference_record}/participants",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{participants: participants[].{name: name, displayName: signedinUser.displayName || anonymousUser.displayName || phoneUser.displayName, kind: signedinUser && 'signedin' || anonymousUser && 'anonymous' || phoneUser && 'phone' || null, user: signedinUser.user, earliestStartTime: earliestStartTime, latestEndTime: latestEndTime}, nextPageToken: nextPageToken}"
+        }
+      }
+    },
+    {
+      "name": "google_meet_get_participant",
+      "description": "Get one participant of a call by its resource name, for example the participant a transcript entry points to: displayName, user id, first join and last leave time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant": {
+            "type": "string",
+            "description": "Participant resource name, e.g. conferenceRecords/abc123-def/participants/456."
+          }
+        },
+        "required": [
+          "participant"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{participant}"
+      }
+    },
+    {
+      "name": "google_meet_list_participant_sessions",
+      "description": "List the join and leave sessions of one participant (each time they joined from a device), with startTime and endTime, to work out how long they stayed. Paginate with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant": {
+            "type": "string",
+            "description": "Participant resource name from google_meet_list_participants, e.g. conferenceRecords/abc123-def/participants/456."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter on start_time and end_time, e.g. end_time IS NULL for sessions still running."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Sessions per page, 1 to 250 (default 100).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "participant"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{participant}/participantSessions",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_meet_list_recordings",
+      "description": "List the recordings of a call with state (STARTED, ENDED, FILE_GENERATED), start and end time, and driveDestination: the Drive file id of the MP4 and exportUri, a link to play it in the browser.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conference_record": {
+            "type": "string",
+            "description": "Conference record name exactly as returned in `name` by google_meet_list_conference_records, e.g. conferenceRecords/abc123-def. Not the meeting code."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Recordings per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "conference_record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conference_record}/recordings",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_meet_list_transcripts",
+      "description": "List the transcripts of a call: name (pass it to google_meet_read_transcript), state (FILE_GENERATED when complete), start and end time, and docsDestination with the Google Doc id and link of the transcript document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conference_record": {
+            "type": "string",
+            "description": "Conference record name exactly as returned in `name` by google_meet_list_conference_records, e.g. conferenceRecords/abc123-def. Not the meeting code."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Transcripts per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "conference_record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conference_record}/transcripts",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_meet_read_transcript",
+      "description": "Read what was said in a call: transcript entries in spoken order, each with participant (speaker resource name), startTime, endTime, languageCode and text. Up to 100 entries per call; keep calling with page_token = nextPageToken until it is missing. Entries are kept 30 days after the call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcript": {
+            "type": "string",
+            "description": "Transcript resource name from google_meet_list_transcripts, e.g. conferenceRecords/abc123-def/transcripts/xyz."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Entries per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "transcript"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{transcript}/entries",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{entries: transcriptEntries[].{participant: participant, startTime: startTime, endTime: endTime, languageCode: languageCode, text: text}, nextPageToken: nextPageToken}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_meet_list_smart_notes",
+      "description": "List the Gemini smart notes (\"Take notes for me\") of a call: state (FILE_GENERATED when ready), start and end time and docsDestination with the Google Doc id and link. Read the document with the Google Docs connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conference_record": {
+            "type": "string",
+            "description": "Conference record name exactly as returned in `name` by google_meet_list_conference_records, e.g. conferenceRecords/abc123-def. Not the meeting code."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Smart notes per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to get the next page."
+          }
+        },
+        "required": [
+          "conference_record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{conference_record}/smartNotes",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    }
+  ]
+}

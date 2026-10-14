@@ -1,0 +1,704 @@
+{
+  "slug": "google-slides",
+  "name": "Google Slides",
+  "description": "Let your AI work with Google Slides: read a presentation as text slide by slide with speaker notes, see slides as images, create presentations, add, copy and reorder slides, fill templates, insert text, text boxes and images. Personal Google accounts and Google Workspace.",
+  "instructions": "## Google Slides\nThis connector reads and edits Google Slides through the **Google Slides API v1** (`https://slides.googleapis.com/v1`): it reads a presentation as text slide by slide, renders slides as images, creates presentations, adds, copies and reorders slides, inserts and replaces text, adds text boxes and images. It works with personal Google accounts and Google Workspace, on every presentation the authorizing Google account can open.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Slides API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the Google account whose presentations the AI should use. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Google Docs, Google Slides, Google Forms, Google Contacts, Google Tasks, Search Console, Analytics, Ads). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/presentations` (read and edit every presentation the user can open). It does not include Google Drive, so it cannot list, search, share or delete presentation files. For a read-only setup, change the scope to `https://www.googleapis.com/auth/presentations.readonly` in the connector's OAuth settings, authorize again, and disable `google_slides_create_presentation`, `google_slides_add_slide`, `google_slides_duplicate_object`, `google_slides_move_slides`, `google_slides_insert_text`, `google_slides_add_text_box`, `google_slides_replace_all_text` and `google_slides_create_image`.\n\n**Switched off at install**: `google_slides_delete_object` and `google_slides_batch_update`, which can delete slides and content. Turn them on per tool if the AI needs them.\n\n**Before every change**: tell the user what will be created, changed or deleted and in which presentation, and wait for a yes. Edits are saved at once and seen by everyone who has the file open.\n\n**Finding a presentation**: the id is the long string in the link, `https://docs.google.com/presentation/d/<id>/edit`. To find one by name, use the Google Drive connector's `gdrive_search_files` with `mimeType = 'application/vnd.google-apps.presentation' and name contains '...'`, or ask the user for the link.\n\n**Reading**\n- `google_slides_get_presentation` returns each slide's `objectId`, its elements (`objectId`, `type`, `text`) and speaker `notes` with their `notesObjectId`. `type` is the placeholder type (`TITLE`, `CENTERED_TITLE`, `SUBTITLE`, `BODY`) or the shape type (`TEXT_BOX`, `RECTANGLE`...), or `TABLE`, `IMAGE`, `VIDEO`, `LINE`, `SHEETS_CHART`, `GROUP`. Text inside groups is not shown; read the group's children with `google_slides_get_page`. Formatting is left out, and the answer is cut at 200 KB.\n- `google_slides_get_page` adds positions and sizes. They are in EMU: 12,700 EMU = 1 pt, 914,400 EMU = 1 inch; the element's real size is `size` times the `transform` scale.\n- `google_slides_get_page_thumbnail` returns a PNG link valid for about 30 minutes; anyone with the link can open it.\n\n**Editing**\n- A new deck from `google_slides_create_presentation` has one title slide; the reply lists its placeholders. Add slides with `google_slides_add_slide`, read the new slide with `google_slides_get_page` and fill its placeholders with `google_slides_insert_text`.\n- Templates: `google_slides_replace_all_text` replaces placeholders such as `[Customer name]` everywhere (or on `page_ids` only), keeping the formatting. To build one slide per item, copy a template slide with `google_slides_duplicate_object`, then replace with `page_ids` set to the copy.\n- Speaker notes: insert into the slide's `notesObjectId` with `google_slides_insert_text`.\n- `google_slides_add_text_box` and `google_slides_create_image` place content in points from the top-left corner; a 16:9 slide is 720 x 405 pt. Images must be public URLs (PNG, JPEG, GIF).\n- objectIds you choose must have 5 to 50 characters (letters, digits, `_`, `-`, `:`) and be unique in the presentation.\n- `google_slides_batch_update` (switched off) takes raw Slides API requests: `updateTextStyle`, `updateParagraphStyle`, `deleteText`, `createTable`, `replaceAllShapesWithImage`, `createSlide` with a `layoutId` from the presentation's `layouts`. Pass `write_control` `{\"requiredRevisionId\": \"<revisionId>\"}` from the last read to fail instead of editing a deck someone changed in between. All requests in one call apply together or not at all.\n\n**Quotas**: Google allows 600 read and 60 write requests per minute per user (3,000 and 600 per project); thumbnails count as expensive reads, 60 per minute per user. Over the limit it answers 429 `RESOURCE_EXHAUSTED`: wait a minute and retry. Several edits in one `google_slides_batch_update` count as one write.\n\n**Common errors**\n- 401: the authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*). Click **Authorize with Provider** again.\n- 403 `PERMISSION_DENIED`: the account cannot open (or cannot edit) that presentation, or the scope is read-only. 403 \"Slides API has not been used in project\": enable the Google Slides API in the Cloud project.\n- 404: the presentation id is wrong, or the id belongs to another file type (a PowerPoint file uploaded to Drive is not a Slides presentation until converted).\n- 400 `The object (...) could not be found`: the objectId is wrong or was deleted; read the presentation again. 400 on `google_slides_add_slide`: the theme has no such layout, pick another. 400 on images: the URL is not public or the file is not PNG, JPEG or GIF.\n\n**Out of scope here**: comments, sharing, moving and deleting presentation files (Google Drive connector), exporting to PDF or PowerPoint (Google Drive connector's export), and editing PowerPoint files stored in Drive.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "google-slides",
+  "docsUrl": "https://developers.google.com/workspace/slides/api/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Slides API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
+    "rate_limited": "Google Slides is throttling this account or project (60 writes per minute per user). Wait a minute and try again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "google_slides_get_presentation",
+    "params": {
+      "presentation_id": "1EAYk18WDjIG-zp_0vLm3CsfQh_i8eXc67Jo2O9C6Vuc"
+    }
+  },
+  "prerequisites": "A Google Cloud project with the **Google Slides API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 10 minutes.",
+  "connector": {
+    "name": "Google Slides",
+    "type": "REST",
+    "baseUrl": "https://slides.googleapis.com/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/presentations"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/presentations/1EAYk18WDjIG-zp_0vLm3CsfQh_i8eXc67Jo2O9C6Vuc?fields=presentationId"
+  },
+  "tools": [
+    {
+      "name": "google_slides_get_presentation",
+      "description": "Read a Google Slides presentation as text, slide by slide: for each slide its objectId, layout, every element with objectId, type (TITLE, BODY, SUBTITLE, TEXT_BOX, TABLE, IMAGE...) and text, and the speaker notes with notesObjectId. Also title, revisionId, page size and the deck's layouts. Formatting is left out; output over 200 KB is cut.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          }
+        },
+        "required": [
+          "presentation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/presentations/{presentation_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "presentationId,title,revisionId,locale,pageSize,layouts(objectId,layoutProperties(name,displayName)),slides(objectId,slideProperties(layoutObjectId,notesPage(notesProperties(speakerNotesObjectId),pageElements(shape(text(textElements(textRun(content))))))),pageElements(objectId,shape(shapeType,placeholder(type),text(textElements(textRun(content)))),table(rows,columns,tableRows(tableCells(text(textElements(textRun(content)))))),image(contentUrl,sourceUrl),video(id,source),line(lineType),sheetsChart(spreadsheetId,chartId),elementGroup(children(objectId))))"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{presentationId: presentationId, title: title, revisionId: revisionId, locale: locale, pageSize: pageSize, slideCount: length(slides || `[]`), slides: slides[].{objectId: objectId, layoutObjectId: slideProperties.layoutObjectId, notesObjectId: slideProperties.notesPage.notesProperties.speakerNotesObjectId, elements: pageElements[].{objectId: objectId, type: shape.placeholder.type || shape.shapeType || (table && 'TABLE') || (image && 'IMAGE') || (video && 'VIDEO') || (line && 'LINE') || (sheetsChart && 'SHEETS_CHART') || (elementGroup && 'GROUP') || 'OTHER', text: join('', [shape.text.textElements[].textRun.content, table.tableRows[].tableCells[].text.textElements[].textRun.content][][])}, notes: join('', [slideProperties.notesPage.pageElements[].shape.text.textElements[].textRun.content][][])}, layouts: layouts[].{objectId: objectId, name: layoutProperties.name, displayName: layoutProperties.displayName}}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_slides_get_page",
+      "description": "Read one slide (or a layout or master page) in detail: each element's objectId, type, placeholder index, text, size and transform (position, in EMU: 12,700 EMU = 1 pt), alt text, table size, image source URL, plus the speaker notes. Use it to find the placeholder ids of a new slide or where to place an element.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "The slide's objectId, from google_slides_get_presentation or the reply of google_slides_add_slide."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/presentations/{presentation_id}/pages/{page_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "objectId,pageType,slideProperties(layoutObjectId,notesPage(notesProperties(speakerNotesObjectId),pageElements(shape(text(textElements(textRun(content))))))),pageElements(objectId,title,description,size,transform,shape(shapeType,placeholder(type,index),text(textElements(textRun(content)))),table(rows,columns,tableRows(tableCells(text(textElements(textRun(content)))))),image(contentUrl,sourceUrl),video(id,source),line(lineType),sheetsChart(spreadsheetId,chartId),elementGroup(children(objectId)))"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{objectId: objectId, pageType: pageType, layoutObjectId: slideProperties.layoutObjectId, notesObjectId: slideProperties.notesPage.notesProperties.speakerNotesObjectId, notes: join('', [slideProperties.notesPage.pageElements[].shape.text.textElements[].textRun.content][][]), elements: pageElements[].{objectId: objectId, type: shape.placeholder.type || shape.shapeType || (table && 'TABLE') || (image && 'IMAGE') || (video && 'VIDEO') || (line && 'LINE') || (sheetsChart && 'SHEETS_CHART') || (elementGroup && 'GROUP') || 'OTHER', placeholderIndex: shape.placeholder.index, text: join('', [shape.text.textElements[].textRun.content, table.tableRows[].tableCells[].text.textElements[].textRun.content][][]), size: size, transform: transform, title: title, description: description, rows: table.rows, columns: table.columns, imageSourceUrl: image.sourceUrl, video: video, chart: sheetsChart, children: elementGroup.children[].objectId}}",
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "google_slides_get_page_thumbnail",
+      "description": "Render a slide as a PNG and get a link to it: width, height and contentUrl. The link works without signing in for about 30 minutes, so show or share it right away. Counts as an expensive read (60 per minute per user).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "The slide's objectId."
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "SMALL",
+              "MEDIUM",
+              "LARGE"
+            ],
+            "default": "MEDIUM",
+            "description": "Image width: SMALL 200 px, MEDIUM 800 px (default), LARGE 1600 px."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/presentations/{presentation_id}/pages/{page_id}/thumbnail",
+        "encodePathParams": true,
+        "queryParams": {
+          "thumbnailProperties.thumbnailSize": "$size",
+          "thumbnailProperties.mimeType": "PNG"
+        }
+      }
+    },
+    {
+      "name": "google_slides_create_presentation",
+      "description": "Create a new presentation with a title, in the root of the user's My Drive. It starts with one title slide; the reply lists its slide and placeholder objectIds, ready for google_slides_insert_text. The link is https://docs.google.com/presentation/d/<presentationId>/edit. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the new presentation."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations",
+        "queryParams": {
+          "fields": "presentationId,title,revisionId,slides(objectId,pageElements(objectId,shape(placeholder(type))))"
+        },
+        "bodyMapping": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "google_slides_add_slide",
+      "description": "Add a slide with a predefined layout of the deck's theme (TITLE_AND_BODY by default), at a position or at the end. Returns replies[0].createSlide.objectId; read it with google_slides_get_page to get the placeholder ids, then fill them with google_slides_insert_text. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "BLANK",
+              "CAPTION_ONLY",
+              "TITLE",
+              "TITLE_AND_BODY",
+              "TITLE_AND_TWO_COLUMNS",
+              "TITLE_ONLY",
+              "SECTION_HEADER",
+              "SECTION_TITLE_AND_DESCRIPTION",
+              "ONE_COLUMN_TEXT",
+              "MAIN_POINT",
+              "BIG_NUMBER"
+            ],
+            "default": "TITLE_AND_BODY",
+            "description": "Predefined layout. A theme that lacks it answers 400; then try another one or BLANK."
+          },
+          "insertion_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based position of the new slide; omit to add it at the end."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Optional objectId for the new slide (5 to 50 characters, starting with a letter, digit or underscore, then letters, digits, _, - or :; unique in the presentation); generated when omitted."
+          }
+        },
+        "required": [
+          "presentation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createSlide": {
+                "objectId": "$object_id",
+                "insertionIndex": "$insertion_index",
+                "slideLayoutReference": {
+                  "predefinedLayout": "$layout"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_slides_duplicate_object",
+      "description": "Duplicate a slide (the copy goes right after it) or an element (the copy lands on the same slide, in the same position). Returns replies[0].duplicateObject.objectId. Good for building slides from a template slide, then google_slides_replace_all_text with page_ids limited to the copy. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "objectId of the slide or element to copy."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "duplicateObject": {
+                "objectId": "$object_id"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_slides_move_slides",
+      "description": "Move one or more slides to a new position, keeping their order. insertion_index is the 0-based position in the deck as it is before the move. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "slide_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "objectIds of the slides to move, in the order they should end up."
+          },
+          "insertion_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Where to put them, 0 for the start."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "slide_ids",
+          "insertion_index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "updateSlidesPosition": {
+                "slideObjectIds": "$slide_ids",
+                "insertionIndex": "$insertion_index"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_slides_insert_text",
+      "description": "Insert text into a shape: a placeholder (title, body), a text box, or the speaker notes (use the slide's notesObjectId). The text goes at insertion_index, the start by default, which is right for an empty placeholder. To change existing words use google_slides_replace_all_text. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "objectId of the shape, from google_slides_get_presentation or google_slides_get_page."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to insert; \\n starts a new paragraph (a new bullet in a body placeholder)."
+          },
+          "insertion_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position in the shape's text, in UTF-16 code units; omit for the start."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "object_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "insertText": {
+                "objectId": "$object_id",
+                "text": "$text",
+                "insertionIndex": "$insertion_index"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_slides_add_text_box",
+      "description": "Add a text box with text to a slide, at a position and size in points (a 16:9 slide is 720 x 405 pt, a 4:3 one 720 x 540 pt). You choose the new box's objectId, so it can be edited later. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "slide_id": {
+            "type": "string",
+            "description": "objectId of the slide."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "objectId for the new text box (5 to 50 characters, starting with a letter, digit or underscore, then letters, digits, _, - or :; unique in the presentation), e.g. textbox_q3_summary."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text of the box; \\n starts a new paragraph."
+          },
+          "x_pt": {
+            "type": "number",
+            "default": 50,
+            "description": "Distance from the slide's left edge, in points (default 50)."
+          },
+          "y_pt": {
+            "type": "number",
+            "default": 50,
+            "description": "Distance from the slide's top edge, in points (default 50)."
+          },
+          "width_pt": {
+            "type": "number",
+            "default": 400,
+            "description": "Width in points (default 400)."
+          },
+          "height_pt": {
+            "type": "number",
+            "default": 100,
+            "description": "Height in points (default 100)."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "slide_id",
+          "object_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createShape": {
+                "objectId": "$object_id",
+                "shapeType": "TEXT_BOX",
+                "elementProperties": {
+                  "pageObjectId": "$slide_id",
+                  "size": {
+                    "width": {
+                      "magnitude": "$width_pt",
+                      "unit": "PT"
+                    },
+                    "height": {
+                      "magnitude": "$height_pt",
+                      "unit": "PT"
+                    }
+                  },
+                  "transform": {
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "translateX": "$x_pt",
+                    "translateY": "$y_pt",
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "insertText": {
+                "objectId": "$object_id",
+                "text": "$text"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_slides_replace_all_text",
+      "description": "Replace every occurrence of a text in the presentation (or only on the given slides) with another text, keeping the formatting; an empty replace_with deletes them. Returns replies[0].replaceAllText.occurrencesChanged. The reliable way to fill templates such as [Customer name]. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "find": {
+            "type": "string",
+            "description": "Text to search for (literal, not a pattern)."
+          },
+          "replace_with": {
+            "type": "string",
+            "description": "Replacement text; \"\" deletes every occurrence."
+          },
+          "match_case": {
+            "type": "boolean",
+            "description": "true for a case-sensitive match (default false)."
+          },
+          "page_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional slide objectIds to limit the replacement to; all slides when omitted."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "find",
+          "replace_with"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "$find",
+                  "matchCase": "$match_case"
+                },
+                "replaceText": "$replace_with",
+                "pageObjectIds": "$page_ids"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_slides_create_image",
+      "description": "Place an image from a public URL on a slide. Google fetches the image once and keeps a copy: PNG, JPEG or GIF, under 50 MB and 25 megapixels, URL up to 2 KB and reachable without sign-in. The image keeps its aspect ratio inside the given box. Returns replies[0].createImage.objectId. Confirm the change with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "slide_id": {
+            "type": "string",
+            "description": "objectId of the slide."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the image."
+          },
+          "x_pt": {
+            "type": "number",
+            "default": 50,
+            "description": "Distance from the slide's left edge, in points (default 50)."
+          },
+          "y_pt": {
+            "type": "number",
+            "default": 50,
+            "description": "Distance from the slide's top edge, in points (default 50)."
+          },
+          "width_pt": {
+            "type": "number",
+            "default": 300,
+            "description": "Width of the box in points (default 300)."
+          },
+          "height_pt": {
+            "type": "number",
+            "default": 200,
+            "description": "Height of the box in points (default 200)."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "Optional objectId for the image (5 to 50 characters, starting with a letter, digit or underscore, then letters, digits, _, - or :; unique in the presentation)."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "slide_id",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "createImage": {
+                "objectId": "$object_id",
+                "url": "$url",
+                "elementProperties": {
+                  "pageObjectId": "$slide_id",
+                  "size": {
+                    "width": {
+                      "magnitude": "$width_pt",
+                      "unit": "PT"
+                    },
+                    "height": {
+                      "magnitude": "$height_pt",
+                      "unit": "PT"
+                    }
+                  },
+                  "transform": {
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "translateX": "$x_pt",
+                    "translateY": "$y_pt",
+                    "unit": "PT"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_slides_delete_object",
+      "description": "Delete a slide or an element (shape, image, table, group) by its objectId. Cannot be undone through the API; the version history in Google Slides still has it. Always confirm with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "object_id": {
+            "type": "string",
+            "description": "objectId of the slide or element to delete."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": [
+            {
+              "deleteObject": {
+                "objectId": "$object_id"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_slides_batch_update",
+      "description": "Run Slides API batchUpdate requests for edits the other tools do not cover: styling text (updateTextStyle, updateParagraphStyle), deleting text (deleteText), tables, shapes, replacing shapes with images (replaceAllShapesWithImage), a custom layout (createSlide with layoutId), speaker notes. Requests run in order and atomically. Always confirm with the user first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "presentation_id": {
+            "type": "string",
+            "description": "Presentation id, the long string in its link: https://docs.google.com/presentation/d/<id>/edit."
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Slides API Request objects, e.g. [{\"updateTextStyle\": {\"objectId\": \"g1_0\", \"textRange\": {\"type\": \"ALL\"}, \"style\": {\"bold\": true}, \"fields\": \"bold\"}}]."
+          },
+          "write_control": {
+            "type": "object",
+            "description": "Optional {\"requiredRevisionId\": \"<revisionId>\"} to fail if the presentation changed since it was read."
+          }
+        },
+        "required": [
+          "presentation_id",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/presentations/{presentation_id}:batchUpdate",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "requests": "$requests",
+          "writeControl": "$write_control"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
