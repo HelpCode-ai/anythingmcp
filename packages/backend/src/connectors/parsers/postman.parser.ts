@@ -17,6 +17,23 @@ import { outboundAxiosOptions } from '../../common/outbound-http';
  *   - Query params, headers, body (raw JSON, form-data, urlencoded)
  *   - Pre-request scripts are noted in descriptions
  */
+
+/**
+ * A body field name from the collection that is safe to use as a key of the
+ * tool's parameters and body mapping: a collection is untrusted input, and
+ * `__proto__` / `constructor` / `prototype` as a key would write to the
+ * object's prototype instead of adding a field.
+ */
+function isSafeFieldName(key: unknown): key is string {
+  return (
+    typeof key === 'string' &&
+    key !== '' &&
+    key !== '__proto__' &&
+    key !== 'constructor' &&
+    key !== 'prototype'
+  );
+}
+
 @Injectable()
 export class PostmanParser {
   private readonly logger = new Logger(PostmanParser.name);
@@ -367,6 +384,7 @@ export class PostmanParser {
             }
 
             for (const [key, value] of Object.entries(parsed)) {
+              if (!isSafeFieldName(key)) continue;
               const strVal = String(value);
               if (strVal.startsWith('__var_') && strVal.endsWith('__')) {
                 const varName = strVal.replace(/^__var_|__$/g, '');
@@ -392,7 +410,7 @@ export class PostmanParser {
       // JSON (the HAR importer had the same bug).
       case 'urlencoded': {
         for (const field of body.urlencoded || []) {
-          if (field.disabled || !field.key) continue;
+          if (field.disabled || !isSafeFieldName(field.key)) continue;
           properties[field.key] = {
             type: 'string',
             description: field.description || `Form field: ${field.key}`,
@@ -407,7 +425,7 @@ export class PostmanParser {
         // the engine downloads it from the URL the caller passes (the
         // `__file` marker, as Etsy's image upload uses).
         for (const field of body.formdata || []) {
-          if (field.disabled || !field.key) continue;
+          if (field.disabled || !isSafeFieldName(field.key)) continue;
           if (field.type === 'file') {
             properties[field.key] = {
               type: 'string',

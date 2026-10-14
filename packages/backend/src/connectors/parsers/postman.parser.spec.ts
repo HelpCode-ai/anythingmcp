@@ -314,6 +314,40 @@ describe('PostmanParser', () => {
     expect(tools.map((t) => t.endpointMapping.bodyEncoding)).toEqual([undefined, undefined]);
   });
 
+  it('ignores body field names that would write to the prototype', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Form',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/form', path: ['form'] },
+            body: {
+              mode: 'formdata',
+              formdata: [
+                { key: '__proto__', value: 'x', type: 'text' },
+                { key: 'constructor', type: 'file' },
+                { key: 'name', value: 'n', type: 'text' },
+              ],
+            },
+          },
+        },
+        {
+          name: 'Json',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/json', path: ['json'] },
+            body: { mode: 'raw', raw: '{"__proto__":{"polluted":true},"ok":1}' },
+          },
+        },
+      ],
+    });
+    expect(Object.keys(tools[0].endpointMapping.bodyMapping!)).toEqual(['name']);
+    expect(Object.keys(tools[1].endpointMapping.bodyMapping!)).toEqual(['ok']);
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
   it('sets no encoding for a form whose fields are all disabled', async () => {
     const tools = await parser.parse({
       ...minimalCollection,
