@@ -145,7 +145,7 @@ describe('amplitude adapter: static spec conformance', () => {
   it('probes with the event list and explains wrong keys and the wrong data center', () => {
     expect(a.probe).toEqual({ tool: 'amplitude_list_events' });
     for (const status of ['401', '403', '404', '429']) expect(a.verifyHints[status]).toBeTruthy();
-    expect(a.verifyHints['403']).toMatch(/analytics\.eu\.amplitude\.com/);
+    expect(a.verifyHints['403']).toContain('analytics.eu.amplitude.com');
   });
 
   it('prefixes every tool with amplitude_ and shares no tool name with another adapter', () => {

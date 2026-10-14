@@ -142,7 +142,7 @@ describe('segment adapter: static spec conformance', () => {
   it('probes with the workspace and explains wrong tokens and regions', () => {
     expect(a.probe).toEqual({ tool: 'segment_get_workspace' });
     for (const status of ['401', '403', '404', '429']) expect(a.verifyHints[status]).toBeTruthy();
-    expect(a.verifyHints['403']).toMatch(/eu1\.api\.segmentapis\.com/);
+    expect(a.verifyHints['403']).toContain('eu1.api.segmentapis.com');
   });
 
   it('prefixes every tool with segment_ and shares no tool name with another adapter', () => {

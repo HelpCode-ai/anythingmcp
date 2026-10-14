@@ -147,7 +147,7 @@ describe('iterable adapter: static spec conformance', () => {
   it('probes with the channel list and explains wrong keys and data centers', () => {
     expect(a.probe).toEqual({ tool: 'iterable_list_channels' });
     for (const status of ['401', '403', '404', '429']) expect(a.verifyHints[status]).toBeTruthy();
-    expect(a.verifyHints['401']).toMatch(/api\.eu\.iterable\.com/);
+    expect(a.verifyHints['401']).toContain('api.eu.iterable.com');
   });
 
   it('prefixes every tool with iterable_ and shares no tool name with another adapter', () => {
