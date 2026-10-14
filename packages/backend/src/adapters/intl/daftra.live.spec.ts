@@ -16,7 +16,7 @@ type Tool = {
 const a = adapter as unknown as {
   slug: string;
   region: string;
-  unlisted: boolean;
+  unlisted?: boolean;
   icon: string;
   instructions: string;
   requiredEnvVars: string[];
@@ -36,7 +36,7 @@ describe('Daftra adapter — static contract', () => {
   it('calls the tenant api2 base URL with the APIKEY header', () => {
     expect(a.slug).toBe('daftra');
     expect(a.region).toBe('intl');
-    expect(a.unlisted).toBe(true);
+    expect(a.unlisted).toBeFalsy();
     expect(a.icon).toBe('daftra');
     expect(a.requiredEnvVars).toEqual(['DAFTRA_SUBDOMAIN', 'DAFTRA_API_KEY']);
     expect(a.connector.baseUrl).toBe('https://{{DAFTRA_SUBDOMAIN}}.daftra.com/api2');
@@ -49,9 +49,16 @@ describe('Daftra adapter — static contract', () => {
   });
 
   it('checks the connection with a cheap authenticated GET', () => {
-    expect(a.connector.healthcheckPath).toBe('/site_info.json');
-    expect(a.probe.tool).toBe('daftra_get_site_info');
-    expect(byName.daftra_get_site_info.endpointMapping).toEqual({ method: 'GET', path: '/site_info.json' });
+    expect(a.connector.healthcheckPath).toBe('/stores.json');
+    expect(a.probe.tool).toBe('daftra_list_stores');
+    expect(byName.daftra_list_stores.endpointMapping).toMatchObject({ method: 'GET', path: '/stores.json' });
+  });
+
+  // Daftra answers 405 to these with an API key (checked on a live account, 14 Oct 2026).
+  it('has no tools for site info, estimates, incomes or taxes', () => {
+    for (const path of ['/site_info.json', '/estimates.json', '/incomes.json', '/taxes.json']) {
+      expect(a.tools.some((t) => t.endpointMapping.path === path)).toBe(false);
+    }
   });
 
   it('prefixes every tool and uses the .json resource paths', () => {
@@ -64,7 +71,7 @@ describe('Daftra adapter — static contract', () => {
 
   it('pages list tools with page and limit', () => {
     const lists = a.tools.filter((tool) => tool.name.startsWith('daftra_list_'));
-    expect(lists).toHaveLength(19);
+    expect(lists).toHaveLength(16);
     for (const tool of lists) {
       expect(tool.endpointMapping.method).toBe('GET');
       expect(tool.endpointMapping.queryParams).toMatchObject({ page: '$page', limit: '$limit' });
@@ -119,8 +126,8 @@ const live = process.env.RUN_DAFTRA_LIVE === '1';
     return fetch(`https://${sub}.daftra.com/api2${path}`, { headers: { APIKEY: key, Accept: 'application/json' } });
   };
 
-  it('reads the site info', async () => {
-    const res = await get('/site_info.json');
+  it('reads the warehouses', async () => {
+    const res = await get('/stores.json');
     expect(res.status).toBe(200);
     expect(typeof (await res.json())).toBe('object');
   });

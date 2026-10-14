@@ -57,8 +57,8 @@ const engine = () => new RestEngine({} as OAuth2TokenService, {} as LoginTokenSe
 const WRITES = ['amocrm_add_note', 'amocrm_create_contact', 'amocrm_create_lead', 'amocrm_create_task', 'amocrm_update_lead'];
 
 describe('amocrm adapter: static spec conformance', () => {
-  it('is unlisted until verified against a live account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified read-only on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe('amocrm');
     expect(a.name).toBe('amoCRM');
     expect(a.region).toBe('intl');

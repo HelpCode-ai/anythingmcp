@@ -140,8 +140,8 @@ describe('manomano adapter: static spec conformance', () => {
     mockedFetchOutbound.mockReset();
   });
 
-  it('is unlisted until it has been run against a real seller account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified read-only on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.name).toBe('ManoMano');
     expect(a.region).toBe('fr');
     expect(a.icon).toBe('manomano');

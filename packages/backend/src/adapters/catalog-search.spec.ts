@@ -106,8 +106,8 @@ describe('catalog search — aliases', () => {
   it.each([
     ['mercado livre', 'mercado-libre'],
     ['mercadolivre', 'mercado-libre'],
-    ['amocrm', 'kommo'],
-    ['amo crm', 'kommo'],
+    ['amocrm', 'amocrm'],
+    ['amo crm', 'amocrm'],
     ['twitter', 'x'],
     ['lexoffice', 'lexware-office'],
     ['navision', 'dynamics-nav'],
