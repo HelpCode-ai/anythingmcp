@@ -104,6 +104,7 @@ import * as billCom from './intl/bill-com.json';
 import * as bingWebmaster from './intl/bing-webmaster.json';
 import * as bitrix24 from './intl/bitrix24.json';
 import * as bluesky from './intl/bluesky.json';
+import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
 import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
@@ -143,9 +144,11 @@ import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as easypost from './intl/easypost.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
+import * as elevenlabs from './intl/elevenlabs.json';
 import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
+import * as eventbrite from './intl/eventbrite.json';
 import * as exa from './intl/exa.json';
 import * as exerciseCom from './intl/exercise-com.json';
 import * as facebookPages from './intl/facebook-pages.json';
@@ -166,6 +169,7 @@ import * as freshservice from './intl/freshservice.json';
 import * as front from './intl/front.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
+import * as gamma from './intl/gamma.json';
 import * as gelato from './intl/gelato.json';
 import * as gemini from './intl/gemini.json';
 import * as georgianRailway from './intl/georgian-railway.json';
@@ -203,6 +207,7 @@ import * as height from './intl/height.json';
 import * as helium10 from './intl/helium10.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
+import * as heygen from './intl/heygen.json';
 import * as hubspot from './intl/hubspot.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
@@ -253,6 +258,7 @@ import * as microsoftTodo from './intl/microsoft-todo.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mirakl from './intl/mirakl.json';
 import * as miro from './intl/miro.json';
+import * as mistral from './intl/mistral.json';
 import * as mixpanel from './intl/mixpanel.json';
 import * as mollie from './intl/mollie.json';
 import * as monday from './intl/monday.json';
@@ -306,6 +312,7 @@ import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
 import * as redmine from './intl/redmine.json';
+import * as replicate from './intl/replicate.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
 import * as rozetka from './intl/rozetka.json';
@@ -352,6 +359,7 @@ import * as tavily from './intl/tavily.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
+import * as telnyx from './intl/telnyx.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
 import * as tiktokAds from './intl/tiktok-ads.json';
@@ -376,6 +384,7 @@ import * as waveAccounting from './intl/wave-accounting.json';
 import * as webflow from './intl/webflow.json';
 import * as weeek from './intl/weeek.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
+import * as whop from './intl/whop.json';
 import * as wildberries from './intl/wildberries.json';
 import * as wix from './intl/wix.json';
 import * as woocommerce from './intl/woocommerce.json';
@@ -385,6 +394,7 @@ import * as worksection from './intl/worksection.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
 import * as x from './intl/x.json';
+import * as xai from './intl/xai.json';
 import * as xero from './intl/xero.json';
 import * as yandexDisk from './intl/yandex-disk.json';
 import * as youcom from './intl/youcom.json';
@@ -738,6 +748,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bingWebmaster as unknown as AdapterDefinition,
   bitrix24 as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
+  botpress as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
   braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
@@ -777,9 +788,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   easypost as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
+  elevenlabs as unknown as AdapterDefinition,
   erpnext as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
+  eventbrite as unknown as AdapterDefinition,
   exa as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
   facebookPages as unknown as AdapterDefinition,
@@ -800,6 +813,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   front as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
+  gamma as unknown as AdapterDefinition,
   gelato as unknown as AdapterDefinition,
   gemini as unknown as AdapterDefinition,
   georgianRailway as unknown as AdapterDefinition,
@@ -837,6 +851,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helium10 as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
+  heygen as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
@@ -887,6 +902,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mintlify as unknown as AdapterDefinition,
   mirakl as unknown as AdapterDefinition,
   miro as unknown as AdapterDefinition,
+  mistral as unknown as AdapterDefinition,
   mixpanel as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   monday as unknown as AdapterDefinition,
@@ -940,6 +956,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,
   redmine as unknown as AdapterDefinition,
+  replicate as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
@@ -986,6 +1003,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   teamworkProjects as unknown as AdapterDefinition,
   ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
+  telnyx as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
   tiktokAds as unknown as AdapterDefinition,
@@ -1010,6 +1028,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   webflow as unknown as AdapterDefinition,
   weeek as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
+  whop as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
   wix as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
@@ -1019,6 +1038,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
   x as unknown as AdapterDefinition,
+  xai as unknown as AdapterDefinition,
   xero as unknown as AdapterDefinition,
   yandexDisk as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,

@@ -1,0 +1,1780 @@
+{
+  "slug": "eventbrite",
+  "name": "Eventbrite",
+  "description": "Let your AI work with Eventbrite: list your events, attendees with check-in state, orders, ticket types, venues, discount codes and sales reports, and create, update and publish events, tickets, venues and event descriptions after you confirm.",
+  "instructions": "## Eventbrite\nThis connector works with the events of one Eventbrite account through the **Eventbrite API v3** (`https://www.eventbriteapi.com/v3`) with a private token: organizations, events, the event description, ticket types, attendees, orders, venues, discount codes and sales reports. It can create and update events, tickets and venues and publish or unpublish events after you confirm.\n\n**Setup (about 2 minutes)**\n1. Sign in to Eventbrite and open https://www.eventbrite.com/platform/api-keys (Account settings, Developer links, API keys). If there is no key yet, click **Create API key** and fill in the short form.\n2. Copy the **Private token** (not the API key, client secret or public token) into `EVENTBRITE_PRIVATE_TOKEN` and install. It is sent as `Authorization: Bearer <token>` to www.eventbriteapi.com only.\n3. Check the setup with `eventbrite_get_current_user`, then `eventbrite_list_my_organizations`.\n\nThe token acts as the Eventbrite user who created it, with all of their organizations: share the MCP server only with people allowed to see attendees and orders.\n\n**How to work**\n1. Start with `eventbrite_list_my_organizations`: almost every tool needs an organization_id (not the organizer id from a profile URL).\n2. Events: `eventbrite_list_events` (default upcoming events; time_filter past or all for older ones), `eventbrite_get_event`, `eventbrite_get_event_description`.\n3. Sales and guests: `eventbrite_list_ticket_classes`, `eventbrite_list_attendees` (with check-in state), `eventbrite_get_attendee`, `eventbrite_list_event_orders`, `eventbrite_list_organization_orders`, `eventbrite_get_order`, `eventbrite_get_sales_report` and `eventbrite_list_discounts`.\n4. Building an event, each step only after the user confirms: `eventbrite_create_venue` (or pick one with `eventbrite_list_venues`), `eventbrite_create_event` (a draft), `eventbrite_create_ticket_class`, `eventbrite_set_event_description`, then `eventbrite_publish_event` to go live. Change things later with `eventbrite_update_event` and `eventbrite_update_ticket_class`; `eventbrite_unpublish_event` takes an event offline while it has no orders.\n5. `eventbrite_cancel_event` and `eventbrite_delete_event` are installed switched off; an administrator turns them on deliberately. Both only work while an event has no orders.\n\n**Dates**: send times in UTC as `YYYY-MM-DDTHH:MM:SSZ` (no milliseconds) together with the event timezone (`Europe/Berlin`). Answers carry `start.local`, `start.utc` and `start.timezone`.\n\n**Prices**: ticket costs are `CURRENCY,amount in the smallest unit`: `EUR,2500` is 25.00 EUR. Answers show amounts as objects with `display` (e.g. \"€25.00\").\n\n**Paging**: list answers have `pagination.has_more_items` and `pagination.continuation`; pass `continuation` for the next page.\n\n**No public search**: Eventbrite removed public event search from the API in 2019, so this connector only sees events of the user's own organizations.\n\n**Common errors**\n- 401 INVALID_AUTH: the token is wrong or revoked, or the API key was pasted instead of the private token.\n- 403 NOT_AUTHORIZED: the user has no permission for this organization or event.\n- 400 ARGUMENTS_ERROR and similar: a field is invalid; `error_description` names it (e.g. DATE_CONFLICT, VENUE_AND_ONLINE, CANNOT_UNPUBLISH, PAGE_VERSION_DISCONTINUITY).\n- 404 NOT_FOUND: no such event, order or organization for this user.\n- 429 HIT_RATE_LIMIT: 2,000 calls per hour per token; wait and retry.\n\n**Out of scope here**: refunds, check-in through the API, inventory tiers and reserved seating, ticket groups, custom questions, webhooks, media upload, series schedules and copying events.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "eventbrite",
+  "docsUrl": "https://www.eventbrite.com/platform/api",
+  "prerequisites": "An Eventbrite account that organizes events, and its private token from Account settings, Developer links, API keys. About 2 minutes.",
+  "requiredEnvVars": [
+    "EVENTBRITE_PRIVATE_TOKEN"
+  ],
+  "appRegistrationUrl": "https://www.eventbrite.com/platform/api-keys",
+  "envVarMeta": {
+    "EVENTBRITE_PRIVATE_TOKEN": {
+      "label": "Private token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Eventbrite, Account settings, Developer links, API keys: the Private token (not the API key or client secret). Paste it without the Bearer prefix.",
+      "link": "https://www.eventbrite.com/platform/api-keys",
+      "pattern": "^[A-Za-z0-9]{10,}$",
+      "patternMessage": "Paste the private token as Eventbrite shows it: letters and digits only, no spaces or Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Eventbrite refused the token (INVALID_AUTH): it is wrong or revoked, or the API key or client secret was pasted instead of the Private token from the API keys page.",
+    "403": "Eventbrite accepted the token but this user may not do this (NOT_AUTHORIZED).",
+    "429": "Eventbrite's limit of 2,000 calls per hour for this token is reached. Wait and verify again."
+  },
+  "connector": {
+    "name": "Eventbrite API v3",
+    "type": "REST",
+    "baseUrl": "https://www.eventbriteapi.com/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{EVENTBRITE_PRIVATE_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users/me/"
+  },
+  "tools": [
+    {
+      "name": "eventbrite_get_current_user",
+      "description": "Return the Eventbrite user the private token belongs to: id, name, emails. Free and the quickest check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "emails": "$.emails"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_list_my_organizations",
+      "description": "List the organizations the user belongs to: id, name, vertical. Almost every other tool needs an organization_id from here (it is not the organizer id from a profile URL). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/organizations/",
+        "queryParams": {
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "organizations": {
+              "$from": "$.organizations[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "vertical": "vertical",
+                "image_id": "image_id"
+              }
+            },
+            "pagination": "$.pagination"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_list_events",
+      "description": "List the events of an organization, filtered by status and time: id, name, start and end (local and UTC with timezone), status (draft, live, started, ended, completed, canceled), url, currency, capacity, online_event, venue and, with expand ticket_availability, prices and sold-out state. Public event search across Eventbrite no longer exists in the API; this lists your own events. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Event status, or several comma-separated (e.g. live,started). Default all.",
+            "default": "all"
+          },
+          "time_filter": {
+            "type": "string",
+            "description": "current_future (default here), past or all.",
+            "enum": [
+              "current_future",
+              "past",
+              "all"
+            ],
+            "default": "current_future"
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "start_asc",
+              "start_desc",
+              "created_asc",
+              "created_desc",
+              "name_asc",
+              "name_desc"
+            ],
+            "default": "start_asc"
+          },
+          "name_filter": {
+            "type": "string",
+            "description": "Only events whose name contains this text."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Events per page, e.g. 20 or 50.",
+            "default": 20
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated expansions, e.g. venue,ticket_availability (lowest and highest price, sold out, sales start). Also organizer, category, format, refund_policy, event_sales_status.",
+            "default": "venue"
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/events/",
+        "queryParams": {
+          "status": "$status",
+          "time_filter": "$time_filter",
+          "order_by": "$order_by",
+          "name_filter": "$name_filter",
+          "page_size": "$page_size",
+          "expand": "$expand",
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "events": {
+              "$from": "$.events[*]",
+              "$select": {
+                "id": "id",
+                "name": "name.text",
+                "summary": "summary",
+                "url": "url",
+                "status": "status",
+                "start": "start",
+                "end": "end",
+                "currency": "currency",
+                "online_event": "online_event",
+                "listed": "listed",
+                "shareable": "shareable",
+                "invite_only": "invite_only",
+                "capacity": "capacity",
+                "is_series": "is_series",
+                "is_series_parent": "is_series_parent",
+                "series_id": "series_id",
+                "venue_id": "venue_id",
+                "organization_id": "organization_id",
+                "organizer_id": "organizer_id",
+                "category_id": "category_id",
+                "format_id": "format_id",
+                "created": "created",
+                "changed": "changed",
+                "published": "published",
+                "venue": {
+                  "id": "venue.id",
+                  "name": "venue.name",
+                  "address": "venue.address.localized_address_display"
+                },
+                "ticket_availability": "ticket_availability"
+              }
+            },
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_get_event",
+      "description": "Get one event with its name, summary, dates, status, url, currency, capacity, listing settings, venue and ticket availability (with the default expand). For the long description use eventbrite_get_event_description. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated expansions, e.g. venue,ticket_availability (lowest and highest price, sold out, sales start). Also organizer, category, format, refund_policy, event_sales_status.",
+            "default": "venue,ticket_availability"
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name.text",
+            "summary": "$.summary",
+            "url": "$.url",
+            "status": "$.status",
+            "start": "$.start",
+            "end": "$.end",
+            "currency": "$.currency",
+            "online_event": "$.online_event",
+            "listed": "$.listed",
+            "shareable": "$.shareable",
+            "invite_only": "$.invite_only",
+            "capacity": "$.capacity",
+            "is_series": "$.is_series",
+            "is_series_parent": "$.is_series_parent",
+            "series_id": "$.series_id",
+            "venue_id": "$.venue_id",
+            "organization_id": "$.organization_id",
+            "organizer_id": "$.organizer_id",
+            "category_id": "$.category_id",
+            "format_id": "$.format_id",
+            "created": "$.created",
+            "changed": "$.changed",
+            "published": "$.published",
+            "venue": {
+              "id": "$.venue.id",
+              "name": "$.venue.name",
+              "address": "$.venue.address.localized_address_display"
+            },
+            "ticket_availability": "$.ticket_availability"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_create_event",
+      "description": "Create a new event as a draft in an organization. Confirm the name, dates, timezone and currency with the user first. The event stays unpublished (not visible, no sales) until eventbrite_publish_event; add tickets with eventbrite_create_ticket_class and the long description with eventbrite_set_event_description before publishing. Set venue_id (from eventbrite_list_venues or eventbrite_create_venue) or online_event true, not both. Returns the new event with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Event name."
+          },
+          "start_utc": {
+            "type": "string",
+            "description": "Start in UTC, YYYY-MM-DDTHH:MM:SSZ without milliseconds, e.g. 2026-11-20T18:00:00Z."
+          },
+          "end_utc": {
+            "type": "string",
+            "description": "End in UTC, same format, after the start."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the event, e.g. Europe/Berlin or America/New_York."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency for tickets, e.g. EUR or USD."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short plain-text summary, up to 140 characters."
+          },
+          "online_event": {
+            "type": "boolean",
+            "description": "true for an online-only event without a venue."
+          },
+          "venue_id": {
+            "type": "string",
+            "description": "Venue id; leave out for online events."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "false to keep the event out of Eventbrite search (default true)."
+          },
+          "shareable": {
+            "type": "boolean",
+            "description": "Show social sharing buttons."
+          },
+          "invite_only": {
+            "type": "boolean",
+            "description": "Only invited people can see the page (cannot be combined with listed true)."
+          },
+          "capacity": {
+            "type": "integer",
+            "description": "Total capacity; leave out to use the sum of the ticket capacities."
+          },
+          "organizer_id": {
+            "type": "string",
+            "description": "Organizer profile id; leave out for the default organizer."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 103 Music, 102 Science & Technology, 101 Business."
+          },
+          "format_id": {
+            "type": "string",
+            "description": "Format id, e.g. 1 Conference, 2 Seminar or Talk, 9 Class or Workshop."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the listing page, e.g. de_DE, en_US, it_IT (default en_US)."
+          }
+        },
+        "required": [
+          "organization_id",
+          "name",
+          "start_utc",
+          "end_utc",
+          "timezone",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/organizations/{organization_id}/events/",
+        "bodyMapping": {
+          "event": {
+            "name": {
+              "html": "$name"
+            },
+            "start": {
+              "timezone": "$timezone",
+              "utc": "$start_utc"
+            },
+            "end": {
+              "timezone": "$timezone",
+              "utc": "$end_utc"
+            },
+            "currency": "$currency",
+            "summary": "$summary",
+            "online_event": "$online_event",
+            "venue_id": "$venue_id",
+            "listed": "$listed",
+            "shareable": "$shareable",
+            "invite_only": "$invite_only",
+            "capacity": "$capacity",
+            "organizer_id": "$organizer_id",
+            "category_id": "$category_id",
+            "format_id": "$format_id",
+            "locale": "$locale"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name.text",
+            "summary": "$.summary",
+            "url": "$.url",
+            "status": "$.status",
+            "start": "$.start",
+            "end": "$.end",
+            "currency": "$.currency",
+            "online_event": "$.online_event",
+            "listed": "$.listed",
+            "shareable": "$.shareable",
+            "invite_only": "$.invite_only",
+            "capacity": "$.capacity",
+            "is_series": "$.is_series",
+            "is_series_parent": "$.is_series_parent",
+            "series_id": "$.series_id",
+            "venue_id": "$.venue_id",
+            "organization_id": "$.organization_id",
+            "organizer_id": "$.organizer_id",
+            "category_id": "$.category_id",
+            "format_id": "$.format_id",
+            "created": "$.created",
+            "changed": "$.changed",
+            "published": "$.published",
+            "venue": {
+              "id": "$.venue.id",
+              "name": "$.venue.name",
+              "address": "$.venue.address.localized_address_display"
+            },
+            "ticket_availability": "$.ticket_availability"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "eventbrite_update_event",
+      "description": "Change an event's name, dates, summary, venue, capacity or listing settings; only the fields you pass change. Show the user the changes and confirm before calling: a live event changes for everyone who sees or bought it. Dates take an object with timezone and utc. Currency cannot change once paid tickets are sold. Returns the updated event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "name": {
+            "type": "object",
+            "description": "New name as {\"html\": \"Summer Party 2026\"}."
+          },
+          "start": {
+            "type": "object",
+            "description": "New start as {\"timezone\": \"Europe/Berlin\", \"utc\": \"2026-11-20T18:00:00Z\"}."
+          },
+          "end": {
+            "type": "object",
+            "description": "New end as {\"timezone\": \"Europe/Berlin\", \"utc\": \"2026-11-20T22:00:00Z\"}; same timezone as start."
+          },
+          "summary": {
+            "type": "string",
+            "description": "New plain-text summary, up to 140 characters."
+          },
+          "online_event": {
+            "type": "boolean",
+            "description": "true for online only."
+          },
+          "venue_id": {
+            "type": "string",
+            "description": "New venue id."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Show in Eventbrite search."
+          },
+          "shareable": {
+            "type": "boolean",
+            "description": "Show social sharing buttons."
+          },
+          "invite_only": {
+            "type": "boolean",
+            "description": "Only invited people can see the page."
+          },
+          "capacity": {
+            "type": "integer",
+            "description": "New total capacity."
+          },
+          "currency": {
+            "type": "string",
+            "description": "New currency (only before paid sales)."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id."
+          },
+          "format_id": {
+            "type": "string",
+            "description": "Format id."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/",
+        "bodyMapping": {
+          "event": {
+            "name": "$name",
+            "start": "$start",
+            "end": "$end",
+            "summary": "$summary",
+            "online_event": "$online_event",
+            "venue_id": "$venue_id",
+            "listed": "$listed",
+            "shareable": "$shareable",
+            "invite_only": "$invite_only",
+            "capacity": "$capacity",
+            "currency": "$currency",
+            "category_id": "$category_id",
+            "format_id": "$format_id"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name.text",
+            "summary": "$.summary",
+            "url": "$.url",
+            "status": "$.status",
+            "start": "$.start",
+            "end": "$.end",
+            "currency": "$.currency",
+            "online_event": "$.online_event",
+            "listed": "$.listed",
+            "shareable": "$.shareable",
+            "invite_only": "$.invite_only",
+            "capacity": "$.capacity",
+            "is_series": "$.is_series",
+            "is_series_parent": "$.is_series_parent",
+            "series_id": "$.series_id",
+            "venue_id": "$.venue_id",
+            "organization_id": "$.organization_id",
+            "organizer_id": "$.organizer_id",
+            "category_id": "$.category_id",
+            "format_id": "$.format_id",
+            "created": "$.created",
+            "changed": "$.changed",
+            "published": "$.published",
+            "venue": {
+              "id": "$.venue.id",
+              "name": "$.venue.name",
+              "address": "$.venue.address.localized_address_display"
+            },
+            "ticket_availability": "$.ticket_availability"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "eventbrite_publish_event",
+      "description": "Publish an event: it becomes visible and its tickets go on sale. Confirm with the user first. Publishing needs a name, a description, an organizer, at least one ticket class and, for paid tickets, payout settings; otherwise Eventbrite answers 400 naming what is missing. Returns published true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/publish/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "published": "$.published"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "eventbrite_unpublish_event",
+      "description": "Unpublish an event: it is no longer visible and stops selling. Confirm with the user first. Only possible while the event has no pending or completed orders (a completed and paid-out paid event can be unpublished). Returns unpublished true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/unpublish/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "unpublished": "$.unpublished"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "eventbrite_cancel_event",
+      "description": "Cancel an event for good. Only possible when it has no pending or completed orders (refund them first). Installed switched off: an administrator turns it on deliberately. Show the event with eventbrite_get_event first and call only after the user confirms. Returns canceled true.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/cancel/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "canceled": "$.canceled"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "eventbrite_delete_event",
+      "description": "Delete an event for good. Only possible when it has no pending or completed orders. Installed switched off: an administrator turns it on deliberately. Show the event with eventbrite_get_event first and call only after the user confirms. Returns deleted true.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/events/{event_id}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deleted": "$.deleted"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_get_event_description",
+      "description": "Get the long description of an event (its structured content): page_version_number and the modules (text with HTML, images, videos) and widgets (agenda, FAQs). This is the latest working version, published or not. eventbrite_set_event_description needs page_version_number + 1 as version (1 when there is no version yet). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "listing (the event page, default) or digital_content (online event page).",
+            "enum": [
+              "listing",
+              "digital_content"
+            ]
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/structured_content/edit/",
+        "queryParams": {
+          "purpose": "$purpose"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "page_version_number": "$.page_version_number",
+            "purpose": "$.purpose",
+            "modules": {
+              "$from": "$.modules[*]",
+              "$select": {
+                "id": "id",
+                "type": "type",
+                "data": "data"
+              }
+            },
+            "widgets": "$.widgets"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_set_event_description",
+      "description": "Replace the long description of an event with one HTML text block and publish it. This replaces every existing module (images and videos too), so read eventbrite_get_event_description first, keep what should stay in the HTML, show the user the new text and call only after the user confirms. version must be the current page_version_number + 1 (400 PAGE_VERSION_DISCONTINUITY otherwise; read the description again and retry). HTML allowed: paragraphs, bold, italics, links and lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "version": {
+            "type": "string",
+            "description": "New version: page_version_number from eventbrite_get_event_description plus 1, or 1 for the first description."
+          },
+          "html": {
+            "type": "string",
+            "description": "The description as HTML, e.g. <p>Doors open at <strong>7 pm</strong>.</p>"
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "true (default) makes the new text visible on the event page; false saves it as a draft.",
+            "default": true
+          },
+          "purpose": {
+            "type": "string",
+            "description": "listing (default) or digital_content.",
+            "enum": [
+              "listing",
+              "digital_content"
+            ],
+            "default": "listing"
+          }
+        },
+        "required": [
+          "event_id",
+          "version",
+          "html"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/structured_content/{version}/",
+        "bodyMapping": {
+          "modules": [
+            {
+              "type": "text",
+              "data": {
+                "body": {
+                  "text": "$html",
+                  "alignment": "left"
+                }
+              }
+            }
+          ],
+          "publish": "$publish",
+          "purpose": "$purpose"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "page_version_number": "$.page_version_number",
+            "purpose": "$.purpose",
+            "modules": {
+              "$from": "$.modules[*]",
+              "$select": {
+                "id": "id",
+                "type": "type"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "eventbrite_list_ticket_classes",
+      "description": "List an event's ticket types: id, name, free or cost (with fee and tax), capacity, quantity_sold, sales start and end, on_sale_status, hidden, min and max per order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/ticket_classes/",
+        "queryParams": {
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "ticket_classes": {
+              "$from": "$.ticket_classes[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "display_name": "display_name",
+                "description": "description",
+                "free": "free",
+                "donation": "donation",
+                "cost": "cost",
+                "fee": "fee",
+                "tax": "tax",
+                "capacity": "capacity",
+                "quantity_total": "quantity_total",
+                "quantity_sold": "quantity_sold",
+                "sales_start": "sales_start",
+                "sales_end": "sales_end",
+                "on_sale_status": "on_sale_status",
+                "hidden": "hidden",
+                "minimum_quantity": "minimum_quantity",
+                "maximum_quantity": "maximum_quantity",
+                "include_fee": "include_fee",
+                "sales_channels": "sales_channels",
+                "category": "category",
+                "inventory_tier_id": "inventory_tier_id"
+              }
+            },
+            "pagination": "$.pagination"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_create_ticket_class",
+      "description": "Add a ticket type to an event, free (free true) or paid (cost such as EUR,2500 for 25.00 EUR in the event currency) with a capacity. Confirm name, price and quantity with the user first. Paid tickets need payout settings in Eventbrite before the event can be published. Returns the ticket class with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "name": {
+            "type": "string",
+            "description": "Ticket name, e.g. General Admission."
+          },
+          "free": {
+            "type": "boolean",
+            "description": "true for a free ticket (leave cost out)."
+          },
+          "cost": {
+            "type": "string",
+            "description": "Price as currency and amount in the smallest unit, matching the event currency: EUR,2500 is 25.00 EUR."
+          },
+          "capacity": {
+            "type": "integer",
+            "description": "How many of this ticket can be sold."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description shown with the ticket."
+          },
+          "minimum_quantity": {
+            "type": "integer",
+            "description": "Minimum per order."
+          },
+          "maximum_quantity": {
+            "type": "integer",
+            "description": "Maximum per order."
+          },
+          "sales_start": {
+            "type": "string",
+            "description": "Sales start in UTC, YYYY-MM-DDTHH:MM:SSZ; default when the event is published."
+          },
+          "sales_end": {
+            "type": "string",
+            "description": "Sales end in UTC, YYYY-MM-DDTHH:MM:SSZ; default one hour before the start."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hide this ticket from the event page."
+          },
+          "include_fee": {
+            "type": "boolean",
+            "description": "Absorb the Eventbrite fee into the price."
+          },
+          "sales_channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where it sells: [\"online\"], [\"atd\"] (at the door) or both."
+          }
+        },
+        "required": [
+          "event_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/ticket_classes/",
+        "bodyMapping": {
+          "ticket_class": {
+            "name": "$name",
+            "free": "$free",
+            "cost": "$cost",
+            "capacity": "$capacity",
+            "description": "$description",
+            "minimum_quantity": "$minimum_quantity",
+            "maximum_quantity": "$maximum_quantity",
+            "sales_start": "$sales_start",
+            "sales_end": "$sales_end",
+            "hidden": "$hidden",
+            "include_fee": "$include_fee",
+            "sales_channels": "$sales_channels"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "display_name": "$.display_name",
+            "description": "$.description",
+            "free": "$.free",
+            "donation": "$.donation",
+            "cost": "$.cost",
+            "fee": "$.fee",
+            "tax": "$.tax",
+            "capacity": "$.capacity",
+            "quantity_total": "$.quantity_total",
+            "quantity_sold": "$.quantity_sold",
+            "sales_start": "$.sales_start",
+            "sales_end": "$.sales_end",
+            "on_sale_status": "$.on_sale_status",
+            "hidden": "$.hidden",
+            "minimum_quantity": "$.minimum_quantity",
+            "maximum_quantity": "$.maximum_quantity",
+            "include_fee": "$.include_fee",
+            "sales_channels": "$.sales_channels",
+            "category": "$.category",
+            "inventory_tier_id": "$.inventory_tier_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "eventbrite_update_ticket_class",
+      "description": "Change a ticket type: name, price, capacity, sales dates, limits per order or hidden; only the fields you pass change. Confirm the change with the user first. The price cannot change once tickets were sold. Returns the updated ticket class.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "ticket_class_id": {
+            "type": "string",
+            "description": "Ticket class id from eventbrite_list_ticket_classes."
+          },
+          "name": {
+            "type": "string",
+            "description": "Ticket name, e.g. General Admission."
+          },
+          "free": {
+            "type": "boolean",
+            "description": "true for a free ticket (leave cost out)."
+          },
+          "cost": {
+            "type": "string",
+            "description": "Price as currency and amount in the smallest unit, matching the event currency: EUR,2500 is 25.00 EUR."
+          },
+          "capacity": {
+            "type": "integer",
+            "description": "How many of this ticket can be sold."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description shown with the ticket."
+          },
+          "minimum_quantity": {
+            "type": "integer",
+            "description": "Minimum per order."
+          },
+          "maximum_quantity": {
+            "type": "integer",
+            "description": "Maximum per order."
+          },
+          "sales_start": {
+            "type": "string",
+            "description": "Sales start in UTC, YYYY-MM-DDTHH:MM:SSZ; default when the event is published."
+          },
+          "sales_end": {
+            "type": "string",
+            "description": "Sales end in UTC, YYYY-MM-DDTHH:MM:SSZ; default one hour before the start."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hide this ticket from the event page."
+          },
+          "include_fee": {
+            "type": "boolean",
+            "description": "Absorb the Eventbrite fee into the price."
+          },
+          "sales_channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where it sells: [\"online\"], [\"atd\"] (at the door) or both."
+          }
+        },
+        "required": [
+          "event_id",
+          "ticket_class_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/{event_id}/ticket_classes/{ticket_class_id}/",
+        "bodyMapping": {
+          "ticket_class": {
+            "name": "$name",
+            "free": "$free",
+            "cost": "$cost",
+            "capacity": "$capacity",
+            "description": "$description",
+            "minimum_quantity": "$minimum_quantity",
+            "maximum_quantity": "$maximum_quantity",
+            "sales_start": "$sales_start",
+            "sales_end": "$sales_end",
+            "hidden": "$hidden",
+            "include_fee": "$include_fee",
+            "sales_channels": "$sales_channels"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "display_name": "$.display_name",
+            "description": "$.description",
+            "free": "$.free",
+            "donation": "$.donation",
+            "cost": "$.cost",
+            "fee": "$.fee",
+            "tax": "$.tax",
+            "capacity": "$.capacity",
+            "quantity_total": "$.quantity_total",
+            "quantity_sold": "$.quantity_sold",
+            "sales_start": "$.sales_start",
+            "sales_end": "$.sales_end",
+            "on_sale_status": "$.on_sale_status",
+            "hidden": "$.hidden",
+            "minimum_quantity": "$.minimum_quantity",
+            "maximum_quantity": "$.maximum_quantity",
+            "include_fee": "$.include_fee",
+            "sales_channels": "$.sales_channels",
+            "category": "$.category",
+            "inventory_tier_id": "$.inventory_tier_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "eventbrite_list_attendees",
+      "description": "List the attendees of an event (one per ticket sold): id, name, email, ticket type, status (Attending, Checked In, Not Attending), checked_in, cancelled, refunded, order_id and the check-in state of each barcode. Barcode values are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "status": {
+            "type": "string",
+            "description": "attending (attending or checked in), not_attending, or unpaid.",
+            "enum": [
+              "attending",
+              "not_attending",
+              "unpaid"
+            ]
+          },
+          "changed_since": {
+            "type": "string",
+            "description": "Only attendees changed at or after this UTC time, YYYY-MM-DDTHH:MM:SSZ."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/attendees/",
+        "queryParams": {
+          "status": "$status",
+          "changed_since": "$changed_since",
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "attendees": {
+              "$from": "$.attendees[*]",
+              "$select": {
+                "id": "id",
+                "created": "created",
+                "changed": "changed",
+                "status": "status",
+                "checked_in": "checked_in",
+                "cancelled": "cancelled",
+                "refunded": "refunded",
+                "ticket_class_id": "ticket_class_id",
+                "ticket_class_name": "ticket_class_name",
+                "order_id": "order_id",
+                "event_id": "event_id",
+                "name": "profile.name",
+                "email": "profile.email",
+                "gross": "costs.gross.display",
+                "barcodes": {
+                  "$from": "barcodes[*]",
+                  "$select": {
+                    "status": "status",
+                    "checkin_type": "checkin_type",
+                    "changed": "changed"
+                  }
+                }
+              }
+            },
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_get_attendee",
+      "description": "Get one attendee of an event with profile (name, email, phone, company, job title), ticket type, cost, status, check-in state per barcode and answers to the order form questions. Barcode values are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "attendee_id": {
+            "type": "string",
+            "description": "Attendee id from eventbrite_list_attendees."
+          }
+        },
+        "required": [
+          "event_id",
+          "attendee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/attendees/{attendee_id}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "created": "$.created",
+            "changed": "$.changed",
+            "status": "$.status",
+            "checked_in": "$.checked_in",
+            "cancelled": "$.cancelled",
+            "refunded": "$.refunded",
+            "ticket_class_id": "$.ticket_class_id",
+            "ticket_class_name": "$.ticket_class_name",
+            "order_id": "$.order_id",
+            "event_id": "$.event_id",
+            "name": "$.profile.name",
+            "email": "$.profile.email",
+            "gross": "$.costs.gross.display",
+            "profile": "$.profile",
+            "costs": "$.costs",
+            "answers": "$.answers",
+            "barcodes": {
+              "$from": "$.barcodes[*]",
+              "$select": {
+                "status": "status",
+                "checkin_type": "checkin_type",
+                "changed": "changed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_list_event_orders",
+      "description": "List the orders of an event: id, buyer name and email, status, created time, gross, base price, Eventbrite fee, payment fee and tax. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, e.g. from eventbrite_list_events."
+          },
+          "status": {
+            "type": "string",
+            "description": "active (attending, default), inactive (not attending), both, or all_not_deleted.",
+            "enum": [
+              "active",
+              "inactive",
+              "both",
+              "all_not_deleted"
+            ]
+          },
+          "changed_since": {
+            "type": "string",
+            "description": "Only orders changed at or after this UTC time, YYYY-MM-DDTHH:MM:SSZ."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}/orders/",
+        "queryParams": {
+          "status": "$status",
+          "changed_since": "$changed_since",
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "orders": {
+              "$from": "$.orders[*]",
+              "$select": {
+                "id": "id",
+                "created": "created",
+                "changed": "changed",
+                "name": "name",
+                "email": "email",
+                "status": "status",
+                "event_id": "event_id",
+                "gross": "costs.gross.display",
+                "base_price": "costs.base_price.display",
+                "eventbrite_fee": "costs.eventbrite_fee.display",
+                "payment_fee": "costs.payment_fee.display",
+                "tax": "costs.tax.display"
+              }
+            },
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_list_organization_orders",
+      "description": "List the orders across all events of an organization: id, event_id, buyer name and email, status, created time and amounts. Use changed_since to look at recent sales. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "status": {
+            "type": "string",
+            "description": "active (attending, default), inactive (not attending), both, or all_not_deleted.",
+            "enum": [
+              "active",
+              "inactive",
+              "both",
+              "all_not_deleted"
+            ]
+          },
+          "changed_since": {
+            "type": "string",
+            "description": "Only orders changed at or after this UTC time, YYYY-MM-DDTHH:MM:SSZ."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/orders/",
+        "queryParams": {
+          "status": "$status",
+          "changed_since": "$changed_since",
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "orders": {
+              "$from": "$.orders[*]",
+              "$select": {
+                "id": "id",
+                "created": "created",
+                "changed": "changed",
+                "name": "name",
+                "email": "email",
+                "status": "status",
+                "event_id": "event_id",
+                "gross": "costs.gross.display",
+                "base_price": "costs.base_price.display",
+                "eventbrite_fee": "costs.eventbrite_fee.display",
+                "payment_fee": "costs.payment_fee.display",
+                "tax": "costs.tax.display"
+              }
+            },
+            "pagination": "$.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_get_order",
+      "description": "Get one order with buyer, status and the full cost breakdown; expand attendees to see the tickets in it, event for the event. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated expansions: attendees, event.",
+            "default": "attendees"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "created": "$.created",
+            "changed": "$.changed",
+            "name": "$.name",
+            "email": "$.email",
+            "status": "$.status",
+            "event_id": "$.event_id",
+            "costs": "$.costs",
+            "attendees": {
+              "$from": "$.attendees[*]",
+              "$select": {
+                "id": "id",
+                "created": "created",
+                "changed": "changed",
+                "status": "status",
+                "checked_in": "checked_in",
+                "cancelled": "cancelled",
+                "refunded": "refunded",
+                "ticket_class_id": "ticket_class_id",
+                "ticket_class_name": "ticket_class_name",
+                "order_id": "order_id",
+                "event_id": "event_id",
+                "name": "profile.name",
+                "email": "profile.email",
+                "gross": "costs.gross.display"
+              }
+            },
+            "event": {
+              "id": "$.event.id",
+              "name": "$.event.name.text",
+              "start": "$.event.start",
+              "status": "$.event.status"
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "eventbrite_list_venues",
+      "description": "List the saved venues of an organization: id, name, address, capacity and age restriction. Use the id as venue_id when creating or updating an event. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/venues/",
+        "queryParams": {
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "venues": {
+              "$from": "$.venues[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "capacity": "capacity",
+                "age_restriction": "age_restriction",
+                "address": "address.localized_address_display",
+                "city": "address.city",
+                "country": "address.country",
+                "latitude": "latitude",
+                "longitude": "longitude"
+              }
+            },
+            "pagination": "$.pagination"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_create_venue",
+      "description": "Save a new venue in an organization so events can use it. Confirm name and address with the user first. Returns the venue with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Venue name."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: {\"address_1\": \"Hauptstr. 1\", \"address_2\": \"\", \"city\": \"Freiburg\", \"region\": \"BW\", \"postal_code\": \"79098\", \"country\": \"DE\"}; latitude and longitude as strings may be added here too, never at the top level."
+          },
+          "capacity": {
+            "type": "integer",
+            "description": "Venue capacity."
+          },
+          "age_restriction": {
+            "type": "string",
+            "description": "Age restriction.",
+            "enum": [
+              "AGE_RESTRICTION_ALL_AGES",
+              "AGE_RESTRICTION_MIN_TWELVE",
+              "AGE_RESTRICTION_MIN_THIRTEEN",
+              "AGE_RESTRICTION_MIN_FOURTEEN",
+              "AGE_RESTRICTION_MIN_FIFTEEN",
+              "AGE_RESTRICTION_MIN_SIXTEEN",
+              "AGE_RESTRICTION_MIN_SEVENTEEN",
+              "AGE_RESTRICTION_MIN_EIGHTEEN",
+              "AGE_RESTRICTION_MIN_NINETEEN",
+              "AGE_RESTRICTION_MIN_TWENTY_ONE",
+              "AGE_RESTRICTION_UNDER_TWENTY_ONE_WITH_GUARDIAN",
+              "AGE_RESTRICTION_UNDER_EIGHTEEN_WITH_GUARDIAN"
+            ]
+          },
+          "google_place_id": {
+            "type": "string",
+            "description": "Google Place id of the venue, if known."
+          }
+        },
+        "required": [
+          "organization_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/organizations/{organization_id}/venues/",
+        "bodyMapping": {
+          "venue": {
+            "name": "$name",
+            "address": "$address",
+            "capacity": "$capacity",
+            "age_restriction": "$age_restriction",
+            "google_place_id": "$google_place_id"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "capacity": "$.capacity",
+            "age_restriction": "$.age_restriction",
+            "address": "$.address.localized_address_display",
+            "city": "$.address.city",
+            "country": "$.address.country",
+            "latitude": "$.latitude",
+            "longitude": "$.longitude"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "eventbrite_list_discounts",
+      "description": "List discount, access and promo codes of an organization: id, code, type, amount_off or percent_off, how many are available and used, validity dates and the event or ticket classes they apply to. With scope event (default) event_id is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id from eventbrite_list_my_organizations (not the organizer id)."
+          },
+          "scope": {
+            "type": "string",
+            "description": "event (codes of one event, needs event_id), multi_events or user.",
+            "enum": [
+              "event",
+              "multi_events",
+              "user"
+            ],
+            "default": "event"
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id; required for scope event."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only the code with exactly this name."
+          },
+          "code_filter": {
+            "type": "string",
+            "description": "Only codes containing this text (not together with code)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this kind: coded (discount code), access (access code), public (public discount) or hold.",
+            "enum": [
+              "coded",
+              "access",
+              "public",
+              "hold"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Codes per page."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "pagination.continuation from the previous answer, for the next page (only while has_more_items is true)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/discounts/",
+        "queryParams": {
+          "scope": "$scope",
+          "event_id": "$event_id",
+          "code": "$code",
+          "code_filter": "$code_filter",
+          "type": "$type",
+          "page_size": "$page_size",
+          "continuation": "$continuation"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "discounts": {
+              "$from": "$.discounts[*]",
+              "$select": {
+                "id": "id",
+                "code": "code",
+                "type": "type",
+                "amount_off": "amount_off",
+                "percent_off": "percent_off",
+                "quantity_available": "quantity_available",
+                "quantity_sold": "quantity_sold",
+                "start_date": "start_date",
+                "end_date": "end_date",
+                "event_id": "event_id",
+                "ticket_class_ids": "ticket_class_ids",
+                "ticket_group_id": "ticket_group_id"
+              }
+            },
+            "pagination": "$.pagination"
+          }
+        }
+      }
+    },
+    {
+      "name": "eventbrite_get_sales_report",
+      "description": "Get a sales report for one or more events: gross, net, quantity, fees and royalty per period (day by default), optionally grouped by ticket, payment method, currency, country, sales channel and more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Event ids to report on, e.g. [\"123456789\"]."
+          },
+          "event_status": {
+            "type": "string",
+            "description": "Limit to events with this status.",
+            "enum": [
+              "all",
+              "live",
+              "ended"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, YYYY-MM-DD."
+          },
+          "date_facet": {
+            "type": "string",
+            "description": "Period per row: fifteen, hour, day (default), event_day, week, month, year or none (one total).",
+            "enum": [
+              "fifteen",
+              "hour",
+              "day",
+              "event_day",
+              "week",
+              "month",
+              "year",
+              "none"
+            ]
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Break out by: ticket, payment_method, currency, event, country, city, sales_channel_lvl_1, delivery_method and others."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone of the dates, e.g. Europe/Berlin; default the first event's timezone."
+          }
+        },
+        "required": [
+          "event_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/sales/",
+        "queryParams": {
+          "event_ids": "$event_ids",
+          "event_status": "$event_status",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_facet": "$date_facet",
+          "group_by": "$group_by",
+          "timezone": "$timezone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "timezone": "$.timezone",
+            "event_ids": "$.event_ids",
+            "totals": "$.totals",
+            "data": "$.data"
+          },
+          "maxBytes": 60000
+        }
+      }
+    }
+  ]
+}
