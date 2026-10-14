@@ -30,6 +30,47 @@ function refreshWindowMs(lifetimeMs: number | undefined): number {
     : PROACTIVE_REFRESH_BUFFER_MS;
 }
 
+/**
+ * The cross-process refresh lock (see withRefreshLock): how long to wait for
+ * a database connection to hold it, and how long the holding transaction may
+ * live (the token request alone may take 10 s).
+ */
+const REFRESH_LOCK_MAX_WAIT_MS = 3_000;
+const REFRESH_LOCK_TIMEOUT_MS = 30_000;
+const REFRESH_LOCK_NAMESPACE = 'amcp:oauth2-refresh:';
+
+/** What a renewal may do besides asking the token endpoint. */
+interface RenewOptions {
+  /**
+   * Take the token stored on the connector instead of spending the refresh
+   * token, when another process (the other half of a blue/green deploy) or a
+   * new authorization stored a usable one.
+   */
+  adoptStored?: boolean;
+  /**
+   * The API refused a token sent at this time: a stored token only counts
+   * when it was obtained afterwards, whatever its expiry says.
+   */
+  rejectedAt?: number;
+}
+
+/** The connector reads and writes a renewal makes: the client, or the lock's transaction. */
+type ConnectorDb = Pick<PrismaService, 'connector'>;
+
+/** A renewed token that still has to be stored. */
+interface Rotation {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  expiresIn?: number;
+}
+
+/** What a renewal under the lock obtained, and whether it was stored. */
+interface PendingRotation {
+  rotation?: Rotation;
+  saved?: boolean;
+}
+
 interface CachedToken {
   accessToken: string;
   expiresAt: number;
@@ -186,10 +227,136 @@ export class OAuth2TokenService {
    * Refresh the OAuth2 access token using the refresh token.
    * On success: caches in-memory and persists to DB.
    * Returns the new access token, or null on failure.
+   *
+   * For a saved connector the whole renewal (read the stored refresh token,
+   * ask the token endpoint, store what it returned) runs under a database
+   * lock on the connector, so two processes never spend the same refresh
+   * token: a provider that rotates it (Cloudinary, JTL, Sage, DATEV) accepts
+   * the first and refuses the second with invalid_grant.
    */
   async refreshToken(
     authConfig: Record<string, unknown>,
     connectorId?: string,
+    options: RenewOptions = {},
+  ): Promise<string | null> {
+    if (!connectorId) return this.renew(authConfig, undefined, this.prisma, options);
+    return this.withRefreshLock(connectorId, (db, pending) =>
+      this.renew(authConfig, connectorId, db, options, pending),
+    );
+  }
+
+  /**
+   * Runs `fn` while holding a Postgres advisory lock on the connector, inside
+   * a transaction whose client `fn` uses for its reads and writes (one
+   * connection, so a full pool cannot deadlock against itself). The renewed
+   * token is written before the lock is released; should the transaction
+   * fail after the token endpoint answered, the token is written again
+   * outside it rather than lost.
+   *
+   * Without a way to take the lock (no interactive transactions, or no
+   * connection free within REFRESH_LOCK_MAX_WAIT_MS) the renewal runs
+   * unlocked, as it did before, guarded only by the in-process mutex.
+   */
+  private async withRefreshLock(
+    connectorId: string,
+    fn: (db: ConnectorDb, pending: PendingRotation) => Promise<string | null>,
+  ): Promise<string | null> {
+    const prisma = this.prisma as unknown as {
+      $transaction?: (
+        run: (tx: any) => Promise<void>,
+        opts: { maxWait: number; timeout: number },
+      ) => Promise<void>;
+    };
+    if (typeof prisma.$transaction !== 'function') {
+      return fn(this.prisma, {});
+    }
+
+    const pending: PendingRotation = {};
+    let started = false;
+    let outcome: { value: string | null } | undefined;
+    let failure: unknown;
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          started = true;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${REFRESH_LOCK_NAMESPACE + connectorId}))`;
+          outcome = { value: await fn(tx, pending) };
+        },
+        { maxWait: REFRESH_LOCK_MAX_WAIT_MS, timeout: REFRESH_LOCK_TIMEOUT_MS },
+      );
+    } catch (err: any) {
+      if (!started) {
+        this.logger.warn(
+          `OAuth2: no database connection for the refresh lock of connector ${connectorId} ` +
+            `(${err?.message ?? err}); refreshing without it`,
+        );
+        return fn(this.prisma, {});
+      }
+      failure = err;
+    }
+
+    // The token endpoint rotated the refresh token, but the write did not
+    // survive (it failed, which leaves Postgres to roll the transaction back
+    // on commit, or the transaction itself failed): store it again outside,
+    // or the connector is left holding a refresh token the provider revoked.
+    if (pending.rotation && (failure !== undefined || !pending.saved)) {
+      this.logger.warn(
+        `OAuth2: the renewed token of connector ${connectorId} was not stored under the refresh lock` +
+          (failure !== undefined ? ` (${(failure as Error)?.message ?? failure})` : '') +
+          '; storing it again',
+      );
+      const r = pending.rotation;
+      await this.persistRefreshedToken(this.prisma, connectorId, r.accessToken, r.refreshToken, r.expiresAt, r.expiresIn);
+      return r.accessToken;
+    }
+    if (outcome) return outcome.value;
+    throw failure;
+  }
+
+  /**
+   * The stored token, when it can be used instead of a renewal (see
+   * RenewOptions.adoptStored). Cached like a renewed one.
+   */
+  private adoptStoredToken(
+    stored: Record<string, unknown>,
+    connectorId: string,
+    options: RenewOptions,
+  ): string | null {
+    if (!options.adoptStored) return null;
+    const accessToken = typeof stored.accessToken === 'string' ? stored.accessToken : '';
+    const expiresAt = Number(stored.expiresAt);
+    if (!accessToken || !Number.isFinite(expiresAt) || expiresAt <= 0) return null;
+
+    const obtainedAt =
+      Date.parse(String(stored.lastRefreshedAt ?? stored.authorizedAt ?? '')) || 0;
+    const expiresIn = Number(stored.expiresIn);
+    const lifetimeMs =
+      expiresIn > 0 ? expiresIn * 1000 : obtainedAt ? Math.max(0, expiresAt - obtainedAt) : 0;
+    const now = Date.now();
+
+    const usable =
+      options.rejectedAt !== undefined
+        ? obtainedAt > options.rejectedAt && expiresAt > now
+        : expiresAt > now + refreshWindowMs(lifetimeMs || undefined);
+    if (!usable) return null;
+
+    this.tokenCache.set(connectorId, {
+      accessToken,
+      expiresAt,
+      lifetimeMs: lifetimeMs || expiresAt - now,
+      obtainedAt: obtainedAt || now,
+    });
+    this.lastRefreshError.delete(connectorId);
+    this.logger.debug(`OAuth2: using the token stored on connector ${connectorId} instead of renewing`);
+    return accessToken;
+  }
+
+  private async renew(
+    authConfig: Record<string, unknown>,
+    connectorId: string | undefined,
+    db: ConnectorDb,
+    options: RenewOptions,
+    pending: PendingRotation = {},
   ): Promise<string | null> {
     const cacheKey = keyFor(authConfig, connectorId);
     // Rolling refresh tokens (e.g. DATEV rotates the refresh token on every
@@ -201,8 +368,12 @@ export class OAuth2TokenService {
     // The connector's own headers, for the User-Agent the API calls carry.
     let connectorHeaders: unknown;
     if (connectorId) {
-      const fresh = await this.loadAuthConfigFromDb(connectorId);
-      if (fresh) authConfig = { ...authConfig, ...fresh.authConfig };
+      const fresh = await this.loadAuthConfigFromDb(connectorId, db);
+      if (fresh) {
+        const adopted = this.adoptStoredToken(fresh.authConfig, connectorId, options);
+        if (adopted) return adopted;
+        authConfig = { ...authConfig, ...fresh.authConfig };
+      }
       connectorHeaders = fresh?.headers;
     }
 
@@ -369,12 +540,20 @@ export class OAuth2TokenService {
       // and password there's no refresh_token to use — we just record the
       // latest access_token + its expiry so a cold-start can reuse it.
       if (connectorId) {
-        await this.persistRefreshedToken(
+        const rotation: Rotation = {
+          accessToken: access_token,
+          refreshToken: newRefreshToken || refreshToken || '',
+          expiresAt: Date.now() + expiresInMs,
+          expiresIn: expires_in,
+        };
+        pending.rotation = rotation;
+        pending.saved = await this.persistRefreshedToken(
+          db,
           connectorId,
-          access_token,
-          newRefreshToken || refreshToken || '',
-          Date.now() + expiresInMs,
-          expires_in,
+          rotation.accessToken,
+          rotation.refreshToken,
+          rotation.expiresAt,
+          rotation.expiresIn,
         );
       }
 
@@ -410,7 +589,10 @@ export class OAuth2TokenService {
     if (cached && cached.obtainedAt >= sentAt && cached.expiresAt > Date.now()) {
       return cached.accessToken;
     }
-    return this.refreshTokenWithMutex(authConfig, connectorId);
+    return this.refreshTokenWithMutex(authConfig, connectorId, {
+      adoptStored: true,
+      rejectedAt: sentAt,
+    });
   }
 
   /**
@@ -446,11 +628,16 @@ export class OAuth2TokenService {
   }
 
   /**
-   * Wraps refreshToken with a per-key mutex to prevent concurrent refresh storms.
+   * Wraps refreshToken with a per-key mutex to prevent concurrent refresh
+   * storms: every caller in this process that needs a new token for the
+   * connector while one is being obtained waits for that one. Across
+   * processes, refreshToken's database lock does the same, and a renewal
+   * that waited there takes the token the other process stored.
    */
   private async refreshTokenWithMutex(
     authConfig: Record<string, unknown>,
     connectorId?: string,
+    options: RenewOptions = { adoptStored: true },
   ): Promise<string | null> {
     const cacheKey = keyFor(authConfig, connectorId);
 
@@ -460,7 +647,7 @@ export class OAuth2TokenService {
       return inFlight;
     }
 
-    const refreshPromise = this.refreshToken(authConfig, connectorId).finally(() => {
+    const refreshPromise = this.refreshToken(authConfig, connectorId, options).finally(() => {
       this.refreshInFlight.delete(cacheKey);
     });
 
@@ -499,19 +686,16 @@ export class OAuth2TokenService {
   }
 
   /**
-   * Update the connector's encrypted authConfig with the new access token
-   * so it survives server restarts.
-   */
-  /**
    * Reads and decrypts the connector's current authConfig straight from the DB.
    * Used to obtain the freshest (possibly-rotated) refresh token, bypassing the
    * stale in-memory registry snapshot. Returns null if unavailable.
    */
   private async loadAuthConfigFromDb(
     connectorId: string,
+    db: ConnectorDb = this.prisma,
   ): Promise<{ authConfig: Record<string, unknown>; headers: unknown } | null> {
     try {
-      const connector = await this.prisma.connector.findUnique({
+      const connector = await db.connector.findUnique({
         where: { id: connectorId },
         select: { authConfig: true, envVars: true, headers: true },
       });
@@ -539,20 +723,26 @@ export class OAuth2TokenService {
     }
   }
 
+  /**
+   * Store a renewed token on the connector. False when the write failed, so
+   * the caller can try again outside a transaction that may not commit.
+   */
   private async persistRefreshedToken(
+    db: ConnectorDb,
     connectorId: string,
     newAccessToken: string,
     newRefreshToken: string,
     expiresAt: number,
     expiresIn?: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      const connector = await this.prisma.connector.findUnique({
+      const connector = await db.connector.findUnique({
         where: { id: connectorId },
         select: { authConfig: true },
       });
 
-      if (!connector?.authConfig) return;
+      // Deleted meanwhile, or never had credentials: nothing to keep.
+      if (!connector?.authConfig) return true;
 
       const authConfig = JSON.parse(
         decrypt(connector.authConfig, this.encryptionKey),
@@ -563,7 +753,7 @@ export class OAuth2TokenService {
       if (typeof expiresIn === 'number' && expiresIn > 0) authConfig.expiresIn = expiresIn;
       authConfig.lastRefreshedAt = new Date().toISOString();
 
-      await this.prisma.connector.update({
+      await db.connector.update({
         where: { id: connectorId },
         data: {
           authConfig: encrypt(
@@ -576,10 +766,12 @@ export class OAuth2TokenService {
       this.logger.debug(
         `OAuth2: persisted refreshed token for connector ${connectorId}`,
       );
+      return true;
     } catch (err: any) {
       this.logger.warn(
-        `OAuth2: failed to persist refreshed token: ${err.message}`,
+        `OAuth2: failed to persist refreshed token for connector ${connectorId}: ${err.message}`,
       );
+      return false;
     }
   }
 }

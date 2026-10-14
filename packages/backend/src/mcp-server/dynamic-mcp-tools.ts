@@ -21,6 +21,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
+  usesCallerContext,
 } from '../common/caller-context.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
 import {
@@ -377,6 +378,17 @@ export class DynamicMcpTools {
         authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
+        // The engines key the OAuth2 token cache, the refresh lock and the
+        // saving of a renewed token on the connector id. Without it every
+        // call parsed a fresh authConfig, so nothing was cached, a renewed
+        // token was never saved, and the next renewal sent the refresh token
+        // the provider had already rotated: Cloudinary (5-minute tokens)
+        // answered invalid_grant a few minutes after each authorization.
+        // Credentials that depend on the caller ({{amcp.*}}) differ per call,
+        // so they stay unkeyed.
+        connectorId: usesCallerContext(tool.connectorConfig.authConfig)
+          ? undefined
+          : tool.connectorId,
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
         ...(proxyUrl ? { proxyUrl } : {}),
       };

@@ -584,3 +584,65 @@ describe('DynamicMcpTools: images in the response', () => {
     expect(res.content[0].text).toBe(JSON.stringify(GENERATED, null, 2));
   });
 });
+
+describe('DynamicMcpTools: the connector id reaches the engine', () => {
+  function bridgeTool(authConfig: Record<string, unknown>): RegisteredTool {
+    return {
+      id: 'tool-c',
+      connectorId: 'cmv-cloudinary',
+      organizationId: 'org-1',
+      name: 'cloudinary_list_images',
+      description: 'List images',
+      parameters: { type: 'object', properties: {} },
+      connectorType: 'MCP',
+      connectorConfig: {
+        baseUrl: 'https://asset-management.mcp.cloudinary.com/mcp',
+        authType: 'OAUTH2',
+        // The registry holds the decrypted authConfig as a JSON string.
+        authConfig: JSON.stringify(authConfig),
+      },
+      endpointMapping: { method: 'list-images', path: '/mcp' },
+    };
+  }
+
+  function run(tool: RegisteredTool) {
+    const mcpClientEngine = { execute: jest.fn().mockResolvedValue({ content: [] }) };
+    const executor = new DynamicMcpTools(
+      { getTool: () => tool, getToolForOrg: () => tool } as any,
+      { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn().mockResolvedValue(null), set: jest.fn() } as any,
+      { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
+      { isCloud: () => false } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      mcpClientEngine as any,
+      {} as any,
+      { scheduleObservationalIngest: jest.fn() } as any,
+    );
+    return { executor, mcpClientEngine };
+  }
+
+  // Without it the OAuth2 token service could neither cache a renewed token
+  // nor store the rotated refresh token, and the next renewal replayed the
+  // spent one (Cloudinary: invalid_grant minutes after each authorization).
+  it('passes the connector id, so OAuth2 renewals are cached, locked and stored', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', accessToken: 'at', refreshToken: 'rt' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0]).toMatchObject({
+      connectorId: 'cmv-cloudinary',
+      authType: 'OAUTH2',
+    });
+  });
+
+  it('leaves credentials that depend on the caller ({{amcp.*}}) unkeyed', async () => {
+    const { executor, mcpClientEngine } = run(
+      bridgeTool({ tokenUrl: 'https://x/token', username: '{{amcp.user_email}}', password: 'p' }),
+    );
+    await executor.executeTool('cloudinary_list_images', {});
+    expect(mcpClientEngine.execute.mock.calls[0][0].connectorId).toBeUndefined();
+  });
+});
