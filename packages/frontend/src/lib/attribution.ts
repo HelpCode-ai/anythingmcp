@@ -57,6 +57,13 @@ const STRING_KEYS = [
 ] as const;
 /** Google Ads click ids, in the order Google prefers them. */
 export const CLICK_ID_KEYS: readonly ClickIdKey[] = ['gclid', 'gbraid', 'wbraid'];
+/**
+ * Every query parameter the sign-up page reads for attribution: the site's
+ * hand-over and the campaign tags and click ids of a touch built here. The
+ * sign-in redirect (proxy.ts) lifts these out of `redirect` to the top of the
+ * /login URL, the only place they are read.
+ */
+export const LANDING_PARAM_KEYS: readonly string[] = ['amcp_src', 'amcp_lt', ...STRING_KEYS, ...CLICK_ID_KEYS];
 const MAX_CLICK_ID = 150;
 const AD_CONSENT_VALUES: readonly AdConsent[] = ['granted', 'denied', 'unknown'];
 

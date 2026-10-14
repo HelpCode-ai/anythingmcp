@@ -1,0 +1,1244 @@
+{
+  "slug": "whop",
+  "name": "Whop",
+  "aliases": [
+    "whop.com"
+  ],
+  "description": "Let your AI work with your Whop business: products and plans, memberships and license keys, members, payments, promo codes, experiences, forum posts and webhooks, with cancellations and refunds kept switched off until you enable them.",
+  "instructions": "## Whop\nThis connector calls the **Whop API v1** (`https://api.whop.com/api/v1`), the current API Whop recommends, with an **Account API key** sent as `Authorization: Bearer`. The older v5 and v2 APIs are legacy and not used.\n\n**Key types**: an **Account API key** acts as your own business (account `biz_...`) and is what this connector expects. An **App API key** acts as an app across every business that installed it; it also works, but then `WHOP_ACCOUNT_ID` decides which business the account-scoped tools read. OAuth tokens and iframe user tokens are not supported here.\n\n**Setup (about 3 minutes)**\n1. Open https://whop.com/dashboard, pick the business in the business switcher, then **Developer** > **Account API Keys** > **Create**.\n2. Permissions: the Admin role covers everything. For a narrower custom set, grant the read permissions of the tools you use: `member:basic:read` (memberships, members, license keys), `access_pass:basic:read` (products), `plan:basic:read` (plans), `payment:basic:read` (payments), `promo_code:basic:read` (promo codes), `forum:read` (forum posts), `developer:manage_webhook` (webhooks), `company:balance:read` (`whop_get_account`), and `member:email:read` to see member emails. Cancelling needs `membership:cancel` or `member:manage`, refunding `payment:manage`.\n3. Copy the key once (it is shown only at creation) into `WHOP_API_KEY`.\n4. `WHOP_ACCOUNT_ID` is your business id, starting with `biz_`: it is in the dashboard URL (`whop.com/dashboard/biz_.../`) and returned as `id` by `whop_get_account`.\n\n**Which tool**\n- Catalog: `whop_list_products` and `whop_get_product`; `whop_list_plans` and `whop_get_plan` for the prices and billing periods (Whop now calls plans variants; ids still start with `plan_`).\n- Customers: `whop_list_memberships` and `whop_get_membership` (one purchase or subscription, `mem_...`), `whop_list_members` and `whop_get_member` (one buyer across all their memberships, `mber_...`), `whop_get_user` (public profile, `user_...`), `whop_check_user_access` (does this user have access to a product, experience or the business?).\n- License keys: `whop_validate_license_key` looks a key up and answers `valid` (status active, trialing or completed). It does not bind a machine.\n- Money: `whop_list_payments` and `whop_get_payment`. Amounts are objects such as {\"amount\": \"49.00\", \"currency\": \"usd\"}.\n- Marketing and community: `whop_list_promo_codes`, `whop_list_experiences`, `whop_list_forum_posts` (needs an experience id from `whop_list_experiences`).\n- Developer: `whop_list_webhooks` (signing secrets are left out).\n\n**Writes are off by default**: `whop_cancel_membership` and `whop_refund_payment` are installed switched off. Enable them in the connector settings only if the AI should cancel or refund. Even then, confirm the exact membership or payment, the amount and the timing with the user first: a refund emails the buyer, claws back the affiliate commission and cannot be undone.\n\n**Pagination**: list tools return `page_info`; while `has_next_page` is true, call again with `after` = `page_info.end_cursor`.\n\n**Personal data**: memberships, members and payments include names, emails (with `member:email:read`) and phone numbers. Use them only for the user's request.\n\n**Common errors**\n- 401 `unauthorized`: the key is wrong, deleted or incomplete.\n- 403: the key lacks the permission named in the message; add it to the key under Developer > Account API Keys.\n- 404: unknown id or license key, or an object of another business.\n- 400: an invalid parameter, for example an id with the wrong prefix; the message names it.\n- 429: rate limited. Wait and retry once.\n\n**Out of scope here**: creating or editing products, plans and promo codes, checkout links, payouts, chat and DM messages, apps, ads and financial reports.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "whop",
+  "docsUrl": "https://docs.whop.com/developer/guides/auth-scoping",
+  "prerequisites": "A Whop business, an Account API key from Developer > Account API Keys (Admin role or the read permissions you need) and the business id (biz_...) from the dashboard URL. About 3 minutes.",
+  "requiredEnvVars": [
+    "WHOP_API_KEY",
+    "WHOP_ACCOUNT_ID"
+  ],
+  "envVarMeta": {
+    "WHOP_API_KEY": {
+      "label": "Whop Account API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "whop.com/dashboard, Developer, Account API Keys, Create. Pick the Admin role or the read permissions you need; the key is shown once.",
+      "link": "https://whop.com/dashboard",
+      "example": "whop_...",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the key as Whop shows it, without spaces and without the word Bearer."
+    },
+    "WHOP_ACCOUNT_ID": {
+      "label": "Business ID",
+      "kind": "setting",
+      "help": "Your business id, starting with biz_: it is in the dashboard URL (whop.com/dashboard/biz_.../). Products, promo codes, experiences and webhooks are listed for this business.",
+      "link": "https://whop.com/dashboard",
+      "example": "biz_xxxxxxxxxxxxxx",
+      "pattern": "^biz_[A-Za-z0-9]{6,}$",
+      "patternMessage": "Paste the business id starting with biz_."
+    }
+  },
+  "verifyHints": {
+    "401": "Whop refused the API key: it is wrong, deleted or incomplete. Create an Account API key under Developer > Account API Keys at https://whop.com/dashboard.",
+    "403": "Whop accepted the key but it lacks a permission. Give the key member:basic:read (or the Admin role) under Developer > Account API Keys.",
+    "429": "Whop is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "whop_list_memberships",
+    "params": {
+      "first": 1
+    }
+  },
+  "connector": {
+    "name": "Whop",
+    "type": "REST",
+    "baseUrl": "https://api.whop.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WHOP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/memberships?first=1"
+  },
+  "tools": [
+    {
+      "name": "whop_get_account",
+      "description": "Get the Whop business (account) behind the API key: id (biz_), title, business name, route, email, country, status, level, website, owner and creation date. Needs the company:balance:read permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "title": "$.title",
+            "business_name": "$.business_name",
+            "route": "$.route",
+            "email": "$.email",
+            "country": "$.country",
+            "status": "$.status",
+            "status_reason": "$.status_reason",
+            "level": "$.level",
+            "website": "$.website",
+            "owner": "$.owner",
+            "created_at": "$.created_at"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "whop_list_products",
+      "description": "List the products of the configured Whop business with id (prod_), title, headline, route, visibility, member count, review rating and default plan. Filter by text, creation date or order. Read-only. Paginate with after = page_info.end_cursor while has_next_page is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filter products by text in the title or description."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created_at (default)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction. Default desc."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only products created after this ISO 8601 time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only products created before this ISO 8601 time."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Products per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "query": "$query",
+          "order": "$order",
+          "direction": "$direction",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "headline": "headline",
+                "route": "route",
+                "visibility": "visibility",
+                "member_count": "member_count",
+                "average_review_rating": "average_review_rating",
+                "published_reviews_count": "published_reviews_count",
+                "default_plan": "default_plan",
+                "external_identifier": "external_identifier",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "whop_get_product",
+      "description": "Get one Whop product with its description, visibility, plans (variants), affiliate settings, member count and owner. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The product id, prefixed prod_."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "gallery_images"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "whop_list_plans",
+      "description": "List the plans (Whop now calls them variants) of the configured business: id (plan_), title, product, plan type (renewal or one_time), initial and renewal price, currency, billing period, trial days, visibility, stock, member count and purchase URL. Read-only. Paginate with after = page_info.end_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Only plans of this product (prod_ id)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "active_members_count",
+              "created_at",
+              "internal_notes",
+              "expiration_days"
+            ],
+            "description": "Sort field. Default created_at."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction. Default desc."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Plans per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "product_ids": "$product_id",
+          "order": "$order",
+          "direction": "$direction",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "plans": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "product": "product",
+                "plan_type": "plan_type",
+                "release_method": "release_method",
+                "currency": "currency",
+                "initial_price": "initial_price",
+                "renewal_price": "renewal_price",
+                "formatted_price": "formatted_price",
+                "billing_period": "billing_period",
+                "trial_period_days": "trial_period_days",
+                "expiration_days": "expiration_days",
+                "visibility": "visibility",
+                "stock": "stock",
+                "unlimited_stock": "unlimited_stock",
+                "member_count": "member_count",
+                "purchase_url": "purchase_url",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "whop_get_plan",
+      "description": "Get one Whop plan (variant) with price, currency, billing period, trial, stock, visibility, tax settings, internal notes and purchase URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The plan id, prefixed plan_."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "image",
+            "checkout_styling"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "whop_list_memberships",
+      "description": "List memberships (purchases and subscriptions, mem_) newest first, with status, product, plan, user, member, prices, current period, cancel flags and license key. Filter by status, product, plan, user, member or creation date. Read-only. Paginate with after = page_info.end_cursor while has_next_page is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "trialing",
+              "past_due",
+              "completed",
+              "canceled",
+              "expired",
+              "canceling",
+              "paused",
+              "expiring",
+              "one_time",
+              "unclaimed",
+              "banned"
+            ],
+            "description": "Only memberships in this state."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only memberships of this product (prod_)."
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "Only memberships of this plan (plan_)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only memberships of this user (user_)."
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Only memberships of this member (mber_)."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only memberships created after this ISO 8601 time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only memberships created before this ISO 8601 time."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction by creation date. Default desc."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Memberships per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "status": "$status",
+          "product_id": "$product_id",
+          "plan_id": "$plan_id",
+          "user_id": "$user_id",
+          "member_id": "$member_id",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "direction": "$direction",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "memberships": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "product": "product.title",
+                "product_id": "product_id",
+                "plan_id": "plan_id",
+                "user_id": "user_id",
+                "member_id": "member_id",
+                "initial_price": "initial_price",
+                "renewal_price": "renewal_price",
+                "current_period_end": "current_period_end",
+                "cancel_at_period_end": "cancel_at_period_end",
+                "canceled_at": "canceled_at",
+                "expires_at": "expires_at",
+                "most_recent_action": "most_recent_action",
+                "promo_code_id": "promo_code_id",
+                "license_key": "license_key",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "whop_get_membership",
+      "description": "Get one Whop membership by its mem_ id or by its license key: status, product, plan, user and member, prices, billing period, cancellation details, metadata (for example a bound machine id) and the buyer's manage URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The membership id (mem_) or a license key."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/{id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "account.logo_url",
+            "product.logo_url"
+          ],
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "whop_validate_license_key",
+      "description": "Check a software license key sold through Whop: returns valid (true when the membership status is active, trialing or completed), status, the membership, product, plan and user ids, period end, cancel flag and metadata such as a bound machine id. A key Whop does not know answers 404. Read-only; it does not bind or reset the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_key": {
+            "type": "string",
+            "description": "The license key the customer received with the purchase."
+          }
+        },
+        "required": [
+          "license_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/{license_key}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{valid: contains(['active', 'trialing', 'completed'], status), status: status, membership_id: id, product_id: product_id, product: product.title, plan_id: plan_id, user_id: user_id, member_id: member_id, current_period_end: current_period_end, expires_at: expires_at, cancel_at_period_end: cancel_at_period_end, metadata: metadata}",
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "whop_cancel_membership",
+      "description": "Cancel a Whop membership, either at the end of the current billing period (cancel_at_period_end true, access continues until then) or immediately (access revoked now). Installed switched off. Confirm with the user first, naming the membership, the buyer and the timing. Buy-now-pay-later and non-trial split-pay memberships cannot be cancelled. Returns the updated membership.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The membership id, prefixed mem_."
+          },
+          "cancel_at_period_end": {
+            "type": "boolean",
+            "description": "true stops renewal and keeps access until the period ends; false or left out revokes access immediately. Ask the user which."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Free-text note recorded on the membership, e.g. \"customer request by email\"."
+          }
+        },
+        "required": [
+          "id",
+          "cancel_at_period_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/memberships/{id}/cancel",
+        "bodyMapping": {
+          "cancel_at_period_end": "$cancel_at_period_end",
+          "reason": "$reason"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "cancel_at_period_end": "$.cancel_at_period_end",
+            "canceled_at": "$.canceled_at",
+            "current_period_end": "$.current_period_end",
+            "cancellation_reason": "$.cancellation_reason"
+          },
+          "maxBytes": 10000
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "whop_list_members",
+      "description": "List the members of the configured business (one per buyer, mber_) with name, email (needs member:email:read), access level, status, most recent action, total spent in USD and join date. Search by name, username or exact email; filter by product, access or activity. Read-only. Paginate with after = page_info.end_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search by name or username; an exact email also matches with member:email:read."
+          },
+          "access_level": {
+            "type": "string",
+            "enum": [
+              "no_access",
+              "admin",
+              "customer"
+            ],
+            "description": "Only members with this access."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "joined",
+              "left"
+            ],
+            "description": "joined for current members, left for former ones."
+          },
+          "membership_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "description": "active: holds at least one membership that grants access now; inactive: holds none."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "joined_at",
+              "last_accessed_at",
+              "most_recent_action_at",
+              "usd_total_spent"
+            ],
+            "description": "Sort field. Default created_at."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction. Default desc."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only members who joined after this ISO 8601 time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only members who joined before this ISO 8601 time."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Members per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "query": "$query",
+          "access_level": "$access_level",
+          "status": "$status",
+          "membership_status": "$membership_status",
+          "order": "$order",
+          "direction": "$direction",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "members": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "display_name": "display_name",
+                "email": "email",
+                "user_id": "user.id",
+                "username": "user.username",
+                "access_level": "access_level",
+                "status": "status",
+                "most_recent_action": "most_recent_action",
+                "most_recent_action_at": "most_recent_action_at",
+                "usd_total_spent": "usd_total_spent",
+                "joined_at": "joined_at",
+                "last_accessed_at": "last_accessed_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "whop_get_member",
+      "description": "Get one member (mber_) of the business: name, email (with member:email:read), phone, user, access level, status, most recent action, total spent and token balance. List their memberships with whop_list_memberships and member_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The member id, prefixed mber_."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "user.profile_picture"
+          ],
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "whop_get_user",
+      "description": "Get a Whop user's public profile by user_ id or username: name, username, bio, level, verification and creation date. Private fields such as email and balance stay empty for other users. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The user id (user_) or username."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "include_balance": false
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "username": "$.username",
+            "name": "$.name",
+            "bio": "$.bio",
+            "level": "$.level",
+            "verification": "$.verification",
+            "social_links": "$.social_links",
+            "created_at": "$.created_at"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "whop_check_user_access",
+      "description": "Check whether a Whop user has access to a product (prod_), an experience (exp_) or the business (biz_). Returns has_access and access_level (customer, admin or no_access). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user id, prefixed user_."
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "The product (prod_), experience (exp_) or business (biz_) id."
+          }
+        },
+        "required": [
+          "user_id",
+          "resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/access/{resource_id}"
+      }
+    },
+    {
+      "name": "whop_list_payments",
+      "description": "List the business's payments newest first, with status, total, subtotal, refunded amount, currency, billing reason, buyer, product, plan, membership and dates. Filter by status, buyer, member, membership, product, plan, currency, search text or date. Read-only. Paginate with after = page_info.end_cursor while has_next_page is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "authorized",
+              "paid",
+              "pending",
+              "uncollectible",
+              "unresolved",
+              "void"
+            ],
+            "description": "Only payments in this state."
+          },
+          "billing_reason": {
+            "type": "string",
+            "enum": [
+              "subscription_create",
+              "subscription_cycle",
+              "subscription_update",
+              "one_time",
+              "manual",
+              "subscription"
+            ],
+            "description": "Only payments charged for this reason; subscription_cycle are renewals."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search by user id, membership id, email, name or username (email needs member:email:read)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only payments by this buyer (user_)."
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Only payments by this member (mber_)."
+          },
+          "membership_id": {
+            "type": "string",
+            "description": "Only payments of this membership (mem_)."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only payments for this product (prod_)."
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "Only payments for this plan (plan_)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Only payments in this three-letter currency, e.g. usd or eur."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only payments created after this ISO 8601 time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only payments created before this ISO 8601 time."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "paid_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Payments per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "status": "$status",
+          "billing_reason": "$billing_reason",
+          "query": "$query",
+          "user_id": "$user_id",
+          "member_id": "$member_id",
+          "membership_id": "$membership_id",
+          "product_id": "$product_id",
+          "plan_id": "$plan_id",
+          "currency": "$currency",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "order": "$order",
+          "direction": "$direction",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "payments": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "substatus": "substatus",
+                "total": "total",
+                "subtotal": "subtotal",
+                "refunded_amount": "refunded_amount",
+                "currency": "currency",
+                "billing_reason": "billing_reason",
+                "customer_email": "customer_email",
+                "user_id": "user.id",
+                "member_id": "member_id",
+                "membership_id": "membership_id",
+                "product_id": "product_id",
+                "plan_id": "plan_id",
+                "promo_code_id": "promo_code_id",
+                "refundable": "refundable",
+                "failure_message": "failure_message",
+                "paid_at": "paid_at",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "whop_get_payment",
+      "description": "Get one Whop payment with its line items, totals, tax, fees, refunded amount, status, failure message, buyer and related membership, product and plan ids. Card details, client secret, IP address and risk signals are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The payment id, prefixed pay_."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "client_secret",
+            "payment_instrument",
+            "ip_address",
+            "risk_signals",
+            "risk_score",
+            "billing_address",
+            "shipping_address",
+            "verification_checks",
+            "recovery_url"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "whop_refund_payment",
+      "description": "Refund all or part of a Whop payment through the processor that charged it. The buyer is emailed, the affiliate commission is clawed back, the membership is updated and an open dispute case is closed; it cannot be undone. Installed switched off. Confirm the payment, the buyer and the exact amount with the user first. Returns the updated payment.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The payment id, prefixed pay_."
+          },
+          "partial_amount": {
+            "type": "number",
+            "description": "Amount to refund in the payment's currency, e.g. 10.5. Leave out to refund everything still refundable."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{id}/refund",
+        "bodyMapping": {
+          "partial_amount": "$partial_amount"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "status": "$.status",
+            "substatus": "$.substatus",
+            "total": "$.total",
+            "refunded_amount": "$.refunded_amount",
+            "refunded_at": "$.refunded_at",
+            "currency": "$.currency"
+          },
+          "maxBytes": 10000
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "whop_list_promo_codes",
+      "description": "List the business's promo codes with code, status, discount type and amount (percentages as a fraction, e.g. 0.1), duration, uses, stock, product restriction and expiry. Read-only. Paginate with after = page_info.end_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "archived",
+              "expired"
+            ],
+            "description": "Only codes in this state; expired covers inactive and archived."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction by creation date. Default desc."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Codes per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/promo_codes",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "status": "$status",
+          "direction": "$direction",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "promo_codes": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "code": "code",
+                "status": "status",
+                "promo_type": "promo_type",
+                "amount_off": "amount_off",
+                "currency": "currency",
+                "duration": "duration",
+                "promo_duration_months": "promo_duration_months",
+                "uses": "uses",
+                "stock": "stock",
+                "unlimited_stock": "unlimited_stock",
+                "product": "product",
+                "new_users_only": "new_users_only",
+                "one_per_customer": "one_per_customer",
+                "expires_at": "expires_at",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "whop_list_experiences",
+      "description": "List the business's experiences (the apps inside a whop: courses, forums, chats, files and so on) with id (exp_), name, the app that powers it, whether it is public and its order. Filter by product or app. Read-only. Paginate with after = page_info.end_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Only experiences attached to this product (prod_)."
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Only experiences powered by this app (app_)."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Experiences per page. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/experiences",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "product_id": "$product_id",
+          "app_id": "$app_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "experiences": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "app_id": "app.id",
+                "app_name": "app.name",
+                "is_public": "is_public",
+                "order": "order",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "whop_list_forum_posts",
+      "description": "List the posts of a forum experience, or the replies to one post with parent_id, with title, content, author, like, comment and view counts and pinned flag. Needs the forum:read permission and a forum experience id from whop_list_experiences. Read-only. Paginate with after = page_info.end_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experience_id": {
+            "type": "string",
+            "description": "The forum experience id, prefixed exp_."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "A post id, to list its replies instead of the top-level posts."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "true for pinned posts only."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Posts per page. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        },
+        "required": [
+          "experience_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forum_posts",
+        "queryParams": {
+          "experience_id": "$experience_id",
+          "parent_id": "$parent_id",
+          "pinned": "$pinned",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "posts": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "content": "content",
+                "author": "user.username",
+                "is_pinned": "is_pinned",
+                "like_count": "like_count",
+                "comment_count": "comment_count",
+                "view_count": "view_count",
+                "parent_id": "parent_id",
+                "created_at": "created_at"
+              }
+            },
+            "page_info": "$.page_info"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "whop_list_webhooks",
+      "description": "List the business's webhook endpoints with URL, subscribed events, API version, enabled flag and failure state (consecutive failures, failing since, disabled reason). Signing secrets are left out. Needs developer:manage_webhook. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "has_failures": {
+            "type": "boolean",
+            "description": "true for endpoints that are currently failing only."
+          },
+          "include_app_webhooks": {
+            "type": "boolean",
+            "description": "Also list webhooks of the business's apps."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Webhooks per page, 1 to 100. Default 20."
+          },
+          "after": {
+            "type": "string",
+            "description": "page_info.end_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": {
+          "account_id": "{{WHOP_ACCOUNT_ID}}",
+          "has_failures": "$has_failures",
+          "include_app_webhooks": "$include_app_webhooks",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].webhook_secret"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    }
+  ]
+}

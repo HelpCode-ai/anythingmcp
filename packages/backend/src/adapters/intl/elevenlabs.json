@@ -1,0 +1,1294 @@
+{
+  "slug": "elevenlabs",
+  "name": "ElevenLabs",
+  "description": "Let your AI use ElevenLabs with your own key: find voices in your account and the Voice Library, turn text into speech you can download, transcribe audio and video, dub videos into other languages, check credits and history, and read your voice agents' conversations.",
+  "aliases": [
+    "Eleven Labs",
+    "11Labs"
+  ],
+  "instructions": "## ElevenLabs\nThis connector works with **ElevenLabs** (AI voice: text to speech, speech to text, dubbing and voice agents) through the ElevenLabs API at `https://api.elevenlabs.io` with the user's own API key: voices and the public Voice Library, models, speech generation with a download link, transcription of audio and video, the history of generated audio, plan and credit usage, dubbing projects, and the voice agents with their conversations and transcripts.\n\n**Spending**: speech, transcription and dubbing are billed to the user's ElevenLabs account (credits on a subscription plan, US dollars on pay-as-you-go API billing). Everything else is free. Before a call that costs money, tell the user what it will roughly cost and wait for a yes. `elevenlabs_get_subscription` shows the credits left.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://elevenlabs.io and open your API keys (https://elevenlabs.io/app/settings/api-keys). For a key that does not depend on one person, a workspace admin can create it for a service account under Workspace settings, Service Accounts.\n2. Create a key and either leave it unrestricted or allow at least these endpoints: Text to Speech and Flows (speech), Speech to Text, Models (read), Voices (read), Add voice from Voice Library, Speech History (read; write only for deletes), User (read), Dubbing (read and write), and ElevenAgents (read). A credit quota on the key caps what it can spend; an IP allowlist would block AnythingMCP.\n3. Copy the key (it starts with `sk_` and is shown only once), paste it into `ELEVENLABS_API_KEY` and install the connector. It is sent as the `xi-api-key` header, only to ElevenLabs.\n\n**Data residency**: accounts on an isolated environment use their own host and their own keys: `https://api.eu.residency.elevenlabs.io` (EU), `https://api.in.residency.elevenlabs.io` (India) or `https://api.sg.residency.elevenlabs.io` (Singapore). Change the connector's base URL to that host; a key from an isolated environment is refused on api.elevenlabs.io with 401, and the other way round.\n\n**How to work**\n1. Voices: `elevenlabs_list_voices` for the account's voices; `elevenlabs_get_voice` for one. `elevenlabs_search_voice_library` searches the public Voice Library; `elevenlabs_add_library_voice` saves a Library voice to the account (uses a voice slot) so it can speak.\n2. Speech: `elevenlabs_create_speech` with the text and a voice id starts the audio and returns an `id`. Then call `elevenlabs_get_speech` with that id: after a few seconds `status` is `completed` and `content_url` is an MP3 link the user can open or download (it expires after about an hour; call `elevenlabs_get_speech` again for a fresh link). `elevenlabs_list_speech_generations` finds earlier ones. Models: `eleven_multilingual_v2` (default), `eleven_v3` (most expressive, audio tags such as [whispers]), `eleven_flash_v2_5` (fastest, half the price). `elevenlabs_list_models` lists all models with their limits.\n3. Transcription: `elevenlabs_transcribe` with `source_url` (a public file link, YouTube or TikTok) returns the text right away; `diarize: true` separates speakers, and `elevenlabs_get_transcript` then shows who said what and when. Use `file_url` only when ElevenLabs cannot open the link (AnythingMCP then uploads the file, up to 10 MB).\n4. History: `elevenlabs_list_history` and `elevenlabs_get_history_item` show what was generated (text, voice, date). `elevenlabs_delete_history_item` is installed switched off.\n5. Account: `elevenlabs_get_subscription` for plan, credits used and left, reset date and voice slots.\n6. Dubbing: `elevenlabs_create_dubbing` with a link and a target language starts a dub and returns `dubbing_id` and the expected processing time. Check `elevenlabs_get_dubbing` every 30 to 60 seconds until `status` is `dubbed`; `elevenlabs_list_dubbings` lists all. `elevenlabs_get_dubbing_transcript` returns the subtitles (SRT or WebVTT). The dubbed video or audio is watched and downloaded in the ElevenLabs app under Dubbing.\n7. Voice agents: `elevenlabs_list_agents` and `elevenlabs_get_agent` (prompt, first message, voice, LLM). `elevenlabs_list_conversations` lists calls with outcome and title (`summary_mode: include` adds summaries); `elevenlabs_get_conversation` returns the full transcript and analysis.\n\n**Costs (October 2026)**: speech about 1 credit per character with eleven_multilingual_v2 and eleven_v3, 0.5 with eleven_flash_v2_5 (pay-as-you-go API: $0.08 or $0.04 per 1,000 characters); transcription about $0.22 per hour of audio; dubbing about $0.33 a minute with a watermark, $0.50 without. Failed speech generations are not charged.\n\n**Audio files**: the connector returns audio as download links, never as raw audio in the chat. Speech comes from `elevenlabs_get_speech` as `content_url`. Older history items, dubs and agent call recordings are played and downloaded in the ElevenLabs app.\n\n**Common errors** (the reason is in `detail.code` and `detail.message`)\n- 401 `invalid_api_key` or `unauthorized`: the key is wrong, expired or disabled, or belongs to an isolated environment (change the base URL). A key that is cut off or mistyped is refused with 400 `invalid_api_key`.\n- 402 `insufficient_credits`: no credits left this period, or the key's own credit quota is used up.\n- 403 `insufficient_permissions`: the key is not allowed to use this endpoint, or an IP allowlist blocks the request; edit the key.\n- 400 or 422: a parameter the model does not accept (for example `language_code` with eleven_multilingual_v2, or a text above the model's limit); `detail.param` names it.\n- 404 `voice_not_found` and similar: check the id with the list tools.\n- 429 `rate_limit_exceeded`, `concurrent_limit_exceeded` or `system_busy`: wait a moment and retry once. Do not retry in a loop.\n\n**Out of scope here**: sound effects and music (the API returns only raw audio and keeps no history of them), real-time and streaming audio, voice cloning and voice design, speech to speech, audio isolation, Studio projects, editing or creating agents, phone calls and batch calls, and downloading audio files of history items, dubs or agent calls.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "elevenlabs",
+  "docsUrl": "https://elevenlabs.io/docs/api-reference/introduction",
+  "prerequisites": "An ElevenLabs account and an API key from its API key settings. Speech, transcription and dubbing use the account's credits. About 3 minutes.",
+  "requiredEnvVars": [
+    "ELEVENLABS_API_KEY"
+  ],
+  "envVarMeta": {
+    "ELEVENLABS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "elevenlabs.io, Settings, API Keys, create a key. Calls that make audio, transcripts or dubs use this account's credits; a credit limit on the key caps the spend.",
+      "link": "https://elevenlabs.io/app/settings/api-keys",
+      "example": "sk_0123456789abcdef0123456789abcdef0123456789abcdef",
+      "pattern": "^sk_[A-Za-z0-9]{48}$",
+      "patternMessage": "Paste the whole API key as ElevenLabs shows it: sk_ followed by 48 letters and digits, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "ElevenLabs says the API key is malformed (code invalid_api_key). Copy the whole key again: sk_ followed by 48 letters and digits.",
+    "401": "ElevenLabs refused the API key. Check that it is complete, not expired or disabled, and, for an account on an isolated environment (EU, India, Singapore), that the connector's base URL is that environment's host.",
+    "403": "ElevenLabs refused this request for the key: it lacks the Models (read) permission, or an IP allowlist on the key blocks AnythingMCP. Edit the key as in the setup steps.",
+    "429": "ElevenLabs is rate limiting this key. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "elevenlabs_list_models"
+  },
+  "connector": {
+    "name": "ElevenLabs",
+    "type": "REST",
+    "baseUrl": "https://api.elevenlabs.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "xi-api-key",
+      "apiKey": "{{ELEVENLABS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/models"
+  },
+  "tools": [
+    {
+      "name": "elevenlabs_list_voices",
+      "description": "List the voices in the user's ElevenLabs account (premade, cloned, generated, professional and voices saved from the Voice Library), with id, name, category, labels and a preview link. Search by name or description and filter by type, gender, age, accent or language. Call again with next_page_token while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to look for in the voice name, description, labels or category."
+          },
+          "voice_type": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "community",
+              "default",
+              "workspace",
+              "non-default",
+              "non-community",
+              "saved"
+            ],
+            "description": "personal (the user's own), community (saved from the Voice Library), default (premade), workspace (shared in the workspace), saved, non-default or non-community."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "premade",
+              "cloned",
+              "generated",
+              "professional"
+            ],
+            "description": "Voice category."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender label, e.g. male or female."
+          },
+          "age": {
+            "type": "string",
+            "description": "Age label, e.g. young, middle_aged or old."
+          },
+          "accent": {
+            "type": "string",
+            "description": "Accent label, e.g. british or american."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language label as an ISO 639-1 code, e.g. en or de."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "name",
+              "created_at_unix"
+            ],
+            "description": "Sort field."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Voices per page, 1 to 100. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/voices",
+        "queryParams": {
+          "search": "$search",
+          "voice_type": "$voice_type",
+          "category": "$category",
+          "gender": "$gender",
+          "age": "$age",
+          "accent": "$accent",
+          "language": "$language",
+          "sort": "$sort",
+          "sort_direction": "$sort_direction",
+          "page_size": "$page_size",
+          "next_page_token": "$next_page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "voices": {
+              "$from": "$.voices[*]",
+              "$select": {
+                "voice_id": "voice_id",
+                "name": "name",
+                "category": "category",
+                "labels": "labels",
+                "description": "description",
+                "preview_url": "preview_url"
+              }
+            },
+            "has_more": "$.has_more",
+            "total_count": "$.total_count",
+            "next_page_token": "$.next_page_token"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_get_voice",
+      "description": "Get one voice by id: name, category, labels, description, preview link, default settings, the models it is tuned for and its verified languages. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voice_id": {
+            "type": "string",
+            "description": "Voice id from elevenlabs_list_voices, e.g. JBFqnCBsd6RMkjVDRZzb."
+          }
+        },
+        "required": [
+          "voice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/voices/{voice_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "samples",
+            "fine_tuning",
+            "sharing",
+            "voice_verification",
+            "safety_control",
+            "recording_quality_reason"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_search_voice_library",
+      "description": "Search the public ElevenLabs Voice Library (voices shared by the community and professional voice actors) by words, gender, age, accent, language, locale or use case. Each result has public_owner_id and voice_id, which elevenlabs_add_library_voice needs to save it to the account. Page with page (0, 1, 2...) while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to look for, e.g. calm narrator or german news."
+          },
+          "gender": {
+            "type": "string",
+            "description": "male, female or neutral."
+          },
+          "age": {
+            "type": "string",
+            "description": "young, middle_aged or old."
+          },
+          "accent": {
+            "type": "string",
+            "description": "Accent, e.g. british, american, australian."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language as an ISO 639-1 code, e.g. en, de, it."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale, e.g. en-US or de-DE."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "professional",
+              "famous",
+              "high_quality"
+            ],
+            "description": "Voice category."
+          },
+          "use_cases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Use cases, e.g. narrative_story, conversational, social_media, advertisement, informative_educational."
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "Only featured voices."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created_date",
+              "usage_character_count_1y",
+              "trending",
+              "cloned_by_count"
+            ],
+            "description": "Sort order. Default created_date."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Voices per page, 1 to 100. Default 20.",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shared-voices",
+        "queryParams": {
+          "search": "$search",
+          "gender": "$gender",
+          "age": "$age",
+          "accent": "$accent",
+          "language": "$language",
+          "locale": "$locale",
+          "category": "$category",
+          "use_cases": "$use_cases",
+          "featured": "$featured",
+          "sort": "$sort",
+          "page_size": "$page_size",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "voices": {
+              "$from": "$.voices[*]",
+              "$select": {
+                "public_owner_id": "public_owner_id",
+                "voice_id": "voice_id",
+                "name": "name",
+                "gender": "gender",
+                "age": "age",
+                "accent": "accent",
+                "language": "language",
+                "locale": "locale",
+                "category": "category",
+                "use_case": "use_case",
+                "descriptive": "descriptive",
+                "description": "description",
+                "preview_url": "preview_url",
+                "cloned_by_count": "cloned_by_count",
+                "free_users_allowed": "free_users_allowed",
+                "is_added_by_user": "is_added_by_user"
+              }
+            },
+            "has_more": "$.has_more",
+            "total_count": "$.total_count"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_add_library_voice",
+      "description": "Save a voice from the public Voice Library to the user's account under a new name, so it can be used for speech. Costs nothing but takes one of the account's custom voice slots (see voice_slots_used and voice_limit in elevenlabs_get_subscription). Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "public_user_id": {
+            "type": "string",
+            "description": "public_owner_id of the voice, from elevenlabs_search_voice_library."
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "voice_id of the library voice."
+          },
+          "new_name": {
+            "type": "string",
+            "description": "Name the voice gets in the user's account."
+          }
+        },
+        "required": [
+          "public_user_id",
+          "voice_id",
+          "new_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/voices/add/{public_user_id}/{voice_id}",
+        "bodyMapping": {
+          "new_name": "$new_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "elevenlabs_list_models",
+      "description": "List the ElevenLabs models with id, name, whether they do text to speech, their cost factor, maximum text length per request and supported languages. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/models"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{model_id: model_id, name: name, description: description, can_do_text_to_speech: can_do_text_to_speech, can_do_voice_conversion: can_do_voice_conversion, token_cost_factor: token_cost_factor, maximum_text_length_per_request: maximum_text_length_per_request, languages: languages[].language_id}",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_create_speech",
+      "description": "Turn text into spoken audio (MP3) with an ElevenLabs voice. The audio is made in the background: this call returns a generation id, then elevenlabs_get_speech returns a download link once it is ready (usually within seconds). COSTS CREDITS: about 1 credit per character with eleven_multilingual_v2 and eleven_v3, about 0.5 with eleven_flash_v2_5 (on pay-as-you-go API billing about $0.08 or $0.04 per 1,000 characters). Tell the user the character count and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to speak. Up to 10,000 characters with eleven_multilingual_v2, 5,000 with eleven_v3, 40,000 with eleven_flash_v2_5. eleven_v3 understands audio tags such as [whispers] or [laughs]."
+          },
+          "voice": {
+            "type": "string",
+            "description": "Voice id from elevenlabs_list_voices, e.g. JBFqnCBsd6RMkjVDRZzb."
+          },
+          "model_id": {
+            "type": "string",
+            "enum": [
+              "eleven_multilingual_v2",
+              "eleven_v3",
+              "eleven_flash_v2_5"
+            ],
+            "description": "eleven_multilingual_v2 (default, natural and stable, 29 languages), eleven_v3 (most expressive, 70+ languages) or eleven_flash_v2_5 (fastest, half the cost).",
+            "default": "eleven_multilingual_v2"
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "mp3_22050_32",
+              "mp3_24000_48",
+              "mp3_44100_32",
+              "mp3_44100_64",
+              "mp3_44100_96",
+              "mp3_44100_128",
+              "mp3_44100_192"
+            ],
+            "description": "MP3 sample rate and bitrate. Default mp3_44100_128; mp3_44100_192 needs the Creator plan or higher."
+          },
+          "language_code": {
+            "type": "string",
+            "description": "ISO 639-1 code to force the language, e.g. de. Only with eleven_v3 and eleven_flash_v2_5; leave it out for eleven_multilingual_v2."
+          },
+          "voice_settings": {
+            "type": "object",
+            "description": "Optional overrides for this generation only. eleven_multilingual_v2: stability, similarity_boost, style (0 to 1), use_speaker_boost (true/false), speed (about 0.7 to 1.2). eleven_flash_v2_5: stability, similarity_boost, speed. eleven_v3: stability only."
+          }
+        },
+        "required": [
+          "text",
+          "voice"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/flows/text-to-speech",
+        "bodyMapping": {
+          "model_id": "$model_id",
+          "text": "$text",
+          "voice": "$voice",
+          "output_format": "$output_format",
+          "language_code": "$language_code",
+          "voice_settings": "$voice_settings"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "elevenlabs_get_speech",
+      "description": "Check a speech generation started with elevenlabs_create_speech. status is pending or generating while it runs (wait a few seconds and call again), completed with content_url (a signed MP3 download link that expires after about an hour; call again for a fresh one) or failed with failure_reason and error_message (failed generations are not charged). Give the user the content_url to listen or download. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "generation_id": {
+            "type": "string",
+            "description": "id returned by elevenlabs_create_speech."
+          }
+        },
+        "required": [
+          "generation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/flows/text-to-speech/{generation_id}"
+      }
+    },
+    {
+      "name": "elevenlabs_list_speech_generations",
+      "description": "List the speech generations made through elevenlabs_create_speech (and other API calls of the same kind), newest first, with status and, when completed, a fresh download link. Call again with cursor = next_cursor while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "generating",
+              "completed",
+              "failed"
+            ],
+            "description": "Only generations with this status."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Only generations of this model."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Generations per page, 1 to 100. Default 30.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/flows/text-to-speech",
+        "queryParams": {
+          "status": "$status",
+          "model_id": "$model_id",
+          "page_size": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "generations": {
+              "$from": "$.generations[*]",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "content_url": "content_url",
+                "content_mime_type": "content_mime_type",
+                "failure_reason": "failure_reason",
+                "error_message": "error_message"
+              }
+            },
+            "next_cursor": "$.next_cursor",
+            "has_more": "$.has_more"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_transcribe",
+      "description": "Transcribe the speech in an audio or video file to text with ElevenLabs Scribe, optionally telling speakers apart. Pass source_url (a public link to the file, also YouTube or TikTok links; up to 2 GB) or file_url (a direct link AnythingMCP downloads and uploads, up to 10 MB). Returns the text, the detected language, the duration and a transcription_id; elevenlabs_get_transcript returns the word timings and speakers. COSTS MONEY: about $0.22 per hour of audio on pay-as-you-go API billing (credits on a subscription plan). Confirm with the user before transcribing long recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTPS link to the audio or video file, or a YouTube or TikTok video URL. ElevenLabs downloads it."
+          },
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Use instead of source_url when ElevenLabs cannot open the link: a direct link to the file that AnythingMCP downloads (max 10 MB) and uploads."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "scribe_v2 (default) or scribe_v2_medical for clinical audio.",
+            "default": "scribe_v2"
+          },
+          "language_code": {
+            "type": "string",
+            "description": "ISO 639-1 or 639-3 code of the spoken language, e.g. en or deu. Leave it out to detect it."
+          },
+          "diarize": {
+            "type": "boolean",
+            "description": "Tell speakers apart (speaker ids in elevenlabs_get_transcript). Default false."
+          },
+          "num_speakers": {
+            "type": "integer",
+            "description": "Maximum number of speakers, up to 32. Helps diarization."
+          },
+          "tag_audio_events": {
+            "type": "boolean",
+            "description": "Mark sounds such as (laughter) or (applause) in the text. Default true."
+          },
+          "no_verbatim": {
+            "type": "boolean",
+            "description": "Leave out filler words, false starts and non-speech sounds. Default false."
+          },
+          "transcript_edit": {
+            "type": "string",
+            "description": "Optional instruction applied to the finished transcript, e.g. Fix product names. The result comes back as edited_transcript. Adds 30% to the transcription cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/speech-to-text",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "model_id": "$model_id",
+          "source_url": "$source_url",
+          "file": {
+            "__file": "$file_url"
+          },
+          "language_code": "$language_code",
+          "diarize": "$diarize",
+          "num_speakers": "$num_speakers",
+          "tag_audio_events": "$tag_audio_events",
+          "no_verbatim": "$no_verbatim",
+          "transcript_edit": "$transcript_edit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transcription_id": "$.transcription_id",
+            "language_code": "$.language_code",
+            "language_probability": "$.language_probability",
+            "audio_duration_secs": "$.audio_duration_secs",
+            "text": "$.text",
+            "edited_transcript": "$.edited_transcript"
+          },
+          "maxBytes": 300000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "elevenlabs_get_transcript",
+      "description": "Get a transcript made with elevenlabs_transcribe by its transcription_id: the full text plus every word as [start second, speaker id, word], which shows who said what and when (speaker ids only when the transcription used diarize). Long recordings are cut at about 250 KB. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transcription_id": {
+            "type": "string",
+            "description": "transcription_id returned by elevenlabs_transcribe."
+          }
+        },
+        "required": [
+          "transcription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/speech-to-text/transcripts/{transcription_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{transcription_id: transcription_id, language_code: language_code, audio_duration_secs: audio_duration_secs, text: text, words: words[?type!='spacing'].[start, speaker_id, text]}",
+          "maxBytes": 250000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_list_history",
+      "description": "List the audio generated in the account (text to speech, speech to speech, Studio, dubbing), newest first, with text, voice, model, date and source. Sound effects and music are not in this history. Page with start_after_history_item_id = last_history_item_id while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to look for in the generated text."
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Only items of this voice."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Only items of this model."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "TTS",
+              "STS",
+              "Flows"
+            ],
+            "description": "TTS (text to speech), STS (speech to speech) or Flows (made with elevenlabs_create_speech)."
+          },
+          "date_after_unix": {
+            "type": "integer",
+            "description": "Only items created at or after this Unix time (seconds)."
+          },
+          "date_before_unix": {
+            "type": "integer",
+            "description": "Only items created before this Unix time (seconds)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1,000. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "start_after_history_item_id": {
+            "type": "string",
+            "description": "last_history_item_id of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/history",
+        "queryParams": {
+          "search": "$search",
+          "voice_id": "$voice_id",
+          "model_id": "$model_id",
+          "source": "$source",
+          "date_after_unix": "$date_after_unix",
+          "date_before_unix": "$date_before_unix",
+          "page_size": "$page_size",
+          "start_after_history_item_id": "$start_after_history_item_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "history": {
+              "$from": "$.history[*]",
+              "$select": {
+                "history_item_id": "history_item_id",
+                "date_unix": "date_unix",
+                "source": "source",
+                "voice_id": "voice_id",
+                "voice_name": "voice_name",
+                "model_id": "model_id",
+                "text": "text",
+                "character_count_change_from": "character_count_change_from",
+                "character_count_change_to": "character_count_change_to",
+                "state": "state"
+              }
+            },
+            "has_more": "$.has_more",
+            "last_history_item_id": "$.last_history_item_id"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_get_history_item",
+      "description": "Get one generated audio item from the history: text, voice, model, settings, date, source and character usage. The audio itself can be played and downloaded in the ElevenLabs app under History. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "history_item_id": {
+            "type": "string",
+            "description": "history_item_id from elevenlabs_list_history."
+          }
+        },
+        "required": [
+          "history_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/history/{history_item_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "alignments",
+            "feedback"
+          ],
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_delete_history_item",
+      "description": "Delete one generated audio item from the history. It cannot be restored. Confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "history_item_id": {
+            "type": "string",
+            "description": "history_item_id from elevenlabs_list_history."
+          }
+        },
+        "required": [
+          "history_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/history/{history_item_id}"
+      }
+    },
+    {
+      "name": "elevenlabs_get_subscription",
+      "description": "Show the account's plan and usage: tier, status, credits used (character_count) and included (character_limit) this period, when they reset (next_character_count_reset_unix), voice slots and whether usage-based overage is allowed. Use it before costly calls. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/subscription"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "tier": "$.tier",
+            "status": "$.status",
+            "character_count": "$.character_count",
+            "character_limit": "$.character_limit",
+            "next_character_count_reset_unix": "$.next_character_count_reset_unix",
+            "can_extend_character_limit": "$.can_extend_character_limit",
+            "max_credit_limit_extension": "$.max_credit_limit_extension",
+            "current_overage": "$.current_overage",
+            "currency": "$.currency",
+            "billing_period": "$.billing_period",
+            "character_refresh_period": "$.character_refresh_period",
+            "voice_slots_used": "$.voice_slots_used",
+            "voice_limit": "$.voice_limit",
+            "professional_voice_slots_used": "$.professional_voice_slots_used",
+            "professional_voice_limit": "$.professional_voice_limit",
+            "can_use_instant_voice_cloning": "$.can_use_instant_voice_cloning",
+            "can_use_professional_voice_cloning": "$.can_use_professional_voice_cloning"
+          }
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_create_dubbing",
+      "description": "Dub a video or audio file into another language with ElevenLabs, keeping the original speakers' voices. Pass a public link to the file (also YouTube and other video sites). Runs in the background: returns dubbing_id and expected_duration_sec; check with elevenlabs_get_dubbing until status is dubbed. COSTS MONEY per minute of media: on pay-as-you-go API billing about $0.33 a minute with a watermark and $0.50 without (credits on a subscription plan). Tell the user the cost for the file's length and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public link to the video or audio file, or a YouTube or other video page URL."
+          },
+          "target_lang": {
+            "type": "string",
+            "description": "Language to dub into, ISO 639-1 code, e.g. de, es, it, ja."
+          },
+          "source_lang": {
+            "type": "string",
+            "description": "Language of the original, ISO 639-1 code. Default auto (detected)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the dubbing project."
+          },
+          "num_speakers": {
+            "type": "integer",
+            "description": "Number of speakers; 0 (default) detects them."
+          },
+          "watermark": {
+            "type": "boolean",
+            "description": "Put a watermark on the output video (cheaper). Default false."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Dub only from this second of the source."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "Dub only up to this second of the source."
+          },
+          "highest_resolution": {
+            "type": "boolean",
+            "description": "Use the highest resolution available. Default false."
+          },
+          "drop_background_audio": {
+            "type": "boolean",
+            "description": "Remove background music and noise from the dub. Default false."
+          },
+          "disable_voice_cloning": {
+            "type": "boolean",
+            "description": "Use similar Voice Library voices instead of cloning the speakers. Default false."
+          }
+        },
+        "required": [
+          "source_url",
+          "target_lang"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/dubbing",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "source_url": "$source_url",
+          "target_lang": "$target_lang",
+          "source_lang": "$source_lang",
+          "name": "$name",
+          "num_speakers": "$num_speakers",
+          "watermark": "$watermark",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "highest_resolution": "$highest_resolution",
+          "drop_background_audio": "$drop_background_audio",
+          "disable_voice_cloning": "$disable_voice_cloning"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "elevenlabs_get_dubbing",
+      "description": "Check a dubbing project: status (dubbing while it runs, dubbed when done, failed with error), source and target languages and media details. A finished dub is played and downloaded in the ElevenLabs app under Dubbing; elevenlabs_get_dubbing_transcript returns its subtitles. Poll every 30 to 60 seconds, not faster. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dubbing_id": {
+            "type": "string",
+            "description": "dubbing_id from elevenlabs_create_dubbing or elevenlabs_list_dubbings."
+          }
+        },
+        "required": [
+          "dubbing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dubbing/{dubbing_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "dubbing_id": "$.dubbing_id",
+            "name": "$.name",
+            "status": "$.status",
+            "source_language": "$.source_language",
+            "target_languages": "$.target_languages",
+            "created_at": "$.created_at",
+            "media_metadata": "$.media_metadata",
+            "error": "$.error",
+            "editable": "$.editable"
+          }
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_list_dubbings",
+      "description": "List the dubbing projects in the account, newest first, with id, name, status and languages. Call again with cursor = next_cursor while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dubbing_status": {
+            "type": "string",
+            "enum": [
+              "dubbing",
+              "dubbed",
+              "failed"
+            ],
+            "description": "Only projects in this state."
+          },
+          "filter_by_creator": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "others",
+              "all"
+            ],
+            "description": "Projects created by the key's user, by others, or all (default)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Projects per page, 1 to 200. Default 30.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dubbing",
+        "queryParams": {
+          "dubbing_status": "$dubbing_status",
+          "filter_by_creator": "$filter_by_creator",
+          "page_size": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "dubs": {
+              "$from": "$.dubs[*]",
+              "$select": {
+                "dubbing_id": "dubbing_id",
+                "name": "name",
+                "status": "status",
+                "source_language": "source_language",
+                "target_languages": "target_languages",
+                "created_at": "created_at",
+                "error": "error"
+              }
+            },
+            "next_cursor": "$.next_cursor",
+            "has_more": "$.has_more"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_get_dubbing_transcript",
+      "description": "Get the subtitles of a finished dub as SRT or WebVTT text, for a target language or for the original (language_code source). Long media is cut at about 200 KB. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dubbing_id": {
+            "type": "string",
+            "description": "dubbing_id of a dub with status dubbed."
+          },
+          "language_code": {
+            "type": "string",
+            "description": "A target language of the dub, e.g. de, or source for the original."
+          },
+          "format_type": {
+            "type": "string",
+            "enum": [
+              "srt",
+              "webvtt"
+            ],
+            "description": "srt (default) or webvtt.",
+            "default": "srt"
+          }
+        },
+        "required": [
+          "dubbing_id",
+          "language_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dubbing/{dubbing_id}/transcripts/{language_code}/format/{format_type}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transcript_format": "$.transcript_format",
+            "srt": "$.srt",
+            "webvtt": "$.webvtt"
+          },
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_list_agents",
+      "description": "List the ElevenLabs voice agents (ElevenAgents, formerly Conversational AI) in the account, with id, name, tags and last call time. Call again with cursor = next_cursor while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to look for in the agent name."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true lists archived agents instead. Default false."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Agents per page, 1 to 100. Default 30.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/convai/agents",
+        "queryParams": {
+          "search": "$search",
+          "archived": "$archived",
+          "page_size": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "agents": {
+              "$from": "$.agents[*]",
+              "$select": {
+                "agent_id": "agent_id",
+                "name": "name",
+                "tags": "tags",
+                "voice_id": "voice_id",
+                "created_at_unix_secs": "created_at_unix_secs",
+                "last_call_time_unix_secs": "last_call_time_unix_secs",
+                "archived": "archived"
+              }
+            },
+            "next_cursor": "$.next_cursor",
+            "has_more": "$.has_more"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_get_agent",
+      "description": "Get a voice agent's setup: name, first message, language, system prompt, LLM, voice and TTS model, tags and phone numbers. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "agent_id from elevenlabs_list_agents."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/convai/agents/{agent_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "agent_id": "$.agent_id",
+            "name": "$.name",
+            "tags": "$.tags",
+            "first_message": "$.conversation_config.agent.first_message",
+            "language": "$.conversation_config.agent.language",
+            "system_prompt": "$.conversation_config.agent.prompt.prompt",
+            "llm": "$.conversation_config.agent.prompt.llm",
+            "temperature": "$.conversation_config.agent.prompt.temperature",
+            "tool_ids": "$.conversation_config.agent.prompt.tool_ids",
+            "knowledge_base": "$.conversation_config.agent.prompt.knowledge_base",
+            "voice_id": "$.conversation_config.tts.voice_id",
+            "tts_model_id": "$.conversation_config.tts.model_id",
+            "max_duration_seconds": "$.conversation_config.conversation.max_duration_seconds",
+            "phone_numbers": "$.phone_numbers",
+            "version_id": "$.version_id",
+            "branch_id": "$.branch_id"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_list_conversations",
+      "description": "List the conversations held by the account's voice agents, newest first: id, agent, start time, duration, number of messages, status, success evaluation and a short title (with summary_mode include, also the summary). Filter by agent, time, outcome or words in the transcript. Call again with cursor = next_cursor while has_more is true. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Only conversations of this agent."
+          },
+          "call_successful": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failure",
+              "unknown"
+            ],
+            "description": "Only conversations with this success evaluation."
+          },
+          "call_start_after_unix": {
+            "type": "integer",
+            "description": "Only conversations that started after this Unix time (seconds)."
+          },
+          "call_start_before_unix": {
+            "type": "integer",
+            "description": "Only conversations that started before this Unix time (seconds)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Words to look for in the transcripts."
+          },
+          "summary_mode": {
+            "type": "string",
+            "enum": [
+              "exclude",
+              "include"
+            ],
+            "description": "include adds each conversation's transcript summary. Default exclude."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Conversations per page, 1 to 100. Default 30.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/convai/conversations",
+        "queryParams": {
+          "agent_id": "$agent_id",
+          "call_successful": "$call_successful",
+          "call_start_after_unix": "$call_start_after_unix",
+          "call_start_before_unix": "$call_start_before_unix",
+          "search": "$search",
+          "summary_mode": "$summary_mode",
+          "page_size": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "conversations": {
+              "$from": "$.conversations[*]",
+              "$select": {
+                "conversation_id": "conversation_id",
+                "agent_id": "agent_id",
+                "agent_name": "agent_name",
+                "start_time_unix_secs": "start_time_unix_secs",
+                "call_duration_secs": "call_duration_secs",
+                "message_count": "message_count",
+                "status": "status",
+                "call_successful": "call_successful",
+                "call_summary_title": "call_summary_title",
+                "transcript_summary": "transcript_summary",
+                "main_language": "main_language",
+                "direction": "direction",
+                "termination_reason": "termination_reason",
+                "rating": "rating"
+              }
+            },
+            "next_cursor": "$.next_cursor",
+            "has_more": "$.has_more"
+          },
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "elevenlabs_get_conversation",
+      "description": "Read one agent conversation: the transcript (who said what, at which second, and which tools the agent called), status, duration, termination reason, and the analysis (success, summary, data collection and evaluation results). The call recording itself is played in the ElevenLabs app. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "conversation_id from elevenlabs_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/convai/conversations/{conversation_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "conversation_id": "$.conversation_id",
+            "agent_id": "$.agent_id",
+            "agent_name": "$.agent_name",
+            "status": "$.status",
+            "start_time_unix_secs": "$.metadata.start_time_unix_secs",
+            "call_duration_secs": "$.metadata.call_duration_secs",
+            "termination_reason": "$.metadata.termination_reason",
+            "main_language": "$.metadata.main_language",
+            "call_successful": "$.analysis.call_successful",
+            "call_summary_title": "$.analysis.call_summary_title",
+            "transcript_summary": "$.analysis.transcript_summary",
+            "data_collection_results": "$.analysis.data_collection_results",
+            "evaluation_criteria_results": "$.analysis.evaluation_criteria_results",
+            "transcript": {
+              "$from": "$.transcript[*]",
+              "$select": {
+                "role": "role",
+                "message": "message",
+                "time_in_call_secs": "time_in_call_secs",
+                "tool_calls": "tool_calls[*].tool_name",
+                "interrupted": "interrupted"
+              }
+            }
+          },
+          "maxBytes": 200000
+        }
+      }
+    }
+  ]
+}
