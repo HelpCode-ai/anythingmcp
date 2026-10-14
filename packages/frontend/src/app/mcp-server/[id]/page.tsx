@@ -557,12 +557,18 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open ChatGPT&apos;s connector settings.<br />
-              2. Click <strong>Add connector</strong> or <strong>Create</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Click the button below to open <strong>Plugins</strong> in ChatGPT, then click <strong>+</strong> and <strong>Add custom MCP server</strong>.<br />
+              2. Enter a name (e.g. AnythingMCP), paste the MCP endpoint URL below as the <strong>Server URL</strong> and keep <strong>Authentication</strong> on <strong>OAuth</strong>.<br />
+              3. Select <strong>I understand and want to continue</strong>, then <strong>Create as a plugin</strong>, and sign in to AnythingMCP when asked.<br />
+              4. Install the plugin from your personal plugins, then type <strong>@</strong> in a chat to use it.
             </p>
-            {linkAction('https://chatgpt.com/admin/mcp', 'Open ChatGPT Settings', true)}
+            {linkAction('https://chatgpt.com/plugins', 'Open ChatGPT Plugins', true)}
             {endpointRow('modal-chatgpt-url')}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              No developer mode needed. On a Business workspace only admins and owners can add
+              custom MCP servers; on Enterprise and Edu an admin can grant the <strong>Create plugins with MCPs</strong> permission
+              under <strong>Workspace settings → Permissions &amp; roles</strong>.
+            </p>
           </div>
         );
       case 'muse': {
