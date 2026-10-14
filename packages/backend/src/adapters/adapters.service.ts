@@ -16,7 +16,7 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
-import { odooDatabaseHint } from './odoo-database-hint';
+import { odooCheckAdvice } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -451,24 +451,32 @@ export class AdaptersService {
       const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
       const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      // A wrong Odoo database name: look up the right one rather than send
-      // the user looking for a value Odoo shows nowhere.
-      const database = await odooDatabaseHint(
-        adapter.slug,
+      // Odoo: a JSON-2 404 is told apart by asking Odoo its version (older
+      // than 19, a wrong database name, no database at this address), and a
+      // wrong database name is looked up rather than left for the user to
+      // find. When that says what is wrong, the adapter's own suggestion (the
+      // JSON-RPC connector) stands only if the advice repeats it.
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        kind: classified.kind,
         message,
-        prepared.resolvedBaseUrl,
-        credentials?.ODOO_DB,
-      );
-      // ...in which case the JSON-RPC adapter is not the better choice either.
-      const suggest =
-        !database && typeof own === 'object' && own?.suggest ? own.suggest : undefined;
+        upstream,
+        baseUrl: prepared.resolvedBaseUrl,
+        enteredDatabase: credentials?.ODOO_DB,
+      });
+      const suggest = odoo
+        ? odoo.suggest
+        : typeof own === 'object' && own?.suggest
+          ? own.suggest
+          : undefined;
       return {
         ok: false,
         kind: classified.kind,
         toolName: call.toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
@@ -862,14 +870,21 @@ export class AdaptersService {
         message: upstream,
       });
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
-      const database = await odooDatabaseHint(adapter.slug, message, baseUrl, envVars.ODOO_DB);
+      const odoo = await odooCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        message,
+        upstream,
+        baseUrl,
+        enteredDatabase: envVars.ODOO_DB,
+      });
       return {
         ok: false,
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: database ? `${database} ${message}` : message,
+        message: odoo ? odoo.message : message,
       };
     }
   }

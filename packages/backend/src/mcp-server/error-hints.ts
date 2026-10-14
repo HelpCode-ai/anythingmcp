@@ -44,6 +44,45 @@ const ODOO_PARTNER_MOBILE_HINT =
   'Odoo 18.3 and later (Odoo 19 included) have no `mobile` field on contacts: every number is ' +
   'in `phone`. Ask for `phone` instead and leave `mobile` out of fields and domains.';
 
+// Since Odoo 18 an API key expires. The "New API Key" dialog asks for a
+// Duration and preselects "1 Day", so a connector that worked yesterday answers
+// 401 "Invalid apikey" today (several workspaces in October 2026). Only an
+// administrator is offered "Persistent Key"; other users get at most what
+// their group allows (90 days for internal users by default).
+const ODOO_EXPIRED_KEY_HINT =
+  'Odoo refused the API key. Since Odoo 18 API keys expire, and the key dialog preselects a ' +
+  'duration of 1 Day, so a key that worked before has most likely expired (or was deleted). ' +
+  'Retrying will not help: tell the user to create a new key in Odoo (avatar → My Profile / ' +
+  'Preferences → Account Security → New API Key) with Duration "Persistent Key" (offered to ' +
+  'administrators) or the longest duration offered, such as 3 Months, and paste it into the ' +
+  'connector\'s ODOO_API_KEY in AnythingMCP.';
+
+const ODOO_ACCESS_DENIED_HINT =
+  'Odoo answered Access Denied: the API key, the user ID and the database name do not belong ' +
+  'together, or the key has expired (since Odoo 18 keys expire, and the key dialog preselects ' +
+  '1 Day). Retrying will not help: tell the user to check ODOO_DB and ODOO_UID in AnythingMCP ' +
+  'and, if they are right, to create a new key (My Profile / Preferences → Account Security → ' +
+  'New API Key) with Duration "Persistent Key" (administrators) or the longest duration ' +
+  'offered, and paste it into ODOO_API_KEY.';
+
+// The client_credentials token of a communication arrangement comes from the
+// tenant's own API host. A BTP token URL, a client that is not the
+// arrangement's communication user, a missing arrangement or a scope it does
+// not grant all end in a refusal that names none of them.
+const S4HANA_CLOUD_TOKEN_HINT =
+  'SAP S/4HANA Cloud refused the token request. Retrying will not help: tell the user to check, in ' +
+  'the connector settings in AnythingMCP, (1) the token URL: the Token Service URL from the ' +
+  'communication arrangement → Inbound Communication → OAuth 2.0 Details, on the tenant\'s API host ' +
+  '(https://<tenant>-api.s4hana.cloud.sap/sap/bc/sec/oauth2/token), not a BTP ' +
+  'authentication.<region>.hana.ondemand.com address; (2) that the client ID and secret are those of ' +
+  'the arrangement\'s communication user; (3) that an active communication arrangement exists for the ' +
+  'service; (4) that no scope is set, or only scopes the arrangement grants.';
+
+const S4HANA_CLOUD_ARRANGEMENT_HINT =
+  'SAP S/4HANA Cloud accepted the sign-in but refused this API: no active communication arrangement ' +
+  'covers this service for the connector\'s communication user (e.g. SAP_COM_0008 for business ' +
+  'partners, SAP_COM_0109 for sales orders). An SAP administrator has to add one; retrying will not help.';
+
 const ODOO_MODEL_HINT =
   'That model does not exist in this Odoo database: it was renamed in newer versions or its ' +
   'app is not installed (for example stock.production.lot is stock.lot since Odoo 16). Check ' +
@@ -55,15 +94,24 @@ const ETSY_PROPERTY_NAME_HINT =
   'etsy_read_listing_inventory and send its property_values back unchanged, changing ' +
   'only prices, quantities or SKUs.';
 
+// About 50 failures across 10 workspaces in the ten days to 14 Oct 2026 were
+// guessed names in `properties` (customerNumber on orders and invoices,
+// openAmount, salesOrderItems, unitName, stockQuantity, validUntil), each
+// a call that would have worked with `properties` left out.
 const WECLAPP_FIELD_HINT =
-  'weclapp rejects fields it does not know. Field names are camelCase and belong to ' +
+  'weclapp rejects fields it does not know. If the unknown name is in `properties`, retry ' +
+  'the same call with `properties` left out: weclapp then returns every field, and the ' +
+  'answer is in there. Field names are camelCase and belong to ' +
   'the entity itself: line items live under `orderItems` / `salesInvoiceItems` / ' +
   '`shipmentItems` (as nested objects, not as filterable properties), the customer ' +
   'name is inside `recordAddress`, links end in `Id` (`customerId`, `articleId`, ' +
   '`warehouseId` is NOT a field of every entity). Names seen guessed wrong: the ' +
   'shipping address of an order is `deliveryAddress` (not `shippingAddress`), an ' +
   'article has `unitId` (not `unitName`), and fields of line items cannot be picked ' +
-  'with a dot (`orderItems.articleNumber`): ask for `orderItems` whole. Do not guess another spelling: ' +
+  'with a dot (`orderItems.articleNumber`): ask for `orderItems` whole. Sales orders and ' +
+  'invoices have no `customerNumber` (filter by `customerId`), an invoice has no ' +
+  '`openAmount` or `paidAmount` (`paymentStatus` and `paid` say whether it is settled), and ' +
+  'an article holds no stock quantity. Do not guess another spelling: ' +
   'fetch ONE record without `properties` and without that filter, read the field ' +
   'names it actually returns, then retry using only those.';
 
@@ -375,6 +423,23 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   }
   if (/Object [\w.]+ doesn't exist|Model not found: [\w.]+/i.test(text)) {
     return ODOO_MODEL_HINT;
+  }
+  // JSON-2 (Odoo 19) answers 401 "Invalid apikey"; /jsonrpc answers an
+  // AccessDenied inside a 200.
+  if (/Invalid apikey/i.test(text)) {
+    return ODOO_EXPIRED_KEY_HINT;
+  }
+  if (/Odoo Server Error: Access Denied|odoo\.exceptions\.AccessDenied/i.test(text)) {
+    return ODOO_ACCESS_DENIED_HINT;
+  }
+
+  if (hostMatches(input.host, 's4hana.cloud.sap') || hostMatches(input.host, 's4hana.ondemand.com')) {
+    if (input.status === 401 || /could not obtain an access token/i.test(text)) {
+      return S4HANA_CLOUD_TOKEN_HINT;
+    }
+    if (input.status === 403) {
+      return S4HANA_CLOUD_ARRANGEMENT_HINT;
+    }
   }
 
   if (hostMatches(input.host, 'weclapp.com')) {
