@@ -172,7 +172,7 @@ export class PostmanParser {
     const properties: Record<string, any> = {};
     const required: string[] = [];
     const queryParams: Record<string, string> = {};
-    const bodyMapping: Record<string, string> = {};
+    const bodyMapping: Record<string, unknown> = {};
     const headerMapping: Record<string, string> = {};
 
     // Path parameters (from {{param}} in URL path)
@@ -220,8 +220,9 @@ export class PostmanParser {
     }
 
     // Request body
+    let bodyEncoding: string | undefined;
     if (request.body) {
-      this.parseBody(request.body, properties, required, bodyMapping);
+      bodyEncoding = this.parseBody(request.body, properties, required, bodyMapping);
     }
 
     // Headers (non-standard ones become parameters)
@@ -263,6 +264,7 @@ export class PostmanParser {
     };
     if (Object.keys(queryParams).length > 0) endpointMapping.queryParams = queryParams;
     if (Object.keys(bodyMapping).length > 0) endpointMapping.bodyMapping = bodyMapping;
+    if (bodyEncoding) endpointMapping.bodyEncoding = bodyEncoding;
     if (Object.keys(headerMapping).length > 0) endpointMapping.headers = headerMapping as Record<string, string>;
 
     const tool: ParsedTool = { name, description, parameters, endpointMapping };
@@ -346,8 +348,8 @@ export class PostmanParser {
     body: any,
     properties: Record<string, any>,
     required: string[],
-    bodyMapping: Record<string, string>,
-  ): void {
+    bodyMapping: Record<string, unknown>,
+  ): string | undefined {
     switch (body.mode) {
       case 'raw': {
         if (body.raw) {
@@ -385,9 +387,12 @@ export class PostmanParser {
         }
         break;
       }
+      // Content-Type is not one of the headers a tool replays, so the engine
+      // has to be told how to send form fields; without it they went out as
+      // JSON (the HAR importer had the same bug).
       case 'urlencoded': {
         for (const field of body.urlencoded || []) {
-          if (field.disabled) continue;
+          if (field.disabled || !field.key) continue;
           properties[field.key] = {
             type: 'string',
             description: field.description || `Form field: ${field.key}`,
@@ -395,20 +400,35 @@ export class PostmanParser {
           bodyMapping[field.key] = `$${field.key}`;
           if (field.value?.includes('{{')) required.push(field.key);
         }
-        break;
+        return Object.keys(bodyMapping).length > 0 ? 'form-urlencoded' : undefined;
       }
       case 'formdata': {
+        // multipart/form-data. A file part cannot come from the model as text:
+        // the engine downloads it from the URL the caller passes (the
+        // `__file` marker, as Etsy's image upload uses).
         for (const field of body.formdata || []) {
-          if (field.disabled) continue;
-          properties[field.key] = {
-            type: field.type === 'file' ? 'string' : 'string',
-            description: field.description || `Form field: ${field.key}`,
-          };
-          bodyMapping[field.key] = `$${field.key}`;
+          if (field.disabled || !field.key) continue;
+          if (field.type === 'file') {
+            properties[field.key] = {
+              type: 'string',
+              description:
+                (field.description ? `${field.description}. ` : '') +
+                `Public https URL of the file to send as "${field.key}". AnythingMCP downloads it and uploads it as the file part.`,
+            };
+            bodyMapping[field.key] = { __file: `$${field.key}` };
+          } else {
+            properties[field.key] = {
+              type: 'string',
+              description: field.description || `Form field: ${field.key}`,
+            };
+            bodyMapping[field.key] = `$${field.key}`;
+            if (field.value?.includes('{{')) required.push(field.key);
+          }
         }
-        break;
+        return Object.keys(bodyMapping).length > 0 ? 'form-data' : undefined;
       }
     }
+    return undefined;
   }
 
   private generateToolName(

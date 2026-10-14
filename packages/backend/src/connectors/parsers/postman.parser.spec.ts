@@ -285,6 +285,51 @@ describe('PostmanParser', () => {
     const params = tools[0].parameters as any;
     expect(params.required).toContain('username');
     expect(params.required).toContain('password');
+    // Sent as a form, not as JSON: Content-Type is not a replayed header.
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-urlencoded');
+  });
+
+  it('leaves the encoding unset (JSON) for a raw JSON body and a raw XML body', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Create',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/items', path: ['items'] },
+            body: { mode: 'raw', raw: '{"name":"x"}' },
+          },
+        },
+        {
+          name: 'Soap',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/soap', path: ['soap'] },
+            body: { mode: 'raw', raw: '<Envelope/>' },
+          },
+        },
+      ],
+    });
+    expect(tools.map((t) => t.endpointMapping.bodyEncoding)).toEqual([undefined, undefined]);
+  });
+
+  it('sets no encoding for a form whose fields are all disabled', async () => {
+    const tools = await parser.parse({
+      ...minimalCollection,
+      item: [
+        {
+          name: 'Empty form',
+          request: {
+            method: 'POST',
+            url: { raw: 'https://api.example.com/form', path: ['form'] },
+            body: { mode: 'urlencoded', urlencoded: [{ key: 'a', value: '1', disabled: true }] },
+          },
+        },
+      ],
+    });
+    expect(tools[0].endpointMapping.bodyMapping).toBeUndefined();
+    expect(tools[0].endpointMapping.bodyEncoding).toBeUndefined();
   });
 
   it('should parse POST with form-data body', async () => {
@@ -309,8 +354,14 @@ describe('PostmanParser', () => {
     };
     const tools = await parser.parse(collection);
     expect(tools).toHaveLength(1);
-    expect(tools[0].endpointMapping.bodyMapping!['file']).toBe('$file');
+    // multipart/form-data; the file part is downloaded from the URL the
+    // caller passes, the text part goes as given.
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-data');
+    expect(tools[0].endpointMapping.bodyMapping!['file']).toEqual({ __file: '$file' });
     expect(tools[0].endpointMapping.bodyMapping!['description']).toBe('$description');
+    const params = tools[0].parameters as any;
+    expect(params.properties.file.description).toMatch(/^File to upload\. Public https URL/);
+    expect(params.properties.description.type).toBe('string');
   });
 
   it('should skip disabled form-data fields', async () => {
@@ -335,8 +386,9 @@ describe('PostmanParser', () => {
     };
     const tools = await parser.parse(collection);
     expect(tools).toHaveLength(1);
-    expect(tools[0].endpointMapping.bodyMapping!['file']).toBe('$file');
+    expect(tools[0].endpointMapping.bodyMapping!['file']).toEqual({ __file: '$file' });
     expect(tools[0].endpointMapping.bodyMapping?.['debug']).toBeUndefined();
+    expect(tools[0].endpointMapping.bodyEncoding).toBe('form-data');
   });
 
   it('should handle raw non-JSON body (XML/SOAP)', async () => {
