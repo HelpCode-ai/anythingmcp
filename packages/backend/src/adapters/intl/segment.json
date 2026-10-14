@@ -1,0 +1,1467 @@
+{
+  "slug": "segment",
+  "name": "Twilio Segment",
+  "aliases": [
+    "Segment.io",
+    "Segment CDP"
+  ],
+  "description": "Let your AI work with your Twilio Segment workspace: list sources, destinations and warehouses, check event volume, delivery and warehouse syncs, read tracking plans, Functions, usage and the audit trail. US and EU workspaces.",
+  "instructions": "## Twilio Segment\nThis connector manages one **Segment** workspace (customer data platform) through the **Segment Public API** with a workspace token: sources, destinations and their mappings, warehouses and their syncs, tracking plans and rules (Protocols), Functions, event volume, Delivery Overview and destination delivery metrics, API call and MTU usage, and the Audit Trail. Changing or deleting sources and destinations is possible but installed switched off.\n\n**Setup (about 3 minutes; you need to be a Workspace Owner)**\n1. In Segment open **Settings, Workspace settings, Access Management, Tokens** (https://app.segment.com/goto-my-workspace/settings/access-management/tokens) and click **Create Token**.\n2. Choose a **Public API** token (not a Config API token). Give it the least role that covers what you want: **Workspace Member** with read-only roles (for example Source Read-only, Tracking Plan Read-only) for reading; **Workspace Owner** only if the write tools will be switched on. The token is shown once: copy it at once.\n3. Paste it into `SEGMENT_API_TOKEN`. It is sent as a Bearer token and only to Segment.\n4. Set `SEGMENT_API_HOST` to the workspace's region: `https://api.segmentapis.com` for US workspaces, `https://eu1.api.segmentapis.com` for EU workspaces. A token only works in its own region.\n\nA token belongs to one workspace; create one connector per workspace.\n\n**Limits**: Segment limits requests per token, IP address and endpoint; over the limit it answers 429 with a Retry-After header. Some endpoints are stricter: `segment_list_warehouse_syncs` 2 requests a minute, `segment_get_event_volume` 60 a minute, `segment_list_tracking_plan_rules` and `segment_get_warehouse_connection_state` 200 a minute. Prefer list tools over many single reads, and never loop over items.\n\n**Pagination**: list tools take `count` (1 to 1000) and `cursor`. When the answer has `pagination.next`, call the same tool again with `cursor` set to it; when it is missing you have everything.\n\n**How to work**\n1. Map the workspace: `segment_get_workspace`, `segment_list_sources`, `segment_list_destinations`, `segment_list_warehouses`; per source `segment_get_source`, `segment_list_source_destinations`, `segment_list_source_warehouses`, `segment_get_source_schema_settings`; per destination `segment_get_destination` and `segment_list_destination_subscriptions` (Actions mappings).\n2. Data health: `segment_get_event_volume` for volume over time, `segment_get_delivery_overview` for where events are dropped (step by step, with discard reasons), `segment_get_destination_delivery_metrics` for one destination, `segment_get_warehouse`, `segment_get_warehouse_connection_state` and `segment_list_warehouse_syncs` for warehouses.\n3. Governance (Protocols): `segment_list_tracking_plans`, `segment_get_tracking_plan`, `segment_list_tracking_plan_rules`, `segment_list_tracking_plan_sources`.\n4. Code and usage: `segment_list_functions`, `segment_get_function`, `segment_get_daily_api_calls_usage`, `segment_get_daily_mtu_usage`, and `segment_list_audit_events` for who changed what.\n5. Changes (installed switched off): `segment_update_source` and `segment_update_destination` rename or enable and disable; a disabled source or destination drops data, so confirm with the user before each call. `segment_delete_source` and `segment_delete_destination` cannot be undone and need the user's explicit confirmation of the id and name.\n\nTimes are ISO 8601 (`2026-10-13T00:00:00Z`); end times are exclusive.\n\nSecrets: tools leave out settings fields that usually hold credentials (API keys, secrets, tokens, passwords) of destinations and warehouses. `segment_get_source` returns the source's write keys, which let anyone send data into that source.\n\n**Common errors**\n- 403 \"Not authorized to perform this operation\": the token is wrong or revoked, belongs to a workspace in the other region, or its role does not allow this resource.\n- 401: no token was sent; set `SEGMENT_API_TOKEN`.\n- 404: no resource with that id in this workspace.\n- 422: a parameter is missing or invalid; the message names it (for example a Delivery Overview time range longer than its granularity allows).\n- A message about a feature: the workspace has no Protocols, Functions or Destination Subscriptions.\n- 429: rate limited; wait for Retry-After.\n\n**Out of scope here**: sending events (the Tracking API uses a source's write key with HTTP Basic on api.segment.io, a different credential and host), creating sources, destinations and warehouses, filters, transformations, Reverse ETL, Engage audiences and computed traits, IAM, regulations (deletion and suppression) and the catalog.",
+  "region": "intl",
+  "category": "data",
+  "icon": "segment",
+  "docsUrl": "https://docs.segmentapis.com/",
+  "prerequisites": "A Segment workspace and the Workspace Owner role, to create a Public API token under Settings, Workspace settings, Access Management, Tokens. About 3 minutes.",
+  "requiredEnvVars": [
+    "SEGMENT_API_HOST",
+    "SEGMENT_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SEGMENT_API_HOST": {
+      "label": "API host (region)",
+      "kind": "address",
+      "help": "https://api.segmentapis.com for a US workspace, https://eu1.api.segmentapis.com for an EU workspace.",
+      "example": "https://api.segmentapis.com",
+      "pattern": "^(https://)?(eu1\\.)?api\\.segmentapis\\.com/?$",
+      "patternMessage": "Use exactly https://api.segmentapis.com (US) or https://eu1.api.segmentapis.com (EU), without a path."
+    },
+    "SEGMENT_API_TOKEN": {
+      "label": "Public API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, Workspace settings, Access Management, Tokens, Create Token: choose a Public API token. It is shown once.",
+      "link": "https://app.segment.com/goto-my-workspace/settings/access-management/tokens",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the token as Segment shows it, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Segment received no token. Set the Public API token.",
+    "403": "Segment refused the token: it is wrong or revoked, it is a Config API token instead of a Public API token, its role does not allow this, or it belongs to a workspace in the other region (US tokens work only with https://api.segmentapis.com, EU tokens only with https://eu1.api.segmentapis.com).",
+    "404": "Nothing answered at this host. Use https://api.segmentapis.com or https://eu1.api.segmentapis.com, without a path.",
+    "429": "Segment's API rate limit is reached. Wait a minute and verify again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "segment_get_workspace"
+  },
+  "connector": {
+    "name": "Twilio Segment",
+    "type": "REST",
+    "baseUrl": "{{SEGMENT_API_HOST}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SEGMENT_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "segment_get_workspace",
+      "description": "Get the Segment workspace the token belongs to (id, slug, name). A cheap first call to check the connection. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workspace": "$.data.workspace"
+          }
+        }
+      }
+    },
+    {
+      "name": "segment_list_sources",
+      "description": "List the workspace's sources (websites, apps, servers and cloud apps that send data) with id, name, slug, enabled flag, source type, categories and labels. Write keys and settings are left out; segment_get_source has them. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "sources": {
+              "$from": "$.data.sources[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "slug": "slug",
+                "enabled": "enabled",
+                "type": "metadata.name",
+                "categories": "metadata.categories",
+                "labels": "labels"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "segment_get_source",
+      "description": "Get one source by id: name, slug, enabled flag, source type, labels, write keys, settings and the id of the tracking plan connected to it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Source id from segment_list_sources."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources/{source_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "source": {
+              "id": "$.data.source.id",
+              "name": "$.data.source.name",
+              "slug": "$.data.source.slug",
+              "enabled": "$.data.source.enabled",
+              "type": "$.data.source.metadata.name",
+              "metadataId": "$.data.source.metadata.id",
+              "labels": "$.data.source.labels",
+              "writeKeys": "$.data.source.writeKeys",
+              "settings": "$.data.source.settings"
+            },
+            "trackingPlanId": "$.data.trackingPlanId"
+          },
+          "exclude": [
+            "data.source.settings.apiKey",
+            "data.source.settings.api_key",
+            "data.source.settings.apiSecret",
+            "data.source.settings.secret",
+            "data.source.settings.secretKey",
+            "data.source.settings.secret_key",
+            "data.source.settings.clientSecret",
+            "data.source.settings.client_secret",
+            "data.source.settings.accessToken",
+            "data.source.settings.access_token",
+            "data.source.settings.token",
+            "data.source.settings.password",
+            "data.source.settings.privateKey",
+            "data.source.settings.private_key",
+            "data.source.settings.ciphertext",
+            "data.source.settings.serviceAccountKey",
+            "data.source.settings.credentials"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_list_source_destinations",
+      "description": "List the destinations connected to one source (id, name, enabled flag, destination type). Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Source id from segment_list_sources."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources/{source_id}/connected-destinations",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "destinations": {
+              "$from": "$.data.destinations[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "enabled": "enabled",
+                "type": "metadata.name",
+                "metadataId": "metadata.id",
+                "sourceId": "sourceId"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "segment_list_source_warehouses",
+      "description": "List the warehouses connected to one source (id, name, enabled flag, warehouse type). Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Source id from segment_list_sources."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources/{source_id}/connected-warehouses",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "warehouses": {
+              "$from": "$.data.warehouses[*]",
+              "$select": {
+                "id": "id",
+                "name": "settings.name",
+                "enabled": "enabled",
+                "type": "metadata.name"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_get_source_schema_settings",
+      "description": "Get a source's schema settings: whether unplanned track events, properties and traits are allowed or blocked, what happens on tracking plan violations, and where blocked events and violations are forwarded. Protocols settings show defaults when Protocols is off. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Source id from segment_list_sources."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources/{source_id}/settings"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "sourceId": "$.data.sourceId",
+            "settings": "$.data.settings"
+          }
+        }
+      }
+    },
+    {
+      "name": "segment_list_destinations",
+      "description": "List the workspace's destinations (tools Segment sends data to) with id, name, enabled flag, destination type, catalog metadata id and the source each one reads from. Settings are left out; segment_get_destination has them. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/destinations",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "destinations": {
+              "$from": "$.data.destinations[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "enabled": "enabled",
+                "type": "metadata.name",
+                "metadataId": "metadata.id",
+                "sourceId": "sourceId"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "segment_get_destination",
+      "description": "Get one destination by id: name, enabled flag, destination type, source id and its settings. Settings that usually hold the destination's own credentials (API keys, secrets, tokens, passwords) are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "description": "Destination id from segment_list_destinations."
+          }
+        },
+        "required": [
+          "destination_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/destinations/{destination_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.destination.settings.apiKey",
+            "data.destination.settings.api_key",
+            "data.destination.settings.apiSecret",
+            "data.destination.settings.secret",
+            "data.destination.settings.secretKey",
+            "data.destination.settings.secret_key",
+            "data.destination.settings.clientSecret",
+            "data.destination.settings.client_secret",
+            "data.destination.settings.accessToken",
+            "data.destination.settings.access_token",
+            "data.destination.settings.token",
+            "data.destination.settings.password",
+            "data.destination.settings.privateKey",
+            "data.destination.settings.private_key",
+            "data.destination.settings.ciphertext",
+            "data.destination.settings.serviceAccountKey",
+            "data.destination.settings.credentials"
+          ],
+          "select": {
+            "destination": {
+              "id": "$.data.destination.id",
+              "name": "$.data.destination.name",
+              "enabled": "$.data.destination.enabled",
+              "type": "$.data.destination.metadata.name",
+              "metadataId": "$.data.destination.metadata.id",
+              "sourceId": "$.data.destination.sourceId",
+              "settings": "$.data.destination.settings"
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_list_destination_subscriptions",
+      "description": "List the mappings (subscriptions) of an Actions destination: id, name, action, trigger (which events it fires on) and enabled flag. Needs the Destination Subscriptions feature in the workspace; this endpoint is in alpha. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "description": "Destination id from segment_list_destinations."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "destination_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/destinations/{destination_id}/subscriptions",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "subscriptions": {
+              "$from": "$.data.subscriptions[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "actionSlug": "actionSlug",
+                "trigger": "trigger",
+                "enabled": "enabled"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "segment_get_destination_delivery_metrics",
+      "description": "Delivery metrics summary of one destination for one source: totals per metric (delivered, discarded, retried and so on) with breakdowns. Time limits by granularity: MINUTE up to 4 hours within the last 48 hours (default last hour), HOUR up to 7 days within the last 7 days, DAY up to 14 days within the last 14 days. Beta endpoint. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "description": "Destination id from segment_list_destinations."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Id of the source connected to this destination (sourceId in segment_list_destinations)."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, ISO 8601, e.g. 2026-10-13T00:00:00Z. Defaults depend on granularity."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, ISO 8601. Defaults to now."
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "MINUTE",
+              "HOUR",
+              "DAY"
+            ],
+            "description": "MINUTE (default), HOUR or DAY."
+          }
+        },
+        "required": [
+          "destination_id",
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/destinations/{destination_id}/delivery-metrics",
+        "queryParams": {
+          "sourceId": "$source_id",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "granularity": "$granularity"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deliveryMetricsSummary": "$.data.deliveryMetricsSummary"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "segment_list_warehouses",
+      "description": "List the workspace's warehouses (id, name, enabled flag, warehouse type such as Snowflake, BigQuery, Redshift, Postgres). Connection settings are left out. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "warehouses": {
+              "$from": "$.data.warehouses[*]",
+              "$select": {
+                "id": "id",
+                "name": "settings.name",
+                "enabled": "enabled",
+                "type": "metadata.name"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_get_warehouse",
+      "description": "Get one warehouse by id: name, enabled flag, warehouse type and its connection settings without passwords, keys and other secrets. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id from segment_list_warehouses."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/{warehouse_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.warehouse.settings.apiKey",
+            "data.warehouse.settings.api_key",
+            "data.warehouse.settings.apiSecret",
+            "data.warehouse.settings.secret",
+            "data.warehouse.settings.secretKey",
+            "data.warehouse.settings.secret_key",
+            "data.warehouse.settings.clientSecret",
+            "data.warehouse.settings.client_secret",
+            "data.warehouse.settings.accessToken",
+            "data.warehouse.settings.access_token",
+            "data.warehouse.settings.token",
+            "data.warehouse.settings.password",
+            "data.warehouse.settings.privateKey",
+            "data.warehouse.settings.private_key",
+            "data.warehouse.settings.ciphertext",
+            "data.warehouse.settings.serviceAccountKey",
+            "data.warehouse.settings.credentials"
+          ],
+          "select": {
+            "warehouse": {
+              "id": "$.data.warehouse.id",
+              "enabled": "$.data.warehouse.enabled",
+              "type": "$.data.warehouse.metadata.name",
+              "settings": "$.data.warehouse.settings"
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "segment_get_warehouse_connection_state",
+      "description": "Check whether Segment can currently connect to a warehouse with its saved settings (e.g. CONNECTED). Limited to 200 requests per minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id from segment_list_warehouses."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/{warehouse_id}/connection-state"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "connectionState": "$.data.connectionState"
+          }
+        }
+      }
+    },
+    {
+      "name": "segment_list_warehouse_syncs",
+      "description": "Recent sync reports of a warehouse for every connected source: source id, start and end, status, duration, rows synced and notices. Segment allows only 2 calls a minute to this endpoint, so call it once and read the answer. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id from segment_list_warehouses."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Items per page (default 20, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/{warehouse_id}/syncs",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "reports": "$.data.reports",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "segment_list_tracking_plans",
+      "description": "List the tracking plans (id, name, slug, description, type, created and updated). Needs Segment Protocols in the workspace. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "LIVE",
+              "PROPERTY_LIBRARY",
+              "RULE_LIBRARY",
+              "TEMPLATE",
+              "ENGAGE"
+            ],
+            "description": "Only tracking plans of this type; all types when left out."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking-plans",
+        "queryParams": {
+          "type": "$type",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "trackingPlans": "$.data.trackingPlans",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_get_tracking_plan",
+      "description": "Get one tracking plan by id (name, slug, description, type, created and updated). Needs Segment Protocols in the workspace. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_plan_id": {
+            "type": "string",
+            "description": "Tracking plan id, e.g. tp_sprout_rVGCC6WdrNxjCf6JpCHP, from segment_list_tracking_plans."
+          }
+        },
+        "required": [
+          "tracking_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking-plans/{tracking_plan_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "trackingPlan": "$.data.trackingPlan"
+          }
+        }
+      }
+    },
+    {
+      "name": "segment_list_tracking_plan_rules",
+      "description": "List the rules of a tracking plan: per event or trait the rule type, key, JSON Schema of the allowed properties, version and dates. Limited to 200 requests per minute. Needs Segment Protocols in the workspace. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_plan_id": {
+            "type": "string",
+            "description": "Tracking plan id from segment_list_tracking_plans."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "tracking_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking-plans/{tracking_plan_id}/rules",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "rules": "$.data.rules",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "segment_list_tracking_plan_sources",
+      "description": "List the sources connected to a tracking plan (id, name, slug, enabled flag, source type). Needs Segment Protocols in the workspace. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_plan_id": {
+            "type": "string",
+            "description": "Tracking plan id from segment_list_tracking_plans."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "tracking_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking-plans/{tracking_plan_id}/sources",
+        "queryParams": {
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "sources": {
+              "$from": "$.data.sources[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "slug": "slug",
+                "enabled": "enabled",
+                "type": "metadata.name",
+                "categories": "metadata.categories",
+                "labels": "labels"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_list_functions",
+      "description": "List the workspace's Functions of one type (id, name, description, type, created). Needs the Functions feature. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "SOURCE",
+              "DESTINATION",
+              "INSERT_DESTINATION",
+              "INSERT_SOURCE",
+              "INSERT_TRANSFORMATION"
+            ],
+            "default": "SOURCE",
+            "description": "The function type: SOURCE (default), DESTINATION, INSERT_DESTINATION, INSERT_SOURCE or INSERT_TRANSFORMATION."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "resource_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions",
+        "queryParams": {
+          "resourceType": "$resource_type",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "functions": {
+              "$from": "$.data.functions[*]",
+              "$select": {
+                "id": "id",
+                "displayName": "displayName",
+                "description": "description",
+                "resourceType": "resourceType",
+                "createdAt": "createdAt"
+              }
+            },
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "segment_get_function",
+      "description": "Get one Function by id, including its JavaScript code, declared settings (names and types, not values) and type. Long code is cut at about 60 KB. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function_id": {
+            "type": "string",
+            "description": "Function id, e.g. sfnc_wXzcDGFR3KmjLDrtSawNHf, from segment_list_functions."
+          }
+        },
+        "required": [
+          "function_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions/{function_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "function": "$.data.function"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "segment_get_event_volume",
+      "description": "Event volume of the workspace over time: totals and series per bucket, optionally grouped by event name, event type or source and filtered to one source, event name, event type or app version. Segment recommends ending one minute before now. Limited to 60 requests per minute. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "DAY",
+              "HOUR",
+              "MINUTE"
+            ],
+            "description": "Bucket size: DAY, HOUR or MINUTE."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, inclusive, ISO 8601, e.g. 2026-10-07T00:00:00Z."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, exclusive, ISO 8601, e.g. 2026-10-14T00:00:00Z."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "eventName",
+              "eventType",
+              "source"
+            ],
+            "description": "Optional first dimension to group by."
+          },
+          "group_by_2": {
+            "type": "string",
+            "enum": [
+              "eventName",
+              "eventType",
+              "source"
+            ],
+            "description": "Optional second dimension to group by."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Optional: only this source id."
+          },
+          "event_name": {
+            "type": "string",
+            "description": "Optional: only this event name."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "alias",
+              "group",
+              "identify",
+              "page",
+              "screen",
+              "track"
+            ],
+            "description": "Optional: only this event type."
+          },
+          "app_version": {
+            "type": "string",
+            "description": "Optional: only this app version."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "granularity",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/volume",
+        "queryParams": {
+          "granularity": "$granularity",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "groupBy.0": "$group_by",
+          "groupBy.1": "$group_by_2",
+          "sourceId.0": "$source_id",
+          "eventName.0": "$event_name",
+          "eventType.0": "$event_type",
+          "appVersion.0": "$app_version",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.data.result",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "segment_get_delivery_overview",
+      "description": "Delivery Overview counts for one step of a source's pipeline: successfully-received and failed-on-ingest (events reaching Segment), filtered-at-source (blocked by Protocols or filters), and, for one destination, filtered-at-destination, failed-delivery and successful-delivery. Returns the total, a dataset per group with series, and discard reasons. Time limits by granularity: MINUTE up to 4 hours within the last 48 hours, HOUR up to 14 days within the last 30 days, DAY up to 30 days within the last 30 days. Beta endpoint. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "successfully-received",
+              "failed-on-ingest",
+              "filtered-at-source",
+              "filtered-at-destination",
+              "failed-delivery",
+              "successful-delivery"
+            ],
+            "description": "Pipeline step. The last three need destination_config_id."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "The source id."
+          },
+          "destination_config_id": {
+            "type": "string",
+            "description": "The destination id (from segment_list_destinations); required for filtered-at-destination, failed-delivery and successful-delivery."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, inclusive, ISO 8601, e.g. 2026-10-13T00:00:00Z."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, exclusive, ISO 8601."
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "DAY",
+              "HOUR",
+              "MINUTE"
+            ],
+            "description": "Bucket size: DAY, HOUR or MINUTE."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "eventName",
+              "eventType",
+              "discardReason",
+              "appVersion",
+              "subscriptionId",
+              "activationId",
+              "audienceId",
+              "spaceId"
+            ],
+            "description": "Optional first dimension to group by. discardReason does not apply to successfully-received; subscriptionId, activationId, audienceId and spaceId only to the destination steps."
+          },
+          "group_by_2": {
+            "type": "string",
+            "enum": [
+              "eventName",
+              "eventType",
+              "discardReason",
+              "appVersion",
+              "subscriptionId",
+              "activationId",
+              "audienceId",
+              "spaceId"
+            ],
+            "description": "Optional second dimension to group by."
+          },
+          "filter_event_name": {
+            "type": "string",
+            "description": "Optional: only these event names, comma-separated."
+          },
+          "filter_event_type": {
+            "type": "string",
+            "description": "Optional: only these event types, comma-separated (alias, group, identify, page, screen, track)."
+          },
+          "filter_discard_reason": {
+            "type": "string",
+            "description": "Optional: only these discard reasons, comma-separated."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "step",
+          "source_id",
+          "start_time",
+          "end_time",
+          "granularity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery-overview/{step}",
+        "queryParams": {
+          "sourceId": "$source_id",
+          "destinationConfigId": "$destination_config_id",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "granularity": "$granularity",
+          "groupBy.0": "$group_by",
+          "groupBy.1": "$group_by_2",
+          "filter.eventName": "$filter_event_name",
+          "filter.eventType": "$filter_event_type",
+          "filter.discardReason": "$filter_discard_reason",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total": "$.data.total",
+            "dataset": "$.data.dataset",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "segment_get_daily_api_calls_usage",
+      "description": "Daily cumulative API call counts of the workspace for one usage month (the volume Segment bills on for API-based plans). Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start of the usage month, YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 31,
+            "description": "Items per page (default 31, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/usage/api-calls/daily",
+        "queryParams": {
+          "period": "$period",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "dailyWorkspaceAPICallsUsage": "$.data.dailyWorkspaceAPICallsUsage",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "segment_get_daily_mtu_usage",
+      "description": "Daily cumulative monthly tracked users (MTU) of the workspace for one usage month: anonymous, identified, anonymous then identified and never identified. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start of the usage month, YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 31,
+            "description": "Items per page (default 31, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        },
+        "required": [
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/usage/mtu/daily",
+        "queryParams": {
+          "period": "$period",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "dailyWorkspaceMTUUsage": "$.data.dailyWorkspaceMTUUsage",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "segment_list_audit_events",
+      "description": "List Audit Trail events (who changed what and when): id, timestamp, type (e.g. Source Disabled), actor and actor email, resource id, type and name. Filter by time, resource id or resource type. Pages with count and cursor: call again with cursor = pagination.next until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Only events after this time, ISO 8601."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only events before this time, ISO 8601. Defaults to now."
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Only events about this resource, e.g. a source id."
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "Only events about this resource type, e.g. source, warehouse or tracking plan."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Items per page (default 50, at most 1000)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pagination.next from the previous answer, for the next page. Missing when there is no further page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audit-events",
+        "queryParams": {
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "resourceId": "$resource_id",
+          "resourceType": "$resource_type",
+          "pagination.count": "$count",
+          "pagination.cursor": "$cursor"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "events": "$.data.events",
+            "pagination": "$.data.pagination"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "segment_update_source",
+      "description": "Rename a source or switch it on or off. A disabled source drops every event sent to it until it is enabled again, so confirm the source and the change with the user before calling. Installed switched off; an administrator turns it on deliberately.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Source id from segment_list_sources."
+          },
+          "name": {
+            "type": "string",
+            "description": "New display name."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "true lets the source send data, false stops it."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/sources/{source_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "enabled": "$enabled"
+        }
+      }
+    },
+    {
+      "name": "segment_update_destination",
+      "description": "Rename a destination or switch it on or off. A disabled destination receives no data until it is enabled again, so confirm the destination and the change with the user before calling. Installed switched off; an administrator turns it on deliberately.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "description": "Destination id from segment_list_destinations."
+          },
+          "name": {
+            "type": "string",
+            "description": "New display name."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "true sends data to the destination, false stops it."
+          }
+        },
+        "required": [
+          "destination_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/destinations/{destination_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "enabled": "$enabled"
+        }
+      }
+    },
+    {
+      "name": "segment_delete_source",
+      "description": "Delete a source for good, with its settings and connections; data sent with its write key is no longer accepted. Cannot be undone. Installed switched off. Show the user the source (segment_get_source) and only call this after they confirm its id and name.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Id of the source to delete, as confirmed by the user."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sources/{source_id}"
+      }
+    },
+    {
+      "name": "segment_delete_destination",
+      "description": "Delete a destination for good, with its settings and mappings. Cannot be undone. Installed switched off. Show the user the destination (segment_get_destination) and only call this after they confirm its id and name.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string",
+            "description": "Id of the destination to delete, as confirmed by the user."
+          }
+        },
+        "required": [
+          "destination_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/destinations/{destination_id}"
+      }
+    }
+  ]
+}

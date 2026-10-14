@@ -1,0 +1,1126 @@
+{
+  "slug": "sistrix",
+  "name": "SISTRIX",
+  "unlisted": true,
+  "aliases": [
+    "Sichtbarkeitsindex"
+  ],
+  "description": "Give your AI SISTRIX SEO data: the Visibility Index (Sichtbarkeitsindex) and its history, ranking keywords, competitors, top URLs, keyword rankings, metrics and questions, and backlinks, with the credit cost of every call.",
+  "instructions": "## SISTRIX\nThis connector calls the **SISTRIX API** (`https://api.sistrix.com`) with the user's own API key: the SISTRIX Visibility Index (Sichtbarkeitsindex), domain key figures, ranking keywords, competitors, URLs, keyword rankings and metrics, questions and backlinks. Every tool is a read.\n\n**Every call spends SISTRIX API credits** from the account's weekly allowance. Most functions cost 1 credit per row returned; `sistrix_domain_overview` costs 5, `sistrix_keyword_metrics` 5 per keyword, `sistrix_links_overview` 25. SISTRIX returns 100 rows when no limit is sent (10,000 links for backlinks), so every list tool here defaults to `limit` 10. `sistrix_get_credits` and `sistrix_list_countries` are free. Each answer ends with `credits_used`.\n\n**Setup (about 2 minutes)**\n1. API access and weekly credits come with SISTRIX plans from Plus upwards.\n2. In the SISTRIX Toolbox open Account, API access (https://app.sistrix.com/account/api) and create or copy an API key.\n3. Paste it into `SISTRIX_API_KEY` and install. SISTRIX takes the key as the `api_key` query parameter; it is stored encrypted, added to each request by the connector, and only sent to api.sistrix.com.\n\n**Tools**\n- `sistrix_get_credits`: credits left this week (free).\n- `sistrix_list_countries`: supported country codes (free).\n- `sistrix_domain_overview`: Visibility Index, SEO and Ads keyword counts (5 credits).\n- `sistrix_visibility_index`: Visibility Index now, on a date or as history (1 per value).\n- `sistrix_keyword_count`: number of ranking keywords, now or as history (1 per value).\n- `sistrix_ranking_distribution`: keywords per result page (1 per date).\n- `sistrix_competitors`: SEO competitors with similarity (1 per competitor).\n- `sistrix_ranking_keywords`: keywords a domain ranks for, with position and URL (1 per keyword).\n- `sistrix_top_urls`: best-ranking URLs (1 per URL).\n- `sistrix_traffic_estimation`: paths with the most estimated clicks (1 per path).\n- `sistrix_keyword_opportunities`: keywords close to page one (1 per keyword).\n- `sistrix_keyword_serp`: who ranks for a keyword, or a site's ranking history (1 per ranking).\n- `sistrix_keyword_metrics`: competition, CPC, traffic, clicks of a keyword (5).\n- `sistrix_keyword_traffic`: search traffic and clicks, per country or over time (1 per value).\n- `sistrix_keyword_questions`: question queries for a keyword (1 per question).\n- `sistrix_links_overview`: backlink totals (25 credits).\n- `sistrix_backlinks`: backlinks (1 per link, at most 250).\n- `sistrix_link_texts`: anchor texts (1 per text).\n\n**What to analyse**: domain tools take exactly one of `domain` (sistrix.de, with all subdomains), `host` (www.sistrix.de), `path` (www.sistrix.de/news/) or `url` (one page). `country` is a lower-case code (de, at, ch, uk, us, it, fr, es...); without it SISTRIX uses the account's default country, usually de. `date` (YYYY-MM-DD) asks for the weekly value of a past week.\n\n**Reading the answers**: `answer` holds the data, `info` the country and object analysed, `credits_used` the credits spent. The Visibility Index appears as `sichtbarkeitsindex` (value with date). `traffic` on keywords is SISTRIX's search traffic index from 0 to 100, not visits; `competition` is 0 to 100.\n\n**Common errors** (SISTRIX answers `{\"status\": \"error\", \"error\": [{\"error_code\": ..., \"error_message\": ...}]}`)\n- 100 wrong api key / 403 permission denied: the key is wrong or the plan has no API access (code 5000).\n- 200 not enough credits: the weekly credits are used up; `sistrix_get_credits` shows the balance.\n- 1000 no results, 2000 domain not found, 3000 keyword not found: SISTRIX has no data for this object in this country.\n- 1002 / 1003 invalid or missing parameters: for example no domain, host, path or url given.\n- 429 too many requests: SISTRIX allows 300 requests a minute.\n\n**Official MCP server**: SISTRIX also runs its own MCP server (https://api.sistrix.com/mcp/, OAuth sign-in) that does not spend API credits; this connector uses the REST API with an API key instead.\n\n**Out of scope here**: SISTRIX projects (Optimizer), the AI visibility functions, the Amazon marketplace functions, Google Ads (SEM) data and bulk keyword requests.",
+  "region": "de",
+  "category": "analytics",
+  "icon": "sistrix",
+  "docsUrl": "https://www.sistrix.com/api/",
+  "requiredEnvVars": [
+    "SISTRIX_API_KEY"
+  ],
+  "envVarMeta": {
+    "SISTRIX_API_KEY": {
+      "label": "SISTRIX API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "SISTRIX Toolbox, Account, API access. Plans from Plus upwards include weekly API credits; every call spends some.",
+      "link": "https://app.sistrix.com/account/api",
+      "example": "AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+      "pattern": "^[^\\s=&?]{10,128}$",
+      "patternMessage": "Paste only the API key, without spaces or an api_key= prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "SISTRIX refused the API key. Copy it again from https://app.sistrix.com/account/api.",
+    "403": "SISTRIX refused the request (permission denied): the API key is wrong, or the plan has no API access. Check https://app.sistrix.com/account/api.",
+    "429": "SISTRIX is rate limiting this key (300 requests a minute). Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "sistrix_get_credits"
+  },
+  "prerequisites": "A SISTRIX plan with API access (Plus or higher) and its API key from the Toolbox, Account, API access. Every call spends API credits from the weekly allowance. About 2 minutes.",
+  "connector": {
+    "name": "SISTRIX",
+    "type": "REST",
+    "baseUrl": "https://api.sistrix.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_key": "{{SISTRIX_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/credits",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error[0].error_code",
+          "in": [
+            100
+          ],
+          "messagePath": "error[0].error_message",
+          "status": 401
+        },
+        {
+          "path": "error[0].error_code",
+          "in": [
+            403,
+            5000,
+            5001,
+            200,
+            3501
+          ],
+          "messagePath": "error[0].error_message",
+          "status": 403
+        },
+        {
+          "path": "error[0].error_code",
+          "equals": 429,
+          "messagePath": "error[0].error_message",
+          "status": 429
+        },
+        {
+          "path": "error[0].error_code",
+          "in": [
+            404,
+            1000,
+            2000,
+            2001,
+            3000,
+            3001
+          ],
+          "messagePath": "error[0].error_message",
+          "status": 404
+        },
+        {
+          "path": "error[0].error_code",
+          "equals": 500,
+          "messagePath": "error[0].error_message",
+          "status": 502
+        },
+        {
+          "path": "status",
+          "equals": "error",
+          "messagePath": "error[0].error_message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "sistrix_get_credits",
+      "description": "Show how many SISTRIX API credits this key has left this week. Free: costs no credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credits",
+        "queryParams": {
+          "format": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_list_countries",
+      "description": "List the country codes SISTRIX supports for Google (and Amazon marketplace) data. Free: costs no credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/countries",
+        "queryParams": {
+          "format": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_domain_overview",
+      "description": "Latest key figures of a domain, host, path or URL: Visibility Index (Sichtbarkeitsindex), number of SEO keywords and of Google Ads keywords, each with its date. Costs 5 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.overview",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_visibility_index",
+      "description": "SISTRIX Visibility Index (Sichtbarkeitsindex) of a domain, host, path or URL: the current value, the value of a past week (date), or the weekly history (history=true), or the last 30 daily values (history and daily). Costs 1 credit per value returned; the full history can be hundreds of values, so set limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "true returns the weekly history, newest first. Combine with limit."
+          },
+          "daily": {
+            "type": "boolean",
+            "description": "With history=true: daily values of the last 30 days instead of weekly ones."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum values when history is true (default 10). Each value costs 1 credit; without a limit SISTRIX returns the whole history."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.visibilityindex",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "date": "$date",
+          "history": "$history",
+          "daily": "$daily",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_count",
+      "description": "Number of keywords a domain, host, path or URL ranks for in Google's top 100, now, on a past date, or as weekly history. Costs 1 credit per value returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "true returns the weekly history (up to 100 weeks unless limited)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum values when history is true (default 10). Each value costs 1 credit."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.kwcount.seo",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "date": "$date",
+          "history": "$history",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_ranking_distribution",
+      "description": "How many keywords of a domain rank on each of Google's first ten result pages (page01 = positions 1 to 10, page02 = 11 to 20...), now, for a past week, or as history. Costs 1 credit per date returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "true returns the last 10 weekly distributions."
+          },
+          "percent": {
+            "type": "boolean",
+            "description": "true returns percentages instead of keyword counts."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.ranking.distribution",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "date": "$date",
+          "history": "$history",
+          "percent": "$percent"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_competitors",
+      "description": "SEO competitors of a domain, host, path or URL with their similarity (match, in %); the analysed domain itself appears with 100. Costs 1 credit per competitor returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum competitors (default 10). Each one returned costs 1 credit."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.competitors.seo",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_ranking_keywords",
+      "description": "Keywords a domain, host, path or URL ranks for in Google: keyword, position, competition, search traffic (0 to 100) and ranking URL. Filter by a search term or position range. Costs 1 credit per keyword returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum keywords (default 10). Each one returned costs 1 credit."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging (10 starts at the 11th)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Only keywords containing this term, e.g. shoes."
+          },
+          "from_pos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Only rankings from this position on, e.g. 11."
+          },
+          "to_pos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Only rankings up to this position, e.g. 20."
+          },
+          "serp_feature": {
+            "type": "string",
+            "description": "Only keywords whose results page shows this SERP feature code."
+          },
+          "ai_answer": {
+            "type": "boolean",
+            "description": "true: only keywords whose results page shows an AI answer box."
+          },
+          "regex_keyword": {
+            "type": "string",
+            "description": "Only keywords matching this regular expression (unencoded; the connector encodes it)."
+          },
+          "regex_url": {
+            "type": "string",
+            "description": "Only rankings whose URL matches this regular expression."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword.domain.seo",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "date": "$date",
+          "limit": "$limit",
+          "offset": "$offset",
+          "search": "$search",
+          "from_pos": "$from_pos",
+          "to_pos": "$to_pos",
+          "serp_feature": "$serp_feature",
+          "ai_answer": "$ai_answer",
+          "regex_keyword": "$regex_keyword",
+          "regex_url": "$regex_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_top_urls",
+      "description": "The best-ranking URLs of a domain, host or path with their top-10 and top-100 keyword counts and their share of the domain's Visibility Index. Costs 1 credit per URL returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum URLs (default 10). Each one returned costs 1 credit."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging (10 starts at the 11th)."
+          },
+          "regex_url": {
+            "type": "string",
+            "description": "Only URLs matching this regular expression (unencoded)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.urls",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "date": "$date",
+          "limit": "$limit",
+          "offset": "$offset",
+          "regex_url": "$regex_url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_traffic_estimation",
+      "description": "Paths of a domain with the most estimated organic clicks: estimated clicks, share of clicks (%) and number of top-100 keywords per path. Costs 1 credit per path returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum paths (default 10). Each one returned costs 1 credit."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging (10 starts at the 11th)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.traffic.estimation",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_opportunities",
+      "description": "Keywords a domain ranks for beyond page one that could reach page one with little effort: gain (0 to 100), current position, ranking URL and competition. Costs 1 credit per keyword returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, e.g. sistrix.de. Set exactly one of domain, host, path or url."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname (subdomain), e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "url": {
+            "type": "string",
+            "description": "Single URL, e.g. https://www.sistrix.de/test/. Instead of domain."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum keywords (default 10). Each one returned costs 1 credit."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging (10 starts at the 11th)."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain.opportunities",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "url": "$url",
+          "country": "$country",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_serp",
+      "description": "The organic Google ranking for a keyword: position, domain and URL of each result, now or for a past week. With domain or url plus history=true, the weekly ranking history of that site for the keyword. Costs 1 credit per ranking returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "The keyword, e.g. laufschuhe."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "A past date, YYYY-MM-DD: returns the weekly value of that week. Leave out for the current value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum rankings (default 10). Each one returned costs 1 credit."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only the rankings of this domain for the keyword."
+          },
+          "url": {
+            "type": "string",
+            "description": "Only the rankings of this URL for the keyword."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "With domain or url: weekly ranking history."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword.seo",
+        "queryParams": {
+          "format": "json",
+          "kw": "$kw",
+          "country": "$country",
+          "date": "$date",
+          "limit": "$limit",
+          "domain": "$domain",
+          "url": "$url",
+          "history": "$history"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_metrics",
+      "description": "Main metrics of a keyword: competition, CPC, search traffic (0 to 100), clicks and the mobile and desktop share. Costs 5 credits per keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "The keyword, e.g. laufschuhe."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword.seo.metrics",
+        "queryParams": {
+          "format": "json",
+          "kw": "$kw",
+          "country": "$country"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_traffic",
+      "description": "Search traffic (0 to 100) and clicks of a keyword in one country, all countries (show_all_countries) or as history (show_all). Costs 1 credit per value returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "The keyword, e.g. laufschuhe."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "show_all": {
+            "type": "boolean",
+            "description": "true returns the full traffic history of the keyword (one credit per value)."
+          },
+          "show_all_countries": {
+            "type": "boolean",
+            "description": "true returns the values for every country (one credit per country)."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword.seo.traffic",
+        "queryParams": {
+          "format": "json",
+          "kw": "$kw",
+          "country": "$country",
+          "show-all": "$show_all",
+          "show-all-countries": "$show_all_countries"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_keyword_questions",
+      "description": "Google queries that combine a keyword with question words (what, how, why...), with search volume. Costs 1 credit per question returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kw": {
+            "type": "string",
+            "description": "The keyword, e.g. laufschuhe."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Country code in lower case, e.g. de, at, ch, uk, us, it, fr, es. Default: the country of the SISTRIX account. sistrix_list_countries lists them."
+          },
+          "lang": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Language of the questions (ISO 639), e.g. de, en. Default the account language."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum questions (default 10). Each one returned costs 1 credit."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Result page, with limit questions per page."
+          }
+        },
+        "required": [
+          "kw"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword.questions",
+        "queryParams": {
+          "format": "json",
+          "kw": "$kw",
+          "country": "$country",
+          "lang": "$lang",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_links_overview",
+      "description": "Backlink overview of a domain, host or path: total backlinks and the number of linking hosts, domains, networks and class C IP ranges. Costs 25 credits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain whose backlinks to read, e.g. sistrix.de. Set exactly one of domain, host or path."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname, e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/links.overview",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_backlinks",
+      "description": "Backlinks of a domain: source URL (url.from), link text and target URL (url.to). Costs 1 credit per link returned, at most 250 credits per request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain whose backlinks to list, e.g. sistrix.de."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum links (default 10). Each costs 1 credit; SISTRIX returns up to 10,000 when left out (billed at most 250 credits)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip, for paging (10 starts at the 11th)."
+          },
+          "regex_link_from": {
+            "type": "string",
+            "description": "Only links whose source URL matches this regular expression."
+          },
+          "regex_link_to": {
+            "type": "string",
+            "description": "Only links whose target URL matches this regular expression."
+          },
+          "regex_link_text": {
+            "type": "string",
+            "description": "Only links whose anchor text matches this regular expression."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/links.list",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "limit": "$limit",
+          "offset": "$offset",
+          "regex_link_from": "$regex_link_from",
+          "regex_link_to": "$regex_link_to",
+          "regex_link_text": "$regex_link_text"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "sistrix_link_texts",
+      "description": "Most-used anchor texts of the backlinks of a domain, host or path, with the number of links and of linking hosts, domains, IPs and networks. Costs 1 credit per text returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain whose backlinks to read, e.g. sistrix.de. Set exactly one of domain, host or path."
+          },
+          "host": {
+            "type": "string",
+            "description": "Hostname, e.g. www.sistrix.de. Instead of domain."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory, e.g. www.sistrix.de/news/. Instead of domain."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Maximum texts (default 10). Each one returned costs 1 credit."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/links.linktexts",
+        "queryParams": {
+          "format": "json",
+          "domain": "$domain",
+          "host": "$host",
+          "path": "$path",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{info: info[0], answer: answer[0], date: date[0][0], credits_used: credits[0].used} | from_items(items(@)[?[1] != null])",
+          "maxBytes": 80000
+        }
+      }
+    }
+  ]
+}

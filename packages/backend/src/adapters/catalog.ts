@@ -57,6 +57,7 @@ import * as sendcloud from './de/sendcloud.json';
 import * as sevdesk from './de/sevdesk.json';
 import * as shipcloud from './de/shipcloud.json';
 import * as shopware6 from './de/shopware-6.json';
+import * as sistrix from './de/sistrix.json';
 import * as superchat from './de/superchat.json';
 import * as teamviewer from './de/teamviewer.json';
 import * as timetac from './de/timetac.json';
@@ -76,10 +77,12 @@ import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
 import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
+import * as ahrefs from './intl/ahrefs.json';
 import * as airtable from './intl/airtable.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as amocrm from './intl/amocrm.json';
+import * as amplitude from './intl/amplitude.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apify from './intl/apify.json';
 import * as apollo from './intl/apollo.json';
@@ -102,6 +105,7 @@ import * as bingWebmaster from './intl/bing-webmaster.json';
 import * as bitrix24 from './intl/bitrix24.json';
 import * as bluesky from './intl/bluesky.json';
 import * as box from './intl/box.json';
+import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
@@ -121,9 +125,11 @@ import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
+import * as customerIo from './intl/customer-io.json';
 import * as customily from './intl/customily.json';
 import * as daftra from './intl/daftra.json';
 import * as datadog from './intl/datadog.json';
+import * as dataforseo from './intl/dataforseo.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
 import * as directus from './intl/directus.json';
@@ -207,6 +213,7 @@ import * as instantly from './intl/instantly.json';
 import * as intercom from './intl/intercom.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
+import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
 import * as keycrm from './intl/keycrm.json';
@@ -250,6 +257,7 @@ import * as mixpanel from './intl/mixpanel.json';
 import * as mollie from './intl/mollie.json';
 import * as monday from './intl/monday.json';
 import * as mongodb from './intl/mongodb.json';
+import * as moz from './intl/moz.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
 import * as netsuite from './intl/netsuite.json';
@@ -266,6 +274,7 @@ import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
 import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as omnisend from './intl/omnisend.json';
+import * as onesignal from './intl/onesignal.json';
 import * as openai from './intl/openai.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
@@ -313,6 +322,8 @@ import * as sapSuccessfactors from './intl/sap-successfactors.json';
 import * as savvycal from './intl/savvycal.json';
 import * as sealSubscriptions from './intl/seal-subscriptions.json';
 import * as seamlessAi from './intl/seamless-ai.json';
+import * as segment from './intl/segment.json';
+import * as semrush from './intl/semrush.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
 import * as serpapi from './intl/serpapi.json';
@@ -680,6 +691,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sevdesk as unknown as AdapterDefinition,
   shipcloud as unknown as AdapterDefinition,
   shopware6 as unknown as AdapterDefinition,
+  sistrix as unknown as AdapterDefinition,
   superchat as unknown as AdapterDefinition,
   teamviewer as unknown as AdapterDefinition,
   timetac as unknown as AdapterDefinition,
@@ -699,10 +711,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   adyen as unknown as AdapterDefinition,
   agentSkills as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
+  ahrefs as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   amocrm as unknown as AdapterDefinition,
+  amplitude as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
   apify as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
@@ -725,6 +739,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bitrix24 as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
+  braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
@@ -744,9 +759,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
+  customerIo as unknown as AdapterDefinition,
   customily as unknown as AdapterDefinition,
   daftra as unknown as AdapterDefinition,
   datadog as unknown as AdapterDefinition,
+  dataforseo as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
@@ -830,6 +847,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   intercom as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
+  iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
@@ -873,6 +891,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mollie as unknown as AdapterDefinition,
   monday as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
+  moz as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
   netsuite as unknown as AdapterDefinition,
@@ -889,6 +908,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   odoo as unknown as AdapterDefinition,
   odooJsonrpc as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
+  onesignal as unknown as AdapterDefinition,
   openai as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
@@ -936,6 +956,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   savvycal as unknown as AdapterDefinition,
   sealSubscriptions as unknown as AdapterDefinition,
   seamlessAi as unknown as AdapterDefinition,
+  segment as unknown as AdapterDefinition,
+  semrush as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
   serpapi as unknown as AdapterDefinition,

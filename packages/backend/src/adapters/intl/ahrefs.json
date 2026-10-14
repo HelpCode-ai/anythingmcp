@@ -1,0 +1,1329 @@
+{
+  "slug": "ahrefs",
+  "name": "Ahrefs",
+  "unlisted": true,
+  "description": "Give your AI Ahrefs SEO data: Domain Rating, backlinks, referring domains, organic keywords, top pages, competitors, keyword volume, difficulty and ideas, SERP overview and batch comparisons, with the API unit cost of each request.",
+  "instructions": "## Ahrefs\nThis connector calls the **Ahrefs API v3** (`https://api.ahrefs.com/v3`) with the user's own API key: Site Explorer (Domain Rating, backlinks, referring domains, anchors, organic keywords, top pages, competitors, metrics and history), Keywords Explorer (overview, matching and related terms, volume history), SERP Overview and Batch Analysis. Every tool is a read.\n\n**Every request spends API units from the Ahrefs workspace.** A request costs `max(50, per_row_cost x rows)`: at least 50 units, otherwise the sum of the unit costs of every column in `select`, `where` and `order_by` (1 unit by default, 5 or 10 for metrics such as traffic, volume, difficulty and referring domains), times the rows returned. Each tool says what its default columns cost. `limit` defaults to 10 rows: raise it only when needed, and select only the columns the answer needs. Requests served from Ahrefs' cache are free. `ahrefs_get_limits_and_usage` is free and shows the units used and left.\n\n**Free test queries**: Site Explorer requests on `ahrefs.com`, `yep.com` or `firehose.com` (or their URLs) and Keywords Explorer or SERP Overview requests for the keywords `ahrefs`, `yep` or `firehose` alone cost nothing (capped at 100 rows). Use them to try a tool.\n\n**Setup (about 3 minutes)**\n1. API access comes with eligible paid Ahrefs plans, each with a monthly API unit allowance (see https://ahrefs.com/pricing); other plans can only run the free test queries. Only workspace owners and admins can create keys.\n2. Open Account settings, API keys (https://app.ahrefs.com/account/api-keys), create a key, and consider a monthly unit limit for it.\n3. Paste it into `AHREFS_API_KEY` and install. It is stored encrypted and sent as `Authorization: Bearer` only to api.ahrefs.com.\n\n**Tools**\n- `ahrefs_get_limits_and_usage`: plan, units used and allowed, reset date (free).\n- `ahrefs_domain_rating`: Domain Rating and Ahrefs Rank.\n- `ahrefs_backlinks_stats`: live and all-time backlinks and referring domains.\n- `ahrefs_site_metrics`: organic and paid keywords, traffic and traffic value.\n- `ahrefs_metrics_history`: traffic and traffic value over time.\n- `ahrefs_domain_rating_history`: Domain Rating over time.\n- `ahrefs_backlinks`: backlinks.\n- `ahrefs_referring_domains`: referring domains.\n- `ahrefs_anchors`: anchor texts.\n- `ahrefs_organic_keywords`: keywords a domain or URL ranks for.\n- `ahrefs_top_pages`: pages with the most organic traffic.\n- `ahrefs_organic_competitors`: organic competitors in a country.\n- `ahrefs_keywords_overview`: volume, difficulty, CPC, traffic potential of given keywords.\n- `ahrefs_matching_terms`: keyword ideas containing the seed words, or questions.\n- `ahrefs_related_terms`: related keywords of the top-ranking pages.\n- `ahrefs_volume_history`: monthly volume of one keyword.\n- `ahrefs_serp_overview`: the recorded Google top results for a keyword.\n- `ahrefs_batch_analysis`: up to 100 targets compared in one call (POST, read-only).\n\n**Parameters**: `date` (YYYY-MM-DD) is required by most Site Explorer tools; use today's date for current data. `country` is a lower-case two-letter code. `mode` sets the scope of `target`: `subdomains` (default), `domain`, `prefix` or `exact`. `order_by` takes `column:asc` or `column:desc`. `where` takes Ahrefs' JSON filter, e.g. `{\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]},{\"field\":\"keyword\",\"is\":[\"isubstring\",\"shoes\"]}]}`. CPC and traffic value are in USD cents.\n\n**Common errors** (Ahrefs answers `[\"Error\", \"<reason>\"]`)\n- 401 Unauthorized: the API key is wrong, expired or was deleted. Create a new one in Account settings, API keys.\n- 403 Forbidden: the plan has no API access, the key or workspace has used its unit limit, or the request is outside the plan (for example more rows than the plan allows per request).\n- 400: a parameter is invalid; the reason names it (for example an unknown column in `select`).\n- 429: more than 60 requests a minute, or Ahrefs is throttling; wait and retry.\n\n**Out of scope here**: Rank Tracker, Site Audit, Brand Radar, Web Analytics, GSC Insights, Social Media, Content Helper and the management endpoints (projects, keyword lists).",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "ahrefs",
+  "docsUrl": "https://docs.ahrefs.com/docs/api/reference/introduction",
+  "requiredEnvVars": [
+    "AHREFS_API_KEY"
+  ],
+  "envVarMeta": {
+    "AHREFS_API_KEY": {
+      "label": "Ahrefs API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Ahrefs, Account settings, API keys (workspace owners and admins). Every request spends API units of the workspace; set a monthly limit on the key.",
+      "link": "https://app.ahrefs.com/account/api-keys",
+      "example": "AbCdEf0123456789AbCdEf0123456789",
+      "pattern": "^(?!Bearer\\s)\\S{16,256}$",
+      "patternMessage": "Paste only the API key, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Ahrefs refused the API key: it is wrong, expired or deleted. Create a new one at https://app.ahrefs.com/account/api-keys.",
+    "403": "Ahrefs denied the request: the plan may have no API access, or the key or workspace has reached its API unit limit. Check https://app.ahrefs.com/account/limits-and-usage/web.",
+    "429": "Ahrefs is rate limiting this key (60 requests a minute). Wait a minute and verify again.",
+    "400": "Ahrefs rejected the request as invalid. Verify again; if it persists, check the key has no extra characters."
+  },
+  "probe": {
+    "tool": "ahrefs_get_limits_and_usage"
+  },
+  "prerequisites": "An Ahrefs plan with API access and an API key created by a workspace owner or admin. Requests spend API units (at least 50 each). About 3 minutes.",
+  "connector": {
+    "name": "Ahrefs",
+    "type": "REST",
+    "baseUrl": "https://api.ahrefs.com/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{AHREFS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/subscription-info/limits-and-usage"
+  },
+  "tools": [
+    {
+      "name": "ahrefs_get_limits_and_usage",
+      "description": "Show the Ahrefs plan, the API units used and allowed this month for the key and the workspace, the reset date and the key's expiry. Free: costs no API units.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscription-info/limits-and-usage"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "subscription": "$.limits_and_usage.subscription",
+            "usage_reset_date": "$.limits_and_usage.usage_reset_date",
+            "units_limit_workspace": "$.limits_and_usage.units_limit_workspace",
+            "units_usage_workspace": "$.limits_and_usage.units_usage_workspace",
+            "units_limit_api_key": "$.limits_and_usage.units_limit_api_key",
+            "units_usage_api_key": "$.limits_and_usage.units_usage_api_key",
+            "api_key_expiration_date": "$.limits_and_usage.api_key_expiration_date"
+          }
+        }
+      }
+    },
+    {
+      "name": "ahrefs_domain_rating",
+      "description": "Domain Rating (0 to 100, strength of the backlink profile) and Ahrefs Rank of a domain on a date. Costs 50 API units (the minimum per request); free for ahrefs.com, yep.com and firehose.com.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          }
+        },
+        "required": [
+          "target",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/domain-rating",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_backlinks_stats",
+      "description": "Backlink totals of a domain or URL on a date: live and all-time backlinks and referring domains. Costs 50 API units; free for ahrefs.com, yep.com and firehose.com.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/backlinks-stats",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date",
+          "mode": "$mode",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_site_metrics",
+      "description": "Organic and paid search metrics of a domain or URL on a date: organic keywords (all and top 3), organic traffic and its value, paid keywords, pages and traffic. Costs 50 API units; free for ahrefs.com, yep.com and firehose.com. Traffic values are monthly visits, costs are in USD cents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, e.g. us, de, it. Leave out for all countries."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          },
+          "volume_mode": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "average"
+            ],
+            "description": "Search volume basis for traffic: monthly (default) or average."
+          }
+        },
+        "required": [
+          "target",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/metrics",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date",
+          "country": "$country",
+          "mode": "$mode",
+          "protocol": "$protocol",
+          "volume_mode": "$volume_mode"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_metrics_history",
+      "description": "History of a domain's organic (and optionally paid) traffic and traffic value, grouped by month, week or day. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. Each row is one period; org_traffic and org_cost cost 10 units per row each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "End of the period, YYYY-MM-DD. Default today."
+          },
+          "history_grouping": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "weekly",
+              "daily"
+            ],
+            "default": "monthly",
+            "description": "Period of each row. Default monthly; daily makes many rows."
+          },
+          "select": {
+            "type": "string",
+            "default": "date,org_traffic,org_cost",
+            "description": "Comma-separated columns to return. Default date,org_traffic,org_cost. Each column costs units per row (most 1, the ones marked here more): date, org_traffic (10), org_cost (10), paid_traffic (10), paid_cost (10)."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, e.g. us, de, it. Leave out for all countries."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target",
+          "date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/metrics-history",
+        "queryParams": {
+          "target": "$target",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "history_grouping": "$history_grouping",
+          "select": "$select",
+          "country": "$country",
+          "mode": "$mode",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_domain_rating_history",
+      "description": "History of a domain's Domain Rating, grouped by month, week or day. Costs 50 API units for up to 25 rows (2 units per row); free for ahrefs.com, yep.com and firehose.com.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "End of the period, YYYY-MM-DD. Default today."
+          },
+          "history_grouping": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "weekly",
+              "daily"
+            ],
+            "default": "monthly",
+            "description": "Period of each row. Default monthly."
+          }
+        },
+        "required": [
+          "target",
+          "date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/domain-rating-history",
+        "queryParams": {
+          "target": "$target",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "history_grouping": "$history_grouping"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_backlinks",
+      "description": "Backlinks of a domain or URL: linking page, target, anchor, Domain Rating of the source, dofollow, first and last seen. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 8 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "url_from,url_to,anchor,title,domain_rating_source,is_dofollow,first_seen,last_seen",
+            "description": "Comma-separated columns to return. Default url_from,url_to,anchor,title,domain_rating_source,is_dofollow,first_seen,last_seen. Each column costs units per row (most 1, the ones marked here more): url_from, url_to, anchor, title, domain_rating_source, url_rating_source, is_dofollow, is_nofollow, is_lost, first_seen, last_seen, lost_reason, links_external, traffic (10), refdomains_source (5), traffic_domain (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At 8 units per row the default costs the 50-unit minimum. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "domain_rating_source:desc",
+            "description": "Column and direction to sort by, e.g. first_seen:desc. Default domain_rating_source:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "history": {
+            "type": "string",
+            "description": "Which links: live (only current links), since:YYYY-MM-DD (current plus those lost since that date) or all_time (default, every link ever seen)."
+          },
+          "aggregation": {
+            "type": "string",
+            "enum": [
+              "similar_links",
+              "1_per_domain",
+              "all"
+            ],
+            "description": "Grouping: similar_links (default) groups near-identical links, 1_per_domain keeps one link per referring domain, all returns every link."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/all-backlinks",
+        "queryParams": {
+          "target": "$target",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "history": "$history",
+          "aggregation": "$aggregation",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_referring_domains",
+      "description": "Domains linking to a domain or URL: Domain Rating, links to the target, dofollow links, first and last seen. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 6 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "domain,domain_rating,links_to_target,dofollow_links,first_seen,last_seen",
+            "description": "Comma-separated columns to return. Default domain,domain_rating,links_to_target,dofollow_links,first_seen,last_seen. Each column costs units per row (most 1, the ones marked here more): domain, domain_rating, links_to_target, dofollow_links, new_links, lost_links, first_seen, last_seen, is_spam, dofollow_refdomains (5), traffic_domain (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At 6 units per row the default costs the 50-unit minimum. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "domain_rating:desc",
+            "description": "Column and direction to sort by, e.g. links_to_target:desc. Default domain_rating:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "history": {
+            "type": "string",
+            "description": "Which links: live (only current links), since:YYYY-MM-DD (current plus those lost since that date) or all_time (default, every link ever seen)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/refdomains",
+        "queryParams": {
+          "target": "$target",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "history": "$history",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_anchors",
+      "description": "Anchor texts of the links to a domain or URL with referring domains and link counts. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 10 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "anchor,refdomains,links_to_target,dofollow_links,first_seen,last_seen",
+            "description": "Comma-separated columns to return. Default anchor,refdomains,links_to_target,dofollow_links,first_seen,last_seen. Each column costs units per row (most 1, the ones marked here more): anchor, refdomains (5), refpages, links_to_target, dofollow_links, new_links, lost_links, first_seen, last_seen, top_domain_rating."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At 10 units per row the default costs 100 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "refdomains:desc",
+            "description": "Column and direction to sort by, e.g. links_to_target:desc. Default refdomains:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "history": {
+            "type": "string",
+            "description": "Which links: live (only current links), since:YYYY-MM-DD (current plus those lost since that date) or all_time (default, every link ever seen)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/anchors",
+        "queryParams": {
+          "target": "$target",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "history": "$history",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_organic_keywords",
+      "description": "Keywords a domain or URL ranks for in Google on a date: best position and ranking URL, volume, traffic, difficulty, CPC. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 34 units per row (volume, sum_traffic and keyword_difficulty 10 each).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, e.g. us, de, it. Leave out for all countries."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "keyword,best_position,best_position_url,volume,sum_traffic,keyword_difficulty,cpc",
+            "description": "Comma-separated columns to return. Default keyword,best_position,best_position_url,volume,sum_traffic,keyword_difficulty,cpc. Each column costs units per row (most 1, the ones marked here more): keyword, best_position, best_position_url, best_position_diff, cpc (USD cents), is_branded, is_commercial, is_informational, is_navigational, is_transactional, serp_features, words, volume (10), sum_traffic (10), keyword_difficulty (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At the default 34 units per row, 10 rows cost 340 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "sum_traffic:desc",
+            "description": "Column and direction to sort by, e.g. volume:desc. Default sum_traffic:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "date_compared": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Optional earlier date, YYYY-MM-DD, to compare positions and traffic with (adds *_prev fields)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/organic-keywords",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date",
+          "country": "$country",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "date_compared": "$date_compared",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_top_pages",
+      "description": "Pages of a domain that bring the most organic traffic on a date, with traffic value, keyword count and top keyword. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 24 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, e.g. us, de, it. Leave out for all countries."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "url,sum_traffic,value,keywords,top_keyword,top_keyword_best_position",
+            "description": "Comma-separated columns to return. Default url,sum_traffic,value,keywords,top_keyword,top_keyword_best_position. Each column costs units per row (most 1, the ones marked here more): url, keywords, top_keyword, top_keyword_best_position, ur, status, sum_traffic (10), value (10, USD cents), top_keyword_volume (10), referring_domains (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At the default 24 units per row, 10 rows cost 240 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "sum_traffic:desc",
+            "description": "Column and direction to sort by, e.g. keywords:desc. Default sum_traffic:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/top-pages",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date",
+          "country": "$country",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_organic_competitors",
+      "description": "Domains competing with a target in organic search in one country: common keywords, their keywords, share and traffic. Costs max(50, units per row x rows) API units; requests on ahrefs.com, yep.com or firehose.com as target are free test queries. The default columns cost 15 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Domain or URL to analyse, e.g. example.com, blog.example.com or https://example.com/page."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date to report on, YYYY-MM-DD. Use today's date for current data."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, required here, e.g. us, de, it."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "prefix",
+              "domain",
+              "subdomains"
+            ],
+            "description": "Scope of target: subdomains (default, the domain with all subdomains), domain (this host only), prefix (all URLs under a path), exact (one URL)."
+          },
+          "select": {
+            "type": "string",
+            "default": "competitor_domain,keywords_common,keywords_competitor,share,traffic,domain_rating",
+            "description": "Comma-separated columns to return. Default competitor_domain,keywords_common,keywords_competitor,share,traffic,domain_rating. Each column costs units per row (most 1, the ones marked here more): competitor_domain, competitor_url, keywords_common, keywords_competitor, keywords_target, share, domain_rating, pages, traffic (10), value (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At the default 15 units per row, 10 rows cost 150 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "keywords_common:desc",
+            "description": "Column and direction to sort by, e.g. share:desc. Default keywords_common:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "both",
+              "http",
+              "https"
+            ],
+            "description": "Protocol of the target. Default both."
+          }
+        },
+        "required": [
+          "target",
+          "date",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/site-explorer/organic-competitors",
+        "queryParams": {
+          "target": "$target",
+          "date": "$date",
+          "country": "$country",
+          "mode": "$mode",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "protocol": "$protocol"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_keywords_overview",
+      "description": "Metrics of one or more keywords in a country: search volume, Keyword Difficulty, CPC, traffic potential and parent topic. Costs max(50, units per row x rows) API units; the keywords ahrefs, yep or firehose alone are free test queries. The default columns cost 33 units per keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "One keyword or several separated by commas, e.g. seo tools,keyword research."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case (ISO 3166-1 alpha-2), e.g. us, de, it."
+          },
+          "select": {
+            "type": "string",
+            "default": "keyword,volume,difficulty,cpc,traffic_potential,parent_topic",
+            "description": "Comma-separated columns to return. Default keyword,volume,difficulty,cpc,traffic_potential,parent_topic. Each column costs units per row (most 1, the ones marked here more): keyword, cpc (USD cents), cps, parent_topic, serp_features, first_seen, volume (10), difficulty (10), traffic_potential (10), global_volume (10), intents (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). One row per keyword. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "volume:desc",
+            "description": "Column and direction to sort by, e.g. difficulty:asc. Default volume:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          }
+        },
+        "required": [
+          "keywords",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords-explorer/overview",
+        "queryParams": {
+          "keywords": "$keywords",
+          "country": "$country",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_matching_terms",
+      "description": "Keyword ideas that contain the words of the seed keywords (or questions with terms=questions), with volume, difficulty, CPC and traffic potential. Costs max(50, units per row x rows) API units; the keywords ahrefs, yep or firehose alone are free test queries. The default columns cost 32 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "One keyword or several separated by commas, e.g. seo tools,keyword research."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case (ISO 3166-1 alpha-2), e.g. us, de, it."
+          },
+          "select": {
+            "type": "string",
+            "default": "keyword,volume,difficulty,cpc,traffic_potential",
+            "description": "Comma-separated columns to return. Default keyword,volume,difficulty,cpc,traffic_potential. Each column costs units per row (most 1, the ones marked here more): keyword, cpc (USD cents), cps, parent_topic, serp_features, first_seen, volume (10), difficulty (10), traffic_potential (10), global_volume (10), intents (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At the default 32 units per row, 10 rows cost 320 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "volume:desc",
+            "description": "Column and direction to sort by, e.g. difficulty:asc. Default volume:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "terms": {
+            "type": "string",
+            "enum": [
+              "all",
+              "questions"
+            ],
+            "description": "all (default) for every idea, questions for ideas phrased as questions."
+          },
+          "match_mode": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "phrase"
+            ],
+            "description": "terms (default): the words in any order; phrase: in the exact order."
+          }
+        },
+        "required": [
+          "keywords",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords-explorer/matching-terms",
+        "queryParams": {
+          "keywords": "$keywords",
+          "country": "$country",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "terms": "$terms",
+          "match_mode": "$match_mode"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_related_terms",
+      "description": "Related keywords: terms the top-ranking pages also rank for or also mention, with volume, difficulty, CPC and traffic potential. Costs max(50, units per row x rows) API units; the keywords ahrefs, yep or firehose alone are free test queries. The default columns cost 32 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "One keyword or several separated by commas, e.g. seo tools,keyword research."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case (ISO 3166-1 alpha-2), e.g. us, de, it."
+          },
+          "select": {
+            "type": "string",
+            "default": "keyword,volume,difficulty,cpc,traffic_potential",
+            "description": "Comma-separated columns to return. Default keyword,volume,difficulty,cpc,traffic_potential. Each column costs units per row (most 1, the ones marked here more): keyword, cpc (USD cents), cps, parent_topic, serp_features, first_seen, volume (10), difficulty (10), traffic_potential (10), global_volume (10), intents (10)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows to return (default 10). At the default 32 units per row, 10 rows cost 320 units. Ahrefs returns 1,000 rows when left out, and plans cap rows per request."
+          },
+          "order_by": {
+            "type": "string",
+            "default": "volume:desc",
+            "description": "Column and direction to sort by, e.g. difficulty:asc. Default volume:desc."
+          },
+          "where": {
+            "type": "string",
+            "description": "Optional filter as Ahrefs JSON filter syntax, e.g. {\"and\":[{\"field\":\"volume\",\"is\":[\"gte\",100]}]}. Operators include eq, neq, gt, gte, lt, lte, substring, isubstring, prefix, suffix. Fields in the filter are billed like selected fields."
+          },
+          "terms": {
+            "type": "string",
+            "enum": [
+              "all",
+              "also_rank_for",
+              "also_talk_about"
+            ],
+            "description": "also_rank_for, also_talk_about, or all (default) for both."
+          },
+          "view_for": {
+            "type": "string",
+            "enum": [
+              "top_10",
+              "top_100"
+            ],
+            "description": "Base the ideas on the top 10 (default) or top 100 ranking pages."
+          }
+        },
+        "required": [
+          "keywords",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords-explorer/related-terms",
+        "queryParams": {
+          "keywords": "$keywords",
+          "country": "$country",
+          "select": "$select",
+          "limit": "$limit",
+          "order_by": "$order_by",
+          "where": "$where",
+          "terms": "$terms",
+          "view_for": "$view_for"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_volume_history",
+      "description": "Monthly search volume history of one keyword in a country. Costs 50 API units for up to 25 months (2 units per month); free for the keywords ahrefs, yep and firehose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case (ISO 3166-1 alpha-2), e.g. us, de, it."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Optional start, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Optional end, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "keyword",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keywords-explorer/volume-history",
+        "queryParams": {
+          "keyword": "$keyword",
+          "country": "$country",
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_serp_overview",
+      "description": "The Google results page Ahrefs recorded for a keyword in a country: position, URL, title, type, Domain Rating, URL Rating, backlinks, referring domains and traffic of each result. Costs max(50, units per row x rows) API units; the keywords ahrefs, yep or firehose alone are free test queries. The default columns cost 25 units per position.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case (ISO 3166-1 alpha-2), e.g. us, de, it."
+          },
+          "select": {
+            "type": "string",
+            "default": "position,url,title,type,domain_rating,url_rating,backlinks,refdomains,traffic",
+            "description": "Comma-separated columns to return. Default position,url,title,type,domain_rating,url_rating,backlinks,refdomains,traffic. Each column costs units per row (most 1, the ones marked here more): position, url, title, type, domain_rating, url_rating, backlinks, keywords, top_keyword, page_type, update_date, refdomains (5), traffic (10), value (10), top_keyword_volume (10)."
+          },
+          "top_positions": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Number of top organic positions to return (default 10)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional timestamp YYYY-MM-DDThh:mm:ss for the last SERP recorded before it. Default the most recent."
+          }
+        },
+        "required": [
+          "keyword",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/serp-overview/serp-overview",
+        "queryParams": {
+          "keyword": "$keyword",
+          "country": "$country",
+          "select": "$select",
+          "top_positions": "$top_positions",
+          "date": "$date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ahrefs_batch_analysis",
+      "description": "Compare up to 100 domains or URLs in one call: Domain Rating, backlinks, referring domains, organic keywords and traffic for each. Read-only, though it uses POST. Costs max(50, units per row x targets); refdomains cost 5 and org_traffic 10 units per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Targets to analyse, each {\"url\": \"example.com\", \"mode\": \"subdomains\", \"protocol\": \"both\"}. mode is exact, prefix, domain or subdomains; protocol is both, http or https.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Domain or URL."
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "prefix",
+                    "domain",
+                    "subdomains"
+                  ],
+                  "description": "Scope of the target."
+                },
+                "protocol": {
+                  "type": "string",
+                  "enum": [
+                    "both",
+                    "http",
+                    "https"
+                  ],
+                  "description": "Protocol of the target."
+                }
+              },
+              "required": [
+                "url",
+                "mode",
+                "protocol"
+              ]
+            }
+          },
+          "select": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "url",
+              "domain_rating",
+              "backlinks",
+              "refdomains",
+              "org_keywords",
+              "org_traffic"
+            ],
+            "description": "Fields to return. Default url, domain_rating, backlinks, refdomains, org_keywords, org_traffic (17 units per target). Also: ahrefs_rank, url_rating, backlinks_dofollow, refdomains_dofollow (5), linked_domains, org_keywords_1_3, org_keywords_4_10, org_cost (10), paid_keywords, paid_traffic (10), paid_cost (10), refips, outgoing_links."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[a-z]{2}$",
+            "description": "Two-letter country code in lower case, e.g. us, de, it. Leave out for all countries."
+          },
+          "order_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional sort, e.g. [\"domain_rating:desc\"]."
+          }
+        },
+        "required": [
+          "targets"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/batch-analysis/batch-analysis",
+        "bodyMapping": {
+          "targets": "$targets",
+          "select": "$select",
+          "country": "$country",
+          "order_by": "$order_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,1149 @@
+{
+  "slug": "amplitude",
+  "name": "Amplitude",
+  "aliases": [
+    "Amplitude Analytics"
+  ],
+  "description": "Let your AI read your Amplitude product analytics: event trends, funnels, retention, active and new users, revenue LTV, sessions, saved charts, cohorts, user lookups and the tracking plan, and add chart annotations. US and EU data centers.",
+  "instructions": "## Amplitude\nThis connector reads one **Amplitude** project (product analytics) through Amplitude's REST APIs with the project's API key and secret key: the **Dashboard REST API** for event segmentation, funnels, retention, active and new users, real-time users, revenue LTV, sessions, user composition, saved chart results, user search and user activity; the **Taxonomy API** for the planned event types, event properties, user properties and categories; the **Behavioral Cohorts API** for the cohort list; and the **Chart Annotations API**.\n\n**Setup (about 3 minutes; you need the Manager or Admin role in the project)**\n1. In Amplitude select **Settings** (lower left), then **Projects**, and pick the project. Each project has its own keys, so one connector reads one project.\n2. On the project's **General** tab select **Manage** next to **API Key** and copy it. Then select **Manage** next to **Secret Key** and generate a new secret key for AnythingMCP: Amplitude shows a secret key only once, when it is generated, and a project can have several.\n3. Paste them into `AMPLITUDE_API_KEY` and `AMPLITUDE_SECRET_KEY`. They are sent as HTTP Basic credentials (API key as user name, secret key as password) and only to Amplitude.\n4. Set `AMPLITUDE_API_HOST` to the project's data center: `https://amplitude.com` for the default (US) data center, `https://analytics.eu.amplitude.com` for an EU project (its app runs on app.eu.amplitude.com). Keys of an EU project are refused on the US host and the other way round. Do not use analytics.amplitude.com, which is the web app, not the API.\n\nThe secret key reads every event and user of the project. Share the MCP server only with people allowed to see that data.\n\n**Limits (per project, shared with every other integration)**: the Dashboard REST API runs at most **5 requests at the same time** and has a **query cost budget of 1,000 per 5 minutes and 108,000 per hour**. Cost = days in the range x conditions (segments, filters, each group by counts 4) x chart cost (segmentation 1 per event, funnels 2 per step, retention 8, sessions 4, everything else 1). User search and user activity have their own limit of 10 at the same time and 360 per hour. The Taxonomy API allows 4 cost at the same time and 7,200 per hour. Over a limit Amplitude answers 429: wait instead of retrying at once, and shorten the range or drop group bys when the cost budget is the problem. Never loop over days or users; one query with a group by replaces many.\n\n**How to work**\n1. Learn the names: `amplitude_list_events` (exact event names and weekly volume), `amplitude_list_event_types`, `amplitude_list_event_properties` and `amplitude_list_user_properties` (planned taxonomy, with gp: names for custom user properties), `amplitude_get_event_type`, `amplitude_list_event_categories`.\n2. Analyse: `amplitude_get_event_segmentation` (trends of one or two events), `amplitude_get_funnel` (conversion), `amplitude_get_retention`, `amplitude_get_active_users`, `amplitude_get_realtime_active_users`, `amplitude_get_revenue_ltv`, `amplitude_get_session_length_distribution`, `amplitude_get_average_session_length`, `amplitude_get_sessions_per_user`, `amplitude_get_user_composition`.\n3. Saved work: `amplitude_get_chart_results` runs a chart someone saved, by the chart id in its address. `amplitude_list_cohorts` gives cohort ids for segments (Behavioral Cohorts add-on).\n4. People: `amplitude_search_users` finds an Amplitude ID by user ID or device ID; `amplitude_get_user_activity` shows that user's profile and recent events. Both return personal data.\n5. Annotations: `amplitude_list_annotations`; `amplitude_create_annotation` adds a marker every project member sees, so confirm with the user first; `amplitude_delete_annotation` is installed switched off.\n\n**Formats**\n- Dates of the analysis tools are whole days written `YYYYMMDD` (20261001), both included, in the project's time zone.\n- Events are JSON text: `{\"event_type\":\"Sign Up\"}`, with optional `filters` (`[{\"subprop_type\":\"event\",\"subprop_key\":\"plan\",\"subprop_op\":\"is\",\"subprop_value\":[\"pro\"]}]`) and `group_by` (`[{\"type\":\"user\",\"value\":\"country\"}]`). `_active` is any active event, `_all` any event, `_new` new users (retention start), `revenue_amount` revenue.\n- Segments are a JSON array of conditions: `[{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]`; custom user properties are `gp:name`; a cohort is `{\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}`.\n\n**Common errors**\n- 403 \"Invalid API Key\": the key or secret is wrong, belongs to another project, or the project lives in the other data center (check `AMPLITUDE_API_HOST`).\n- 401: the Basic credentials were not sent; both variables must be set.\n- 400: a parameter or the JSON of an event or segment is invalid, or a saved chart belongs to another project.\n- 404 on `amplitude_get_chart_results`: no saved chart with that id in this organization.\n- 429: a concurrency, hourly or cost limit is reached; Amplitude names which.\n\n**Out of scope here**: ingesting events (HTTP V2 API), the Export API (zipped raw event files), cohort download and upload, user privacy deletion, Experiment, Session Replay and the SCIM user management APIs.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "amplitude",
+  "docsUrl": "https://amplitude.com/docs/apis/analytics/dashboard-rest",
+  "prerequisites": "An Amplitude project and the Manager or Admin role in it, to copy the project's API key and generate a secret key under Settings, Projects, General. About 3 minutes.",
+  "requiredEnvVars": [
+    "AMPLITUDE_API_HOST",
+    "AMPLITUDE_API_KEY",
+    "AMPLITUDE_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "AMPLITUDE_API_HOST": {
+      "label": "Data center (API host)",
+      "kind": "address",
+      "help": "https://amplitude.com for the default (US) data center, https://analytics.eu.amplitude.com for a project in the EU data center (its app runs on app.eu.amplitude.com).",
+      "example": "https://amplitude.com",
+      "pattern": "^(https://)?(amplitude\\.com|analytics\\.eu\\.amplitude\\.com)/?$",
+      "patternMessage": "Use exactly https://amplitude.com (US) or https://analytics.eu.amplitude.com (EU), without a path. analytics.amplitude.com is the web app, not the API."
+    },
+    "AMPLITUDE_API_KEY": {
+      "label": "Project API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, Projects, then the project: on the General tab select Manage next to API Key and copy it.",
+      "link": "https://amplitude.com/docs/apis/authentication",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the project's API key without spaces."
+    },
+    "AMPLITUDE_SECRET_KEY": {
+      "label": "Project secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, Projects, then the project: on the General tab select Manage next to Secret Key and generate one. Amplitude shows it only once; Managers and Admins can generate it.",
+      "link": "https://amplitude.com/docs/apis/authentication",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the project's secret key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Amplitude received no valid Basic credentials. Set both the API key and the secret key.",
+    "403": "Amplitude refused the API key or secret key: they are wrong, belong to another project, or the project lives in the other data center. EU projects need https://analytics.eu.amplitude.com, US projects https://amplitude.com.",
+    "404": "Nothing answered at this host. Use https://amplitude.com or https://analytics.eu.amplitude.com as the API host, not the web app address.",
+    "429": "Amplitude's API limit for this project is reached (5 requests at the same time, a query cost budget per 5 minutes and per hour). Wait a few minutes and verify again."
+  },
+  "unlisted": true,
+  "probe": {
+    "tool": "amplitude_list_events"
+  },
+  "connector": {
+    "name": "Amplitude",
+    "type": "REST",
+    "baseUrl": "{{AMPLITUDE_API_HOST}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{AMPLITUDE_API_KEY}}",
+      "password": "{{AMPLITUDE_SECRET_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/2/events/list"
+  },
+  "tools": [
+    {
+      "name": "amplitude_list_events",
+      "description": "List the project's visible event types with this week's totals, as event_type, display name, weekly_totals and the hidden and inactive flags (deleted events are left out). Start here to learn the exact event names the analysis tools need. Read-only, query cost 1.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/events/list"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{events: data[?deleted != `true`].{event_type: value, display: display, weekly_totals: totals, hidden: hidden, non_active: non_active}}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_event_segmentation",
+      "description": "Event Segmentation: count one event (or compare two) per day, week or month, optionally filtered by segments and grouped by a property. Returns data.series (one array per group), seriesLabels, seriesCollapsed (totals for the range) and xValues (dates). Dashboard REST API limits per project: 5 concurrent requests, and a query cost budget of 1,000 per 5 minutes and 108,000 per hour (cost = days x conditions x chart cost). This chart costs 1 per event, plus 4 per group by, times days and conditions: keep ranges short and avoid loops. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Event as JSON text: {\"event_type\":\"Sign Up\"} with optional \"filters\" ([{\"subprop_type\":\"event\",\"subprop_key\":\"plan\",\"subprop_op\":\"is\",\"subprop_value\":[\"pro\"]}]) and \"group_by\" ([{\"type\":\"event\",\"value\":\"plan\"}], at most 2). Special event types: _active (any active event), _all (any event), revenue_amount (revenue). Use the exact event_type from amplitude_list_events."
+          },
+          "second_event": {
+            "type": "string",
+            "description": "Optional second event in the same JSON format, compared with the first or used in a formula as B."
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "metric": {
+            "type": "string",
+            "enum": [
+              "uniques",
+              "totals",
+              "pct_dau",
+              "average",
+              "histogram",
+              "sums",
+              "value_avg",
+              "formula"
+            ],
+            "description": "uniques (default, distinct users), totals (event count), pct_dau (share of daily active users), average (events per user). histogram, sums and value_avg need a property group_by inside the event. formula needs formula."
+          },
+          "user_type": {
+            "type": "string",
+            "enum": [
+              "any",
+              "active"
+            ],
+            "description": "Count any users or only active users."
+          },
+          "interval": {
+            "type": "integer",
+            "enum": [
+              -300000,
+              -3600000,
+              1,
+              7,
+              30
+            ],
+            "description": "Bucket size: -300000 real time (up to 2 days), -3600000 hourly (up to 7 days), 1 daily (default, up to 365 days), 7 weekly, 30 monthly."
+          },
+          "segments": {
+            "type": "string",
+            "description": "Optional segment definition as JSON text: an array of filter objects, e.g. [{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]. Custom user properties are written gp:name; a behavioral cohort is {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}. Operators: is, is not, contains, does not contain, less, less or equal, greater, greater or equal, set is, set is not. Each condition adds query cost."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Optional property to group by, e.g. country, platform, version, or gp:plan for a custom user property. Each group by adds 4 to the query cost."
+          },
+          "group_by_2": {
+            "type": "string",
+            "description": "Optional second property to group by, same format as group_by."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum number of group by values (Amplitude default 100, at most 1000)."
+          },
+          "formula": {
+            "type": "string",
+            "description": "Formula when metric is formula, e.g. UNIQUES(A)/UNIQUES(B)."
+          },
+          "rolling_window": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional rolling window, in units of the interval."
+          },
+          "rolling_average": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional rolling average, in units of the interval."
+          }
+        },
+        "required": [
+          "event",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/events/segmentation",
+        "queryParams": {
+          "e": "$event",
+          "e2": "$second_event",
+          "start": "$start",
+          "end": "$end",
+          "m": "$metric",
+          "n": "$user_type",
+          "i": "$interval",
+          "s": "$segments",
+          "g": "$group_by",
+          "g2": "$group_by_2",
+          "limit": "$limit",
+          "formula": "$formula",
+          "rollingWindow": "$rolling_window",
+          "rollingAverage": "$rolling_average"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_funnel",
+      "description": "Funnel Analysis: conversion through two or more events in order. Returns per group the events, cumulativeRaw (users per step), cumulative and stepByStep (conversion ratios), median and average transition times, and dayFunnels (users per step per day); the per-step histograms are left out to keep the answer small. Dashboard REST API limits per project: 5 concurrent requests, and a query cost budget of 1,000 per 5 minutes and 108,000 per hour (cost = days x conditions x chart cost). A funnel costs 2 per step, plus 4 per group by, times days and conditions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "description": "The funnel steps in order, each an event as JSON text, e.g. [\"{\\\"event_type\\\":\\\"Sign Up\\\"}\", \"{\\\"event_type\\\":\\\"Purchase\\\"}\"]. Event as JSON text: {\"event_type\":\"Sign Up\"} with optional \"filters\" ([{\"subprop_type\":\"event\",\"subprop_key\":\"plan\",\"subprop_op\":\"is\",\"subprop_value\":[\"pro\"]}]) and \"group_by\" ([{\"type\":\"event\",\"value\":\"plan\"}], at most 2). Special event types: _active (any active event), _all (any event), revenue_amount (revenue). Use the exact event_type from amplitude_list_events."
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "ordered",
+              "unordered",
+              "sequential"
+            ],
+            "description": "ordered (default): steps in this order; unordered: in any order; sequential: in this order with no other events between."
+          },
+          "user_type": {
+            "type": "string",
+            "enum": [
+              "new",
+              "active"
+            ],
+            "description": "Only new users, or active users (default)."
+          },
+          "interval": {
+            "type": "integer",
+            "enum": [
+              -300000,
+              -3600000,
+              1,
+              7,
+              30
+            ],
+            "description": "Bucket size of dayFunnels: -300000 real time, -3600000 hourly, 1 daily (default), 7 weekly, 30 monthly."
+          },
+          "segments": {
+            "type": "string",
+            "description": "Optional segment definition as JSON text: an array of filter objects, e.g. [{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]. Custom user properties are written gp:name; a behavioral cohort is {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}. Operators: is, is not, contains, does not contain, less, less or equal, greater, greater or equal, set is, set is not. Each condition adds query cost."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Optional single property to group by, e.g. country or gp:plan. Adds 4 to the query cost."
+          },
+          "conversion_window_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conversion window in seconds. Amplitude default 2592000 (30 days)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum number of group by values (default 100, at most 1000)."
+          }
+        },
+        "required": [
+          "events",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/funnels",
+        "queryParams": {
+          "e": "$events",
+          "start": "$start",
+          "end": "$end",
+          "mode": "$mode",
+          "n": "$user_type",
+          "i": "$interval",
+          "s": "$segments",
+          "g": "$group_by",
+          "cs": "$conversion_window_seconds",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].stepTransTimeDistribution",
+            "data[*].stepPrevStepCountDistribution",
+            "data[*].dayMedianTransTimes",
+            "data[*].dayAvgTransTimes",
+            "data[*].bins"
+          ],
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_retention",
+      "description": "Retention Analysis: how many users who did a starting event come back with a return event, per day, week or month after. Returns data.series with dates, values (per start date: index 0 is the cohort size, index N+1 is retention N intervals out, each {count, outof, incomplete}) and combined (all start dates together). Dashboard REST API limits per project: 5 concurrent requests, and a query cost budget of 1,000 per 5 minutes and 108,000 per hour (cost = days x conditions x chart cost). A retention query costs 8 times days and conditions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_event": {
+            "type": "string",
+            "description": "Starting event as JSON text, e.g. {\"event_type\":\"Sign Up\"}, or {\"event_type\":\"_new\"} for new users and {\"event_type\":\"_active\"} for any active user."
+          },
+          "return_event": {
+            "type": "string",
+            "description": "Returning event as JSON text, e.g. {\"event_type\":\"Purchase\"}, or {\"event_type\":\"_all\"} for any event and {\"event_type\":\"_active\"} for any active event."
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "retention_mode": {
+            "type": "string",
+            "enum": [
+              "n-day",
+              "rolling",
+              "bracket"
+            ],
+            "description": "n-day (default) exact-day retention, rolling (unbounded: on or after), or bracket (needs brackets)."
+          },
+          "brackets": {
+            "type": "string",
+            "description": "Only for retention_mode bracket: the day ranges as JSON text, e.g. [[0,5]] for Day 0 to Day 4."
+          },
+          "interval": {
+            "type": "integer",
+            "enum": [
+              1,
+              7,
+              30
+            ],
+            "description": "Bucket size: 1 daily (default), 7 weekly, 30 monthly."
+          },
+          "segments": {
+            "type": "string",
+            "description": "Optional segment definition as JSON text: an array of filter objects, e.g. [{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]. Custom user properties are written gp:name; a behavioral cohort is {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}. Operators: is, is not, contains, does not contain, less, less or equal, greater, greater or equal, set is, set is not. Each condition adds query cost."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Optional single property to group by."
+          }
+        },
+        "required": [
+          "start_event",
+          "return_event",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/retention",
+        "queryParams": {
+          "se": "$start_event",
+          "re": "$return_event",
+          "start": "$start",
+          "end": "$end",
+          "rm": "$retention_mode",
+          "rb": "$brackets",
+          "i": "$interval",
+          "s": "$segments",
+          "g": "$group_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_active_users",
+      "description": "Count active or new users per day, week or month, optionally segmented and grouped by a property. Returns data.series (one array per group), seriesMeta (group labels) and xValues (dates). Dashboard REST API limits per project: 5 concurrent requests, and a query cost budget of 1,000 per 5 minutes and 108,000 per hour (cost = days x conditions x chart cost). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "metric": {
+            "type": "string",
+            "enum": [
+              "active",
+              "new"
+            ],
+            "description": "active (default) or new users."
+          },
+          "interval": {
+            "type": "integer",
+            "enum": [
+              1,
+              7,
+              30
+            ],
+            "description": "Bucket size: 1 daily (default), 7 weekly, 30 monthly."
+          },
+          "segments": {
+            "type": "string",
+            "description": "Optional segment definition as JSON text: an array of filter objects, e.g. [{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]. Custom user properties are written gp:name; a behavioral cohort is {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}. Operators: is, is not, contains, does not contain, less, less or equal, greater, greater or equal, set is, set is not. Each condition adds query cost."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Optional property to group by, e.g. country, platform, version, or gp:plan for a custom user property. Each group by adds 4 to the query cost."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/users",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "m": "$metric",
+          "i": "$interval",
+          "s": "$segments",
+          "g": "$group_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_realtime_active_users",
+      "description": "Active users in 5-minute steps for today and yesterday, for a live view. Returns data.xValues (HH:mm), seriesLabels (Today, Yesterday) and series. Read-only, query cost 1.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/realtime"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_revenue_ltv",
+      "description": "Revenue lifetime value of new users per start date: average revenue per user, per paying user, total revenue or paying users after 1 to 90 days. Returns data.series with dates and values (r1d ... r90d, count, paid, total_amount per date). Dashboard REST API limits per project: 5 concurrent requests, and a query cost budget of 1,000 per 5 minutes and 108,000 per hour (cost = days x conditions x chart cost). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "metric": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "0 ARPU (default), 1 ARPPU (per paying user), 2 total revenue, 3 paying users."
+          },
+          "interval": {
+            "type": "integer",
+            "enum": [
+              1,
+              7,
+              30
+            ],
+            "description": "Bucket size: 1 daily (default), 7 weekly, 30 monthly."
+          },
+          "segments": {
+            "type": "string",
+            "description": "Optional segment definition as JSON text: an array of filter objects, e.g. [{\"prop\":\"country\",\"op\":\"is\",\"values\":[\"Germany\"]}]. Custom user properties are written gp:name; a behavioral cohort is {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<cohort id>\"]}. Operators: is, is not, contains, does not contain, less, less or equal, greater, greater or equal, set is, set is not. Each condition adds query cost."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Optional single property to group by."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/revenue/ltv",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "m": "$metric",
+          "i": "$interval",
+          "s": "$segments",
+          "g": "$group_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_session_length_distribution",
+      "description": "Number of sessions per session length bucket over a date range. Returns data.series (counts) and xValues (buckets like 60s-120s). Custom buckets need bin_min, bin_max and bin_unit; without them Amplitude uses its default buckets. Query cost 4 per day. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "bin_unit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "minutes",
+              "seconds"
+            ],
+            "description": "Unit of the custom buckets."
+          },
+          "bin_min": {
+            "type": "number",
+            "description": "Lower bound of the custom buckets, e.g. 0."
+          },
+          "bin_max": {
+            "type": "number",
+            "description": "Upper bound of the custom buckets, e.g. 600."
+          },
+          "bin_size": {
+            "type": "number",
+            "description": "Bucket size, e.g. 60. Without it Amplitude picks the size."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/sessions/length",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "timeHistogramConfigBinTimeUnit": "$bin_unit",
+          "timeHistogramConfigBinMin": "$bin_min",
+          "timeHistogramConfigBinMax": "$bin_max",
+          "timeHistogramConfigBinSize": "$bin_size"
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_average_session_length",
+      "description": "Average session length in seconds for each day of a date range. Returns data.series and xValues. Query cost 4 per day. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/sessions/average",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_sessions_per_user",
+      "description": "Average number of sessions per user for each day of a date range. Returns data.series and xValues. Query cost 4 per day. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/sessions/peruser",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_user_composition",
+      "description": "User composition: how many distinct users had each value of one user property in a date range (e.g. users per country, platform or app version). Returns data.xValues (property values) and series (user counts). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "First day of the range, inclusive, as YYYYMMDD (e.g. 20261001), in the project's time zone."
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^\\d{8}$",
+            "description": "Last day of the range, inclusive, as YYYYMMDD (e.g. 20261007), in the project's time zone."
+          },
+          "property": {
+            "type": "string",
+            "description": "The user property: version, country, city, region, DMA, language, platform, os, device, start_version or paying, or gp:name for a custom user property."
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "property"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/composition",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "p": "$property"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_chart_results",
+      "description": "Run a chart saved in Amplitude and return its results as JSON, using the chart's saved definition (events, filters, date range). The chart id is the code after /chart/ in the chart's address, e.g. abc123 in https://app.amplitude.com/analytics/demo/chart/abc123. The shape depends on the chart type. The chart must belong to this project. Read-only; counts against the Dashboard REST API limits like the chart type it runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chart_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]+$",
+            "description": "The saved chart's id from its address, e.g. abc123."
+          }
+        },
+        "required": [
+          "chart_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3/chart/{chart_id}/query"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "amplitude_list_cohorts",
+      "description": "List the project's discoverable behavioral cohorts with id, name, description, size, owners, last computed time and archived or published flags. Use a cohort id in segments as {\"prop\":\"userdata_cohort\",\"op\":\"is\",\"values\":[\"<id>\"]}. The Behavioral Cohorts API is an add-on on Growth and Enterprise; without it Amplitude refuses the call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3/cohorts"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "cohorts": {
+              "$from": "$.cohorts[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "size": "size",
+                "owners": "owners",
+                "archived": "archived",
+                "published": "published",
+                "lastComputed": "lastComputed",
+                "lastMod": "lastMod"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "amplitude_search_users",
+      "description": "Find users by Amplitude ID, device ID, user ID or the start of a user ID. Returns matches (user_id and amplitude_id) and the match type; type nomatch with an empty list when nobody matches. Feed amplitude_id to amplitude_get_user_activity. Limited to 10 concurrent and 360 requests per hour, shared with user activity. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Amplitude ID, device ID, user ID or user ID prefix to look for."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/usersearch",
+        "queryParams": {
+          "user": "$user"
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_user_activity",
+      "description": "One user's summary (userData: first and last seen, event and session counts, revenue, platform, location, user properties) and their most recent or earliest events (event type, time, session, event properties, platform, location). Needs the Amplitude ID from amplitude_search_users. Contains personal data: use it for the user the person is asking about. Limited to 10 concurrent and 360 requests per hour. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amplitude_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The user's Amplitude ID (a number), from amplitude_search_users."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Number of events to return (default 50, at most 1000). Amplitude may return a few more to avoid cutting a session."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based offset from the most recent event, for the next page."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "latest",
+              "earliest"
+            ],
+            "description": "latest (default) starts from the most recent event, earliest from the first."
+          }
+        },
+        "required": [
+          "amplitude_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/useractivity",
+        "queryParams": {
+          "user": "$amplitude_id",
+          "limit": "$limit",
+          "offset": "$offset",
+          "direction": "$direction"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "userData": "$.userData",
+            "events": {
+              "$from": "$.events[*]",
+              "$select": {
+                "event_type": "event_type",
+                "event_time": "event_time",
+                "session_id": "session_id",
+                "event_properties": "event_properties",
+                "platform": "platform",
+                "os_name": "os_name",
+                "device_type": "device_type",
+                "version_name": "version_name",
+                "country": "country",
+                "city": "city"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "amplitude_list_event_types",
+      "description": "List the event types planned in the project's tracking plan (Amplitude Data) with category, display name, description, active flag, tags and owner. Hidden events are not listed. Taxonomy API (all plans): up to 4 cost at the same time and 7,200 per hour per project, each read costs 1. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_deleted": {
+            "type": "boolean",
+            "description": "Also list deleted event types."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/taxonomy/event",
+        "queryParams": {
+          "showDeleted": "$show_deleted"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "event_types": {
+              "$from": "$.data[*]",
+              "$select": {
+                "event_type": "event_type",
+                "category": "category.name",
+                "display_name": "display_name",
+                "description": "description",
+                "is_active": "is_active",
+                "tags": "tags",
+                "owner": "owner"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "amplitude_get_event_type",
+      "description": "Get one planned event type by its exact name: category, display name, description, active and hidden flags, tags and owner. Taxonomy API (all plans): up to 4 cost at the same time and 7,200 per hour per project, each read costs 1. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "description": "The exact event type name, e.g. Sign Up. Spaces and special characters are encoded for you."
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/taxonomy/event/{event_type}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "amplitude_list_event_properties",
+      "description": "List the event properties in the tracking plan: for one event type when event_type is given, otherwise the shared event properties. Returns name, description, type, enum values, required and array flags and classifications such as PII. Taxonomy API (all plans): up to 4 cost at the same time and 7,200 per hour per project, each read costs 1. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "description": "Optional event type whose properties to list, e.g. Sign Up. Without it Amplitude lists the shared event properties."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/taxonomy/event-property",
+        "queryParams": {
+          "event_type": "$event_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "event_properties": {
+              "$from": "$.data[*]",
+              "$select": {
+                "event_property": "event_property",
+                "event_type": "event_type",
+                "description": "description",
+                "type": "type",
+                "enum_values": "enum_values",
+                "is_required": "is_required",
+                "is_array_type": "is_array_type",
+                "classifications": "classifications"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "amplitude_list_user_properties",
+      "description": "List the project's user properties with description, type, enum values, array flag and classifications. Custom user properties come back with the gp: prefix, which is also how segments and group by refer to them. Hidden properties are not listed. Taxonomy API (all plans): up to 4 cost at the same time and 7,200 per hour per project, each read costs 1. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_deleted": {
+            "type": "boolean",
+            "description": "Also list deleted user properties."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/taxonomy/user-property",
+        "queryParams": {
+          "showDeleted": "$show_deleted"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "user_properties": {
+              "$from": "$.data[*]",
+              "$select": {
+                "user_property": "user_property",
+                "description": "description",
+                "type": "type",
+                "enum_values": "enum_values",
+                "is_array_type": "is_array_type",
+                "classifications": "classifications",
+                "deleted": "deleted"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "amplitude_list_event_categories",
+      "description": "List the event categories of the tracking plan (id and name). Taxonomy API (all plans): up to 4 cost at the same time and 7,200 per hour per project, each read costs 1. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2/taxonomy/category"
+      }
+    },
+    {
+      "name": "amplitude_list_annotations",
+      "description": "List the chart annotations of the project (releases, campaigns, incidents marked on charts): id, label, details, start and end, category and chart id (null for annotations shown on every chart). Filter by category or chart (not both) and by time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Only annotations in this category name. Cannot be combined with chart_id."
+          },
+          "chart_id": {
+            "type": "string",
+            "description": "Only annotations shown on this chart. Cannot be combined with category."
+          },
+          "start": {
+            "type": "string",
+            "description": "Only annotations after this time, ISO 8601 with offset, e.g. 2026-10-01T00:00:00+00:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Only annotations ending before this time, ISO 8601 with offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3/annotations",
+        "queryParams": {
+          "category": "$category",
+          "chart_id": "$chart_id",
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "annotations": "$.data"
+          },
+          "maxBytes": 50000
+        }
+      }
+    },
+    {
+      "name": "amplitude_create_annotation",
+      "description": "Add an annotation (e.g. a release or campaign) at a point or range in time. Without chart_id it appears on every chart of the project for every member, so confirm the label, time and scope with the user before calling. Returns the new annotation with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Title shown on the charts, e.g. Release 4.2."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start time, ISO 8601 with offset, e.g. 2026-10-14T09:00:00+00:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Optional end time for a range, ISO 8601 with offset."
+          },
+          "details": {
+            "type": "string",
+            "description": "Optional longer text."
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional existing annotation category name, e.g. Releases. An unknown name answers 404."
+          },
+          "chart_id": {
+            "type": "string",
+            "description": "Optional chart id to annotate only that chart; leave it out for a project-wide annotation."
+          }
+        },
+        "required": [
+          "label",
+          "start"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3/annotations",
+        "bodyMapping": {
+          "label": "$label",
+          "start": "$start",
+          "end": "$end",
+          "details": "$details",
+          "category": "$category",
+          "chart_id": "$chart_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "amplitude_delete_annotation",
+      "description": "Delete a chart annotation by id; it disappears from every chart for every member and cannot be restored. Installed switched off. Show the user the annotation (amplitude_list_annotations) and only call this after they confirm.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "annotation_id": {
+            "type": "integer",
+            "description": "The annotation id from amplitude_list_annotations."
+          }
+        },
+        "required": [
+          "annotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/3/annotations/{annotation_id}"
+      }
+    }
+  ]
+}

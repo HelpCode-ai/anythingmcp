@@ -1,0 +1,1444 @@
+{
+  "slug": "semrush",
+  "name": "Semrush",
+  "unlisted": true,
+  "description": "Give your AI Semrush SEO data: domain overview and history, organic and paid keywords, competitors, keyword gap, keyword volume, difficulty and ideas, URL rankings and backlinks, with the API unit cost of every report.",
+  "instructions": "## Semrush\nThis connector calls the **Semrush API** (`https://api.semrush.com`, Standard API v3) with the user's own API key: Domain Overview, Organic and Advertising Research, competitors, Keyword Gap, keyword metrics and ideas, URL keywords and Backlink Analytics. Every tool is a read.\n\n**Every report spends API units from the Semrush account, per line returned.** Each tool description states its price (10 to 80 units per line; historical data with `display_date` costs five times as much). `display_limit` defaults to 10 lines: raise it only when the user needs more, and never send 0, because Semrush then returns 10,000 lines. `semrush_get_api_units` is free and shows the balance (it also reads 0 for a key Semrush does not know); when units run short Semrush returns only the lines that were paid for, or `ERROR 132 :: API UNITS BALANCE IS ZERO`.\n\n**Setup (about 3 minutes)**\n1. API access needs a Semrush SEO **Business** subscription plus an API units package, bought under Subscription info, API units (https://www.semrush.com/accounts/subscription-info/api-units/). A new Business plan starts with zero units.\n2. Open https://www.semrush.com/accounts/api-keys/active and copy an active v3 API key.\n3. Paste it into `SEMRUSH_API_KEY` and install. Semrush takes the key as the `key` query parameter; it is stored encrypted, added to each request by the connector, and only sent to semrush.com.\n\n**Tools**\n- `semrush_get_api_units`: remaining API units (free).\n- `semrush_domain_overview`: rank, organic and paid keywords, traffic and cost in one database (10 units).\n- `semrush_domain_overview_all_databases`: the same per country (10 units per line).\n- `semrush_domain_history`: monthly history of those metrics (10 units per month).\n- `semrush_domain_organic_keywords`: keywords a domain ranks for (10 per line).\n- `semrush_domain_paid_keywords`: Google Ads keywords of a domain (20 per line).\n- `semrush_domain_organic_competitors`: organic competitors (40 per line).\n- `semrush_domain_organic_pages`: a domain's ranking pages (10 per line).\n- `semrush_keyword_gap`: shared, missing and unique keywords of up to five domains (80 per line).\n- `semrush_keyword_overview`: volume, CPC, competition, intent, difficulty of one keyword (10).\n- `semrush_keyword_overview_all_databases`: one keyword in every country (10 per line, about 140 lines).\n- `semrush_batch_keyword_overview`: up to 100 keywords at once (10 per keyword).\n- `semrush_keyword_organic_results`: the recorded Google top 100 for a keyword (10 per line).\n- `semrush_related_keywords`: related keywords (40 per line).\n- `semrush_broad_match_keywords`: broad-match ideas (20 per line).\n- `semrush_keyword_questions`: question keywords (40 per line).\n- `semrush_keyword_difficulty`: difficulty of up to 100 keywords (50 per keyword).\n- `semrush_url_organic_keywords`: keywords one URL ranks for (10 per line).\n- `semrush_backlinks_overview`: backlink summary and Authority Score (40 per request).\n- `semrush_backlinks`: backlinks (40 per line).\n- `semrush_referring_domains`: referring domains (40 per line).\n\n**Reading the answers**: reports come back as text in CSV form, separated by semicolons (`;`), one header line with the column names and then one line per row (line breaks appear as `\\r\\n`). `Td` (trend) holds 12 comma-separated monthly values from 0 to 1. Column codes in `export_columns`: Ph keyword, Po position, Pp previous position, Pd position change, Nq monthly search volume, Cp CPC in USD, Co paid competition (0 to 1), Kd keyword difficulty (0 to 100), In intent (0 commercial, 1 informational, 2 navigational, 3 transactional; several comma-separated), Nr number of results, Ur URL, Tr traffic share (%), Tg traffic, Tc traffic cost share (%), Dn domain, Rk Semrush rank, Or organic keywords, Ot organic traffic, Oc organic traffic cost (USD), Ad paid keywords, At paid traffic, Ac paid cost, Cr competitor relevance, Np common keywords, Db database, Dt date, Rr related relevance, Pc keywords per page, Fk / Fp SERP feature codes. Fewer columns make a shorter answer but do not lower the price.\n\n**Databases**: `database` is a two-letter country code (`us`, `uk`, `de`, `it`, `fr`, `es`...). Mobile databases (`mobile-us`) and extended ones (`us-ext`) exist for domain reports only.\n\n**Filters**: `display_filter` takes the filter unencoded, `<sign>|<column>|<operation>|<value>`, several joined with `|`, e.g. `+|Nq|Gt|1000|+|Po|Lt|11`; the connector encodes it.\n\n**Common errors** (the body is a line such as `ERROR 120 :: WRONG KEY - ID PAIR`)\n- `ERROR 50 :: NOTHING FOUND`: Semrush has no data for this domain, keyword or database. Check the spelling and the database rather than retrying.\n- `ERROR 120` / `ERROR 122` / `ERROR 402`: the API key is wrong. Copy it again from https://www.semrush.com/accounts/api-keys/active.\n- `ERROR 130 :: API DISABLED`: the subscription has no API access (it needs an SEO Business plan with API units).\n- `ERROR 132 :: API UNITS BALANCE IS ZERO`: no units left; buy more units in Semrush. The backlinks reports also answer it for a key Semrush does not know.\n- `ERROR 133 :: DB ACCESS DENIED`: the plan does not include this database.\n- `ERROR 429`: too many requests at once; wait a moment.\n\n**Out of scope here**: Projects, Position Tracking and Site Audit (the v3 Projects API is deprecated by Semrush and its successor uses a different sign-in), the Trends (traffic) API, Local and Listing Management APIs, and subdomain or subfolder reports.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "semrush",
+  "docsUrl": "https://developer.semrush.com/api/v3/analytics/basic-docs/",
+  "requiredEnvVars": [
+    "SEMRUSH_API_KEY"
+  ],
+  "envVarMeta": {
+    "SEMRUSH_API_KEY": {
+      "label": "Semrush API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Semrush, Account, API keys: an active v3 key. Needs an SEO Business plan with an API units package; every report spends units from it.",
+      "link": "https://www.semrush.com/accounts/api-keys/active",
+      "example": "0123456789abcdef0123456789abcdef",
+      "pattern": "^[a-f0-9]{32}$",
+      "patternMessage": "A Semrush API key is 32 characters, digits and the letters a to f in lower case. Paste only the key, without spaces or a key= prefix."
+    }
+  },
+  "verifyHints": {
+    "400": "Semrush did not accept the API key. Copy it again from https://www.semrush.com/accounts/api-keys/active.",
+    "401": "Semrush refused the API key. Copy it again from https://www.semrush.com/accounts/api-keys/active.",
+    "403": "Semrush refused the request: the key is wrong, the subscription has no API access (SEO Business plan with API units), or the units are used up.",
+    "429": "Semrush is rate limiting this key. Wait a moment and verify again."
+  },
+  "probe": {
+    "tool": "semrush_get_api_units"
+  },
+  "prerequisites": "A Semrush SEO Business subscription with an API units package, and an active v3 API key. Every report spends API units per line. About 3 minutes.",
+  "connector": {
+    "name": "Semrush",
+    "type": "REST",
+    "baseUrl": "https://api.semrush.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{SEMRUSH_API_KEY}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "https://www.semrush.com/users/countapiunits.html"
+  },
+  "tools": [
+    {
+      "name": "semrush_get_api_units",
+      "description": "Show how many Semrush API units this key has left. Free: the call itself costs no units. Check it before a large report, because a report that runs out of units returns only the lines that were paid for. Semrush also answers 0 for a key it does not know, so if a report then fails with ERROR 120 or 122, the key is wrong.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://www.semrush.com/users/countapiunits.html"
+      }
+    },
+    {
+      "name": "semrush_domain_overview",
+      "description": "Domain overview in one Semrush database: Semrush rank, organic keywords, organic traffic and traffic cost, paid keywords, paid traffic and cost. Costs 10 API units (one line); 50 with display_date. Returns semicolon-separated CSV with a header line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Dn,Rk,Or,Ot,Oc,Ad,At,Ac",
+            "description": "Comma-separated column codes. Default Dn,Rk,Or,Ot,Oc,Ad,At,Ac. Available: Dn, Rk, Or, Xn, Ot, Oc, Ad, At, Ac, FKn, FPn, Sr, Srb, St, Stb, Sc."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_rank",
+          "domain": "$domain",
+          "database": "$database",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_overview_all_databases",
+      "description": "The same overview for every Semrush regional database at once (one line per country). Costs 10 API units per line, about 140 lines when unlimited, so keep display_limit small and sort by organic traffic. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 10 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "ot_desc",
+              "or_desc",
+              "oc_desc",
+              "rk_asc",
+              "ad_desc",
+              "at_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "ot_desc"
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Db,Dn,Rk,Or,Ot,Oc,Ad,At,Ac",
+            "description": "Comma-separated column codes. Default Db,Dn,Rk,Or,Ot,Oc,Ad,At,Ac. Available: Db, Dt, Dn, Rk, Or, Ot, Oc, Ad, At, Ac, Sh, Sv, FKn, FPn."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_ranks",
+          "domain": "$domain",
+          "display_limit": "$display_limit",
+          "display_sort": "$display_sort",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_history",
+      "description": "Monthly history of a domain's organic and paid metrics in one database (rank, keywords, traffic, cost, date), newest first. Costs 10 API units per line (one line per month). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Months to return (default 10). Each month costs 10 API units."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "dt_desc",
+              "dt_asc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "dt_desc"
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Dt,Rk,Or,Ot,Oc,Ad,At,Ac",
+            "description": "Comma-separated column codes. Default Dt,Rk,Or,Ot,Oc,Ad,At,Ac. Available: Rk, Or, Xn, Ot, Oc, Ad, At, Ac, Dt, FKn, FPn, Sr, Srb, St, Stb, Sc."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_rank_history",
+          "domain": "$domain",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_sort": "$display_sort",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_organic_keywords",
+      "description": "Keywords a domain ranks for in Google's top 100 (Organic Research): position, previous position, volume, CPC, URL, traffic share, intent. Costs 10 API units per line (50 with display_date). display_positions lists new, lost, rising or falling keywords. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 10 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "tr_desc",
+              "tr_asc",
+              "tg_desc",
+              "po_asc",
+              "po_desc",
+              "nq_desc",
+              "nq_asc",
+              "cp_desc",
+              "kd_desc",
+              "kd_asc",
+              "tc_desc",
+              "co_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "tr_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "display_positions": {
+            "type": "string",
+            "enum": [
+              "new",
+              "lost",
+              "rise",
+              "fall"
+            ],
+            "description": "Only keywords that are new, lost, rising or falling in the top 100 compared with the previous month."
+          },
+          "display_positions_type": {
+            "type": "string",
+            "enum": [
+              "organic",
+              "all",
+              "serp_features"
+            ],
+            "description": "organic (default) for classic results only, all to include SERP feature positions, serp_features for SERP features only."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Po,Pp,Nq,Cp,Ur,Tr,Kd,In",
+            "description": "Comma-separated column codes. Default Ph,Po,Pp,Nq,Cp,Ur,Tr,Kd,In. Available: Ph, Po, Pp, Pd, Nq, Cp, Ur, Tr, Tg, Tc, Co, Nr, Td, Kd, Fp, Fk, Ts, In, Pt."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_organic",
+          "domain": "$domain",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "display_positions": "$display_positions",
+          "display_positions_type": "$display_positions_type",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_paid_keywords",
+      "description": "Keywords a domain buys Google Ads for (Advertising Research): ad position, volume, CPC, visible URL, traffic share. Costs 20 API units per line (100 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 20 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "tr_desc",
+              "tr_asc",
+              "tg_desc",
+              "po_asc",
+              "po_desc",
+              "nq_desc",
+              "nq_asc",
+              "tc_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "tr_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Po,Nq,Cp,Vu,Ur,Tr,Tt,Ds",
+            "description": "Comma-separated column codes. Default Ph,Po,Nq,Cp,Vu,Ur,Tr,Tt,Ds. Available: Ph, Po, Pp, Pd, Ab, Nq, Cp, Tg, Tr, Tc, Co, Nr, Td, Tt, Ds, Vu, Ur, Ts, Un."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 100 API units each."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_adwords",
+          "domain": "$domain",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_organic_competitors",
+      "description": "Organic search competitors of a domain: competitor relevance, common keywords, their organic keywords, traffic and cost. Costs 40 API units per line (200 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 40 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "cr_desc",
+              "cr_asc",
+              "np_desc",
+              "np_asc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "cr_desc"
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Dn,Cr,Np,Or,Ot,Oc,Ad",
+            "description": "Comma-separated column codes. Default Dn,Cr,Np,Or,Ot,Oc,Ad. Available: Dn, Cr, Np, Or, Ot, Oc, Ad, Sr, St, Sc."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 200 API units each."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_organic_organic",
+          "domain": "$domain",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_domain_organic_pages",
+      "description": "A domain's pages that rank in Google's top 100, with the number of ranking keywords and traffic per page. Costs 10 API units per line (50 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain to analyse, without protocol, e.g. example.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 10 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "tr_desc",
+              "tr_asc",
+              "tg_desc",
+              "pc_desc",
+              "pc_asc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "tr_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ur,Pc,Tg,Tr",
+            "description": "Comma-separated column codes. Default Ur,Pc,Tg,Tr. Available: Ur, Pc, Tg, Tr, Ipu, Ip0, Ip1, Ip2, Ip3, Itu, It0, It1, It2, It3, Sr, St."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "domain",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_organic_unique",
+          "domain": "$domain",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_gap",
+      "description": "Compare the keywords of up to five domains (Keyword Gap): shared, all, unique, missing or untapped keywords with each domain's position. Costs 80 API units per line (400 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domains": {
+            "type": "string",
+            "description": "Domains with an operator each, unencoded: <sign>|<type>|<domain> joined with |. type or = organic, ad = paid. Shared: *|or|a.com|*|or|b.com. All: *|or|a.com|+|or|b.com. Unique to a.com: *|or|a.com|-|or|b.com. Missing in a.com: *|or|b.com|*|or|c.com|-|or|a.com. Untapped for a.com: *|or|b.com|+|or|c.com|-|or|a.com."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 80 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "nq_desc",
+              "nq_asc",
+              "p0_asc",
+              "p0_desc",
+              "p1_asc",
+              "p1_desc",
+              "cp_desc",
+              "co_desc",
+              "nr_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "nq_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,P0,P1,P2,P3,P4,Nq,Cp,Kd",
+            "description": "Comma-separated column codes. Default Ph,P0,P1,P2,P3,P4,Nq,Cp,Kd. Available: Ph, P0, P1, P2, P3, P4, Nr, Cp, Nq, Kd, Co, Td (P0 to P4 are the positions of the 1st to 5th domain)."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 400 API units each."
+          }
+        },
+        "required": [
+          "domains",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "domain_domains",
+          "domains": "$domains",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_overview",
+      "description": "Volume, CPC, competition, number of results, trend, intent and difficulty of one keyword in one database. Costs 10 API units (one line; 50 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Nq,Cp,Co,Nr,Td,In,Kd",
+            "description": "Comma-separated column codes. Default Ph,Nq,Cp,Co,Nr,Td,In,Kd. Available: Ph, Nq, Cp, Co, Nr, Td, In, Kd."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_this",
+          "phrase": "$phrase",
+          "database": "$database",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_overview_all_databases",
+      "description": "Volume, CPC and competition of one keyword in every regional database at once (one line per country), to compare markets. Costs 10 API units per line and cannot be limited: about 140 lines (up to 1,400 units) without a database. Prefer semrush_keyword_overview for one country. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Optional: one regional database code to limit the report to that country (one line)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Db,Ph,Nq,Cp,Co",
+            "description": "Comma-separated column codes. Default Db,Ph,Nq,Cp,Co. Available: Dt, Db, Ph, Nq, Cp, Co, Nr, In, Kd."
+          }
+        },
+        "required": [
+          "phrase"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_all",
+          "phrase": "$phrase",
+          "database": "$database",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_batch_keyword_overview",
+      "description": "Overview of up to 100 keywords in one database in a single call: volume, CPC, competition, results, trend, intent, difficulty. Costs 10 API units per keyword (50 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "Up to 100 keywords separated by semicolons, e.g. seo;seo tools;keyword research."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Nq,Cp,Co,Nr,In,Kd",
+            "description": "Comma-separated column codes. Default Ph,Nq,Cp,Co,Nr,In,Kd. Available: Ph, Nq, Cp, Co, Nr, Td, In, Kd."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_these",
+          "phrase": "$phrase",
+          "database": "$database",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_organic_results",
+      "description": "The organic Google results (SERP) Semrush recorded for a keyword: position, domain, URL and SERP features. Costs 10 API units per line (50 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 10 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "positions_type": {
+            "type": "string",
+            "enum": [
+              "organic",
+              "all"
+            ],
+            "description": "organic (default) for classic results only; all also counts SERP features as positions."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Po,Dn,Ur,Fp",
+            "description": "Comma-separated column codes. Default Po,Dn,Ur,Fp. Available: Po, Pt, Dn, Ur, Fk, Fp, Fl."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_organic",
+          "phrase": "$phrase",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "positions_type": "$positions_type",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_related_keywords",
+      "description": "Related keywords, synonyms and variations of a keyword with volume, CPC, competition, difficulty, intent and relevance. Costs 40 API units per line. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 40 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "nq_desc",
+              "nq_asc",
+              "rr_desc",
+              "kd_asc",
+              "kd_desc",
+              "cp_desc",
+              "co_asc",
+              "co_desc",
+              "nr_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "nq_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Nq,Cp,Co,Kd,In,Rr",
+            "description": "Comma-separated column codes. Default Ph,Nq,Cp,Co,Kd,In,Rr. Available: Ph, Nq, Cp, Co, Nr, Td, Rr, Fk, In, Kd."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_related",
+          "phrase": "$phrase",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_broad_match_keywords",
+      "description": "Broad-match keyword ideas that contain the given keyword, with volume, CPC, competition, difficulty and intent. Costs 20 API units per line. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 20 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "nq_desc",
+              "nq_asc",
+              "kd_asc",
+              "kd_desc",
+              "cp_desc",
+              "co_asc",
+              "co_desc",
+              "nr_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "nq_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Nq,Cp,Co,Kd,In",
+            "description": "Comma-separated column codes. Default Ph,Nq,Cp,Co,Kd,In. Available: Ph, Nq, Cp, Co, Nr, Td, Fk, In, Kd."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_fullsearch",
+          "phrase": "$phrase",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_questions",
+      "description": "Question keywords (how, what, why...) that contain the given keyword, with volume, CPC, competition and difficulty. Costs 40 API units per line. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "The keyword, e.g. running shoes."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 40 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "nq_desc",
+              "nq_asc",
+              "kd_asc",
+              "kd_desc",
+              "cp_desc",
+              "co_asc",
+              "co_desc",
+              "nr_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "nq_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Nq,Cp,Co,Kd,In",
+            "description": "Comma-separated column codes. Default Ph,Nq,Cp,Co,Kd,In. Available: Ph, Nq, Cp, Co, Nr, Td, In, Kd."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_questions",
+          "phrase": "$phrase",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_keyword_difficulty",
+      "description": "Keyword Difficulty (0 to 100) of up to 100 keywords: how hard it is to reach Google's top 10. Costs 50 API units per keyword. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "description": "One keyword, or up to 100 separated by semicolons, e.g. ebay;seo."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Kd",
+            "description": "Comma-separated column codes. Default Ph,Kd. Available: Ph, Kd."
+          }
+        },
+        "required": [
+          "phrase",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "phrase_kdi",
+          "phrase": "$phrase",
+          "database": "$database",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_url_organic_keywords",
+      "description": "Keywords one URL ranks for in Google's top 100: position, volume, CPC, traffic share, intent. Costs 10 API units per line (50 with display_date). Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full URL of the page, with protocol, e.g. https://www.example.com/blog/post/."
+          },
+          "database": {
+            "type": "string",
+            "description": "Regional database (two-letter code): us, uk, de, fr, it, es, ca, au, br, in, nl, pl, se, ch, at, jp and more; mobile-us, mobile-de etc. for mobile results. Keyword reports accept desktop codes only."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 10 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "tr_desc",
+              "tr_asc",
+              "tg_desc",
+              "po_asc",
+              "po_desc",
+              "nq_desc",
+              "nq_asc",
+              "tc_desc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "tr_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Semrush filter, unencoded: <sign>|<column>|<operation>|<value>, several joined with |. sign + includes, - excludes; operations Eq, Gt, Lt for numbers and Bw, Ew, Eq, Co, Wm for text. Example: +|Nq|Gt|1000|+|Po|Lt|11 (volume over 1000, positions 1 to 10)."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "Ph,Po,Nq,Cp,Kd,Tr,In",
+            "description": "Comma-separated column codes. Default Ph,Po,Nq,Cp,Kd,Tr,In. Available: Ph, Po, Pp, Nq, Cp, Co, Kd, Tr, Tg, Tc, Nr, Td, Fp, Fk, Ts, In, Pt."
+          },
+          "display_date": {
+            "type": "string",
+            "pattern": "^\\d{6}15$",
+            "description": "Past month as YYYYMM15, e.g. 20260815 for August 2026. Leave out for the latest data. Historical lines cost 50 API units each."
+          }
+        },
+        "required": [
+          "url",
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "type": "url_organic",
+          "url": "$url",
+          "database": "$database",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns",
+          "display_date": "$display_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_backlinks_overview",
+      "description": "Backlink summary of a domain or URL: Authority Score, total backlinks, referring domains, URLs and IPs, follow and nofollow links, text and image links. Costs 40 API units per request. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Root domain (example.com), subdomain (www.example.com) or URL (https://www.example.com/page) to analyse."
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "root_domain",
+              "domain",
+              "url"
+            ],
+            "default": "root_domain",
+            "description": "What target is: root_domain (default) for the whole domain, domain for one subdomain, url for one page."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "ascore,total,domains_num,urls_num,ips_num,follows_num,nofollows_num,texts_num,images_num",
+            "description": "Comma-separated column codes. Default ascore,total,domains_num,urls_num,ips_num,follows_num,nofollows_num,texts_num,images_num. Available: ascore, total, domains_num, urls_num, ips_num, ipclassc_num, follows_num, nofollows_num, sponsored_num, ugc_num, texts_num, images_num, forms_num, frames_num."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics/v1/",
+        "queryParams": {
+          "type": "backlinks_overview",
+          "target": "$target",
+          "target_type": "$target_type",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_backlinks",
+      "description": "Backlinks of a domain or URL: Authority Score of the linking page, source title and URL, target URL, anchor, nofollow, first and last seen (Unix time). Costs 40 API units per line. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Root domain (example.com), subdomain (www.example.com) or URL (https://www.example.com/page) to analyse."
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "root_domain",
+              "domain",
+              "url"
+            ],
+            "default": "root_domain",
+            "description": "What target is: root_domain (default) for the whole domain, domain for one subdomain, url for one page."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 40 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "page_ascore_desc",
+              "page_ascore_asc",
+              "first_seen_desc",
+              "first_seen_asc",
+              "last_seen_desc",
+              "last_seen_asc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "page_ascore_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Backlink filter, unencoded, e.g. +|type||follow (followed links only), +|type||newlink, +|type||lostlink. Fields: type, zone, ip, refdomain, anchor, newlink, lostlink, urlanchor, redirects."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "page_ascore,source_title,source_url,target_url,anchor,nofollow,first_seen,last_seen",
+            "description": "Comma-separated column codes. Default page_ascore,source_title,source_url,target_url,anchor,nofollow,first_seen,last_seen. Available: page_ascore, response_code, source_size, external_num, internal_num, redirect_url, source_url, source_title, image_url, target_url, target_title, anchor, image_alt, last_seen, first_seen, nofollow, form, frame, image, sitewide, newlink, lostlink."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics/v1/",
+        "queryParams": {
+          "type": "backlinks",
+          "target": "$target",
+          "target_type": "$target_type",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "semrush_referring_domains",
+      "description": "Domains that link to a domain or URL: Authority Score, number of backlinks, IP, country, first and last seen (Unix time). Costs 40 API units per line. Returns semicolon-separated CSV.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Root domain (example.com), subdomain (www.example.com) or URL (https://www.example.com/page) to analyse."
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "root_domain",
+              "domain",
+              "url"
+            ],
+            "default": "root_domain",
+            "description": "What target is: root_domain (default) for the whole domain, domain for one subdomain, url for one page."
+          },
+          "display_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Lines to return (default 10). Each line costs 40 API units, so keep it small. Never 0: Semrush then returns 10,000 lines."
+          },
+          "display_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines to skip, for paging. Semrush counts display_limit from the start, so for lines 11 to 20 send display_offset 10 and display_limit 20 (you pay for the 10 returned lines)."
+          },
+          "display_sort": {
+            "type": "string",
+            "enum": [
+              "backlinks_num_desc",
+              "backlinks_num_asc",
+              "domain_ascore_desc",
+              "domain_ascore_asc",
+              "first_seen_desc",
+              "first_seen_asc",
+              "last_seen_desc",
+              "last_seen_asc"
+            ],
+            "description": "Sort column and direction.",
+            "default": "backlinks_num_desc"
+          },
+          "display_filter": {
+            "type": "string",
+            "description": "Referring-domain filter, unencoded, e.g. +|newdomain|| or +|country||de. Fields: zone, country, ip, newdomain, lostdomain, category."
+          },
+          "export_columns": {
+            "type": "string",
+            "default": "domain_ascore,domain,backlinks_num,country,first_seen,last_seen",
+            "description": "Comma-separated column codes. Default domain_ascore,domain,backlinks_num,country,first_seen,last_seen. Available: domain_ascore, domain, backlinks_num, domain_trust_score, ip, country, first_seen, last_seen."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics/v1/",
+        "queryParams": {
+          "type": "backlinks_refdomains",
+          "target": "$target",
+          "target_type": "$target_type",
+          "display_limit": "$display_limit",
+          "display_offset": "$display_offset",
+          "display_sort": "$display_sort",
+          "display_filter": "$display_filter",
+          "export_columns": "$export_columns"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@",
+          "maxBytes": 60000
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<svg viewBox="0 0 1000 1000" fill="none" xmlns="http://www.w3.org/2000/svg" role="img"><title>Customer.io</title>
+<rect width="1000" height="1000" rx="150" fill="#00262B"/>
+<path d="M350.664 500L500 649.338L350.664 798.673H201.327V649.338L350.664 500Z" fill="#BDFFBD"/>
+<path d="M350.664 500L500 350.664L350.664 201.327H201.327V350.664L350.664 500Z" fill="#BDFFBD"/>
+<path d="M798.673 350.664L649.338 201.327H500V350.664L649.338 500L500 649.338V798.673H649.338L798.673 649.338V350.664Z" fill="#BDFFBD"/>
+</svg>
