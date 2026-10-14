@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { getApiOrigin } from '@/lib/origin';
+import { FirstSuccessOffer } from '@/components/first-success-offer';
 
 type HealthResult = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -106,6 +107,9 @@ export default function DashboardPage() {
       }
     >
       <div className="flex flex-col gap-[18px]">
+        {/* Cloud admins, right after the workspace's first successful call. */}
+        <FirstSuccessOffer via="dashboard" />
+
         {/* First-run nudge */}
         {!dataLoading && stats.connectors === 0 && (
           <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--brand)]/30 bg-[var(--brand-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

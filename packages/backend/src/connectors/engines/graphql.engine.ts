@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
@@ -202,13 +203,13 @@ export class GraphqlEngine {
 
       return response.data.data;
     } catch (error) {
-      // OAuth2 auto-refresh: retry once on 401
+      // OAuth2 auto-refresh: retry once on 401 (a refresh token, or a grant
+      // that asks for a new token by itself, such as Datto's password grant)
       if (
         error instanceof AxiosError &&
         error.response?.status === 401 &&
         config.authType === 'OAUTH2' &&
-        config.authConfig?.refreshToken &&
-        config.authConfig?.tokenUrl
+        canRenewToken(config.authConfig)
       ) {
         this.logger.debug(
           'OAuth2: access token expired, attempting refresh...',

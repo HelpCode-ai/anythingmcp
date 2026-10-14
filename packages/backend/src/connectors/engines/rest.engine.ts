@@ -10,6 +10,7 @@ import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
@@ -484,13 +485,13 @@ export class RestEngine {
       const response = await this.requestWithRetry(axiosConfig, outbound);
       return withMeta(response);
     } catch (error) {
-      // OAuth2 auto-refresh: retry once on 401
+      // OAuth2 auto-refresh: retry once on 401 (a refresh token, or a grant
+      // that asks for a new token by itself, such as Datto's password grant)
       if (
         error instanceof AxiosError &&
         error.response?.status === 401 &&
         config.authType === 'OAUTH2' &&
-        config.authConfig?.refreshToken &&
-        config.authConfig?.tokenUrl
+        canRenewToken(config.authConfig)
       ) {
         this.logger.debug('OAuth2: access token expired, attempting refresh...');
         const newToken = await this.oauth2TokenService.renewAfterRejection(

@@ -234,6 +234,48 @@ describe('OAuth2 config endpoints', () => {
       });
     });
 
+    it('switches a connector to the password grant (Datto RMM)', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        grant: 'password',
+        username: 'api-key',
+        password: 'api-secret',
+        tokenAuthMethod: 'client_secret_basic',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        grant: 'password',
+        username: 'api-key',
+        password: 'api-secret',
+        tokenAuthMethod: 'client_secret_basic',
+      });
+    });
+
+    it('stores the authorization-code flow as no grant, as every authorized connector has', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', { grant: 'authorization_code' });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        grant: undefined,
+      });
+    });
+
+    it('stores "in body" explicitly when switching to the password grant, whose default is Basic', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        grant: 'password',
+        tokenAuthMethod: '',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        grant: 'password',
+        tokenAuthMethod: 'client_secret_post',
+      });
+    });
+
     it('carries a corrected Etsy secret into the x-api-key header and the variables', async () => {
       // Production, 6 Oct 2026: the keystring was typed as the shared secret
       // at install, then corrected in the OAuth editor. authConfig.clientSecret
@@ -404,6 +446,37 @@ describe('OAuth2 config endpoints', () => {
       const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
 
       expect(result.tokenAuthMethod).toBe('client_secret_basic');
+    });
+
+    it('reports the grant, and only whether the password-grant credentials are set', async () => {
+      const { encrypt } = require('../common/crypto/encryption.util');
+      const authConfig = encrypt(
+        JSON.stringify({
+          grant: 'password',
+          clientId: 'public-client',
+          clientSecret: 'public',
+          username: 'datto-api-key',
+          password: 'datto-api-secret',
+        }),
+        VALID_ENCRYPTION_KEY,
+      );
+      const { controller } = build(oauthConnector({ authConfig }));
+
+      const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
+
+      expect(result).toMatchObject({
+        grant: 'password',
+        tokenAuthMethod: 'client_secret_basic',
+        hasUsername: true,
+        hasPassword: true,
+      });
+      expect(JSON.stringify(result)).not.toContain('datto-api');
+    });
+
+    it('reports the authorization-code flow when no grant is stored', async () => {
+      const { controller } = build(oauthConnector({ authConfig: null }));
+
+      expect((await controller.getOAuthConfig(req('ADMIN'), 'c1')).grant).toBe('authorization_code');
     });
 
     it('degrades gracefully when the stored config cannot be decrypted', async () => {

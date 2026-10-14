@@ -24,16 +24,22 @@ import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
-import { ProductEventService } from '../audit/product-event.service';
+import { ProductEventService, ProductEvents } from '../audit/product-event.service';
+import { CardTrialEligibilityService } from './card-trial-eligibility.service';
+import { CardTrialOfferService } from './card-trial-offer.service';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
+  CHECKOUT_SOURCES,
   CheckoutBillingPeriod,
   CheckoutPlan,
+  CheckoutSource,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
 } from './license-checkout';
+
+type CardTrialOfferView = { connectorName: string | null; trialEndsAt: string };
 
 class SetLicenseKeyDto {
   @IsString()
@@ -43,7 +49,7 @@ class SetLicenseKeyDto {
   licenseKey: string;
 }
 
-class CheckoutLinkDto {
+export class CheckoutLinkDto {
   @IsIn(CHECKOUT_PLANS as unknown as string[])
   plan: CheckoutPlan;
 
@@ -59,6 +65,12 @@ class CheckoutLinkDto {
   @IsString()
   @Matches(/^[A-Za-z0-9_-]{1,64}$/)
   promo?: string;
+
+  // Which in-app offer led here (e.g. 'first_success', the card-trial offer
+  // after the first successful tool call). Lands in Stripe metadata.
+  @IsOptional()
+  @IsIn(CHECKOUT_SOURCES as unknown as string[])
+  source?: CheckoutSource;
 }
 
 class BillingPortalDto {
@@ -84,6 +96,8 @@ export class LicenseController {
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
     private readonly productEvents: ProductEventService,
+    private readonly cardTrialEligibility: CardTrialEligibilityService,
+    private readonly cardTrialOffer: CardTrialOfferService,
   ) {}
 
   @Get('status')
@@ -250,7 +264,7 @@ export class LicenseController {
     summary:
       'Stripe Checkout link for a cloud plan, optionally as a card trial ending with the free trial (cloud, ADMIN)',
   })
-  async checkoutLink(@Req() req: any, @Body() dto: CheckoutLinkDto): Promise<{ url: string }> {
+  async checkoutLink(@Req() req: any, @Body() dto: CheckoutLinkDto): Promise<{ url: string; trial: boolean }> {
     // Cloud only. Self-hosted buys its licence on the pricing page and has no
     // workspace billing here; answer as if the route did not exist.
     if (!this.deployment.isCloud()) {
@@ -282,14 +296,19 @@ export class LicenseController {
     }
 
     // A card trial ends when the free trial would have. Asked for after the
-    // trial is over, it is a plain purchase: no trialEnd means pay now.
-    const trialEnd = dto.trial ? cardTrialEnd(current) : null;
+    // trial is over, it is a plain purchase: no trialEnd means pay now. An
+    // address that had a subscription before gets no trial from the licence
+    // site either; asking for one would only hide that it pays today.
+    const hadSubscription = dto.trial
+      ? await this.cardTrialEligibility.hadSubscription(email).catch(() => null)
+      : null;
+    const trialEnd = dto.trial && hadSubscription !== true ? cardTrialEnd(current) : null;
     const adMetadata = checkoutAdMetadata(
       await this.productEvents.clickIdForUser(req.user.sub).catch(() => null),
     );
 
     try {
-      return await this.licenseService.createCheckoutIntent({
+      const link = await this.licenseService.createCheckoutIntent({
         email,
         plan: `cloud_${dto.plan}`,
         billingPeriod: dto.billingPeriod,
@@ -298,13 +317,59 @@ export class LicenseController {
         organizationId,
         ...(dto.promo && { promoCode: dto.promo.toUpperCase() }),
         ...(adMetadata && { adMetadata }),
+        ...(dto.source && { source: dto.source }),
       });
+      void this.productEvents.log({
+        event: ProductEvents.CHECKOUT_LINK_CREATED,
+        userId: req.user.sub,
+        organizationId,
+        metadata: { via: dto.source ?? 'app', kind: trialEnd ? 'trial' : 'pay' },
+      });
+      return link;
     } catch (err: any) {
       this.logger.warn(`Checkout link for org ${organizationId} failed: ${err?.message ?? err}`);
       throw new BadGatewayException(
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Get('card-trial-eligibility')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud, ADMIN: whether this address can start a card trial (kind trial), must pay today because it had a subscription (pay), or neither applies (none)',
+  })
+  async cardTrialEligibilityForUser(
+    @Req() req: any,
+  ): Promise<{ kind: 'trial' | 'pay' | 'none'; trialEndsAt: string | null }> {
+    if (!this.deployment.isCloud()) throw new NotFoundException();
+    const result = await this.cardTrialEligibility
+      .forAdmin(req.user?.organizationId, req.user?.email)
+      .catch(() => ({ kind: 'none' as const }));
+    return {
+      kind: result.kind,
+      trialEndsAt: result.kind === 'trial' ? result.trialEndsAt.toISOString() : null,
+    };
+  }
+
+  @Get('card-trial-offer')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud: the card-trial offer after the first successful tool call, for admins of an eligible workspace (null otherwise)',
+  })
+  async cardTrialOfferForUser(@Req() req: any): Promise<{ offer: CardTrialOfferView | null }> {
+    // Null for everyone it does not apply to: self-hosted, members who are
+    // not admins (they cannot start a subscription), workspaces that pay or
+    // already run a card trial, and trials with under 48 hours left.
+    const offer = await this.cardTrialOffer
+      .currentOffer(req.user?.organizationId, req.user?.role, req.user?.email)
+      .catch(() => null);
+    return { offer };
   }
 
   @Post('verify')

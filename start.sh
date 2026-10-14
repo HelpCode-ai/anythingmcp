@@ -46,7 +46,21 @@ run_migrations() {
 # suits a ~4GB host. The backend's own heap guard (see
 # packages/backend/src/common/process-vitals.ts) exits gracefully at a
 # percentage of whatever this is, before V8 hits the wall.
-BACKEND_CMD="node --max-old-space-size=${NODE_MAX_OLD_SPACE_MB:-2048} dist/src/main.js"
+#
+# A fatal V8 error (e.g. "Zone Allocation failed" on 13 Oct, with the heap at
+# a third of its cap) kills the process before any JS handler runs, so the
+# log shows no stack. --report-on-fatalerror writes a Node diagnostic report
+# (native stack, heap spaces, resource usage, and the JS stack when V8 can
+# still produce one) next to the heap snapshots; on Cloud that directory is a
+# volume that outlives the restart. The report would include every
+# environment variable, secrets too, so it is only switched on where Node can
+# leave them out (--report-exclude-env, Node >= 22.13); an older Node, which
+# would refuse to start on the unknown flag, runs without it.
+REPORT_FLAGS=""
+if node --report-exclude-env -e 0 >/dev/null 2>&1; then
+  REPORT_FLAGS="--report-on-fatalerror --report-exclude-env --report-compact --report-directory=${HEAP_SNAPSHOT_DIR:-/tmp}"
+fi
+BACKEND_CMD="node --max-old-space-size=${NODE_MAX_OLD_SPACE_MB:-2048} ${REPORT_FLAGS} dist/src/main.js"
 
 case "$MODE" in
   backend)

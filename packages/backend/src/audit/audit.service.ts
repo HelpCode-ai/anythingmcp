@@ -28,6 +28,7 @@ const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
 import { InvocationStatus, Prisma } from '../generated/prisma/client';
 import { AdsActivationService } from './ads-activation.service';
+import { FirstSuccessService } from './first-success.service';
 import { AlertsService } from '../alerts/alerts.service';
 
 @Injectable()
@@ -43,6 +44,7 @@ export class AuditService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Optional() private readonly adsActivation?: AdsActivationService,
     @Optional() private readonly alerts?: AlertsService,
+    @Optional() private readonly firstSuccess?: FirstSuccessService,
   ) {
     this.flushTimer = setInterval(() => void this.flushRepeats(false), 30_000);
     this.flushTimer.unref?.();
@@ -140,7 +142,7 @@ export class AuditService implements OnModuleDestroy {
       if (data.status === 'SUCCESS' && resolvedUserId) {
         await this.stampFirstSuccess(resolvedUserId);
       }
-      if (data.status === 'SUCCESS') this.reportActivation(data.organizationId);
+      if (data.status === 'SUCCESS') this.reportActivation(data);
     } catch (error: any) {
       // FK violation should be impossible after resolveUserId, but
       // keep the safety net: if it still trips, retry without user_id
@@ -162,7 +164,7 @@ export class AuditService implements OnModuleDestroy {
               clientInfo: data.clientInfo,
             },
           });
-          if (data.status === 'SUCCESS') this.reportActivation(data.organizationId);
+          if (data.status === 'SUCCESS') this.reportActivation(data);
           return;
         } catch (retryError: any) {
           this.logger.warn(
@@ -182,13 +184,23 @@ export class AuditService implements OnModuleDestroy {
 
   /**
    * Cloud: a workspace's first success may be a Google Ads activation (see
-   * ads-activation.service.ts). Runs in the background and never throws here.
+   * ads-activation.service.ts), and on the no-card trial it makes the
+   * workspace eligible for the card-trial offer (first-success.service.ts).
+   * Both run in the background and never throw here.
    */
-  private reportActivation(organizationId?: string): void {
+  private reportActivation(data: { organizationId?: string; connectorId?: string; toolId: string }): void {
     try {
-      void this.adsActivation?.onSuccessfulInvocation(organizationId);
+      void this.adsActivation?.onSuccessfulInvocation(data.organizationId);
     } catch (err: any) {
       this.logger.debug(`Ads activation hook failed: ${err?.message ?? err}`);
+    }
+    try {
+      void this.firstSuccess?.onSuccessfulInvocation(data.organizationId, {
+        connectorId: data.connectorId,
+        toolId: data.toolId,
+      });
+    } catch (err: any) {
+      this.logger.debug(`First-success hook failed: ${err?.message ?? err}`);
     }
   }
 
