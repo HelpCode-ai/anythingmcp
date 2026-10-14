@@ -25,6 +25,7 @@ export interface ParsedTool {
     path: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
+    bodyEncoding?: string;
     headers?: Record<string, string>;
   };
   responseMapping?: {

@@ -78,6 +78,57 @@ describe('HarParser', () => {
     });
   });
 
+  it('sends a form body as a form, not as JSON', () => {
+    const har = (postData: Record<string, unknown>) =>
+      JSON.stringify({
+        log: {
+          entries: [
+            {
+              request: {
+                method: 'POST',
+                url: 'https://api.example.com/v2/oauth/form',
+                headers: [{ name: 'Content-Type', value: 'application/x-www-form-urlencoded' }],
+                postData,
+              },
+            },
+          ],
+        },
+      });
+
+    const fromParams = parser.parse(
+      har({
+        mimeType: 'application/x-www-form-urlencoded; charset=UTF-8',
+        params: [
+          { name: 'grant_type', value: 'client_credentials' },
+          { name: 'client_secret', value: 'hunter2' },
+        ],
+      }),
+      { baseUrl: 'https://api.example.com/v2' },
+    ).tools[0];
+    expect(fromParams.endpointMapping.bodyEncoding).toBe('form-urlencoded');
+    expect(fromParams.endpointMapping.bodyMapping).toEqual({
+      grant_type: '$grant_type',
+      client_secret: '$client_secret',
+    });
+    expect((fromParams.parameters as any).properties.client_secret.default).toBeUndefined();
+    expect(JSON.stringify(fromParams)).not.toContain('hunter2');
+
+    // Some exporters only fill in `text` for a form body.
+    const fromText = parser.parse(
+      har({ mimeType: 'application/x-www-form-urlencoded', text: 'q=widgets&page=2' }),
+      { baseUrl: 'https://api.example.com/v2' },
+    ).tools[0];
+    expect(fromText.endpointMapping.bodyEncoding).toBe('form-urlencoded');
+    expect(fromText.endpointMapping.bodyMapping).toEqual({ q: '$q', page: '$page' });
+    expect((fromText.parameters as any).properties.page.default).toBe('2');
+  });
+
+  it('leaves the default (JSON) encoding on a JSON body', () => {
+    const { tools } = parser.parse(FIXTURE, { baseUrl: 'https://api.example.com/v2' });
+    const login = tools.find((t) => t.endpointMapping.path === '/login');
+    expect(login!.endpointMapping.bodyEncoding).toBeUndefined();
+  });
+
   it('drops credentials the issue\'s naming regex alone would miss', () => {
     const { tools } = parser.parse(FIXTURE, { baseUrl: 'https://api.example.com/v2' });
     const search = tools.find((t) => t.endpointMapping.path === '/search');

@@ -314,6 +314,7 @@ function buildTool(
   }
 
   const postData = entry.request?.postData;
+  let bodyEncoding: string | undefined;
   if (postData?.mimeType?.includes('application/json') && postData.text) {
     try {
       const parsed = JSON.parse(postData.text);
@@ -325,8 +326,18 @@ function buildTool(
     } catch {
       // Not a JSON object body — skip mapping, keep the tool otherwise usable.
     }
-  } else if (postData?.mimeType?.includes('application/x-www-form-urlencoded') && Array.isArray(postData.params)) {
-    for (const field of postData.params) {
+  } else if (postData?.mimeType?.includes('application/x-www-form-urlencoded')) {
+    // Browsers export a form body as `params`; fall back to parsing `text`
+    // for tools that only fill that in.
+    const fields: HarNameValue[] = Array.isArray(postData.params)
+      ? postData.params
+      : postData.text
+        ? [...new URLSearchParams(postData.text)].map(([name, value]) => ({ name, value }))
+        : [];
+    // Content-Type is not a replayed header, so the engine needs to be told
+    // to send these fields as a form, not as JSON.
+    if (fields.length > 0) bodyEncoding = 'form-urlencoded';
+    for (const field of fields) {
       if (!field?.name) continue;
       const value = field.value ?? '';
       const paramName = ensureUniqueParamName(sanitizeIdent(field.name) || 'field', usedParamNames);
@@ -353,6 +364,7 @@ function buildTool(
   const endpointMapping: ParsedTool['endpointMapping'] = { method, path: template };
   if (Object.keys(queryParamsMapping).length > 0) endpointMapping.queryParams = queryParamsMapping;
   if (Object.keys(bodyMapping).length > 0) endpointMapping.bodyMapping = bodyMapping;
+  if (bodyEncoding && endpointMapping.bodyMapping) endpointMapping.bodyEncoding = bodyEncoding;
   if (Object.keys(headerMapping).length > 0) endpointMapping.headers = headerMapping;
 
   return {

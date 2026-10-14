@@ -285,6 +285,32 @@ describe('imports', () => {
     expect(serialized).not.toContain('hunter2');
   });
 
+  it('HAR: a token in the request path moves into a variable, as with cURL', async () => {
+    const { controller, prisma, connectorsService } = buildConnectors(
+      { baseUrl: 'https://api.telegram.org' },
+      { harParser: new HarParser() },
+    );
+    const har = {
+      log: {
+        entries: [
+          {
+            request: {
+              method: 'POST',
+              url: `https://api.telegram.org/bot${TG}/sendMessage`,
+              headers: [],
+              postData: { mimeType: 'application/json', text: '{"chat_id":"1","text":"hi"}' },
+            },
+          },
+        ],
+      },
+    };
+    await controller.importTools(req(), 'c1', { source: 'har', content: JSON.stringify(har) } as any);
+    const created = prisma.mcpTool.create.mock.calls[0][0].data;
+    expect(created.endpointMapping.path).toBe('/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage');
+    expect(connectorsService.addEnvVars).toHaveBeenCalledWith('c1', { TELEGRAM_BOT_TOKEN: TG });
+    noSecret(created);
+  });
+
   it('a DATABASE connector keeps its SQL as written', async () => {
     const { controller, prisma, connectorsService } = buildConnectors({ type: 'DATABASE' });
     const sql = `SELECT * FROM t WHERE k = '${TG}'`;
