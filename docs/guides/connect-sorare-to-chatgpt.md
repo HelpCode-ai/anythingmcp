@@ -34,7 +34,7 @@ ChatGPT picks the right Sorare MCP tool for each prompt — `sorare_get_lineup`,
 
 ## Prerequisites
 
-- ChatGPT **Plus**, **Team**, or **Enterprise** (custom connectors are gated to paid tiers).
+- ChatGPT on the web. On a **Business** workspace only admins and owners can add custom MCP servers; on **Enterprise** and **Edu** an admin can grant the **Create plugins with MCPs** permission.
 - A Sorare account (https://sorare.com). **2FA off** for headless use — recommended to create a dedicated read-only Sorare account for this purpose.
 - AnythingMCP either local (`./setup.sh && docker compose up -d`) or on [`cloud.anythingmcp.com`](https://cloud.anythingmcp.com).
 - **Important:** ChatGPT can only reach **public HTTPS** URLs. If you run AnythingMCP locally, you need to expose it through Cloudflare Tunnel, ngrok or a reverse proxy. The simpler path is to use `cloud.anythingmcp.com`.
@@ -52,18 +52,19 @@ Same flow as any other client: open `https://cloud.anythingmcp.com/connectors` (
 
 There is no AUD field to fill — the adapter hardcodes the JWT audience to `anythingmcp`.
 
-Mint an MCP API key under **Profile → MCP API Keys → New Key**.
+ChatGPT signs in with OAuth, so no MCP API key is needed for it.
 
 ---
 
 ## Step 2 — Add the connector inside ChatGPT
 
-1. In ChatGPT, open **Settings → Connectors → Add custom connector**.
+1. Open **Plugins** in ChatGPT ([chatgpt.com/plugins](https://chatgpt.com/plugins)), click **+**, then **Add custom MCP server**.
 2. Fill in:
    - **Name:** `Sorare`
-   - **URL:** `https://cloud.anythingmcp.com/mcp` (or your tunneled host if you self-host).
-   - **Authentication:** Bearer token → paste the MCP API key.
-3. Save. ChatGPT auto-discovers the 18 Sorare tools.
+   - **Server URL:** your MCP endpoint URL from the server's page on `cloud.anythingmcp.com` (or your tunneled host if you self-host).
+   - **Authentication:** OAuth.
+3. Select **I understand and want to continue**, then **Create as a plugin**, and sign in to AnythingMCP.
+4. Install the plugin from your personal plugins and type **@** in a chat to use it. ChatGPT discovers the 18 Sorare tools.
 
 ---
 
@@ -93,7 +94,7 @@ JWTs live ~30 days. AnythingMCP refreshes 24 h before expiry and re-logs in on a
 ChatGPT can't see `localhost` or private IPs. Either deploy to `cloud.anythingmcp.com` or expose your local instance with Cloudflare Tunnel / ngrok.
 
 **Do I need ChatGPT Enterprise?**
-No — custom connectors are available on Plus, Team and Enterprise.
+No. On Business, Enterprise and Edu workspaces you need the **Create plugins with MCPs** permission (on Business only admins and owners can add custom MCP servers).
 
 **Can I make the connector read-only?**
 Yes. Either drop `sorare_graphql_mutation` from the tool set in your MCP server config, or — for finer control — assign the connector a Role in AnythingMCP that whitelists only `sorare_get_*` / `sorare_list_*` / `sorare_current_user` / `sorare_wallet_balance` / `sorare_token_prices` etc.
