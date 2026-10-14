@@ -81,6 +81,8 @@ export class CardTrialEligibilityService {
     const current = await this.licenseService.getCurrentLicense(organizationId);
     // A workspace with a live paid plan changes plan in the billing portal.
     if (current && current.plan !== 'trial' && current.status === 'active') return { kind: 'none' };
+    // Nor one whose card was declined: that subscription resumes with a new card.
+    if (await this.licenseService.getPaymentFailedLicense(organizationId)) return { kind: 'none' };
     // Only where a card trial would otherwise be offered is the site asked.
     const trialEndsAt = cardTrialEnd(current);
     if (!trialEndsAt) return { kind: 'none' };

@@ -183,6 +183,43 @@ test.describe('subscription state in the app (cloud)', () => {
   });
 });
 
+test.describe('a declined card (cloud)', () => {
+  // A card trial whose first charge was declined: the licence is revoked while
+  // Stripe retries. The wall used to offer "View Plans & Purchase License", and
+  // customers bought a second subscription beside the first (13–14 Oct 2026).
+  const declined = {
+    plan: 'starter',
+    status: 'revoked',
+    expiresAt: null,
+    features: null,
+    paymentFailed: true,
+    billing: billing({ status: 'past_due', amount: 1900 }),
+  };
+
+  test('the wall asks for a new card, not for a purchase, and opens Stripe’s card page', async ({ page }) => {
+    const { posted } = await cloudSession(page, { license: declined });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Your payment didn’t go through' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Purchase/)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Update card' }).click();
+    await expect(page).toHaveURL('https://billing.example.test/session');
+    const portal = posted.find((p) => p.path.endsWith('/license/billing-portal'));
+    expect(portal?.body).toMatchObject({ flow: 'payment_method_update' });
+    expect(posted.some((p) => p.path.endsWith('/license/checkout-link'))).toBe(false);
+  });
+
+  test('the licence page sends a failed payment to the card page too', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      license: { plan: 'team', status: 'active', expiresAt: null, features: {}, billing: billing({ status: 'past_due' }) },
+    });
+    await page.goto('/settings/license');
+    await page.getByRole('button', { name: 'Update payment method' }).click();
+    await expect(page).toHaveURL('https://billing.example.test/session');
+    expect(posted[0].body).toMatchObject({ flow: 'payment_method_update' });
+  });
+});
+
 test.describe('promotion code through sign-up (cloud)', () => {
   test('a code on the sign-up link is kept and applied to the card trial checkout', async ({ page }) => {
     await cloudSession(page, { signedIn: false });

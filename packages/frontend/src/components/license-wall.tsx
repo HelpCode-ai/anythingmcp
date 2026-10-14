@@ -17,7 +17,10 @@ import { cn } from '@/lib/utils';
 // 'lapsed' is a paid subscription that stopped being active without being
 // cancelled — the website marks a licence expired on any non-active status,
 // which in practice means a renewal the card did not cover.
-type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed';
+// 'payment-failed' is the same with Stripe still retrying the subscription
+// (a card trial whose first charge was declined is revoked straight away):
+// a new card resumes it, a new purchase would bill a second subscription.
+type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'payment-failed';
 
 export function LicenseWall() {
   const { token, user, deploymentMode } = useAuth();
@@ -34,6 +37,11 @@ export function LicenseWall() {
   // Checkout, no trial left). Other roles cannot subscribe the workspace and
   // keep the pricing link.
   const buyInPlace = isCloud && reason === 'trial-ended' && user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
+  const [updatingCard, setUpdatingCard] = useState(false);
+  const [cardErr, setCardErr] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (buyInPlace) setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
@@ -55,6 +63,63 @@ export function LicenseWall() {
     }
   };
 
+  // Stripe's add-a-card page: the new card becomes the subscription's and the
+  // open invoice is paid on the spot. It returns here, where the licence is
+  // checked again.
+  const updateCard = async () => {
+    if (!token) return;
+    setUpdatingCard(true);
+    setCardErr(null);
+    try {
+      const { url } = await license.billingPortal(token, window.location.href, 'payment_method_update');
+      window.location.href = url;
+    } catch (e: any) {
+      setCardErr(e?.message || 'Could not open the payment page. Please try again or contact support.');
+      setUpdatingCard(false);
+    }
+  };
+
+  const reasonFor = (status: Awaited<ReturnType<typeof license.getStatus>>): BlockReason | null => {
+    // A declined card the subscription can still be saved with. Before the
+    // trial rule: a card trial is charged the moment the free trial ends.
+    if (status.paymentFailed) return 'payment-failed';
+    // No license at all means the org is not allowed to use the product.
+    if (!status.plan) return 'no-license';
+    // Block when trial is expired
+    if (status.plan === 'trial' && status.trialDaysLeft !== undefined && status.trialDaysLeft <= 0) {
+      return 'trial-ended';
+    }
+    // A paid licence that lapsed is fixed in the billing portal. Sending it
+    // to the pricing page, as this used to, starts a second subscription
+    // while Stripe keeps retrying the first — double billing the day the
+    // old card goes through.
+    if (status.status === 'expired' && status.plan !== 'trial') return 'lapsed';
+    // Block when any license is expired/revoked
+    if (status.status === 'expired' || status.status === 'revoked') return 'expired';
+    // Active/valid license — make sure no stale block lingers.
+    return null;
+  };
+
+  // "I've updated my card": verify the licence now (the payment reaches the
+  // licence a few seconds after Stripe takes it) and lift the wall if it is back.
+  const checkAgain = async () => {
+    if (!token) return;
+    setChecking(true);
+    setCheckNote(null);
+    try {
+      await license.refresh(token).catch(() => undefined);
+      const next = reasonFor(await license.getStatus(token));
+      setReason(next);
+      if (next === 'payment-failed') {
+        setCheckNote('The payment has not come through yet. If you just updated your card, try again in a minute.');
+      }
+    } catch {
+      setCheckNote('Could not check right now. Please try again in a minute.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
   useEffect(() => {
     // Logged out (or logging out) — clear any stale block so the wall
     // doesn't keep covering the login page. Without this reset the modal
@@ -67,34 +132,24 @@ export function LicenseWall() {
       return;
     }
 
-    license.getStatus(token).then((status) => {
-      // No license at all means the org is not allowed to use the product.
-      if (!status.plan) {
-        setReason('no-license');
-        return;
-      }
-      // Block when trial is expired
-      if (status.plan === 'trial' && status.trialDaysLeft !== undefined && status.trialDaysLeft <= 0) {
-        setReason('trial-ended');
-        return;
-      }
-      // A paid licence that lapsed is fixed in the billing portal. Sending it
-      // to the pricing page, as this used to, starts a second subscription
-      // while Stripe keeps retrying the first — double billing the day the
-      // old card goes through.
-      if (status.status === 'expired' && status.plan !== 'trial') {
-        setReason('lapsed');
-        return;
-      }
-      // Block when any license is expired/revoked
-      if (status.status === 'expired' || status.status === 'revoked') {
-        setReason('expired');
-        return;
-      }
-      // Active/valid license — make sure no stale block lingers.
-      setReason(null);
-    }).catch(() => {});
-  }, [token, isCloud]);
+    let cancelled = false;
+    license
+      .getStatus(token)
+      .then(async (status) => {
+        let next = reasonFor(status);
+        // Back from Stripe's card page (or a retry went through since the last
+        // daily check): ask for a fresh verification before walling an admin.
+        if (next === 'payment-failed' && isAdmin) {
+          const { refreshed } = await license.refresh(token).catch(() => ({ refreshed: false }));
+          if (refreshed) next = reasonFor(await license.getStatus(token));
+        }
+        if (!cancelled) setReason(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isCloud, isAdmin]);
 
   // Routes where the wall must never appear: unauthenticated/auth flows
   // (you can't fix a license problem while logged out) and the license
@@ -114,7 +169,9 @@ export function LicenseWall() {
   if (!token || !reason || isExemptRoute) return null;
 
   const title =
-    reason === 'no-license'
+    reason === 'payment-failed'
+      ? 'Your payment didn’t go through'
+      : reason === 'no-license'
       ? 'License Required'
       : reason === 'trial-ended'
         ? 'Your Trial Has Expired'
@@ -123,7 +180,11 @@ export function LicenseWall() {
           : 'Your License Has Expired';
 
   const body =
-    reason === 'no-license'
+    reason === 'payment-failed'
+      ? isAdmin
+        ? 'Your card was declined, so your subscription is on hold. Update your card and it resumes right away: the open payment is taken as soon as the new card is saved. Your connectors and configurations are preserved.'
+        : 'The card on this workspace’s subscription was declined, so the subscription is on hold. Ask a workspace admin to update the card. Your connectors and configurations are preserved.'
+      : reason === 'no-license'
       ? 'This workspace doesn’t have an active license. Start a trial or purchase a plan to continue.'
       : reason === 'trial-ended'
         ? 'Your 7-day trial period has ended. Purchase a license to continue using AnythingMCP Cloud. Your connectors and configurations are preserved.'
@@ -186,6 +247,27 @@ export function LicenseWall() {
                 Compare plans
               </a>
             </>
+          ) : reason === 'payment-failed' ? (
+            isAdmin ? (
+              <>
+                <button
+                  onClick={updateCard}
+                  disabled={updatingCard}
+                  className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
+                >
+                  {updatingCard ? 'Opening…' : 'Update card'}
+                </button>
+                {cardErr && <p role="alert" className="text-xs text-[var(--danger)]">{cardErr}</p>}
+                <button
+                  onClick={checkAgain}
+                  disabled={checking}
+                  className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
+                >
+                  {checking ? 'Checking…' : 'I’ve updated my card'}
+                </button>
+                {checkNote && <p className="text-xs text-[var(--text-2)]">{checkNote}</p>}
+              </>
+            ) : null
           ) : reason === 'lapsed' ? (
             <a
               href={managePlan.href}
@@ -207,15 +289,17 @@ export function LicenseWall() {
             </a>
           )}
 
-          <p className="text-xs text-[var(--text-3)]">
-            Already purchased?{' '}
-            <Link
-              href="/settings/license"
-              className="text-[var(--brand)] hover:underline"
-            >
-              Enter your license key
-            </Link>
-          </p>
+          {reason !== 'payment-failed' && (
+            <p className="text-xs text-[var(--text-3)]">
+              Already purchased?{' '}
+              <Link
+                href="/settings/license"
+                className="text-[var(--brand)] hover:underline"
+              >
+                Enter your license key
+              </Link>
+            </p>
+          )}
         </div>
       </div>
     </div>
