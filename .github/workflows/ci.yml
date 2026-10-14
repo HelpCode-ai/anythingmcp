@@ -8,6 +8,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  cli:
+    name: CLI (test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -w packages/cli
+      - run: npm run build -w packages/cli
+      - run: test ! -e packages/cli/dist/cli.test.js
+
   backend:
     name: Backend (lint, typecheck, test, build)
     runs-on: ubuntu-latest

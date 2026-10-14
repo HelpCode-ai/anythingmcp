@@ -1,0 +1,1735 @@
+{
+  "slug": "weeek",
+  "name": "Weeek",
+  "description": "Manage Weeek projects and the CRM from your AI: find and update tasks, move them across boards, assign people, comment and log time, and work with deals, contacts and organizations, with confirmation before changes.",
+  "unlisted": true,
+  "instructions": "## Weeek\nThis connector calls the **Weeek Public API** (`https://api.weeek.net/public/v1`) of one Weeek workspace with an API token: projects, boards and columns, tasks with comments, assignees and time entries, tags and members, and the CRM (funnels, deals, contacts, organizations).\n\n**Getting credentials (about 1 minute)**\n1. In Weeek, open the workspace settings and the **API** section.\n2. Create a token and copy it.\n3. Paste it into `WEEEK_API_TOKEN`. It is sent as `Authorization: Bearer`, only to Weeek. Everything the connector does is done as the user who created the token, with that user's access.\n\n**Finding ids**: `weeek_list_projects` gives project ids, `weeek_list_boards` the boards of a project and `weeek_list_board_columns` the columns of a board. A new task needs `locations` such as `[{\"projectId\": 12, \"boardColumnId\": 34}]`. People are user ids (UUIDs) from `weeek_list_members`. In the CRM, `weeek_list_funnels` and `weeek_list_funnel_statuses` lead to the status id that `weeek_list_deals` and `weeek_create_deal` need.\n\n**Formats**: Weeek wants flags as 0 or 1, not true or false (`isPrivate`, `completed`, `isOvertime`). Task filters and the planned `day` use `dd.mm.yyyy`; `startDate` and `dueDate` on a task update use `YYYY-MM-DD`; date-times are ISO 8601. Priority is 0 low, 1 medium, 2 high, 3 hold.\n\n**Paging**: `weeek_list_tasks` pages with `perPage` and `offset` and answers `hasMore`; comments, portfolios, deals, contacts and organizations page with `limit` and `offset`.\n\n**Writes are visible to the team.** Creating, moving, completing or commenting on tasks and changing deals notifies other members. Describe the change and wait for the user's yes before any write. `weeek_delete_task` is installed switched off.\n\n**Common errors**\n- 401: the token is wrong or was deleted. Create a new one in the workspace settings under API.\n- 403: the token's user cannot see or change that project or deal.\n- 404: an id does not exist in this workspace.\n- 422: a field is missing or has the wrong format (often true/false instead of 0/1, or a date in the wrong format); the message names it.\n\n**Cloud and self-hosted**: both call api.weeek.net over the internet; nothing else differs.\n\n**Out of scope here**: file uploads, custom field and funnel configuration, timers, and deleting projects, boards, deals or contacts.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "weeek",
+  "docsUrl": "https://developers.weeek.net/",
+  "requiredEnvVars": [
+    "WEEEK_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "WEEEK_API_TOKEN": {
+      "label": "Weeek API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Weeek workspace settings > API: create a token. It acts as the user who created it.",
+      "link": "https://developers.weeek.net/",
+      "example": "123e4567-e89b-12d3-a456-426655440000",
+      "pattern": "^(?!Bearer\\s)\\S{16,}$",
+      "patternMessage": "Paste only the token, without the word Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Weeek refused the API token: it is wrong or was deleted. Create a new one in the workspace settings under API.",
+    "403": "The token is valid but its user has no access to this workspace data."
+  },
+  "probe": {
+    "tool": "weeek_get_profile"
+  },
+  "prerequisites": "A Weeek workspace where you can open the API section of the workspace settings to create a token. About 1 minute.",
+  "connector": {
+    "name": "Weeek",
+    "type": "REST",
+    "baseUrl": "https://api.weeek.net/public/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WEEEK_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user/me"
+  },
+  "tools": [
+    {
+      "name": "weeek_get_profile",
+      "description": "Get the Weeek user the API token belongs to: id, e-mail, name, language and time zone. Writes are made on behalf of this user. Takes no input; the cheapest call to check the connection. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/me"
+      }
+    },
+    {
+      "name": "weeek_get_workspace",
+      "description": "Get the workspace the API token belongs to: id, title, description and whether it is a personal workspace. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws"
+      }
+    },
+    {
+      "name": "weeek_list_members",
+      "description": "List the members of the workspace with their user id (a UUID), e-mail, name and position. Use these ids for assignees, watchers, userId filters and time entries. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/members"
+      }
+    },
+    {
+      "name": "weeek_list_tags",
+      "description": "List the workspace tags with their id, title and colour. Tasks, deals and contacts refer to tags by these ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/tags"
+      }
+    },
+    {
+      "name": "weeek_create_tag",
+      "description": "Create a workspace tag and return it with its id. Check weeek_list_tags first that it does not exist. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Tag title."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/tags",
+        "bodyMapping": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_portfolios",
+      "description": "List portfolios (groups of projects) with id, name, parent and privacy. Filter by name; page with limit and offset while hasMore is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only portfolios whose name contains this text."
+          },
+          "parentId": {
+            "type": "integer",
+            "description": "Only the portfolios inside this parent portfolio."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Portfolios per page, up to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many portfolios to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/portfolios",
+        "queryParams": {
+          "search": "$search",
+          "parentId": "$parentId",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_projects",
+      "description": "List the projects of the workspace with id, name, description, colour, privacy and team members. Project ids are needed for boards and new tasks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/projects"
+      }
+    },
+    {
+      "name": "weeek_get_project",
+      "description": "Get one project by id with its name, description, privacy and team. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Project id from weeek_list_projects."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/projects/{id}"
+      }
+    },
+    {
+      "name": "weeek_create_project",
+      "description": "Create a project, optionally inside a portfolio, and return it with its id. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name."
+          },
+          "isPrivate": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 makes the project private to its members, 0 visible to the workspace. Weeek expects 0 or 1, not true or false."
+          },
+          "description": {
+            "type": "string",
+            "description": "Project description."
+          },
+          "portfolioId": {
+            "type": "integer",
+            "description": "Portfolio id from weeek_list_portfolios to place the project in."
+          }
+        },
+        "required": [
+          "name",
+          "isPrivate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/projects",
+        "bodyMapping": {
+          "name": "$name",
+          "isPrivate": "$isPrivate",
+          "description": "$description",
+          "portfolioId": "$portfolioId"
+        }
+      }
+    },
+    {
+      "name": "weeek_update_project",
+      "description": "Rename a project or change its privacy or colour. Weeek requires name and isPrivate on every update, so send the current values for what should stay. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Project id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Project name (send the current one to keep it)."
+          },
+          "isPrivate": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 private, 0 visible to the workspace (send the current value to keep it)."
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour as a hex code, for example #003C93."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isPrivate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tm/projects/{id}",
+        "bodyMapping": {
+          "name": "$name",
+          "isPrivate": "$isPrivate",
+          "color": "$color"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_boards",
+      "description": "List the boards (kanban boards) of one project with their id, name and privacy. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "integer",
+            "description": "Project id from weeek_list_projects."
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/boards",
+        "queryParams": {
+          "projectId": "$projectId"
+        }
+      }
+    },
+    {
+      "name": "weeek_create_board",
+      "description": "Create a board in a project and return it with its id. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Board name."
+          },
+          "projectId": {
+            "type": "integer",
+            "description": "Project id the board belongs to."
+          }
+        },
+        "required": [
+          "name",
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/boards",
+        "bodyMapping": {
+          "name": "$name",
+          "projectId": "$projectId"
+        }
+      }
+    },
+    {
+      "name": "weeek_rename_board",
+      "description": "Rename a board. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Board id from weeek_list_boards."
+          },
+          "name": {
+            "type": "string",
+            "description": "New board name."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tm/boards/{id}",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_board_columns",
+      "description": "List the columns (stages such as To do, In progress, Done) of one board with their id and name, in board order. Column ids are needed to place or move tasks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "boardId": {
+            "type": "integer",
+            "description": "Board id from weeek_list_boards."
+          }
+        },
+        "required": [
+          "boardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/board-columns",
+        "queryParams": {
+          "boardId": "$boardId"
+        }
+      }
+    },
+    {
+      "name": "weeek_create_board_column",
+      "description": "Add a column to a board and return it with its id. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Column name."
+          },
+          "boardId": {
+            "type": "integer",
+            "description": "Board id."
+          }
+        },
+        "required": [
+          "name",
+          "boardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/board-columns",
+        "bodyMapping": {
+          "name": "$name",
+          "boardId": "$boardId"
+        }
+      }
+    },
+    {
+      "name": "weeek_rename_board_column",
+      "description": "Rename a board column. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Column id from weeek_list_board_columns."
+          },
+          "name": {
+            "type": "string",
+            "description": "New column name."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tm/board-columns/{id}",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "weeek_move_board_column",
+      "description": "Reorder a column on its board: it is placed right after the column given in upperBoardColumnId, or first when that is null. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Id of the column to move."
+          },
+          "upperBoardColumnId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Id of the column that should come just before it; null puts it first."
+          }
+        },
+        "required": [
+          "id",
+          "upperBoardColumnId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/board-columns/{id}/move",
+        "bodyMapping": {
+          "upperBoardColumnId": "$upperBoardColumnId"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_tasks",
+      "description": "Find tasks by project, board, column, assignee, type, priority, text, due day or date range, open or completed. Returns tasks with title, dates, priority, assignees, locations and tags, plus hasMore; page with perPage and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "integer",
+            "description": "Only tasks of this project."
+          },
+          "boardId": {
+            "type": "integer",
+            "description": "Only tasks on this board."
+          },
+          "boardColumnId": {
+            "type": "integer",
+            "description": "Only tasks in this board column."
+          },
+          "userId": {
+            "type": "string",
+            "description": "Only tasks of this user id (a UUID from weeek_list_members)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to find in the title or description."
+          },
+          "completed": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only completed tasks, 0 only open ones."
+          },
+          "all": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 returns every task including completed and deleted ones; completed is then ignored."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "action",
+              "meet",
+              "call"
+            ],
+            "description": "Task type: action (default), meet or call."
+          },
+          "priority": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Priority: 0 low, 1 medium, 2 high, 3 hold."
+          },
+          "day": {
+            "type": "string",
+            "description": "Only tasks planned for this day, dd.mm.yyyy."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Start of a date range, dd.mm.yyyy; needs endDate."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End of a date range, dd.mm.yyyy; needs startDate."
+          },
+          "completedAtFrom": {
+            "type": "string",
+            "description": "Only tasks completed on or after this day, dd.mm.yyyy."
+          },
+          "completedAtTo": {
+            "type": "string",
+            "description": "Only tasks completed on or before this day, dd.mm.yyyy."
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "name",
+              "type",
+              "priority",
+              "duration",
+              "overdue",
+              "created",
+              "date",
+              "start",
+              "-name",
+              "-type",
+              "-priority",
+              "-duration",
+              "-overdue",
+              "-created",
+              "-date",
+              "-start"
+            ],
+            "description": "Sort field, ascending; a leading minus sorts descending, for example -created."
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "Tasks per page (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many tasks to skip, for the next page while hasMore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/tasks",
+        "queryParams": {
+          "projectId": "$projectId",
+          "boardId": "$boardId",
+          "boardColumnId": "$boardColumnId",
+          "userId": "$userId",
+          "search": "$search",
+          "completed": "$completed",
+          "all": "$all",
+          "type": "$type",
+          "priority": "$priority",
+          "day": "$day",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "completedAtFrom": "$completedAtFrom",
+          "completedAtTo": "$completedAtTo",
+          "sortBy": "$sortBy",
+          "perPage": "$perPage",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_get_task",
+      "description": "Get one task by id with description, dates, duration, priority, assignees, watchers, locations, tags, subtasks, time entries, custom fields and attachments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/tasks/{id}"
+      }
+    },
+    {
+      "name": "weeek_create_task",
+      "description": "Create a task in one or more projects, optionally in a board column, as a subtask or planned for a day. Returns the task with its id. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "locations": {
+            "type": "array",
+            "description": "Where the task lives: [{\"projectId\": 12, \"boardColumnId\": 34}]. boardColumnId may be null for a project without a board column. Get ids from weeek_list_projects and weeek_list_board_columns.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "type": "integer"
+                },
+                "boardColumnId": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "projectId"
+              ]
+            },
+            "minItems": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "day": {
+            "type": "string",
+            "description": "Day the task is planned for, dd.mm.yyyy."
+          },
+          "userId": {
+            "type": "string",
+            "description": "Assignee user id (UUID from weeek_list_members)."
+          },
+          "parentId": {
+            "type": "integer",
+            "description": "Parent task id, to create a subtask."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "action",
+              "meet",
+              "call"
+            ],
+            "description": "Task type: action (default), meet or call."
+          },
+          "priority": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Priority: 0 low, 1 medium, 2 high, 3 hold."
+          },
+          "customFields": {
+            "type": "object",
+            "description": "Custom field values keyed by custom field id, for example {\"<field id>\": \"text\", \"<select field id>\": \"<option id>\", \"<member field id>\": [\"<user id>\"]}."
+          }
+        },
+        "required": [
+          "title",
+          "locations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "locations": "$locations",
+          "description": "$description",
+          "day": "$day",
+          "userId": "$userId",
+          "parentId": "$parentId",
+          "type": "$type",
+          "priority": "$priority",
+          "customFields": "$customFields"
+        }
+      }
+    },
+    {
+      "name": "weeek_update_task",
+      "description": "Change a task: title, priority, type, start and due date or date-time, time estimate, tags or custom fields. Use dates (startDate, dueDate) or date-times (startDateTime, dueDateTime), not both. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title, up to 255 characters."
+          },
+          "priority": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Priority: 0 low, 1 medium, 2 high, 3 hold."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "action",
+              "meet",
+              "call"
+            ],
+            "description": "Task type: action (default), meet or call."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "dueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "startDateTime": {
+            "type": "string",
+            "description": "Start date and time, ISO 8601, for example 2026-10-20T09:00:00+03:00."
+          },
+          "dueDateTime": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Time estimate in minutes."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The complete list of tag ids the task should carry (from weeek_list_tags)."
+          },
+          "customFields": {
+            "type": "object",
+            "description": "Custom field values keyed by custom field id, for example {\"<field id>\": \"text\", \"<select field id>\": \"<option id>\", \"<member field id>\": [\"<user id>\"]}."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tm/tasks/{id}",
+        "bodyMapping": {
+          "title": "$title",
+          "priority": "$priority",
+          "type": "$type",
+          "startDate": "$startDate",
+          "dueDate": "$dueDate",
+          "startDateTime": "$startDateTime",
+          "dueDateTime": "$dueDateTime",
+          "duration": "$duration",
+          "tags": "$tags",
+          "customFields": "$customFields"
+        }
+      }
+    },
+    {
+      "name": "weeek_complete_task",
+      "description": "Mark a task as completed. weeek_reopen_task undoes it. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/complete"
+      }
+    },
+    {
+      "name": "weeek_reopen_task",
+      "description": "Mark a completed task as open again. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/un-complete"
+      }
+    },
+    {
+      "name": "weeek_move_task_to_column",
+      "description": "Move a task to another column of its board, for example from In progress to Done. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "boardColumnId": {
+            "type": "integer",
+            "description": "Target column id from weeek_list_board_columns."
+          }
+        },
+        "required": [
+          "id",
+          "boardColumnId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/board-column",
+        "bodyMapping": {
+          "boardColumnId": "$boardColumnId"
+        }
+      }
+    },
+    {
+      "name": "weeek_move_task_to_board",
+      "description": "Move a task to another board. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "boardId": {
+            "type": "integer",
+            "description": "Target board id from weeek_list_boards."
+          }
+        },
+        "required": [
+          "id",
+          "boardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/board",
+        "bodyMapping": {
+          "boardId": "$boardId"
+        }
+      }
+    },
+    {
+      "name": "weeek_add_task_to_project",
+      "description": "Add a task to a further project, optionally into a board column. A task can live in several projects. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "projectId": {
+            "type": "integer",
+            "description": "Project id to add the task to."
+          },
+          "boardColumnId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Board column in that project; null keeps it off the board."
+          }
+        },
+        "required": [
+          "id",
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/locations",
+        "bodyMapping": {
+          "projectId": "$projectId",
+          "boardColumnId": "$boardColumnId"
+        }
+      }
+    },
+    {
+      "name": "weeek_add_task_assignees",
+      "description": "Assign one or more workspace members to a task. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "User ids (UUIDs from weeek_list_members)."
+          }
+        },
+        "required": [
+          "id",
+          "assignees"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/assignees",
+        "bodyMapping": {
+          "assignees": "$assignees"
+        }
+      }
+    },
+    {
+      "name": "weeek_remove_task_assignees",
+      "description": "Unassign one or more members from a task; the task itself stays. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "User ids (UUIDs) to unassign."
+          }
+        },
+        "required": [
+          "id",
+          "assignees"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tm/tasks/{id}/assignees",
+        "bodyMapping": {
+          "assignees": "$assignees"
+        }
+      }
+    },
+    {
+      "name": "weeek_add_task_watchers",
+      "description": "Add watchers to a task; they are notified of its changes. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "watchers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "User ids (UUIDs from weeek_list_members)."
+          }
+        },
+        "required": [
+          "id",
+          "watchers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/watchers",
+        "bodyMapping": {
+          "watchers": "$watchers"
+        }
+      }
+    },
+    {
+      "name": "weeek_set_task_parent",
+      "description": "Make a task a subtask of another task, or a top-level task again with parentId null. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "parentId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Id of the new parent task; null makes it a top-level task."
+          }
+        },
+        "required": [
+          "id",
+          "parentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/parent",
+        "bodyMapping": {
+          "parentId": "$parentId"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_task_comments",
+      "description": "List the comments of a task with author id, Markdown text, reply parent and dates. Page with limit and offset while hasMore is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Comments per page, 1 to 100 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many comments to skip."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tm/tasks/{id}/comments",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_add_task_comment",
+      "description": "Post a comment on a task, or a reply to a comment, as the token's user. Visible to everyone on the task. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "markdown": {
+            "type": "string",
+            "description": "Comment text in Markdown. Attachments are not supported."
+          },
+          "parentId": {
+            "type": "integer",
+            "description": "Comment id to reply to."
+          }
+        },
+        "required": [
+          "id",
+          "markdown"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/comments",
+        "bodyMapping": {
+          "markdown": "$markdown",
+          "parentId": "$parentId"
+        }
+      }
+    },
+    {
+      "name": "weeek_log_time",
+      "description": "Log time spent on a task for a member on a given day. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          },
+          "userId": {
+            "type": "string",
+            "description": "User id (UUID) the time belongs to."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day of the work, YYYY-MM-DD."
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 1439,
+            "description": "Minutes worked, between 2 and 1439."
+          },
+          "isOvertime": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 marks the entry as overtime, 0 regular time."
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "date",
+          "duration",
+          "isOvertime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tm/tasks/{id}/time-entries",
+        "bodyMapping": {
+          "userId": "$userId",
+          "date": "$date",
+          "duration": "$duration",
+          "isOvertime": "$isOvertime"
+        }
+      }
+    },
+    {
+      "name": "weeek_delete_task",
+      "description": "Delete a task. Installed switched off; completing it with weeek_complete_task is usually what the user wants. Confirm the task title with the user before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (the number in the task link, also returned by weeek_list_tasks)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tm/tasks/{id}"
+      }
+    },
+    {
+      "name": "weeek_list_funnels",
+      "description": "List the CRM sales funnels (pipelines) with id, name, currency and deal counts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/funnels"
+      }
+    },
+    {
+      "name": "weeek_list_funnel_statuses",
+      "description": "List the statuses (pipeline stages) of one funnel with id, name, deal count and deal amount. Deals are listed and created per status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "funnelId": {
+            "type": "string",
+            "description": "Funnel id from weeek_list_funnels."
+          }
+        },
+        "required": [
+          "funnelId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/funnels/{funnelId}/statuses"
+      }
+    },
+    {
+      "name": "weeek_list_deals",
+      "description": "List the deals in one funnel status with title, amount, win status, assignees, contacts, organizations and tags; returns hasMoreDeals for paging with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusId": {
+            "type": "string",
+            "description": "Funnel status id from weeek_list_funnel_statuses."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to find in the deal."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "title",
+              "amount",
+              "commented",
+              "createdAt",
+              "updatedAt",
+              "-title",
+              "-amount",
+              "-commented",
+              "-createdAt",
+              "-updatedAt"
+            ],
+            "description": "Sort field; a leading minus sorts descending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Deals per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many deals to skip."
+          }
+        },
+        "required": [
+          "statusId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/statuses/{statusId}/deals",
+        "queryParams": {
+          "search": "$search",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_get_deal",
+      "description": "Get one deal by id with amount, win status, description, assignees, contacts, organizations, tags, tasks and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Deal id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/deals/{id}"
+      }
+    },
+    {
+      "name": "weeek_create_deal",
+      "description": "Create a deal in a funnel status, optionally with amount, assignees, contacts, organizations and tags. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusId": {
+            "type": "string",
+            "description": "Funnel status id the deal starts in."
+          },
+          "title": {
+            "type": "string",
+            "description": "Deal title."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Deal amount in the funnel currency."
+          },
+          "description": {
+            "type": "string",
+            "description": "Deal description."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "User ids (UUIDs) responsible for the deal."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Contact ids (UUIDs) from weeek_list_contacts."
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Organization ids (UUIDs) from weeek_list_organizations."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Tag ids."
+          },
+          "customFields": {
+            "type": "object",
+            "description": "Custom field values keyed by custom field id, for example {\"<field id>\": \"text\", \"<select field id>\": \"<option id>\", \"<member field id>\": [\"<user id>\"]}."
+          }
+        },
+        "required": [
+          "statusId",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/statuses/{statusId}/deals",
+        "bodyMapping": {
+          "title": "$title",
+          "amount": "$amount",
+          "description": "$description",
+          "assignees": "$assignees",
+          "contacts": "$contacts",
+          "organizations": "$organizations",
+          "tags": "$tags",
+          "customFields": "$customFields"
+        }
+      }
+    },
+    {
+      "name": "weeek_update_deal",
+      "description": "Change fields of a deal: title, amount, description, win status (won, lost, archived), assignees, contacts, organizations, tags or custom fields. Only the fields you pass change; lists you pass replace the current ones. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Deal id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New amount."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "winStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "won",
+              "lost",
+              "archived",
+              null
+            ],
+            "description": "won, lost or archived; null reopens the deal."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Complete list of responsible user ids."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Complete list of contact ids."
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Complete list of organization ids."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Complete list of tag ids."
+          },
+          "customFields": {
+            "type": "object",
+            "description": "Custom field values keyed by custom field id, for example {\"<field id>\": \"text\", \"<select field id>\": \"<option id>\", \"<member field id>\": [\"<user id>\"]}."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/crm/deals/{id}",
+        "bodyMapping": {
+          "title": "$title",
+          "amount": "$amount",
+          "description": "$description",
+          "winStatus": "$winStatus",
+          "assignees": "$assignees",
+          "contacts": "$contacts",
+          "organizations": "$organizations",
+          "tags": "$tags",
+          "customFields": "$customFields"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_contacts",
+      "description": "List CRM contacts (people) with name, e-mails, phones, organizations and tags. Filter by text; page with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find in the contact."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "alphabet",
+              "updatedAt",
+              "-alphabet",
+              "-updatedAt"
+            ],
+            "description": "Sort order; a leading minus sorts descending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Contacts per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many contacts to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/contacts",
+        "queryParams": {
+          "search": "$search",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_get_contact",
+      "description": "Get one CRM contact by id with e-mails, phones, organizations and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Contact id (UUID)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/contacts/{id}"
+      }
+    },
+    {
+      "name": "weeek_create_contact",
+      "description": "Create a CRM contact with name, e-mails, phones, organizations and tags. Check weeek_list_contacts first that it does not exist. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "middleName": {
+            "type": "string",
+            "description": "Middle name."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "E-mail addresses."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers."
+          },
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Organization ids (UUIDs)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Tag ids."
+          }
+        },
+        "required": [
+          "firstName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/contacts",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "middleName": "$middleName",
+          "emails": "$emails",
+          "phones": "$phones",
+          "organizations": "$organizations",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "weeek_list_organizations",
+      "description": "List CRM organizations (companies) with name, addresses, e-mails, phones and responsible user. Filter by text; page with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find in the organization."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "alphabet",
+              "updatedAt",
+              "-alphabet",
+              "-updatedAt"
+            ],
+            "description": "Sort order; a leading minus sorts descending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Organizations per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many organizations to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/organizations",
+        "queryParams": {
+          "search": "$search",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "weeek_get_organization",
+      "description": "Get one CRM organization by id with addresses, e-mails, phones, contacts and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Organization id (UUID)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/organizations/{id}"
+      }
+    },
+    {
+      "name": "weeek_create_organization",
+      "description": "Create a CRM organization with name, addresses, e-mails, phones and responsible users. Check weeek_list_organizations first that it does not exist. Changes the shared Weeek workspace: tell the user what will change and get their confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Organization name."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Addresses, one string each."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "E-mail addresses."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers."
+          },
+          "responsibles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Responsible user ids (UUIDs)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/organizations",
+        "bodyMapping": {
+          "name": "$name",
+          "addresses": "$addresses",
+          "emails": "$emails",
+          "phones": "$phones",
+          "responsibles": "$responsibles"
+        }
+      }
+    }
+  ]
+}

@@ -92,6 +92,56 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 
+  describe('subscriptions/listen', () => {
+    const LISTEN = { jsonrpc: '2.0', id: 1, method: 'subscriptions/listen', params: {} };
+
+    it('still refuses a non-member before answering', async () => {
+      (controller as any).serveStateless = jest.fn();
+      const res = makeRes();
+      await controller.handlePost(
+        'srv-A',
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' } } as any,
+        res,
+        LISTEN,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect((controller as any).serveStateless).not.toHaveBeenCalled();
+    });
+
+    it('answers a member without building the tool surface', async () => {
+      let built: McpServer | undefined;
+      (controller as any).serveStateless = jest.fn(
+        async (_req: unknown, _res: unknown, _body: unknown, factory: () => McpServer) => {
+          built = factory();
+        },
+      );
+      await controller.handlePost(
+        'srv-A',
+        { user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' }, headers: {} } as any,
+        makeRes(),
+        LISTEN,
+      );
+      expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+      expect(mcpServersService.getVisibleContent).not.toHaveBeenCalled();
+      expect(toolRegistry.getAllTools).not.toHaveBeenCalled();
+      expect(built!.server.getCapabilities()).toEqual({
+        tools: { listChanged: true },
+        resources: { listChanged: true },
+      });
+    });
+
+    it('leaves every other method on the full path', async () => {
+      (controller as any).serveStateless = jest.fn();
+      await controller.handlePost(
+        'srv-A',
+        { user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' }, headers: {} } as any,
+        makeRes(),
+        { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+      );
+      expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+    });
+  });
+
   it('allows a multi-org user who is a MEMBER of the server org via membership', async () => {
     // Primary org is org-B, but the user is also a member of org-A (the
     // server's org) — must be allowed.

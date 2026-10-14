@@ -1,0 +1,1396 @@
+{
+  "slug": "goaffpro",
+  "name": "GoAffPro",
+  "description": "Run your GoAffPro affiliate program from your AI: find affiliates and their codes, see the orders, rewards and traffic they bring, what you owe and have paid them, and approve affiliates and commissions, add rewards and record payouts with confirmation.",
+  "unlisted": true,
+  "instructions": "## GoAffPro\nThis connector calls the **GoAffPro admin API** (`https://api.goaffpro.com/v1/admin`) of one store's affiliate program: affiliates, the orders and rewards credited to them, what is owed and paid out, coupons, traffic and groups.\n\n**Setup (about 2 minutes)**\n1. Sign in to the GoAffPro admin of the store (from the Shopify, WooCommerce or other store app, or at https://app.goaffpro.com).\n2. Open **Settings > Advanced > API Keys** and generate an access token.\n3. Paste it into `GOAFFPRO_ACCESS_TOKEN` and install. It is sent in the `x-goaffpro-access-token` header, only to GoAffPro.\n\n**Fields**: most list endpoints return only the fields you name. The tools default to a useful set (for affiliates `id,name,email,ref_code,coupon,status,created_at`); pass `fields` to ask for more.\n\n**Tools**\n- Affiliates: `goaffpro_list_affiliates`, `goaffpro_search_affiliates`, `goaffpro_get_affiliate_commissions`, `goaffpro_list_affiliate_coupons`, `goaffpro_list_affiliate_referral_codes`, `goaffpro_list_groups`.\n- Sales and money: `goaffpro_list_orders`, `goaffpro_list_rewards`, `goaffpro_list_transactions`, `goaffpro_list_pending_payouts` (what is owed now), `goaffpro_list_payouts` (paid), `goaffpro_list_payout_requests`, `goaffpro_list_traffic`, `goaffpro_list_coupons`.\n- Writes: `goaffpro_create_affiliate`, `goaffpro_update_affiliate` (approve, reject, commission, coupon), `goaffpro_add_affiliate_coupon`, `goaffpro_add_order`, `goaffpro_update_order` (approve or reject a commission), `goaffpro_give_reward`, `goaffpro_record_payout`, `goaffpro_update_payout_request`.\n- Installed switched off: `goaffpro_delete_affiliate`, `goaffpro_delete_order`.\n\n**Writes change what affiliates earn and see.** Name the affiliate and the amount or status and wait for the user's yes before any write. `goaffpro_record_payout` only records a payment made elsewhere; it never sends money.\n\n**Paging**: affiliates, payouts, coupons and transactions page with `limit` and `offset`; orders, rewards and traffic with `since_id` (the last id of the previous page).\n\n**Dates**: GoAffPro documents dates like `Sun Jul 26 2026 12:10:07 GMT+0200`; the traffic filters use `2026-07-26T12:10:07`.\n\n**Privacy**: affiliates, orders and traffic carry names, e-mail addresses, payout details and visitor IPs; ask only for the fields the question needs.\n\n**Common errors**\n- 403 `x-goaffpro-access-token missing from the headers`: GoAffPro says this for a wrong or deleted token too. Generate a new one under Settings > Advanced > API Keys.\n- 400 or an `error` text: a required parameter such as `fields` is missing or a value is invalid.\n\n**Out of scope here**: multi-level tree moves, groups and their members, special commission rates, creatives and assets, store configuration, webhooks and the affiliate-side (user and SDK) endpoints.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "goaffpro",
+  "docsUrl": "https://api.goaffpro.com/docs/admin/",
+  "requiredEnvVars": [
+    "GOAFFPRO_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "GOAFFPRO_ACCESS_TOKEN": {
+      "label": "GoAffPro access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "GoAffPro admin > Settings > Advanced > API Keys: generate an access token for the store. Sent in the x-goaffpro-access-token header.",
+      "link": "https://app.goaffpro.com",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the token, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "403": "GoAffPro refused the access token (it reports a wrong token as missing). Generate a new one under Settings > Advanced > API Keys and paste it again."
+  },
+  "probe": {
+    "tool": "goaffpro_list_affiliates",
+    "params": {
+      "fields": "id",
+      "limit": 1
+    }
+  },
+  "prerequisites": "A store with the GoAffPro affiliate app and admin access to its settings, where API access tokens are generated. About 2 minutes.",
+  "connector": {
+    "name": "GoAffPro",
+    "type": "REST",
+    "baseUrl": "https://api.goaffpro.com/v1/admin",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-goaffpro-access-token",
+      "apiKey": "{{GOAFFPRO_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/affiliates?fields=id&limit=1"
+  },
+  "tools": [
+    {
+      "name": "goaffpro_list_affiliates",
+      "description": "List the store's affiliates with the fields you ask for (default id, name, e-mail, referral code, coupon, status, created). Filter by ids, e-mails, referral codes, coupon codes, status (pending, approved, invited, rejected) or creation and update dates. Paged with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,name,email,ref_code,coupon,status,created_at; others include first_name, last_name, phone, country, website, instagram, group_id, ref_codes, coupons, payment_method, commission.",
+            "default": "id,name,email,ref_code,coupon,status,created_at"
+          },
+          "id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "email": {
+            "type": "string",
+            "description": "Comma-separated e-mail addresses."
+          },
+          "ref_code": {
+            "type": "string",
+            "description": "Comma-separated referral codes."
+          },
+          "coupon": {
+            "type": "string",
+            "description": "Comma-separated coupon codes."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: pending, approved, invited, rejected."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only affiliates created at or after this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only affiliates created at or before this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only affiliates updated at or after this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of affiliates to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/affiliates",
+        "queryParams": {
+          "fields": "$fields",
+          "id": "$id",
+          "email": "$email",
+          "ref_code": "$ref_code",
+          "coupon": "$coupon",
+          "status": "$status",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_search_affiliates",
+      "description": "Find affiliates by part of their name, e-mail or referral code (starts with, contains or ends with a keyword). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Text to look for, e.g. anna or anna@."
+          },
+          "in": {
+            "type": "string",
+            "description": "Comma-separated columns to search, e.g. name,email,ref_code.",
+            "default": "name,email,ref_code"
+          },
+          "operator": {
+            "type": "string",
+            "description": "How the keyword matches.",
+            "enum": [
+              "starts_with",
+              "contains",
+              "ends_with"
+            ],
+            "default": "contains"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,name,email,ref_code,coupon,status,created_at; see goaffpro_list_affiliates for others.",
+            "default": "id,name,email,ref_code,coupon,status,created_at"
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "Sort by this column.",
+            "enum": [
+              "name",
+              "ref_code",
+              "id"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results.",
+            "minimum": 1,
+            "default": 25
+          }
+        },
+        "required": [
+          "keyword",
+          "in",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/affiliates/search",
+        "queryParams": {
+          "keyword": "$keyword",
+          "in": "$in",
+          "operator": "$operator",
+          "fields": "$fields",
+          "sort_column": "$sort_column",
+          "sort_direction": "$sort_direction",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_get_affiliate_commissions",
+      "description": "Get the commission structure that applies to one affiliate: standard rate, special product or collection rates and royalties. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/affiliates/{id}/commissions"
+      }
+    },
+    {
+      "name": "goaffpro_list_affiliate_coupons",
+      "description": "List the coupon codes assigned to one affiliate with discount type and value. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/affiliates/{id}/coupons"
+      }
+    },
+    {
+      "name": "goaffpro_list_affiliate_referral_codes",
+      "description": "List the referral codes of one affiliate (the codes in their tracking links). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/affiliates/{id}/referral_codes"
+      }
+    },
+    {
+      "name": "goaffpro_list_orders",
+      "description": "List the orders credited to affiliates with total, subtotal (the commission base), commission, affiliate and approval status. Filter by order ids or numbers, affiliate ids, customer e-mail, status (new, approved, rejected), creation date, new customers or subscription orders. Page with since_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,number,total,subtotal,commission,affiliate_id,status,created_at; others include customer_email, customer_name, is_new_customer, conversion_source, sub_id, data (the raw order).",
+            "default": "id,number,total,subtotal,commission,affiliate_id,status,created_at"
+          },
+          "id": {
+            "type": "string",
+            "description": "Comma-separated order ids."
+          },
+          "number": {
+            "type": "string",
+            "description": "Comma-separated order numbers as the shop shows them."
+          },
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Customer e-mail address."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: new, approved, rejected."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created at or after this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only orders created at or before this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "is_new_customer": {
+            "type": "integer",
+            "description": "1 for orders of new customers, 0 for returning ones.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "is_subscription": {
+            "type": "integer",
+            "description": "1 for subscription orders, 0 for others.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only orders after this order id, to fetch the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "fields": "$fields",
+          "id": "$id",
+          "number": "$number",
+          "affiliate_id": "$affiliate_id",
+          "customer_email": "$customer_email",
+          "status": "$status",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "is_new_customer": "$is_new_customer",
+          "is_subscription": "$is_subscription",
+          "since_id": "$since_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_rewards",
+      "description": "List rewards credited to affiliates outside of order commissions: sign-up, recruitment and target bonuses and upline sale commissions, with amount and status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,affiliate_id,type,amount,status,order_id,metadata,created_at; these are the reward fields GoAffPro documents.",
+            "default": "id,affiliate_id,type,amount,status,order_id,metadata,created_at"
+          },
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "type": {
+            "type": "string",
+            "description": "Comma-separated reward types: signup_bonus, sale_commission, recruitment_bonus, target_bonus."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: approved, rejected."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Comma-separated order ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only rewards created at or after this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only rewards created at or before this. Date and time; GoAffPro's documentation writes it like Sun Jul 26 2026 12:10:07 GMT+0200."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only rewards after this reward id, to fetch the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rewards",
+        "queryParams": {
+          "fields": "$fields",
+          "affiliate_id": "$affiliate_id",
+          "type": "$type",
+          "status": "$status",
+          "order_id": "$order_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "since_id": "$since_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_payouts",
+      "description": "List the payouts already made to affiliates (payment history) with amount, method, notes and date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,affiliate_id,amount,currency,payment_method,admin_note,affiliate_message,created_at; add payment_details for the payout account data (personal data).",
+            "default": "id,affiliate_id,amount,currency,payment_method,admin_note,affiliate_message,created_at"
+          },
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only payouts created at or after this date."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only payouts created at or before this date."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of payouts to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "fields": "$fields",
+          "affiliate_id": "$affiliate_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_pending_payouts",
+      "description": "Show how much is owed to each affiliate right now (approved commissions and rewards not yet paid), optionally only up to a date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "upto": {
+            "type": "string",
+            "description": "Count only amounts earned up to this date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/pending",
+        "queryParams": {
+          "affiliate_id": "$affiliate_id",
+          "upto": "$upto"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_payout_requests",
+      "description": "List the payout requests affiliates sent from their dashboard, with amount, note, invoice and status (in_progress, paid, rejected). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only requests with this status.",
+            "enum": [
+              "in_progress",
+              "paid",
+              "rejected"
+            ]
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only requests after this request id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/requests",
+        "queryParams": {
+          "affiliate_id": "$affiliate_id",
+          "status": "$status",
+          "since_id": "$since_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_transactions",
+      "description": "List the affiliate ledger: every credit and debit from orders, rewards and payouts with amount, currency, paid flag and running balance. Filter by affiliate, type or paid state. Paged with limit and offset; the answer carries count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "string",
+            "description": "Only this affiliate's transactions."
+          },
+          "type": {
+            "type": "string",
+            "description": "Comma-separated entity types: ORDERS, REWARDS, PAYOUTS."
+          },
+          "is_paid": {
+            "type": "boolean",
+            "description": "true for paid, false for unpaid transactions."
+          },
+          "payout_id": {
+            "type": "integer",
+            "description": "Only the transactions settled by this payout."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of transactions to skip.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "affiliate_id": "$affiliate_id",
+          "type": "$type",
+          "is_paid": "$is_paid",
+          "payout_id": "$payout_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_traffic",
+      "description": "List visits that affiliates sent to the store, with affiliate, referring page, landing page and time, to see which affiliates drive traffic. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (GoAffPro requires the list). Default id,affiliate_id,referring_page,landing_page,created_at; ip_address and user_agent are also available but are visitors' personal data.",
+            "default": "id,affiliate_id,referring_page,landing_page,created_at"
+          },
+          "affiliate_id": {
+            "type": "string",
+            "description": "Comma-separated affiliate ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only visits at or after this, YYYY-MM-DDThh:mm:ss."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only visits at or before this, YYYY-MM-DDThh:mm:ss."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only visits after this visit id, for the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of visits, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/traffic",
+        "queryParams": {
+          "fields": "$fields",
+          "affiliate_id": "$affiliate_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "since_id": "$since_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_coupons",
+      "description": "List the coupon codes assigned in the affiliate app with discount type and value, affiliate and type (referral or personal). Filter by affiliate or code. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "integer",
+            "description": "Only this affiliate's coupons."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only this coupon code."
+          },
+          "type": {
+            "type": "string",
+            "description": "referral for codes customers use, personal for the affiliate's own discount.",
+            "enum": [
+              "referral",
+              "personal"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, e.g. 100.",
+            "minimum": 1,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of coupons to skip.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": {
+          "affiliate_id": "$affiliate_id",
+          "code": "$code",
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_list_groups",
+      "description": "List the affiliate groups (tiers) with their names and commission structures. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return.",
+            "default": "id,name,commissions"
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_create_affiliate",
+      "description": "Create an affiliate account, approved or pending, optionally with a referral code, a coupon, contact data and a parent affiliate for multi-level programs. GoAffPro may e-mail the new affiliate depending on the store's settings. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The affiliate's e-mail address (their login)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Approval status of the new account.",
+            "enum": [
+              "approved",
+              "pending",
+              "rejected"
+            ]
+          },
+          "coupon": {
+            "type": "object",
+            "description": "Optional coupon to create for the affiliate.",
+            "properties": {
+              "discount_type": {
+                "type": "string",
+                "description": "percentage or fixed_amount.",
+                "enum": [
+                  "percentage",
+                  "fixed_amount"
+                ]
+              },
+              "discount_value": {
+                "type": "number",
+                "description": "A percent or an amount in the store currency."
+              }
+            },
+            "required": [
+              "discount_type",
+              "discount_value"
+            ]
+          },
+          "parent_email": {
+            "type": "string",
+            "description": "E-mail of the parent affiliate, for multi-level programs."
+          },
+          "password": {
+            "type": "string",
+            "description": "Optional initial password; leave out to let the affiliate set one."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "ref_code": {
+            "type": "string",
+            "description": "Referral code used in the affiliate's links."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address_1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "address_2": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country (two-letter code)."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "instagram": {
+            "type": "string",
+            "description": "Instagram handle or URL."
+          },
+          "facebook": {
+            "type": "string",
+            "description": "Facebook URL."
+          },
+          "twitter": {
+            "type": "string",
+            "description": "X / Twitter handle or URL."
+          },
+          "tax_identification_number": {
+            "type": "string",
+            "description": "Tax identification number."
+          },
+          "admin_note": {
+            "type": "string",
+            "description": "Private note visible only to the store admins."
+          },
+          "personal_message": {
+            "type": "string",
+            "description": "Message shown to the affiliate in their dashboard."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/affiliates",
+        "bodyMapping": {
+          "email": "$email",
+          "status": "$status",
+          "parent_email": "$parent_email",
+          "password": "$password",
+          "coupon": "$coupon",
+          "name": "$name",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "ref_code": "$ref_code",
+          "phone": "$phone",
+          "address_1": "$address_1",
+          "address_2": "$address_2",
+          "city": "$city",
+          "state": "$state",
+          "zip": "$zip",
+          "country": "$country",
+          "website": "$website",
+          "instagram": "$instagram",
+          "facebook": "$facebook",
+          "twitter": "$twitter",
+          "tax_identification_number": "$tax_identification_number",
+          "admin_note": "$admin_note",
+          "personal_message": "$personal_message"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_update_affiliate",
+      "description": "Change an affiliate: approve or reject (status), personal commission rate, coupon, referral code, contact data or notes. Only the fields given are sent. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Approval status.",
+            "enum": [
+              "approved",
+              "pending",
+              "rejected"
+            ]
+          },
+          "commission": {
+            "type": "object",
+            "description": "Personal commission that overrides the program's rate.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "percentage or fixed_amount.",
+                "enum": [
+                  "percentage",
+                  "fixed_amount"
+                ]
+              },
+              "amount": {
+                "type": "number",
+                "description": "Rate in percent or amount in the store currency."
+              },
+              "on": {
+                "type": "string",
+                "description": "Per product or per order.",
+                "enum": [
+                  "product",
+                  "order"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "amount"
+            ]
+          },
+          "coupon": {
+            "type": "object",
+            "description": "Coupon to set for the affiliate.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "The coupon code."
+              },
+              "discount_type": {
+                "type": "string",
+                "description": "percentage or fixed_amount.",
+                "enum": [
+                  "percentage",
+                  "fixed_amount"
+                ]
+              },
+              "discount_value": {
+                "type": "number",
+                "description": "Discount value."
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "ref_code": {
+            "type": "string",
+            "description": "Referral code used in the affiliate's links."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address_1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "address_2": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country (two-letter code)."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "instagram": {
+            "type": "string",
+            "description": "Instagram handle or URL."
+          },
+          "facebook": {
+            "type": "string",
+            "description": "Facebook URL."
+          },
+          "twitter": {
+            "type": "string",
+            "description": "X / Twitter handle or URL."
+          },
+          "tax_identification_number": {
+            "type": "string",
+            "description": "Tax identification number."
+          },
+          "admin_note": {
+            "type": "string",
+            "description": "Private note visible only to the store admins."
+          },
+          "personal_message": {
+            "type": "string",
+            "description": "Message shown to the affiliate in their dashboard."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/affiliates/{id}",
+        "bodyMapping": {
+          "status": "$status",
+          "commission": "$commission",
+          "coupon": "$coupon",
+          "name": "$name",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "ref_code": "$ref_code",
+          "phone": "$phone",
+          "address_1": "$address_1",
+          "address_2": "$address_2",
+          "city": "$city",
+          "state": "$state",
+          "zip": "$zip",
+          "country": "$country",
+          "website": "$website",
+          "instagram": "$instagram",
+          "facebook": "$facebook",
+          "twitter": "$twitter",
+          "tax_identification_number": "$tax_identification_number",
+          "admin_note": "$admin_note",
+          "personal_message": "$personal_message"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_delete_affiliate",
+      "description": "Delete an affiliate account. Installed switched off; turn it on deliberately. Rejecting with goaffpro_update_affiliate keeps the history. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/affiliates/{id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "goaffpro_add_affiliate_coupon",
+      "description": "Assign a coupon code to an affiliate. With only coupon_code, GoAffPro also creates the discount in the store according to the store's automatic coupon settings; with a discount type and value it records an existing store code for the affiliate. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The affiliate id."
+          },
+          "coupon_code": {
+            "type": "string",
+            "description": "The coupon code, e.g. ANNA10."
+          },
+          "discount_type": {
+            "type": "string",
+            "description": "Discount type of an existing code.",
+            "enum": [
+              "percentage",
+              "fixed_amount",
+              "free_shipping"
+            ]
+          },
+          "discount_value": {
+            "type": "number",
+            "description": "Discount value of an existing code."
+          }
+        },
+        "required": [
+          "id",
+          "coupon_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/affiliates/{id}/coupons",
+        "bodyMapping": {
+          "coupon": {
+            "code": "$coupon_code",
+            "discount_type": "$discount_type",
+            "discount_value": "$discount_value"
+          }
+        }
+      }
+    },
+    {
+      "name": "goaffpro_add_order",
+      "description": "Credit an order to an affiliate by hand, e.g. a sale the tracking missed, by affiliate id or referral code. GoAffPro computes the commission from the store's rules. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Order number as the shop shows it."
+          },
+          "total": {
+            "type": "number",
+            "description": "Order total."
+          },
+          "affiliate_id": {
+            "type": "string",
+            "description": "Affiliate who gets the order. Give this or ref_code."
+          },
+          "ref_code": {
+            "type": "string",
+            "description": "Referral code of the affiliate. Give this or affiliate_id."
+          }
+        },
+        "required": [
+          "number",
+          "total"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "order": {
+            "number": "$number",
+            "total": "$total"
+          },
+          "affiliate_id": "$affiliate_id",
+          "ref_code": "$ref_code"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_update_order",
+      "description": "Change an affiliate order: approve or reject it, correct the commission or subtotal, or add a merchant adjustment. Only the fields given are sent. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The order id (from goaffpro_list_orders)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Approval status.",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "commission": {
+            "type": "number",
+            "description": "New commission for the affiliate."
+          },
+          "subtotal": {
+            "type": "number",
+            "description": "New commission base."
+          },
+          "merchant_adjustment": {
+            "type": "number",
+            "description": "Adjustment amount applied by the merchant."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Customer e-mail."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{id}",
+        "bodyMapping": {
+          "status": "$status",
+          "commission": "$commission",
+          "subtotal": "$subtotal",
+          "merchant_adjustment": "$merchant_adjustment",
+          "customer_email": "$customer_email",
+          "customer_name": "$customer_name"
+        }
+      }
+    },
+    {
+      "name": "goaffpro_delete_order",
+      "description": "Delete an order and its commission from the affiliate's account. Installed switched off; turn it on deliberately. Rejecting with goaffpro_update_order keeps the record. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The order id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/orders/{id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "goaffpro_give_reward",
+      "description": "Credit a reward to an affiliate: a sign-up, recruitment or target bonus, or an upline sale commission for an order. The amount adds to what the store owes the affiliate. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "integer",
+            "description": "The affiliate who gets the reward."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Reward amount in the store currency."
+          },
+          "type": {
+            "type": "string",
+            "description": "Kind of reward.",
+            "enum": [
+              "signup_bonus",
+              "sale_commission",
+              "recruitment_bonus",
+              "target_bonus"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Status of the reward.",
+            "enum": [
+              "approved",
+              "pending",
+              "rejected"
+            ],
+            "default": "approved"
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Order id; required for sale_commission."
+          },
+          "level": {
+            "type": "string",
+            "description": "Upline level, only for sale_commission."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "A note stored with the reward, e.g. the reason."
+          }
+        },
+        "required": [
+          "affiliate_id",
+          "amount",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rewards",
+        "bodyMapping": {
+          "rewards": [
+            {
+              "affiliate_id": "$affiliate_id",
+              "amount": "$amount",
+              "type": "$type",
+              "status": "$status",
+              "order_id": "$order_id",
+              "level": "$level",
+              "metadata": "$metadata"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "goaffpro_record_payout",
+      "description": "Record that an affiliate was paid (money sent outside GoAffPro, e.g. by bank transfer or PayPal), which lowers what the store owes them. Does not move money itself. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "affiliate_id": {
+            "type": "string",
+            "description": "The affiliate who was paid."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount paid."
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "How it was paid, e.g. paypal or bank. Leave out to use the affiliate's own setting."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Date the payout was sent; now when left out."
+          },
+          "affiliate_message": {
+            "type": "string",
+            "description": "Message for the affiliate."
+          },
+          "admin_note": {
+            "type": "string",
+            "description": "Private note for the admins."
+          }
+        },
+        "required": [
+          "affiliate_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "payments": [
+            {
+              "affiliate_id": "$affiliate_id",
+              "amount": "$amount",
+              "payment_method": "$payment_method",
+              "created_at": "$created_at",
+              "affiliate_message": "$affiliate_message",
+              "admin_note": "$admin_note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "goaffpro_update_payout_request",
+      "description": "Set the status of an affiliate's payout request to in_progress, paid or rejected. Changes the live affiliate program: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The payout request id from goaffpro_list_payout_requests."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "in_progress",
+              "paid",
+              "rejected"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/payments/requests/{id}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    }
+  ]
+}

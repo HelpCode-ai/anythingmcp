@@ -116,6 +116,35 @@ function trimSlash(url: string | undefined): string {
   return (url || '').trim().replace(/\/+$/, '');
 }
 
+/** A single `subscriptions/listen` request (MCP 2026-07-28). */
+export function isListenRequest(body: unknown): boolean {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    (body as { method?: unknown }).method === 'subscriptions/listen'
+  );
+}
+
+/**
+ * The server a `subscriptions/listen` stream is answered from. The SDK takes
+ * only its capabilities (which notifications the stream honours) and its name
+ * from it, closes it, and holds the stream itself until the client leaves,
+ * about five minutes later. Building the full tool surface for that cost a
+ * pass over the whole tool registry per listen, and on a server's own URL
+ * kept that surface alive for the stream's whole life; with ~200 streams open
+ * at once on 13 Oct, that was ~200 surfaces nobody read. Nothing is ever
+ * published to these streams anyway: each request has its own event bus, so
+ * the capabilities only decide what the acknowledgement lists.
+ */
+export function listenOnlyServer(
+  name: string,
+  version: string,
+  capabilities: { tools?: { listChanged: boolean }; resources?: { listChanged: boolean } },
+): McpServer {
+  return new McpServer({ name, version }, { capabilities });
+}
+
 /** Trailer appended to every live demo tool result. */
 const DEMO_RESULT_FOOTER =
   '— served by AnythingMCP (public demo, read-only). Self-host it: ' +
@@ -234,6 +263,19 @@ export class McpEndpointController {
 
   @Post()
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
+    // A subscriptions/listen stream reads only the server's capabilities and
+    // name; resolving the caller's tools for it filtered the whole registry
+    // on every one of the ~50 listens a minute (see listenOnlyServer).
+    if (this.servesSharedToolset(req) && isListenRequest((req as any).body)) {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => listenOnlyServer('AnythingMCP', APP_VERSION, { tools: { listChanged: true } }),
+        'shared /mcp listen',
+      );
+      return;
+    }
     const visible = await this.attachVisibleTools(req);
     // The fixed tool set (see shared-toolset.ts). Operator credentials
     // (`visible === null`) keep the direct tools: they only exist on a
@@ -978,6 +1020,24 @@ export class McpEndpointController {
           id: null,
         });
       }
+    }
+
+    // A subscriptions/listen stream, once the caller may reach this server:
+    // answered without building its tool surface (see listenOnlyServer). The
+    // stateful mode keeps its own path.
+    if (isListenRequest(body) && !McpSessionManager.isEnabled()) {
+      await this.serveStateless(
+        req,
+        res,
+        body,
+        () =>
+          listenOnlyServer(mcpServerConfig.name, mcpServerConfig.version || '1.0.0', {
+            tools: { listChanged: true },
+            resources: { listChanged: true },
+          }),
+        `server ${serverId} listen`,
+      );
+      return;
     }
 
     // 2. Get the connectors assigned to this server and, if the user is

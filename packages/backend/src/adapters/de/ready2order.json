@@ -1,0 +1,1171 @@
+{
+  "slug": "ready2order",
+  "name": "ready2order",
+  "description": "Connect the ready2order POS (Registrierkasse) to your AI: products, prices and stock, product groups, bills and daily sales, open orders, customers, payment methods and VAT rates, with confirmed writes for products, stock and customers.",
+  "unlisted": true,
+  "aliases": [
+    "r2o"
+  ],
+  "instructions": "## ready2order\nThis connector calls the **ready2order Public API** (`https://api.ready2order.com/v1`) of one ready2order account (the cloud POS from Austria, used in retail and gastronomy in Austria and Germany): products and stock, product groups, bills (Belege), open orders, customers, payment methods, VAT rates and users.\n\n**Setup (about 10 minutes, once per account)**\nready2order issues an **Account Token** per register account through a short approval flow:\n1. Register as a developer at https://api.ready2order.com. ready2order e-mails you a **Developer Token**.\n2. Request access with it:\n   `curl -X POST https://api.ready2order.com/v1/developerToken/grantAccessToken -H \"Authorization: Bearer <DEVELOPER_TOKEN>\" -H \"Content-Type: application/json\" -d \"{}\"`\n   The answer holds `grantAccessToken` and `grantAccessUri`.\n3. Open `grantAccessUri` within 10 minutes, sign in with the ready2order account owner and click **Approve**.\n4. Read the Account Token:\n   `curl https://api.ready2order.com/v1/developerToken/grantAccessToken/<grantAccessToken> -H \"Authorization: Bearer <DEVELOPER_TOKEN>\"`\n   and paste `accountToken` into `READY2ORDER_ACCOUNT_TOKEN`. It is sent as `Authorization: Bearer`, only to ready2order, and stays valid until it is revoked in the ready2order admin under Settings > API access.\n\nThe Developer Token alone is refused with 403: the connector needs the Account Token.\n\n**Tools**\n- Products and stock: `ready2order_list_products`, `ready2order_get_product`, `ready2order_get_product_stock`, `ready2order_get_stock_by_item_number`, `ready2order_list_product_groups`, `ready2order_list_group_products`.\n- Sales: `ready2order_list_bills` (with `items` true for the sold lines, `payments` true for payment methods), `ready2order_get_bill`, `ready2order_get_bill_pdf`, `ready2order_list_open_orders`, `ready2order_get_daily_report_status`.\n- Master data: `ready2order_list_customers`, `ready2order_get_customer`, `ready2order_list_customer_groups`, `ready2order_list_payment_methods`, `ready2order_list_vat_rates`, `ready2order_list_users`.\n- Writes: `ready2order_create_product`, `ready2order_update_product`, `ready2order_update_product_stock`, `ready2order_create_product_group`, `ready2order_create_customer`, `ready2order_update_customer`. `ready2order_delete_product` is installed switched off.\n\n**Writes change the live register at once.** Name the product or customer and the new values, and wait for the user's yes before any write. To take a product out of sale, prefer `product_active` false over deleting it.\n\n**Sales figures**: `ready2order_list_bills` with `dateFrom`/`dateTo`. By default the dates filter by the daily report a bill belongs to (the business day); `dateField` bill uses the bill's own timestamp. Page with `offset` and `limit` until `offset + limit` reaches `count`. Bills are fiscal records: there is no tool to change or cancel them.\n\n**Numbers are strings**: prices, VAT rates and stock quantities are decimal strings (`\"4.50\"`, `\"20\"`, `\"-2\"`).\n\n**Rate limit**: 60 requests a minute per Account Token; on 429 wait a minute.\n\n**Common errors**\n- 401 `Sorry, but your token is invalid.`: the token is wrong or revoked. Repeat the approval flow.\n- 403: a Developer Token was pasted instead of the Account Token.\n- 429: more than 60 requests in a minute.\n- 400 or 422: a field is invalid; the message names it (for example a product without product_vat or product_vat_id).\n\n**Out of scope here**: creating or cancelling bills (Storno), printing, coupons, discounts, tables, payment terminals, webhooks and accounting exports.",
+  "region": "de",
+  "category": "payments",
+  "icon": "ready2order",
+  "docsUrl": "https://ready2order.com/api/doc/",
+  "requiredEnvVars": [
+    "READY2ORDER_ACCOUNT_TOKEN"
+  ],
+  "envVarMeta": {
+    "READY2ORDER_ACCOUNT_TOKEN": {
+      "label": "ready2order Account Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The accountToken returned after the account owner approves access (see the setup steps). Not the Developer Token. Sent as Authorization: Bearer.",
+      "link": "https://api.ready2order.com",
+      "pattern": "^(?!Bearer\\s)\\S{8,}$",
+      "patternMessage": "Paste only the Account Token, without the word Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "ready2order refused the token. It is wrong or was revoked; repeat the approval flow and paste the new accountToken.",
+    "403": "ready2order expects the Account Token here. A Developer Token works only to request access; paste the accountToken returned after approval.",
+    "429": "ready2order allows 60 requests a minute per Account Token. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "ready2order_list_vat_rates"
+  },
+  "prerequisites": "A ready2order account (with the owner's login, to approve access) and a free developer registration at api.ready2order.com for the Developer Token. About 10 minutes.",
+  "connector": {
+    "name": "ready2order",
+    "type": "REST",
+    "baseUrl": "https://api.ready2order.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{READY2ORDER_ACCOUNT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/vat-rates",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "equals": true,
+          "messagePath": "msg",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "ready2order_list_products",
+      "description": "List the products (Artikel) of the ready2order register with price, VAT, item number, barcode, stock level and product group. Search by keyword with q, or exactly by name, item number or barcode; filter by product group or by changes since a time. Paged with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword search over the products."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact product name."
+          },
+          "itemNumber": {
+            "type": "string",
+            "description": "Exact item number."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Exact barcode."
+          },
+          "productgroup_id": {
+            "type": "integer",
+            "description": "Only products of this product group."
+          },
+          "updatedAfter": {
+            "type": "string",
+            "description": "Only products changed after this time, e.g. 2026-10-01 00:00:00."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, e.g. 50.",
+            "minimum": 1
+          },
+          "includeProductGroup": {
+            "type": "boolean",
+            "description": "Include each product's product group."
+          },
+          "includeProductVariations": {
+            "type": "boolean",
+            "description": "Include the product variations (add-ons and modifications)."
+          },
+          "includePriceLevels": {
+            "type": "boolean",
+            "description": "Include the price levels."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "q": "$q",
+          "name": "$name",
+          "itemNumber": "$itemNumber",
+          "barcode": "$barcode",
+          "productgroup_id": "$productgroup_id",
+          "updatedAfter": "$updatedAfter",
+          "page": "$page",
+          "limit": "$limit",
+          "includeProductGroup": "$includeProductGroup",
+          "includeProductVariations": "$includeProductVariations",
+          "includePriceLevels": "$includePriceLevels"
+        }
+      }
+    },
+    {
+      "name": "ready2order_get_product",
+      "description": "Get one product by id with all its settings (price, VAT, stock, unit, flags), optionally with its group, variations and price levels. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product_id."
+          },
+          "includeProductGroup": {
+            "type": "boolean",
+            "description": "Include each product's product group."
+          },
+          "includeProductVariations": {
+            "type": "boolean",
+            "description": "Include the product variations (add-ons and modifications)."
+          },
+          "includePriceLevels": {
+            "type": "boolean",
+            "description": "Include the price levels."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}",
+        "queryParams": {
+          "includeProductGroup": "$includeProductGroup",
+          "includeProductVariations": "$includeProductVariations",
+          "includePriceLevels": "$includePriceLevels"
+        }
+      }
+    },
+    {
+      "name": "ready2order_create_product",
+      "description": "Create a product in the register, with name and price, VAT (product_vat or product_vat_id), product group and optional item number, barcode, unit and stock. It appears in the POS at once. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "description": "Product name as shown in the register."
+          },
+          "product_price": {
+            "type": "string",
+            "description": "Price as a decimal string, e.g. 4.50. Gross or net according to product_priceIncludesVat."
+          },
+          "product_priceIncludesVat": {
+            "type": "boolean",
+            "description": "true if product_price includes VAT (the usual setting for retail and gastronomy)."
+          },
+          "product_vat": {
+            "type": "string",
+            "description": "VAT rate in percent as a decimal string, e.g. 20 or 10 in Austria, 19 or 7 in Germany. Give this or product_vat_id."
+          },
+          "product_vat_id": {
+            "type": "integer",
+            "description": "Id of a VAT rate from ready2order_list_vat_rates. Give this or product_vat."
+          },
+          "productgroup_id": {
+            "type": "integer",
+            "description": "Product group id from ready2order_list_product_groups."
+          },
+          "product_itemnumber": {
+            "type": "string",
+            "description": "Item number (Artikelnummer)."
+          },
+          "product_barcode": {
+            "type": "string",
+            "description": "Barcode (EAN)."
+          },
+          "product_externalReference": {
+            "type": "string",
+            "description": "Your own reference, e.g. the id in a webshop or ERP."
+          },
+          "product_description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "product_active": {
+            "type": "boolean",
+            "description": "false hides the product in the register so it cannot be sold."
+          },
+          "product_soldOut": {
+            "type": "boolean",
+            "description": "true marks the product sold out in the register, whatever the stock says."
+          },
+          "product_discountable": {
+            "type": "boolean",
+            "description": "Whether discounts and coupons apply to the product."
+          },
+          "product_stock_enabled": {
+            "type": "boolean",
+            "description": "Turn stock tracking on or off for the product."
+          },
+          "product_unit_identifier": {
+            "type": "string",
+            "description": "Unit the product is sold and counted in.",
+            "enum": [
+              "beutel",
+              "bottle",
+              "can",
+              "centiliter",
+              "gram",
+              "hours",
+              "karton",
+              "kilo",
+              "liter",
+              "m2",
+              "meter",
+              "milliliter",
+              "pair",
+              "palette",
+              "piece",
+              "qm",
+              "raummeter",
+              "sack",
+              "schuettraummeter",
+              "ton"
+            ]
+          },
+          "product_type": {
+            "type": "string",
+            "description": "food or drink for gastronomy side dishes and extras; leave out for ordinary products."
+          },
+          "product_customPrice": {
+            "type": "boolean",
+            "description": "Let the cashier type the price at checkout."
+          },
+          "product_customQuantity": {
+            "type": "boolean",
+            "description": "Let the cashier type a quantity (e.g. weight) at checkout."
+          },
+          "product_accountingCode": {
+            "type": "string",
+            "description": "Revenue account used in accounting exports such as DATEV."
+          },
+          "product_sortIndex": {
+            "type": "integer",
+            "description": "Position in the product group."
+          },
+          "product_stock_value": {
+            "type": "string",
+            "description": "Initial stock quantity as a decimal string, e.g. 24. Needs product_stock_enabled."
+          }
+        },
+        "required": [
+          "product_name",
+          "product_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "product_name": "$product_name",
+          "product_price": "$product_price",
+          "product_priceIncludesVat": "$product_priceIncludesVat",
+          "product_vat": "$product_vat",
+          "product_vat_id": "$product_vat_id",
+          "productgroup_id": "$productgroup_id",
+          "product_itemnumber": "$product_itemnumber",
+          "product_barcode": "$product_barcode",
+          "product_externalReference": "$product_externalReference",
+          "product_description": "$product_description",
+          "product_active": "$product_active",
+          "product_soldOut": "$product_soldOut",
+          "product_discountable": "$product_discountable",
+          "product_stock_enabled": "$product_stock_enabled",
+          "product_unit_identifier": "$product_unit_identifier",
+          "product_type": "$product_type",
+          "product_customPrice": "$product_customPrice",
+          "product_customQuantity": "$product_customQuantity",
+          "product_accountingCode": "$product_accountingCode",
+          "product_sortIndex": "$product_sortIndex",
+          "product_stock_value": "$product_stock_value"
+        }
+      }
+    },
+    {
+      "name": "ready2order_update_product",
+      "description": "Change fields of an existing product: name, price, VAT, product group, item number, barcode, description, active or sold-out flag, unit and more. Only the fields given are sent; the others keep their values. Stock is changed with ready2order_update_product_stock. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product_id to change."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name as shown in the register."
+          },
+          "product_price": {
+            "type": "string",
+            "description": "Price as a decimal string, e.g. 4.50. Gross or net according to product_priceIncludesVat."
+          },
+          "product_priceIncludesVat": {
+            "type": "boolean",
+            "description": "true if product_price includes VAT (the usual setting for retail and gastronomy)."
+          },
+          "product_vat": {
+            "type": "string",
+            "description": "VAT rate in percent as a decimal string, e.g. 20 or 10 in Austria, 19 or 7 in Germany. Give this or product_vat_id."
+          },
+          "product_vat_id": {
+            "type": "integer",
+            "description": "Id of a VAT rate from ready2order_list_vat_rates. Give this or product_vat."
+          },
+          "productgroup_id": {
+            "type": "integer",
+            "description": "Product group id from ready2order_list_product_groups."
+          },
+          "product_itemnumber": {
+            "type": "string",
+            "description": "Item number (Artikelnummer)."
+          },
+          "product_barcode": {
+            "type": "string",
+            "description": "Barcode (EAN)."
+          },
+          "product_externalReference": {
+            "type": "string",
+            "description": "Your own reference, e.g. the id in a webshop or ERP."
+          },
+          "product_description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "product_active": {
+            "type": "boolean",
+            "description": "false hides the product in the register so it cannot be sold."
+          },
+          "product_soldOut": {
+            "type": "boolean",
+            "description": "true marks the product sold out in the register, whatever the stock says."
+          },
+          "product_discountable": {
+            "type": "boolean",
+            "description": "Whether discounts and coupons apply to the product."
+          },
+          "product_stock_enabled": {
+            "type": "boolean",
+            "description": "Turn stock tracking on or off for the product."
+          },
+          "product_unit_identifier": {
+            "type": "string",
+            "description": "Unit the product is sold and counted in.",
+            "enum": [
+              "beutel",
+              "bottle",
+              "can",
+              "centiliter",
+              "gram",
+              "hours",
+              "karton",
+              "kilo",
+              "liter",
+              "m2",
+              "meter",
+              "milliliter",
+              "pair",
+              "palette",
+              "piece",
+              "qm",
+              "raummeter",
+              "sack",
+              "schuettraummeter",
+              "ton"
+            ]
+          },
+          "product_type": {
+            "type": "string",
+            "description": "food or drink for gastronomy side dishes and extras; leave out for ordinary products."
+          },
+          "product_customPrice": {
+            "type": "boolean",
+            "description": "Let the cashier type the price at checkout."
+          },
+          "product_customQuantity": {
+            "type": "boolean",
+            "description": "Let the cashier type a quantity (e.g. weight) at checkout."
+          },
+          "product_accountingCode": {
+            "type": "string",
+            "description": "Revenue account used in accounting exports such as DATEV."
+          },
+          "product_sortIndex": {
+            "type": "integer",
+            "description": "Position in the product group."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{id}",
+        "bodyMapping": {
+          "product_name": "$product_name",
+          "product_price": "$product_price",
+          "product_priceIncludesVat": "$product_priceIncludesVat",
+          "product_vat": "$product_vat",
+          "product_vat_id": "$product_vat_id",
+          "productgroup_id": "$productgroup_id",
+          "product_itemnumber": "$product_itemnumber",
+          "product_barcode": "$product_barcode",
+          "product_externalReference": "$product_externalReference",
+          "product_description": "$product_description",
+          "product_active": "$product_active",
+          "product_soldOut": "$product_soldOut",
+          "product_discountable": "$product_discountable",
+          "product_stock_enabled": "$product_stock_enabled",
+          "product_unit_identifier": "$product_unit_identifier",
+          "product_type": "$product_type",
+          "product_customPrice": "$product_customPrice",
+          "product_customQuantity": "$product_customQuantity",
+          "product_accountingCode": "$product_accountingCode",
+          "product_sortIndex": "$product_sortIndex"
+        }
+      }
+    },
+    {
+      "name": "ready2order_get_product_stock",
+      "description": "Get the current stock, reorder level (Meldebestand), safety stock and unit of one product by its id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product_id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}/stock"
+      }
+    },
+    {
+      "name": "ready2order_get_stock_by_item_number",
+      "description": "Get the current stock, reorder level and safety stock of a product looked up by its item number (Artikelnummer) instead of its id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemNumber": {
+            "type": "string",
+            "description": "The product's item number."
+          }
+        },
+        "required": [
+          "itemNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/itemNumber/{itemNumber}/stock",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "ready2order_update_product_stock",
+      "description": "Change a product's stock: set an absolute count after an inventory (product_stock) or add and subtract a quantity (product_stockDelta, e.g. 24 for goods received, -2 for breakage). Can also set the reorder level and safety stock. Give product_stock or product_stockDelta, not both. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product_id."
+          },
+          "product_stock": {
+            "type": "string",
+            "description": "New absolute stock, as a decimal string, e.g. 36."
+          },
+          "product_stockDelta": {
+            "type": "string",
+            "description": "Quantity to add (positive) or remove (negative), as a decimal string, e.g. -2."
+          },
+          "product_reorderLevel": {
+            "type": "string",
+            "description": "Reorder level: at or below it ready2order sends a low-stock e-mail."
+          },
+          "product_safetyStock": {
+            "type": "string",
+            "description": "Recommended reorder quantity shown with the low-stock e-mail."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{id}/stock",
+        "bodyMapping": {
+          "product_stock": "$product_stock",
+          "product_stockDelta": "$product_stockDelta",
+          "product_reorderLevel": "$product_reorderLevel",
+          "product_safetyStock": "$product_safetyStock"
+        }
+      }
+    },
+    {
+      "name": "ready2order_delete_product",
+      "description": "Delete a product from the register. Installed switched off; turn it on deliberately. Setting product_active false with ready2order_update_product hides a product without deleting it. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product_id to delete."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ready2order_list_product_groups",
+      "description": "List the product groups (Produktgruppen, the categories of the POS), with id, name, parent group and type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Groups per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/productgroups",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_group_products",
+      "description": "List all products that belong to one product group (category), with their prices and settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The productgroup_id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/productgroups/{id}/products"
+      }
+    },
+    {
+      "name": "ready2order_create_product_group",
+      "description": "Create a product group (category) in the register, optionally below a parent group. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productgroup_name": {
+            "type": "string",
+            "description": "Group name."
+          },
+          "productgroup_description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "productgroup_shortcut": {
+            "type": "string",
+            "description": "Short name shown on the POS button."
+          },
+          "productgroup_parent": {
+            "type": "integer",
+            "description": "Id of the parent group, for a sub-group."
+          },
+          "productgroup_active": {
+            "type": "boolean",
+            "description": "false hides the group in the POS."
+          },
+          "productgroup_sortIndex": {
+            "type": "integer",
+            "description": "Position among the groups."
+          },
+          "productgroup_type_id": {
+            "type": "integer",
+            "description": "Group type id; leave out for the default."
+          }
+        },
+        "required": [
+          "productgroup_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/productgroups",
+        "bodyMapping": {
+          "productgroup_name": "$productgroup_name",
+          "productgroup_description": "$productgroup_description",
+          "productgroup_shortcut": "$productgroup_shortcut",
+          "productgroup_parent": "$productgroup_parent",
+          "productgroup_active": "$productgroup_active",
+          "productgroup_sortIndex": "$productgroup_sortIndex",
+          "productgroup_type_id": "$productgroup_type_id"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_bills",
+      "description": "List the bills (Belege, receipts and invoices) of a period with number, date, total, net, VAT, tip, customer and payment state; the main source for sales figures. Filter by date of the bill or of its daily report (Tagesabschluss), by customer or table, or search. With items true each bill includes its sold lines, for sales per product. Paged with offset and limit; the answer carries count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "Start, a date (2026-10-01, in the account's time zone) or an ISO 8601 date-time (2026-10-01T06:00:00Z)."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "End, same formats."
+          },
+          "dateField": {
+            "type": "string",
+            "description": "bill filters by the bill's own date, daily_report by the start of its daily report (default).",
+            "enum": [
+              "bill",
+              "daily_report"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text, e.g. a bill number."
+          },
+          "customerId": {
+            "type": "integer",
+            "description": "Only bills of this customer."
+          },
+          "tableId": {
+            "type": "integer",
+            "description": "Only bills of this table."
+          },
+          "items": {
+            "type": "boolean",
+            "description": "Include the sold lines of each bill."
+          },
+          "payments": {
+            "type": "boolean",
+            "description": "Include the payments of each bill (payment method and amount)."
+          },
+          "discounts": {
+            "type": "boolean",
+            "description": "Include the discounts of each bill."
+          },
+          "testMode": {
+            "type": "boolean",
+            "description": "true for bills made in training mode instead of live ones."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of bills to skip, for the next page.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Bills per page, e.g. 100.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/invoice",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "dateField": "$dateField",
+          "query": "$query",
+          "customerId": "$customerId",
+          "tableId": "$tableId",
+          "items": "$items",
+          "payments": "$payments",
+          "discounts": "$discounts",
+          "testMode": "$testMode",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_get_bill",
+      "description": "Get one bill by id with its lines, payments, totals, VAT breakdown and customer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The invoice_id of the bill."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/invoice/{id}"
+      }
+    },
+    {
+      "name": "ready2order_get_bill_pdf",
+      "description": "Get a temporary download link for the PDF of a bill, e.g. to send a copy to a customer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The invoice_id of the bill."
+          },
+          "format": {
+            "type": "string",
+            "description": "Paper format of the PDF; ready2order uses A4 unless told otherwise.",
+            "default": "A4"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/invoice/{id}/pdf",
+        "queryParams": {
+          "format": "$format"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_open_orders",
+      "description": "List the open orders of the register (items ordered but not yet billed, e.g. on a restaurant table), optionally per table or product and grouped by table or product. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "integer",
+            "description": "Only orders of this table."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Only orders of this product."
+          },
+          "groupBy": {
+            "type": "string",
+            "description": "Group the result by table_id or product_id.",
+            "enum": [
+              "table_id",
+              "product_id"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "table_id": "$table_id",
+          "product_id": "$product_id",
+          "groupBy": "$groupBy",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_customers",
+      "description": "List the customers stored in the register with number, name, company, VAT id, group, notes and addresses. Paged with page and limit. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ready2order_get_customer",
+      "description": "Get one customer by id with contact data, VAT id, group and addresses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The customer_id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{id}"
+      }
+    },
+    {
+      "name": "ready2order_create_customer",
+      "description": "Create a customer in the register, e.g. for invoices to a company. A customer group is required (see ready2order_list_customer_groups). Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerCategory_id": {
+            "type": "integer",
+            "description": "Customer group id from ready2order_list_customer_groups."
+          },
+          "customer_number": {
+            "type": "integer",
+            "description": "Customer number."
+          },
+          "salutation": {
+            "type": "string",
+            "description": "Salutation, e.g. Herr or Frau."
+          },
+          "title": {
+            "type": "string",
+            "description": "Academic title, e.g. Dr."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "uid": {
+            "type": "string",
+            "description": "VAT id (UID), e.g. ATU12345678."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobilePhone": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Birthday, YYYY-MM-DD."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": [
+          "customerCategory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "customerCategory_id": "$customerCategory_id",
+          "customer_number": "$customer_number",
+          "salutation": "$salutation",
+          "title": "$title",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "company": "$company",
+          "uid": "$uid",
+          "email": "$email",
+          "phone": "$phone",
+          "mobilePhone": "$mobilePhone",
+          "street": "$street",
+          "zip": "$zip",
+          "city": "$city",
+          "birthday": "$birthday",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "ready2order_update_customer",
+      "description": "Change an existing customer's contact data, VAT id, group or notes. Only the fields given are sent. Writes to the live ready2order register: describe the change and get the user's confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The customer_id to change."
+          },
+          "customerCategory_id": {
+            "type": "integer",
+            "description": "Customer group id from ready2order_list_customer_groups."
+          },
+          "customer_number": {
+            "type": "integer",
+            "description": "Customer number."
+          },
+          "salutation": {
+            "type": "string",
+            "description": "Salutation, e.g. Herr or Frau."
+          },
+          "title": {
+            "type": "string",
+            "description": "Academic title, e.g. Dr."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "uid": {
+            "type": "string",
+            "description": "VAT id (UID), e.g. ATU12345678."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobilePhone": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Birthday, YYYY-MM-DD."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customers/{id}",
+        "bodyMapping": {
+          "customerCategory_id": "$customerCategory_id",
+          "customer_number": "$customer_number",
+          "salutation": "$salutation",
+          "title": "$title",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "company": "$company",
+          "uid": "$uid",
+          "email": "$email",
+          "phone": "$phone",
+          "mobilePhone": "$mobilePhone",
+          "street": "$street",
+          "zip": "$zip",
+          "city": "$city",
+          "birthday": "$birthday",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_customer_groups",
+      "description": "List the customer groups (Kundengruppen) with their ids, needed to create a customer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerCategories"
+      }
+    },
+    {
+      "name": "ready2order_list_payment_methods",
+      "description": "List the payment methods configured in the register (cash, card, voucher and so on) with their ids and types. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "withDeleted": {
+            "type": "boolean",
+            "description": "Also list deleted payment methods, to read old bills."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/paymentMethods",
+        "queryParams": {
+          "withDeleted": "$withDeleted"
+        }
+      }
+    },
+    {
+      "name": "ready2order_list_vat_rates",
+      "description": "List the VAT rates configured for the account with id, rate and code, for creating products with product_vat_id. Read-only; also a quick check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vat-rates"
+      }
+    },
+    {
+      "name": "ready2order_get_daily_report_status",
+      "description": "Tell whether a daily report (Tagesabschluss period) is currently open in the register. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dailyReport/status"
+      }
+    },
+    {
+      "name": "ready2order_list_users",
+      "description": "List the register's users (cashiers and admins) with their ids and names. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Users per page.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}
