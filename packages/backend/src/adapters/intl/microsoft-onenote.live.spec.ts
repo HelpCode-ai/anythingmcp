@@ -99,8 +99,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('microsoft-onenote adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live, and says up front that it needs an Entra app', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026, and says up front that it needs an Entra app', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.prerequisites).toMatch(/Entra/);
     expect(a.prerequisites).toMatch(/Outlook connector can be reused/);
     expect(a.appRegistrationUrl).toMatch(/^https:\/\/entra\.microsoft\.com\//);
@@ -339,6 +339,8 @@ live('microsoft-onenote adapter: live Graph API', () => {
         body_html: '<p>Created by the AnythingMCP live test: Grüße &amp; perché</p>',
       });
       expect(typeof page.id).toBe('string');
+      // OneNote answers 404 to changes for a few seconds after creating a page.
+      await new Promise((r) => setTimeout(r, 15_000));
       try {
         await run('microsoft_onenote_append_to_page', { page_id: page.id, html: '<p>Appended line</p>' });
         await run('microsoft_onenote_update_page', {

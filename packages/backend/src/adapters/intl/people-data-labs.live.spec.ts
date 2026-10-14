@@ -114,8 +114,8 @@ const ALL = [
 describe('people-data-labs adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.category).toBe('enrichment');
     expect(a.icon).toBe('people-data-labs');
   });

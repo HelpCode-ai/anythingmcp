@@ -38,7 +38,6 @@
     "403": "The Google People API is not enabled in the Google Cloud project, or the authorized scope does not allow this call. Enable it under APIs & Services → Library and authorize again.",
     "rate_limited": "Google Contacts is throttling this account or project. Wait a minute and try again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "google_contacts_list_contacts",
     "params": {

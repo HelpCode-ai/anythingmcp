@@ -112,8 +112,8 @@ const sent = () => mockedAxios.mock.calls[0][0];
 describe('google-forms adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real Google account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('signs in with the shared Google OAuth client and only the two Forms scopes', () => {
@@ -380,7 +380,8 @@ live('google-forms adapter: live Forms API', () => {
         expect(form.settings.quizSettings.isQuiz).toBe(true);
         expect(form.items.map((i: any) => i.title)).toEqual(['Your name 👋', 'Kommst du?']);
         expect(form.items[1].questionItem.question.choiceQuestion.type).toBe('CHECKBOX');
-        expect(form.publishSettings.publishState.isAcceptingResponses).toBe(false);
+        // Google omits false booleans from the answer.
+        expect(form.publishSettings.publishState.isAcceptingResponses ?? false).toBe(false);
         const responses = await exec('google_forms_list_responses', { form_id: id });
         expect(responses.responses ?? []).toEqual([]);
       } finally {

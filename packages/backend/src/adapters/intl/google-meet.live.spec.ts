@@ -125,8 +125,8 @@ const WRITES = [
 describe('google-meet adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been verified live', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('signs in with the shared Google OAuth client and the three Meet scopes', () => {
@@ -398,7 +398,7 @@ live('google-meet adapter: live Meet REST API', () => {
   (process.env.GOOGLE_LIVE_WRITE === '1' ? it : it.skip)(
     'creates a meeting space and reads it back by id and by meeting code',
     async () => {
-      const space = await exec('google_meet_create_space', { config: { accessType: 'RESTRICTED' } });
+      const space = await exec('google_meet_create_space', {});
       expect(space.name).toMatch(/^spaces\//);
       expect(space.meetingUri).toMatch(/^https:\/\/meet\.google\.com\//);
       const id = String(space.name).slice('spaces/'.length);

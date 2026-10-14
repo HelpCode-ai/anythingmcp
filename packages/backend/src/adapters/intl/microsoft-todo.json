@@ -44,7 +44,6 @@
     "404": "Microsoft Graph found no To Do for this account. Work or school accounts need an Exchange Online mailbox for Microsoft To Do.",
     "rate_limited": "Microsoft Graph is throttling this account. Wait a minute and try again."
   },
-  "unlisted": true,
   "aliases": [
     "Microsoft ToDo",
     "MS To Do",

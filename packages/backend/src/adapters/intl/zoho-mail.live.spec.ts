@@ -126,8 +126,8 @@ const READ_ONLY = [
 describe('zoho-mail adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real mailbox', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.category).toBe('email');
     expect(a.icon).toBe('zoho-mail');
   });
@@ -342,7 +342,9 @@ live('zoho-mail adapter: live API', () => {
   beforeAll(() => {
     mockedAxios.mockImplementation((cfg: unknown) => mockedAxios.__actual(cfg as any));
   });
-  const run = (name: string, params: Record<string, unknown> = {}): Promise<any> => execute(name, env, TOKEN as string, params);
+  // Like production: the tool's responseMapping applies to the engine's answer.
+  const run = async (name: string, params: Record<string, unknown> = {}): Promise<any> =>
+    applyResponseTransform(await execute(name, env, TOKEN as string, params), (tool(name) as any).responseMapping).value;
 
   it('answers 401 INVALID_OAUTHTOKEN without a valid token', async () => {
     for (const [name, params] of [

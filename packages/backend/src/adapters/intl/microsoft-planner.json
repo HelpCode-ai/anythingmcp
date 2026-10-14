@@ -44,7 +44,6 @@
     "400": "Microsoft Graph refused the request. Planner needs a Microsoft 365 work or school account; personal Microsoft accounts have no Planner.",
     "rate_limited": "Microsoft Graph is throttling Planner for this account. Wait a minute and try again."
   },
-  "unlisted": true,
   "aliases": [
     "MS Planner",
     "Office 365 Planner"
@@ -380,7 +379,7 @@
           },
           "etag": {
             "type": "string",
-            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (412) when the task changed since; read it again then.",
+            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (409 or 412) when the task changed since; read it again then.",
             "minLength": 1
           },
           "title": {
@@ -458,7 +457,7 @@
           },
           "etag": {
             "type": "string",
-            "description": "The details' current @odata.etag from microsoft_planner_get_task_details. Planner refuses the change (412) when they changed since; read them again then.",
+            "description": "The details' current @odata.etag from microsoft_planner_get_task_details. Planner refuses the change (409 or 412) when they changed since; read them again then.",
             "minLength": 1
           },
           "description": {
@@ -548,7 +547,7 @@
           },
           "etag": {
             "type": "string",
-            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (412) when the task changed since; read it again then.",
+            "description": "The task's current @odata.etag, exactly as microsoft_planner_get_task (or a task list) returned it, e.g. W/\"JzEtVGFzayAgQEBAQEBAQEBAQEBAQEBAWCc=\". Planner refuses the change (409 or 412) when the task changed since; read it again then.",
             "minLength": 1
           }
         },

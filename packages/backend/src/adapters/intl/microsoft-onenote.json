@@ -43,7 +43,6 @@
     "403": "The app lacks a Graph permission or consent for it. Add Notes.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
     "rate_limited": "Microsoft Graph is throttling OneNote for this account. Wait a minute and try again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "microsoft_onenote_list_notebooks"
   },
@@ -525,7 +524,7 @@
     },
     {
       "name": "microsoft_onenote_create_page",
-      "description": "Create a page in a section from a title and HTML content. Use simple HTML: <p>, <h1>-<h6>, <b>, <i>, <ul>/<ol>/<li>, <table>, <a href>, <img src=\"https://...\"> (a public image URL), and <p data-tag=\"to-do\"> for a checkbox. Returns the new page with id and links (oneNoteWebUrl). Confirm with the user before calling.",
+      "description": "Create a page in a section from a title and HTML content. Use simple HTML: <p>, <h1>-<h6>, <b>, <i>, <ul>/<ol>/<li>, <table>, <a href>, <img src=\"https://...\"> (a public image URL), and <p data-tag=\"to-do\"> for a checkbox. Returns the new page with id and links (oneNoteWebUrl). A new page takes a few seconds before OneNote accepts changes to it: an append or update that answers 404 right after creation succeeds when retried a little later. Confirm with the user before calling.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -564,7 +563,7 @@
     },
     {
       "name": "microsoft_onenote_append_to_page",
-      "description": "Add HTML at the end of a page (inside its first div), e.g. \"<p>Follow-up: call Anna on Friday</p>\". The simplest way to add notes to an existing page. OneNote answers with no content when it worked. Confirm with the user before calling.",
+      "description": "Add HTML at the end of a page (inside its first div), e.g. \"<p>Follow-up: call Anna on Friday</p>\". The simplest way to add notes to an existing page. OneNote answers with no content when it worked. Right after microsoft_onenote_create_page OneNote can answer 404 for a few seconds; wait briefly and retry. Confirm with the user before calling.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -604,7 +603,7 @@
     },
     {
       "name": "microsoft_onenote_update_page",
-      "description": "Change a page with a list of commands, each {target, action, position?, content}. target: \"title\" (only action replace, content = new title text), \"body\" (the first div; append or prepend), \"#data-id\" (an id you set with data-id when writing), or a generated id from microsoft_onenote_get_page_content with include_ids true, e.g. \"p:{33f8a242-...}{40}\" (without #). action: append (as last child, or first with position before; for body, div, ol, ul), prepend, insert (as sibling, position after or before), replace (needs the generated id, except for title). Generated ids change after an update, so read the page again before the next one. OneNote answers with no content when it worked. Confirm with the user before calling.",
+      "description": "Change a page with a list of commands, each {target, action, position?, content}. target: \"title\" (only action replace, content = new title text), \"body\" (the first div; append or prepend), \"#data-id\" (an id you set with data-id when writing), or a generated id from microsoft_onenote_get_page_content with include_ids true, e.g. \"p:{33f8a242-...}{40}\" (without #). action: append (as last child, or first with position before; for body, div, ol, ul), prepend, insert (as sibling, position after or before), replace (needs the generated id, except for title). Generated ids change after an update, so read the page again before the next one. OneNote answers with no content when it worked. Right after microsoft_onenote_create_page OneNote can answer 404 for a few seconds; wait briefly and retry. Confirm with the user before calling.",
       "parameters": {
         "type": "object",
         "properties": {

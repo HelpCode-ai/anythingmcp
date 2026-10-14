@@ -108,8 +108,8 @@ const USER = 'fbab97d0-4932-4511-b675-204639209557';
 describe('microsoft-planner adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until verified live, and says up front that it needs a work account and an Entra app', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026, and says up front that it needs a work account and an Entra app', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.prerequisites).toMatch(/work or school account/);
     expect(a.prerequisites).toMatch(/Outlook connector can be reused/);
     expect(a.appRegistrationUrl).toMatch(/^https:\/\/entra\.microsoft\.com\//);
@@ -360,9 +360,12 @@ live('microsoft-planner adapter: live Graph API', () => {
         const updated = await run('microsoft_planner_update_task', { task_id: task.id, etag, percent_complete: 50, title: 'AnythingMCP test (updated)' });
         expect(updated.percentComplete).toBe(50);
         etag = updated['@odata.etag'];
-        await expect(
-          run('microsoft_planner_update_task', { task_id: task.id, etag: fresh['@odata.etag'], percent_complete: 100 }),
-        ).rejects.toMatchObject({ response: { status: 412 } });
+        // Graph answers a stale etag with 409 Conflict (412 in some cases).
+        const stale = await run('microsoft_planner_update_task', { task_id: task.id, etag: fresh['@odata.etag'], percent_complete: 100 }).then(
+          () => 200,
+          (e: any) => e.response?.status,
+        );
+        expect([409, 412]).toContain(stale);
         const details = await run('microsoft_planner_get_task_details', { task_id: task.id });
         const changed = await run('microsoft_planner_update_task_details', {
           task_id: task.id,

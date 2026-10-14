@@ -130,8 +130,8 @@ const LEAN = {
 describe('google-contacts adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real Google account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: verified on a live account on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('signs in with the shared Google OAuth client and the contacts scopes', () => {
