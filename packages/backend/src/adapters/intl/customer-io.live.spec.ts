@@ -107,8 +107,8 @@ const WRITES = ['customer_io_send_transactional_email', 'customer_io_trigger_bro
 describe('customer-io adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('authenticates with the App API key as a Bearer token on the regional App API', () => {
@@ -220,7 +220,7 @@ describe('customer-io adapter: static spec conformance', () => {
     ['customer_io_get_message', { message_id: 'dgOq' }, 'GET', '/v1/messages/dgOq'],
     ['customer_io_list_activities', {}, 'GET', '/v1/activities'],
     ['customer_io_list_transactional_messages', {}, 'GET', '/v1/transactional'],
-    ['customer_io_send_transactional_email', { to: 'ada@example.com', transactional_message_id: '2' }, 'POST', '/v1/send/email'],
+    ['customer_io_send_transactional_email', { to: 'ada@example.com', transactional_message_id: 2 }, 'POST', '/v1/send/email'],
     ['customer_io_trigger_broadcast', { broadcast_id: 3 }, 'POST', '/v1/campaigns/3/triggers'],
   ];
 
@@ -265,12 +265,17 @@ describe('customer-io adapter: static spec conformance', () => {
   it('builds the transactional email and broadcast trigger bodies as documented', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
     await call('customer_io_send_transactional_email', {
-      transactional_message_id: '2',
+      transactional_message_id: 2,
       to: 'ada@example.com',
       identifiers: { email: 'ada@example.com' },
       message_data: { code: '123' },
     });
-    expect(sent().data).toEqual({ transactional_message_id: '2', to: 'ada@example.com', identifiers: { email: 'ada@example.com' }, message_data: { code: '123' } });
+    // The API takes the numeric id as a number and a trigger name as a string.
+    expect(sent().data).toEqual({ transactional_message_id: 2, to: 'ada@example.com', identifiers: { email: 'ada@example.com' }, message_data: { code: '123' } });
+    mockedAxios.mockClear();
+    await call('customer_io_send_transactional_email', { transactional_message_id: 'pwdreset', to: 'ada@example.com', identifiers: { id: 'u1' } });
+    expect(sent().data).toEqual({ transactional_message_id: 'pwdreset', to: 'ada@example.com', identifiers: { id: 'u1' } });
+    expect(tool('customer_io_send_transactional_email').parameters.properties?.transactional_message_id).toMatchObject({ type: ['integer', 'string'] });
     mockedAxios.mockClear();
     await call('customer_io_trigger_broadcast', { broadcast_id: 3, emails: ['ada@example.com'], data: { promo: 'X' }, email_ignore_missing: true });
     expect(sent().data).toEqual({ emails: ['ada@example.com'], data: { promo: 'X' }, email_ignore_missing: true });

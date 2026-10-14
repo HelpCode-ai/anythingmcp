@@ -116,8 +116,8 @@ const DELETES = ['iterable_delete_user_by_email', 'iterable_delete_user_by_user_
 describe('iterable adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('sends the key in the Api-Key header on the project data center', () => {

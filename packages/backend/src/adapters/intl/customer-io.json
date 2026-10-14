@@ -38,7 +38,6 @@
     "404": "Nothing answered at this address. Use https://api.customer.io (US) or https://api-eu.customer.io (EU).",
     "429": "Customer.io's rate limit is reached. Wait a minute and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "customer_io_list_workspaces"
   },
@@ -500,8 +499,7 @@
             "metric": "$.metric",
             "start": "$.start",
             "end": "$.end",
-            "res": "$.res",
-            "tz": "$.tz"
+            "res": "$.res"
           },
           "maxBytes": 100000
         }
@@ -1105,8 +1103,11 @@
         "type": "object",
         "properties": {
           "transactional_message_id": {
-            "type": "string",
-            "description": "Id (or trigger name) of the transactional message from customer_io_list_transactional_messages."
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "The transactional message from customer_io_list_transactional_messages: its numeric id as a number (e.g. 44), or its trigger name as text (e.g. pwdreset)."
           },
           "to": {
             "type": "string",

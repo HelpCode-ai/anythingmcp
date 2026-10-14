@@ -50,7 +50,6 @@
     "404": "Nothing answered at this host. Use https://amplitude.com or https://analytics.eu.amplitude.com as the API host, not the web app address.",
     "429": "Amplitude's API limit for this project is reached (5 requests at the same time, a query cost budget per 5 minutes and per hour). Wait a few minutes and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "amplitude_list_events"
   },
@@ -724,7 +723,7 @@
     },
     {
       "name": "amplitude_get_chart_results",
-      "description": "Run a chart saved in Amplitude and return its results as JSON, using the chart's saved definition (events, filters, date range). The chart id is the code after /chart/ in the chart's address, e.g. abc123 in https://app.amplitude.com/analytics/demo/chart/abc123. The shape depends on the chart type. The chart must belong to this project. Read-only; counts against the Dashboard REST API limits like the chart type it runs.",
+      "description": "Run a chart saved in Amplitude and return its results, using the chart's saved definition (events, filters, date range). The chart id is the code after /chart/ in the chart's address, e.g. abc123 in https://app.amplitude.com/analytics/demo/chart/abc123. Returns data, the results as CSV text (tab-prefixed cells): the chart title and metric, then a header row (Segment and one column per date or step) and one row per segment or group. The layout follows the chart type. The chart must belong to this project. Read-only; counts against the Dashboard REST API limits like the chart type it runs.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -740,7 +739,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/3/chart/{chart_id}/query"
+        "path": "/api/3/chart/{chart_id}/csv"
       },
       "responseMapping": {
         "transform": {

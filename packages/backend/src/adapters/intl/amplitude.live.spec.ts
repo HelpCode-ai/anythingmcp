@@ -115,8 +115,8 @@ const WRITES = ['amplitude_create_annotation', 'amplitude_delete_annotation'];
 describe('amplitude adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('authenticates with API key and secret key as HTTP Basic on the data-center host', () => {
@@ -217,7 +217,7 @@ describe('amplitude adapter: static spec conformance', () => {
     ['amplitude_get_average_session_length', range, 'GET', '/api/2/sessions/average'],
     ['amplitude_get_sessions_per_user', range, 'GET', '/api/2/sessions/peruser'],
     ['amplitude_get_user_composition', { ...range, property: 'country' }, 'GET', '/api/2/composition'],
-    ['amplitude_get_chart_results', { chart_id: 'abc123' }, 'GET', '/api/3/chart/abc123/query'],
+    ['amplitude_get_chart_results', { chart_id: 'abc123' }, 'GET', '/api/3/chart/abc123/csv'],
     ['amplitude_list_cohorts', {}, 'GET', '/api/3/cohorts'],
     ['amplitude_search_users', { user: 'jane@example.com' }, 'GET', '/api/2/usersearch'],
     ['amplitude_get_user_activity', { amplitude_id: '356893043036' }, 'GET', '/api/2/useractivity'],

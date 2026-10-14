@@ -1,7 +1,6 @@
 {
   "slug": "sistrix",
   "name": "SISTRIX",
-  "unlisted": true,
   "aliases": [
     "Sichtbarkeitsindex"
   ],
@@ -203,7 +202,7 @@
     },
     {
       "name": "sistrix_visibility_index",
-      "description": "SISTRIX Visibility Index (Sichtbarkeitsindex) of a domain, host, path or URL: the current value, the value of a past week (date), or the weekly history (history=true), or the last 30 daily values (history and daily). Costs 1 credit per value returned; the full history can be hundreds of values, so set limit.",
+      "description": "SISTRIX Visibility Index (Sichtbarkeitsindex) of a domain, host, path or URL: the current value, the value of a past week (date), or the weekly history (history=true), or the daily values of the last 30 days (daily=true). Costs 1 credit per value returned; the full history can be hundreds of values, so set limit.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -239,7 +238,7 @@
           },
           "daily": {
             "type": "boolean",
-            "description": "With history=true: daily values of the last 30 days instead of weekly ones."
+            "description": "true returns the daily values of the last 30 days instead of weekly ones."
           },
           "limit": {
             "type": "integer",
@@ -526,7 +525,7 @@
           },
           "serp_feature": {
             "type": "string",
-            "description": "Only keywords whose results page shows this SERP feature code."
+            "description": "Only keywords whose results page shows this SERP feature, as the upper-case SISTRIX feature code, e.g. FEATURED (featured snippet) or SITELINKS. An unknown code fails with error 1007."
           },
           "ai_answer": {
             "type": "boolean",

@@ -165,8 +165,8 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
 describe('dataforseo adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until a live run with a funded account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.category).toBe('analytics');
     expect(a.icon).toBe('dataforseo');
   });
@@ -514,7 +514,8 @@ describe('dataforseo adapter: static spec conformance', () => {
       resource_type: 'html', status_code: 200, location: null, url: 'https://dataforseo.com/', size: 120000, total_dom_size: 130000, fetch_time: '2026-10-14 10:00:00 +00:00', media_type: 'text/html', onpage_score: 92.5,
       meta: { title: 'DataForSEO', description: 'APIs', canonical: 'https://dataforseo.com/', htags: { h1: ['SEO APIs'] }, internal_links_count: 100, external_links_count: 10, images_count: 20, scripts_count: 5, cumulative_layout_shift: 0.01, content: { plain_text_word_count: 900, flesch_kincaid_readability_index: 40.2, automated_readability_index: 12 }, social_media_tags: { 'og:title': 'x' } },
       page_timing: { time_to_interactive: 900, dom_complete: 1200, largest_contentful_paint: 800, download_time: 50, connection_time: 3 },
-      checks: { no_h1_tag: false, is_https: true, high_loading_time: true, title_too_long: false },
+      // Some checks pass when true (is_https, canonical, has_meta_title), is_www is neutral.
+      checks: { no_h1_tag: false, is_https: true, is_www: true, high_loading_time: true, title_too_long: false, has_meta_title: false },
       broken_links: false, broken_resources: false,
     };
     expect(shape('dataforseo_onpage_instant_page', envelope([{ crawl_progress: 'finished', crawl_status: null, items_count: 1, items: [page] }])).value).toEqual({
@@ -526,7 +527,7 @@ describe('dataforseo adapter: static spec conformance', () => {
           title: 'DataForSEO', description: 'APIs', canonical: 'https://dataforseo.com/', htags: { h1: ['SEO APIs'] }, word_count: 900, readability_flesch_kincaid: 40.2,
           internal_links_count: 100, external_links_count: 10, images_count: 20, scripts_count: 5,
           page_timing: { time_to_interactive: 900, dom_complete: 1200, largest_contentful_paint: 800, download_time: 50 }, cumulative_layout_shift: 0.01,
-          broken_links: false, broken_resources: false, failed_checks: ['is_https', 'high_loading_time'],
+          broken_links: false, broken_resources: false, failed_checks: ['high_loading_time', 'has_meta_title'],
         },
       ],
     });

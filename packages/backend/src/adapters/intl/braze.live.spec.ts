@@ -111,8 +111,8 @@ const SENDS = ['braze_send_campaign', 'braze_send_canvas'];
 describe('braze adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('authenticates with the REST API key as a Bearer token on the instance endpoint', () => {
@@ -298,8 +298,29 @@ describe('braze adapter: static spec conformance', () => {
     await call('braze_send_canvas', { canvas_id: 'k1', broadcast: true, context: { a: 1 } });
     expect(sent().data).toEqual({ canvas_id: 'k1', broadcast: true, context: { a: 1 } });
     mockedAxios.mockClear();
+    // Workspaces without Canvas Context still take the older entry properties.
+    await call('braze_send_canvas', { canvas_id: 'k1', recipients: [{ external_user_id: 'u1' }], canvas_entry_properties: { a: 1 } });
+    expect(sent().data).toEqual({ canvas_id: 'k1', recipients: [{ external_user_id: 'u1' }], canvas_entry_properties: { a: 1 } });
+    mockedAxios.mockClear();
     await call('braze_delete_users', { braze_ids: ['b1'] });
     expect(sent().data).toEqual({ braze_ids: ['b1'] });
+    mockedAxios.mockClear();
+    // Email and phone identifiers are objects carrying a prioritization.
+    const byEmail = [{ email: 'ada@example.com', prioritization: ['unidentified', 'most_recently_updated'] }];
+    await call('braze_delete_users', { email_addresses: byEmail });
+    expect(sent().data).toEqual({ email_addresses: byEmail });
+    const props = tool('braze_delete_users').parameters.properties as Record<string, any>;
+    expect(props.email_addresses.items.type).toBe('object');
+    expect(props.phone_numbers.items.type).toBe('object');
+  });
+
+  it('looks up subscription states with the documented single-user query', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('braze_get_subscription_group_status', { subscription_group_id: 'sg', phone: '+4915112345678' });
+    expect(sent().params).toEqual({ subscription_group_id: 'sg', phone: '+4915112345678' });
+    mockedAxios.mockClear();
+    await call('braze_list_user_subscription_groups', { external_id: 'u1', limit: 100, offset: 0 });
+    expect(sent().params).toEqual({ external_id: 'u1', limit: 100, offset: 0 });
   });
 
   it('keeps push tokens out of exported profiles', () => {

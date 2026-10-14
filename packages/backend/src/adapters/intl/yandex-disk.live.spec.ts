@@ -128,8 +128,8 @@ const READ_ONLY = [
 describe('yandex-disk adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real Yandex account', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.category).toBe('storage');
     expect(a.icon).toBe('yandex-disk');
   });

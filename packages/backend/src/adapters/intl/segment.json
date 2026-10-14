@@ -41,7 +41,6 @@
     "404": "Nothing answered at this host. Use https://api.segmentapis.com or https://eu1.api.segmentapis.com, without a path.",
     "429": "Segment's API rate limit is reached. Wait a minute and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "segment_get_workspace"
   },
@@ -1155,7 +1154,7 @@
           },
           "filter_discard_reason": {
             "type": "string",
-            "description": "Optional: only these discard reasons, comma-separated."
+            "description": "Optional: only these discard reasons, comma-separated. Not accepted by the successfully-received step."
           },
           "count": {
             "type": "integer",

@@ -304,8 +304,8 @@ const PRICE: Record<string, RegExp> = {
 describe("sistrix adapter: static spec conformance", () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it("is unlisted until checked with a paid key, filed under de/analytics with its own logo", () => {
-    expect(a.unlisted).toBe(true);
+  it("is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026, filed under de/analytics with its own logo", () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe("sistrix");
     expect(a.region).toBe("de");
     expect(a.category).toBe("analytics");

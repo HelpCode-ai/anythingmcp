@@ -38,7 +38,6 @@
     "404": "Nothing answered at this REST endpoint. Copy it from Settings, APIs and Identifiers, for example https://rest.iad-01.braze.com.",
     "429": "Braze's rate limit is reached. Wait a minute and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "braze_list_campaigns"
   },
@@ -688,7 +687,7 @@
         "properties": {
           "page": {
             "type": "integer",
-            "description": "Page to return, starting at 1."
+            "description": "Page of the product list to return. Leave out for the first page; ask for higher page numbers until the list comes back empty."
           }
         }
       },
@@ -880,7 +879,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "The user's phone number in E.164 format."
+            "description": "The user's phone number in E.164 format. Do not send it together with email."
           },
           "limit": {
             "type": "integer",
@@ -1134,7 +1133,11 @@
           },
           "context": {
             "type": "object",
-            "description": "Canvas context properties for every recipient, used as {{context.${key}}}."
+            "description": "Canvas context properties for every recipient, used as {{context.${key}}}. For workspaces with Canvas Context (the personalization menu shows Context Variables)."
+          },
+          "canvas_entry_properties": {
+            "type": "object",
+            "description": "Canvas entry properties for every recipient, used as {{canvas_entry_properties.${key}}}. For workspaces without Canvas Context (the personalization menu shows Canvas Entry Properties); send this instead of context."
           },
           "broadcast": {
             "type": "boolean",
@@ -1149,7 +1152,7 @@
             "items": {
               "type": "object"
             },
-            "description": "Recipients, up to 50: [{\"external_user_id\": \"u1\", \"context\": {...}}] or with \"user_alias\" or \"email\" (email needs \"prioritization\").",
+            "description": "Recipients, up to 50: [{\"external_user_id\": \"u1\", \"context\": {...}}] (or \"canvas_entry_properties\" on workspaces without Canvas Context) or with \"user_alias\" or \"email\" (email needs \"prioritization\").",
             "maxItems": 50
           }
         },
@@ -1163,6 +1166,7 @@
         "bodyMapping": {
           "canvas_id": "$canvas_id",
           "context": "$context",
+          "canvas_entry_properties": "$canvas_entry_properties",
           "broadcast": "$broadcast",
           "audience": "$audience",
           "recipients": "$recipients"
@@ -1176,7 +1180,7 @@
     },
     {
       "name": "braze_delete_users",
-      "description": "Permanently delete Braze user profiles, up to 50 per call, by external_ids, user_aliases, braze_ids, email_addresses or phone_numbers. Cannot be undone. Installed switched off: an administrator turns it on deliberately. Read the profiles with braze_export_users_by_ids first, show the user what will be deleted, and only call this after the user confirms the exact identifiers.",
+      "description": "Permanently delete Braze user profiles, up to 50 per call, by external_ids, user_aliases, braze_ids, email_addresses or phone_numbers, only one of these kinds per call. Cannot be undone. Installed switched off: an administrator turns it on deliberately. Read the profiles with braze_export_users_by_ids first, show the user what will be deleted, and only call this after the user confirms the exact identifiers.",
       "enabled": false,
       "parameters": {
         "type": "object",
@@ -1208,17 +1212,17 @@
           "email_addresses": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object"
             },
-            "description": "Email addresses whose profiles to delete.",
+            "description": "Email addresses whose profiles to delete, each with a prioritization that picks the profile when several share the address: [{\"email\": \"ada@example.com\", \"prioritization\": [\"unidentified\", \"most_recently_updated\"]}]. Allowed values: identified or unidentified (not both), most_recently_updated.",
             "maxItems": 50
           },
           "phone_numbers": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object"
             },
-            "description": "Phone numbers (E.164) whose profiles to delete.",
+            "description": "Phone numbers (E.164) whose profiles to delete, each with a prioritization as for email_addresses: [{\"phone\": \"+4915112345678\", \"prioritization\": [\"identified\", \"most_recently_updated\"]}].",
             "maxItems": 50
           }
         }

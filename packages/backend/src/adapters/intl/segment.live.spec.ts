@@ -113,8 +113,8 @@ const WRITES = ['segment_delete_destination', 'segment_delete_source', 'segment_
 describe('segment adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real token', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('sends the Public API token as Bearer to the region host', () => {

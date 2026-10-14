@@ -7,7 +7,6 @@
   "category": "analytics",
   "icon": "dataforseo",
   "docsUrl": "https://docs.dataforseo.com/v3/",
-  "unlisted": true,
   "requiredEnvVars": [
     "DATAFORSEO_LOGIN",
     "DATAFORSEO_PASSWORD"
@@ -1387,7 +1386,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "from_items(items({cost: cost, status: tasks[0].status_message, pages: tasks[0].result[0].items[].from_items(items({url: url, status_code: status_code, onpage_score: onpage_score, location: location, media_type: media_type, size: size, total_dom_size: total_dom_size, fetch_time: fetch_time, title: meta.title, description: meta.description, canonical: meta.canonical, htags: meta.htags, word_count: meta.content.plain_text_word_count, readability_flesch_kincaid: meta.content.flesch_kincaid_readability_index, internal_links_count: meta.internal_links_count, external_links_count: meta.external_links_count, images_count: meta.images_count, scripts_count: meta.scripts_count, page_timing: page_timing.{time_to_interactive: time_to_interactive, dom_complete: dom_complete, largest_contentful_paint: largest_contentful_paint, download_time: download_time}, cumulative_layout_shift: meta.cumulative_layout_shift, broken_links: broken_links, broken_resources: broken_resources, failed_checks: items(checks || `{}`)[?[1] == `true`][0]})[?[1] != null && [1] != `[]`])})[?[1] != null && [1] != `[]`])",
+          "expression": "from_items(items({cost: cost, status: tasks[0].status_message, pages: tasks[0].result[0].items[].from_items(items({url: url, status_code: status_code, onpage_score: onpage_score, location: location, media_type: media_type, size: size, total_dom_size: total_dom_size, fetch_time: fetch_time, title: meta.title, description: meta.description, canonical: meta.canonical, htags: meta.htags, word_count: meta.content.plain_text_word_count, readability_flesch_kincaid: meta.content.flesch_kincaid_readability_index, internal_links_count: meta.internal_links_count, external_links_count: meta.external_links_count, images_count: meta.images_count, scripts_count: meta.scripts_count, page_timing: page_timing.{time_to_interactive: time_to_interactive, dom_complete: dom_complete, largest_contentful_paint: largest_contentful_paint, download_time: download_time}, cumulative_layout_shift: meta.cumulative_layout_shift, broken_links: broken_links, broken_resources: broken_resources, failed_checks: items(checks || `{}`)[?([1] == `true` && !contains(`[\"is_https\", \"is_www\", \"has_micromarkup\", \"has_html_doctype\", \"canonical\", \"has_meta_title\", \"seo_friendly_url\", \"seo_friendly_url_characters_check\", \"seo_friendly_url_dynamic_check\", \"seo_friendly_url_keywords_check\", \"seo_friendly_url_relative_length_check\"]`, [0])) || ([1] == `false` && contains(`[\"is_https\", \"has_html_doctype\", \"canonical\", \"has_meta_title\", \"seo_friendly_url\", \"seo_friendly_url_characters_check\", \"seo_friendly_url_dynamic_check\", \"seo_friendly_url_keywords_check\", \"seo_friendly_url_relative_length_check\"]`, [0]))][0]})[?[1] != null && [1] != `[]`])})[?[1] != null && [1] != `[]`])",
           "maxBytes": 60000
         }
       },

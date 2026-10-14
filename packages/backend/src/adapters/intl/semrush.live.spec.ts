@@ -698,8 +698,8 @@ const REPORT_TOOLS = Object.keys(REPORTS);
 describe("semrush adapter: static spec conformance", () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it("is unlisted until checked with a paid key, filed under analytics with its own logo", () => {
-    expect(a.unlisted).toBe(true);
+  it("is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026, filed under analytics with its own logo", () => {
+    expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe("semrush");
     expect(a.region).toBe("intl");
     expect(a.category).toBe("analytics");
@@ -964,7 +964,7 @@ describe("semrush adapter: static spec conformance", () => {
         database: "us",
         display_limit: 10,
         display_sort: "nq_desc",
-        export_columns: "Ph,P0,P1,P2,P3,P4,Nq,Cp,Kd",
+        export_columns: "Ph,P0,P1,Nq,Cp,Kd",
       },
     ],
     [

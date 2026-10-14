@@ -115,8 +115,8 @@ const WRITES = [
 describe('onesignal adapter: static spec conformance', () => {
   beforeEach(() => mockedAxios.mockReset());
 
-  it('is unlisted until it has been tried with a real key', () => {
-    expect(a.unlisted).toBe(true);
+  it('is listed: checked against vendor SDKs, specs and working clients on 14 Oct 2026', () => {
+    expect(a.unlisted).toBeFalsy();
   });
 
   it('sends the App API key as "Authorization: Key ..." and keeps the App ID a setting', () => {
@@ -323,6 +323,12 @@ describe('onesignal adapter: static spec conformance', () => {
       limit: 20,
       notifications: [{ id: 'm1', name: 'Promo', contents: { en: 'Hi' }, successful: 5, failed: 0 }],
     });
+  });
+
+  it('keeps the deleted user identity, the only field the delete answers with', () => {
+    // DELETE /users/by/... answers 202 with { identity: { onesignal_id } }, no success flag.
+    const out = applyResponseTransform({ identity: { onesignal_id: 'o1' } }, tool('onesignal_delete_user').responseMapping as any).value;
+    expect(out).toEqual({ identity: { onesignal_id: 'o1' } });
   });
 });
 

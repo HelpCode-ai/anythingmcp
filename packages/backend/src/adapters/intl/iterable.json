@@ -38,7 +38,6 @@
     "404": "Nothing answered at this address. Use https://api.iterable.com (US) or https://api.eu.iterable.com (EU).",
     "429": "Iterable's rate limit is reached. Wait a minute and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "iterable_list_channels"
   },

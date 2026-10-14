@@ -38,7 +38,6 @@
     "403": "OneSignal refused this key for the request, for example because of the key's IP allowlist.",
     "429": "OneSignal's rate limit is reached. Wait a minute and verify again."
   },
-  "unlisted": true,
   "probe": {
     "tool": "onesignal_view_app"
   },
@@ -1027,7 +1026,7 @@
       "responseMapping": {
         "transform": {
           "select": {
-            "success": "$.success",
+            "identity": "$.identity",
             "errors": "$.errors"
           }
         }
