@@ -72,6 +72,19 @@ services:
       - MCP_ALLOW_ANONYMOUS=${MCP_ALLOW_ANONYMOUS:-false}
       # Registration (false = invite-only after first admin, true = anyone can register)
       - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-false}
+      # Email (SMTP) for verification codes, invitations and password resets.
+      # setup.sh writes these into .env; without them here the app never saw
+      # them. Empty SMTP_HOST = no instance-wide mail (workspace admins can
+      # still set their own SMTP in Settings). SMTP_PORT defaults to 587;
+      # SMTP_SECURE=true for implicit TLS (port 465 implies it).
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-}
+      - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
+      - SMTP_SECURE=${SMTP_SECURE:-}
       # Uncomment to enable Redis (optional — used for response caching and rate limiting)
       # - REDIS_URL=redis://redis:6379
       # Deutsche Bahn connector: URL of a MOTIS instance. Set together with

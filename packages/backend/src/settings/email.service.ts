@@ -39,6 +39,24 @@ const LICENSE_API_URL =
     ? 'https://anythingmcp.com'
     : process.env.LICENSE_API_URL?.replace(/\/+$/, '') || 'http://localhost:3100';
 
+/**
+ * The sender of the system SMTP. setup.sh and railway.json ask for the sender
+ * address (SMTP_FROM) and its display name (SMTP_FROM_NAME) separately, but
+ * only SMTP_FROM was ever read, so self-hosted mail went out under a bare
+ * address. A SMTP_FROM that already carries a name (`Name <a@b>`) wins.
+ */
+export function systemSmtpFrom(env: NodeJS.ProcessEnv): string {
+  const name = env.SMTP_FROM_NAME?.trim();
+  const address = env.SMTP_FROM?.trim() || env.SMTP_USER?.trim();
+  if (!address) return name || 'AnythingMCP';
+  if (env.SMTP_FROM?.trim() && address.includes('<')) return address;
+  const display = name || (env.SMTP_FROM?.trim() ? '' : 'AnythingMCP');
+  if (!display) return address;
+  // RFC 5322: a display name with specials must be quoted.
+  const quoted = /[",:;<>@()[\]\\.]/.test(display) ? `"${display.replace(/["\\]/g, '\\$&')}"` : display;
+  return `${quoted} <${address}>`;
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -174,9 +192,7 @@ export class EmailService {
       secure: process.env.SMTP_SECURE === 'true' || port === 465,
       user: process.env.SMTP_USER || '',
       pass: process.env.SMTP_PASS || '',
-      from:
-        process.env.SMTP_FROM ||
-        (process.env.SMTP_USER ? `AnythingMCP <${process.env.SMTP_USER}>` : 'AnythingMCP'),
+      from: systemSmtpFrom(process.env),
       replyTo: process.env.SMTP_REPLY_TO,
     });
   }

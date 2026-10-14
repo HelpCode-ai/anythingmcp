@@ -51,6 +51,16 @@ services:
       - MCP_ALLOW_ANONYMOUS=false
       # Invite-only after the first admin registers.
       - ALLOW_OPEN_REGISTRATION=false
+      # Optional email (SMTP) for verification codes and invitations: add the
+      # values to .env. Empty SMTP_HOST = no instance-wide mail.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-}
+      - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
+      - SMTP_SECURE=${SMTP_SECURE:-}
     depends_on:
       postgres:
         condition: service_healthy

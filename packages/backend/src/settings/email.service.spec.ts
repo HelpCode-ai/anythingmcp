@@ -1,5 +1,5 @@
 import * as nodemailer from 'nodemailer';
-import { EmailService } from './email.service';
+import { EmailService, systemSmtpFrom } from './email.service';
 import { verifyUnsubscribe } from './unsubscribe-token';
 
 jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
@@ -88,6 +88,33 @@ describe('EmailService', () => {
       const { service } = make();
       await service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1');
       expect(lastTransportDefaults()).toBeUndefined();
+    });
+  });
+
+  describe('sender of the system SMTP', () => {
+    it('keeps what the cloud and existing installs send', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'AnythingMCP <noreply@anythingmcp.com>' })).toBe(
+        'AnythingMCP <noreply@anythingmcp.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@example.com' })).toBe('noreply@example.com');
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@example.com' })).toBe('AnythingMCP <mailer@example.com>');
+      expect(systemSmtpFrom({})).toBe('AnythingMCP');
+    });
+
+    it('uses SMTP_FROM_NAME, which setup.sh writes next to a bare SMTP_FROM', () => {
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <noreply@acme.com>',
+      );
+      expect(systemSmtpFrom({ SMTP_USER: 'mailer@acme.com', SMTP_FROM_NAME: 'Acme AI' })).toBe(
+        'Acme AI <mailer@acme.com>',
+      );
+      // A name SMTP_FROM already carries wins.
+      expect(
+        systemSmtpFrom({ SMTP_FROM: 'Ops <ops@acme.com>', SMTP_FROM_NAME: 'Acme AI' }),
+      ).toBe('Ops <ops@acme.com>');
+      expect(systemSmtpFrom({ SMTP_FROM: 'noreply@acme.com', SMTP_FROM_NAME: 'Acme, Inc.' })).toBe(
+        '"Acme, Inc." <noreply@acme.com>',
+      );
     });
   });
 
