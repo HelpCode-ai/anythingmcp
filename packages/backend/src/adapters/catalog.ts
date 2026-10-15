@@ -75,6 +75,7 @@ import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
+import * as affinity from './intl/affinity.json';
 import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as ahrefs from './intl/ahrefs.json';
@@ -112,6 +113,7 @@ import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
 import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
+import * as brex from './intl/brex.json';
 import * as browserbase from './intl/browserbase.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
@@ -127,6 +129,7 @@ import * as close from './intl/close.json';
 import * as cloudflare from './intl/cloudflare.json';
 import * as cloudinary from './intl/cloudinary.json';
 import * as coda from './intl/coda.json';
+import * as coinbase from './intl/coinbase.json';
 import * as coingecko from './intl/coingecko.json';
 import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
@@ -249,6 +252,7 @@ import * as linear from './intl/linear.json';
 import * as linkedin from './intl/linkedin.json';
 import * as linkedinAds from './intl/linkedin-ads.json';
 import * as loops from './intl/loops.json';
+import * as lusha from './intl/lusha.json';
 import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as mailerlite from './intl/mailerlite.json';
@@ -259,6 +263,7 @@ import * as mastodon from './intl/mastodon.json';
 import * as matomo from './intl/matomo.json';
 import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
+import * as mercury from './intl/mercury.json';
 import * as messagebird from './intl/messagebird.json';
 import * as metaAds from './intl/meta-ads.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
@@ -330,6 +335,7 @@ import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
+import * as ramp from './intl/ramp.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
@@ -338,6 +344,7 @@ import * as render from './intl/render.json';
 import * as replicate from './intl/replicate.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
+import * as rocketreach from './intl/rocketreach.json';
 import * as rozetka from './intl/rozetka.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
@@ -432,6 +439,7 @@ import * as zohoBooks from './intl/zoho-books.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as zohoMail from './intl/zoho-mail.json';
 import * as zoom from './intl/zoom.json';
+import * as zoominfo from './intl/zoominfo.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as tiendanube from './br/tiendanube.json';
 import * as zApi from './br/z-api.json';
@@ -758,6 +766,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   activecampaign as unknown as AdapterDefinition,
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
+  affinity as unknown as AdapterDefinition,
   agentSkills as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
   ahrefs as unknown as AdapterDefinition,
@@ -795,6 +804,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   box as unknown as AdapterDefinition,
   braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
+  brex as unknown as AdapterDefinition,
   browserbase as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
@@ -810,6 +820,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   cloudflare as unknown as AdapterDefinition,
   cloudinary as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
+  coinbase as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
@@ -932,6 +943,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   linkedin as unknown as AdapterDefinition,
   linkedinAds as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
+  lusha as unknown as AdapterDefinition,
   magento as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
   mailerlite as unknown as AdapterDefinition,
@@ -942,6 +954,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   matomo as unknown as AdapterDefinition,
   mautic as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
+  mercury as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   metaAds as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
@@ -1013,6 +1026,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   proxmox as unknown as AdapterDefinition,
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
+  ramp as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,
@@ -1021,6 +1035,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   replicate as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
+  rocketreach as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
@@ -1115,6 +1130,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zohoCrm as unknown as AdapterDefinition,
   zohoMail as unknown as AdapterDefinition,
   zoom as unknown as AdapterDefinition,
+  zoominfo as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
   zApi as unknown as AdapterDefinition,

@@ -1,0 +1,822 @@
+{
+  "slug": "zoominfo",
+  "name": "ZoomInfo",
+  "aliases": [
+    "ZoomInfo GTM",
+    "GTM.ai"
+  ],
+  "description": "Give your AI ZoomInfo B2B data: search contacts and companies by role, seniority, industry, size and location for free, look up the exact filter values ZoomInfo accepts, check your credit usage, and enrich the records you choose with emails, phone numbers and firmographics.",
+  "instructions": "## ZoomInfo\nThis connector calls the **ZoomInfo GTM API** (`https://api.zoominfo.com/gtm`, Data API v1) with an app of your own, signed in with the OAuth 2.0 client credentials flow. It searches contacts and companies, looks up valid filter values, reads your usage and enriches selected records. It never changes data in ZoomInfo.\n\n**Personal data: B2B use only.** Contact records describe real people: names, job titles, employers, business emails and direct or mobile phone numbers. Use them only for a legitimate business purpose the user can justify (for example B2B sales or recruiting under legitimate interest), in line with the GDPR, CAN-SPAM and similar laws, and with ZoomInfo's terms. Keep only what is needed, respect the Do Not Call flags (`directPhoneDoNotCall`, `mobilePhoneDoNotCall`) and the `withinEu` flag, and never pull contact data in bulk or build a mass mailing list. Do not look up private individuals.\n\n**Credits: search first, enrich only what the user picked.**\n- Free: `zoominfo_search_contacts`, `zoominfo_search_companies`, `zoominfo_lookup_values`, `zoominfo_list_search_fields`, `zoominfo_list_enrich_fields`, `zoominfo_get_usage`. They still count against the request rate limits.\n- Costs credits: `zoominfo_enrich_contacts` and `zoominfo_enrich_companies` spend 1 bulk data credit for every record returned that is not already under management in your account (a record stays under management, and free to enrich again, for 12 months after its first enrichment). No match, no charge.\nBefore an enrichment, show the user the records you found, say how many credits it can cost at most (one per record), and wait for their yes. Prefer a few records over a whole result page.\n\n**Setup (about 10 minutes, needs ZoomInfo API access)**\nAPI access is part of a GTM.ai plan or of an Enterprise contract with API access; ZoomInfo has no free API tier.\n1. Create an app: on **GTM.ai self-serve**, open the [Developer tab](https://gtm-studio.zoominfo.com/#/builder/apps) and choose **Create**. On an **Enterprise** contract, sign in to the [ZoomInfo Developer Portal](https://developer.zoominfo.com) and choose **Create App**; if you cannot open it, ask your ZoomInfo admin for Developer Portal access.\n2. Under authentication choose **Client Credentials Flow** (server to server) and pick the **integration user** the calls run as. An app made for the Authorization Code (PKCE) flow does not accept this grant and answers `unauthorized_client`.\n3. Select the scopes **Contact** (`api:data:contact`), **Company** (`api:data:company`) and **Lookup** (`api:data:lookup`), then **Create App**.\n4. Copy the **Client ID** and **Client Secret** into `ZOOMINFO_CLIENT_ID` and `ZOOMINFO_CLIENT_SECRET`. The connector exchanges them for a short-lived token at `https://api.zoominfo.com/gtm/oauth/v1/token` (HTTP Basic) and renews it by itself. The secret is only sent to ZoomInfo.\n\n**Workflow**\n1. Turn the user's words into ZoomInfo values with `zoominfo_lookup_values` (industries, management-levels, departments, job-functions, metro-regions, countries, employee-count, revenue-ranges and more). Search rejects free text that is not a known value.\n2. Search with `zoominfo_search_contacts` or `zoominfo_search_companies`. Results carry ids, names, titles and `has...` hints (`hasEmail`, `hasDirectPhone`, `hasMobilePhone`), never the email or phone itself. `zoominfo_list_search_fields` lists every filter a search accepts.\n3. After the user confirms, enrich the chosen ids with `zoominfo_enrich_contacts` (up to 25) or `zoominfo_enrich_companies` (up to 25). `outputFields` decides what comes back; `zoominfo_list_enrich_fields` with `field_type` output shows every field and whether your plan includes it.\n4. `zoominfo_get_usage` shows the request, record and credit limits of your account and what is left.\n\n**Paging**: searches take `page` (from 1, at most 100 pages) and `page_size` (1 to 100). `meta.totalResults` is the number of records, `meta.page.total` the number of pages.\n\n**Rate limits**: per tenant, 5 to 35 requests a second plus hourly and daily caps depending on the package. On a 429 wait for `Retry-After` seconds; an exhausted hourly window can mean several minutes.\n\n**Common errors** (`errors[].code` in the body)\n- 400 `unauthorized_client` at sign-in: the client ID is unknown or the app was not created for the client credentials flow.\n- 401 `ZI0001`: the token is missing, invalid or expired. The connector renews it; if it persists, check the client secret.\n- 403 `ZI0002`: the app lacks the scope for this endpoint. Add it to the app in the Developer Portal.\n- 403 `ZI0003`: your contract does not include this endpoint or API access at all.\n- 400 `PFAPI0001` or `PFAPI0009`: an output field your plan does not include, or a misspelled one. Check `zoominfo_list_enrich_fields`.\n- 400 `PFAPI0006`: a filter value ZoomInfo does not know. Look it up with `zoominfo_lookup_values` and retry with the returned id.\n- 400 `PFAPI0011`: the user's credit limit is reached. Ask the ZoomInfo admin.\n- 429 `ZI0004`: rate limit. Wait and retry once.\n\n**Out of scope here**: intent, scoops and news (separate ZoomInfo packages), org charts, corporate hierarchy, technologies, lookalikes and recommendations, audiences, webhooks, and the legacy Enterprise API (`/authenticate` with username and password or private key), which ZoomInfo is retiring.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "zoominfo",
+  "docsUrl": "https://docs.zoominfo.com/docs/overview",
+  "prerequisites": "A ZoomInfo GTM.ai plan or an Enterprise contract with API access, and an app created for the client credentials flow (GTM.ai Developer tab, or the Developer Portal for Enterprise customers) with the Contact, Company and Lookup scopes. About 10 minutes. Searches are free; enrichment spends credits.",
+  "requiredEnvVars": [
+    "ZOOMINFO_CLIENT_ID",
+    "ZOOMINFO_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "ZOOMINFO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "Your ZoomInfo app (GTM.ai Developer tab or developer.zoominfo.com), created for the Client Credentials Flow: Client ID.",
+      "link": "https://developer.zoominfo.com",
+      "example": "0oaf6t3osgvaPvy4E1d7",
+      "pattern": "^[A-Za-z0-9_-]{8,128}$",
+      "patternMessage": "Paste the client ID exactly as the app page shows it, letters and digits only, without spaces."
+    },
+    "ZOOMINFO_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app page: Client Secret. It is only sent to ZoomInfo's token endpoint.",
+      "link": "https://developer.zoominfo.com",
+      "pattern": "^\\S{16,256}$",
+      "patternMessage": "Paste the client secret without spaces or line breaks."
+    }
+  },
+  "verifyHints": {
+    "400": "ZoomInfo refused the request. If it names a field (PFAPI0001 or PFAPI0009), your plan does not include it; if it says unauthorized_client, the app was not created for the Client Credentials Flow.",
+    "401": "ZoomInfo did not issue or accept a token. Copy the client ID and secret again from the app page, and check that the app was created for the Client Credentials Flow with an integration user and at least one scope (otherwise ZoomInfo answers unauthorized_client).",
+    "403": "The app or your ZoomInfo contract does not include this API. Add the Contact, Company and Lookup scopes to the app, or ask your ZoomInfo account manager about API access.",
+    "429": "ZoomInfo is rate limiting this tenant. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "zoominfo_get_usage",
+    "params": {}
+  },
+  "connector": {
+    "name": "ZoomInfo",
+    "type": "REST",
+    "baseUrl": "https://api.zoominfo.com/gtm",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ZOOMINFO_CLIENT_ID}}",
+      "clientSecret": "{{ZOOMINFO_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.zoominfo.com/gtm/oauth/v1/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/vnd.api+json",
+      "Content-Type": "application/vnd.api+json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/data/v1/users/usage"
+  },
+  "tools": [
+    {
+      "name": "zoominfo_get_usage",
+      "description": "Show the ZoomInfo API usage of this account: for each limit type (requests, records, unique ids and so on) the total allowed, how much is used and what remains in the contract period. Use it before a larger enrichment to check the credits left. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/v1/users/usage"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "data[*].type"
+          ],
+          "expression": "{usage: data[].attributes.usage[].{limitType: limitType, description: description, totalLimit: totalLimit, used: currentUsage, remaining: usageRemaining}}",
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "zoominfo_lookup_values",
+      "description": "List the exact values ZoomInfo accepts for a search filter, with their ids: industries, management levels, departments, job functions, countries, states, metro regions, employee counts, revenue ranges, company types, technologies and more. Use it before a search to turn the user's words (for example SaaS or VP) into valid ZoomInfo values; search answers 400 PFAPI0006 for unknown values. Tech products need a vendor from tech-vendors first. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "enum": [
+              "board-members",
+              "buying-groups",
+              "company-rankings",
+              "company-types",
+              "continents",
+              "countries",
+              "departments",
+              "employee-count",
+              "funding-round-types",
+              "hashtags",
+              "industries",
+              "intent-topics",
+              "job-functions",
+              "job-titles",
+              "management-levels",
+              "metro-regions",
+              "naics-codes",
+              "news-categories",
+              "revenue-ranges",
+              "scoop-departments",
+              "scoop-topics",
+              "scoop-types",
+              "sic-codes",
+              "states",
+              "sub-unit-types",
+              "tech-categories",
+              "tech-products",
+              "tech-skills",
+              "tech-vendors",
+              "years-of-experience"
+            ],
+            "description": "Which list of values to return, e.g. industries, management-levels, departments, metro-regions or employee-count."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Only for tech-products and hashtags: the vendor name as tech-vendors returns it, e.g. microsoft corporation."
+          },
+          "category": {
+            "type": "string",
+            "description": "Only for hashtags: the category, e.g. Unified Communications."
+          },
+          "parent_category": {
+            "type": "string",
+            "description": "Only for hashtags and technology lists: the parent category, e.g. Communication and Collaboration."
+          },
+          "sub_category": {
+            "type": "string",
+            "description": "Only for hashtags and technology lists: the sub-category."
+          }
+        },
+        "required": [
+          "field_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/v1/lookup/{field_name}",
+        "queryParams": {
+          "filter[vendor]": "$vendor",
+          "filter[category]": "$category",
+          "filter[parentCategory]": "$parent_category",
+          "filter[subCategory]": "$sub_category"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "data[*].links",
+            "data[*].type"
+          ],
+          "expression": "{values: data[*].merge({id: id}, attributes)}",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "zoominfo_list_search_fields",
+      "description": "List the filter fields a ZoomInfo search accepts (field_type input) or the fields a search result returns (field_type output), with a description of each. Use it when the user asks for a filter not covered by the common ones. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "contact",
+              "company",
+              "scoop",
+              "news",
+              "intent"
+            ],
+            "description": "Which search: contact or company (scoop, news and intent need those ZoomInfo packages)."
+          },
+          "field_type": {
+            "type": "string",
+            "enum": [
+              "input",
+              "output"
+            ],
+            "default": "input",
+            "description": "input for the filters you can send, output for the fields that come back."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/v1/lookup/search",
+        "queryParams": {
+          "filter[entity]": "$entity",
+          "filter[fieldType]": "$field_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "fields": {
+              "$from": "$.data[*]",
+              "$select": {
+                "name": "attributes.fieldName",
+                "type": "attributes.fieldType",
+                "description": "attributes.description",
+                "accessGranted": "attributes.accessGranted"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "zoominfo_list_enrich_fields",
+      "description": "List the match inputs (field_type input) or the output fields (field_type output) of a ZoomInfo enrichment, with a description and, for inputs, whether your plan grants access. Use output with entity contact or company to choose outputFields for zoominfo_enrich_contacts and zoominfo_enrich_companies. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "enum": [
+              "contact",
+              "company",
+              "scoop",
+              "news",
+              "intent",
+              "technology",
+              "hashtag",
+              "orgChart",
+              "corporate-hierarchy"
+            ],
+            "description": "Which enrichment: contact or company for the tools of this connector."
+          },
+          "field_type": {
+            "type": "string",
+            "enum": [
+              "input",
+              "output"
+            ],
+            "default": "output",
+            "description": "output for the fields an enrichment can return, input for the fields you can match on."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/v1/lookup/enrich",
+        "queryParams": {
+          "filter[entity]": "$entity",
+          "filter[fieldType]": "$field_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "fields": {
+              "$from": "$.data[*]",
+              "$select": {
+                "name": "attributes.fieldName",
+                "type": "attributes.fieldType",
+                "description": "attributes.description",
+                "accessGranted": "attributes.accessGranted"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "zoominfo_search_contacts",
+      "description": "Search ZoomInfo's contacts by role and company criteria and get a page of matches: ZoomInfo person id, name, job title, company, accuracy score and hints of what can be enriched (hasEmail, hasDirectPhone, hasMobilePhone). Never returns the emails or phone numbers themselves. Put the criteria in filters, using ZoomInfo field names, e.g. {\"jobTitle\": \"head of procurement\", \"managementLevel\": \"Director,VP Level Exec\", \"companyName\": \"Bosch\", \"country\": \"Germany\"}. Common fields: firstName, lastName, fullName, emailAddress, jobTitle, exactJobTitle, managementLevel, department, jobFunction, companyId, companyName, companyWebsite, industryCodes, employeeRangeMin, employeeRangeMax, revenueMin, revenueMax (thousands of USD), country, state, metroRegion, zipCode with zipCodeRadiusMiles, contactAccuracyScoreMin, requiredFields (e.g. email). Get valid values with zoominfo_lookup_values and every field with zoominfo_list_search_fields. Free: uses no credits. Read-only. Returns personal data: use it only for a legitimate B2B purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Search criteria as ZoomInfo contact search fields (at least one), e.g. {\"jobTitle\": \"CFO\", \"companyWebsite\": \"https://www.example.com\"}. Lists such as managementLevel or department are comma-separated strings."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Page number, from 1 (ZoomInfo serves at most 100 pages)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Contacts per page, 1 to 100 (default 10 here)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field: contactAccuracyScore, lastName, companyName, hierarchy, sourceCount, lastMentioned or relevance; prefix with - for descending, e.g. -contactAccuracyScore. Default relevance."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/v1/contacts/search",
+        "queryParams": {
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "sort": "$sort"
+        },
+        "bodyMapping": {
+          "data": {
+            "type": "ContactSearch",
+            "attributes": "$filters"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "totalResults": "$.meta.totalResults",
+            "page": "$.meta.page.number",
+            "totalPages": "$.meta.page.total",
+            "contacts": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "firstName": "attributes.firstName",
+                "lastName": "attributes.lastName",
+                "jobTitle": "attributes.jobTitle",
+                "company": "attributes.company",
+                "accuracyScore": "attributes.contactAccuracyScore",
+                "hasEmail": "attributes.hasEmail",
+                "hasDirectPhone": "attributes.hasDirectPhone",
+                "hasMobilePhone": "attributes.hasMobilePhone",
+                "lastUpdated": "attributes.lastUpdatedDate"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zoominfo_search_companies",
+      "description": "Search ZoomInfo's companies by firmographic criteria and get a page of matches: ZoomInfo company id, name, website, city, state, country, employee count and revenue (thousands of USD). Put the criteria in filters, using ZoomInfo field names, e.g. {\"industryCodes\": \"software\", \"country\": \"Germany\", \"employeeRangeMin\": \"50\", \"employeeRangeMax\": \"500\"}. Common fields: companyId, companyName, companyWebsite, companyTicker, companyType, industryCodes, industryKeywords, employeeRangeMin, employeeRangeMax, revenueMin, revenueMax, country, state, metroRegion, zipCode with zipCodeRadiusMiles, techAttributeTagList. Get valid values with zoominfo_lookup_values and every field with zoominfo_list_search_fields. Free: uses no credits. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Search criteria as ZoomInfo company search fields (at least one), e.g. {\"companyName\": \"Siemens\"} or {\"industryCodes\": \"manufacturing\", \"state\": \"Bavaria\"}."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Page number, from 1 (ZoomInfo serves at most 100 pages)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Companies per page, 1 to 100 (default 10 here)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field: name, employeeCount or revenue; prefix with - for descending, e.g. -revenue. Default relevance."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/v1/companies/search",
+        "queryParams": {
+          "page[number]": "$page",
+          "page[size]": "$page_size",
+          "sort": "$sort"
+        },
+        "bodyMapping": {
+          "data": {
+            "type": "CompanySearch",
+            "attributes": "$filters"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "totalResults": "$.meta.totalResults",
+            "page": "$.meta.page.number",
+            "totalPages": "$.meta.page.total",
+            "companies": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "attributes.name",
+                "website": "attributes.website",
+                "city": "attributes.city",
+                "state": "attributes.state",
+                "country": "attributes.country",
+                "employeeCount": "attributes.employeeCount",
+                "revenue": "attributes.revenue",
+                "underManagement": "attributes.managementStatus.underManagement"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zoominfo_enrich_contacts",
+      "description": "Get the full ZoomInfo record of up to 25 contacts, including business email and direct and mobile phone numbers, by ZoomInfo person id (best, from zoominfo_search_contacts) or by match details such as emailAddress, or firstName, lastName and companyName. COSTS CREDITS: 1 bulk data credit for every contact returned that is not already under management in your account; no match, no charge. Before calling, show the user which contacts you will enrich and how many credits that can cost, and wait for their yes. Returns each record with matchStatus. Returns personal data: use it only for a legitimate B2B purpose, under GDPR and CAN-SPAM, and respect the Do Not Call flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 25,
+            "items": {
+              "type": "object",
+              "properties": {
+                "personId": {
+                  "type": "integer",
+                  "description": "ZoomInfo person id from a search."
+                },
+                "emailAddress": {
+                  "type": "string",
+                  "description": "A known email address of the person."
+                },
+                "firstName": {
+                  "type": "string",
+                  "description": "First name, with lastName and companyName or companyId."
+                },
+                "lastName": {
+                  "type": "string",
+                  "description": "Last name."
+                },
+                "fullName": {
+                  "type": "string",
+                  "description": "Full name, instead of firstName and lastName."
+                },
+                "companyName": {
+                  "type": "string",
+                  "description": "Current employer."
+                },
+                "companyId": {
+                  "type": "integer",
+                  "description": "ZoomInfo company id of the current employer."
+                },
+                "jobTitle": {
+                  "type": "string",
+                  "description": "Current job title, to tell apart people with the same name."
+                },
+                "externalURL": {
+                  "type": "string",
+                  "description": "A social profile URL of the person, e.g. LinkedIn."
+                }
+              }
+            },
+            "description": "1 to 25 people to enrich, each as {\"personId\": 123} or with match details, e.g. {\"firstName\": \"Anna\", \"lastName\": \"Schmidt\", \"companyName\": \"Example GmbH\"}."
+          },
+          "output_fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "city",
+                "companyAlternateLogos",
+                "companyCity",
+                "companyContinent",
+                "companyCountry",
+                "companyDescription",
+                "companyDivision",
+                "companyEmployeeCount",
+                "companyEmployeeGrowth",
+                "companyEmployeeRange",
+                "companyFax",
+                "companyId",
+                "companyIndustries",
+                "companyIndustryCodes",
+                "companyLogo",
+                "companyNaicsCodes",
+                "companyName",
+                "companyPhone",
+                "companyPrimaryIndustry",
+                "companyPrimaryIndustryCode",
+                "companyPrimarySubIndustryCode",
+                "companyRanking",
+                "companyRevenue",
+                "companyRevenueNumeric",
+                "companyRevenueRange",
+                "companySicCodes",
+                "companySocialMediaUrls",
+                "companyState",
+                "companyStreet",
+                "companyTicker",
+                "companyType",
+                "companyWebsite",
+                "companyZipCode",
+                "contactAccuracyScore",
+                "continent",
+                "country",
+                "directPhoneAlt",
+                "directPhoneDoNotCall",
+                "education",
+                "email",
+                "emailAlt",
+                "employmentHistory",
+                "engagements",
+                "externalUrls",
+                "firstName",
+                "hasCanadianEmail",
+                "hashedEmails",
+                "id",
+                "isDefunct",
+                "jobFunction",
+                "jobTitle",
+                "lastName",
+                "lastUpdatedDate",
+                "locationCompanyId",
+                "managementLevel",
+                "metroArea",
+                "middleName",
+                "mobilePhone",
+                "mobilePhoneAlt",
+                "mobilePhoneDoNotCall",
+                "noticeProvidedDate",
+                "personHasMoved",
+                "phone",
+                "picture",
+                "positionStartDate",
+                "region",
+                "salutation",
+                "state",
+                "street",
+                "suffix",
+                "supplementalEmail",
+                "techSkills",
+                "validDate",
+                "withinCalifornia",
+                "withinCanada",
+                "withinEu",
+                "yearsOfExperience",
+                "zipCode"
+              ]
+            },
+            "default": [
+              "id",
+              "firstName",
+              "lastName",
+              "jobTitle",
+              "managementLevel",
+              "email",
+              "phone",
+              "directPhoneDoNotCall",
+              "mobilePhone",
+              "mobilePhoneDoNotCall",
+              "companyId",
+              "companyName",
+              "companyWebsite",
+              "city",
+              "country",
+              "withinEu",
+              "contactAccuracyScore",
+              "lastUpdatedDate"
+            ],
+            "description": "Fields to return. The charge is the same whatever you pick; asking for a field your plan does not include answers 400. See zoominfo_list_enrich_fields with entity contact and field_type output."
+          },
+          "required_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return a contact that has these fields, e.g. [\"email\"]. Contacts without them are not returned and not charged."
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/v1/contacts/enrich",
+        "bodyMapping": {
+          "data": {
+            "type": "ContactEnrich",
+            "attributes": {
+              "matchPersonInput": "$contacts",
+              "outputFields": "$output_fields",
+              "requiredFields": "$required_fields"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "contacts": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "matchStatus": "meta.matchStatus",
+                "input": "meta.input",
+                "data": "attributes"
+              }
+            },
+            "errors": "$.errors"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "zoominfo_enrich_companies",
+      "description": "Get the full ZoomInfo profile of up to 25 companies: description, industry and codes, employee count and range, revenue, founding year, headquarters address and phone, parent company, funding and more, by ZoomInfo company id (best, from zoominfo_search_companies) or by companyWebsite, companyName or companyTicker. COSTS CREDITS: 1 bulk data credit for every company returned that is not already under management in your account; no match, no charge. Before calling, tell the user which companies you will enrich and how many credits that can cost, and wait for their yes. Returns each record with matchStatus.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companies": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 25,
+            "items": {
+              "type": "object",
+              "properties": {
+                "companyId": {
+                  "type": "integer",
+                  "description": "ZoomInfo company id from a search."
+                },
+                "companyWebsite": {
+                  "type": "string",
+                  "description": "Website, e.g. http://www.example.com."
+                },
+                "companyName": {
+                  "type": "string",
+                  "description": "Company name."
+                },
+                "companyTicker": {
+                  "type": "string",
+                  "description": "Stock ticker."
+                },
+                "companyCountry": {
+                  "type": "string",
+                  "description": "Country of the headquarters, to tell apart companies with the same name."
+                },
+                "companyCity": {
+                  "type": "string",
+                  "description": "City of the headquarters."
+                }
+              }
+            },
+            "description": "1 to 25 companies to enrich, each as {\"companyId\": 123} or with match details, e.g. {\"companyWebsite\": \"http://www.example.com\"}."
+          },
+          "output_fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "alternateLogos",
+                "businessModel",
+                "certificationDate",
+                "certified",
+                "city",
+                "companyFunding",
+                "companyStatus",
+                "companyStatusDate",
+                "competitors",
+                "continent",
+                "country",
+                "createdDate",
+                "departmentBudgets",
+                "description",
+                "domainList",
+                "employeeCount",
+                "employeeCountByDepartment",
+                "employeeGrowth",
+                "employeeRange",
+                "engagements",
+                "fax",
+                "foundedYear",
+                "id",
+                "industries",
+                "industryCodes",
+                "isDefunct",
+                "lastUpdatedDate",
+                "locationCount",
+                "locationMatch",
+                "logo",
+                "metroArea",
+                "naicsCodes",
+                "name",
+                "numberOfContactsInZoomInfo",
+                "parentId",
+                "parentName",
+                "phone",
+                "primaryIndustry",
+                "primaryIndustryCode",
+                "primarySubIndustryCode",
+                "products",
+                "recentFundingAmount",
+                "recentFundingDate",
+                "revenue",
+                "revenueRange",
+                "sicCodes",
+                "socialMediaUrls",
+                "state",
+                "street",
+                "subUnitIndustries",
+                "subUnitType",
+                "ticker",
+                "totalFundingAmount",
+                "type",
+                "ultimateParentEmployees",
+                "ultimateParentId",
+                "ultimateParentName",
+                "ultimateParentRevenue",
+                "website",
+                "zipCode"
+              ]
+            },
+            "default": [
+              "id",
+              "name",
+              "website",
+              "description",
+              "primaryIndustry",
+              "employeeCount",
+              "employeeRange",
+              "revenue",
+              "revenueRange",
+              "foundedYear",
+              "phone",
+              "street",
+              "city",
+              "state",
+              "zipCode",
+              "country",
+              "ticker",
+              "parentName",
+              "ultimateParentName"
+            ],
+            "description": "Fields to return. The charge is the same whatever you pick; asking for a field your plan does not include answers 400. See zoominfo_list_enrich_fields with entity company and field_type output."
+          }
+        },
+        "required": [
+          "companies"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/v1/companies/enrich",
+        "bodyMapping": {
+          "data": {
+            "type": "CompanyEnrich",
+            "attributes": {
+              "matchCompanyInput": "$companies",
+              "outputFields": "$output_fields"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "companies": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "matchStatus": "meta.matchStatus",
+                "input": "meta.input",
+                "data": "attributes"
+              }
+            },
+            "errors": "$.errors"
+          },
+          "maxBytes": 60000
+        }
+      }
+    }
+  ]
+}
