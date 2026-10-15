@@ -18,8 +18,9 @@ import { cn } from '@/lib/utils';
 // cancelled — the website marks a licence expired on any non-active status,
 // which in practice means a renewal the card did not cover.
 // 'payment-failed' is the same with Stripe still retrying the subscription
-// (a card trial whose first charge was declined is revoked straight away):
-// a new card resumes it, a new purchase would bill a second subscription.
+// (a card trial whose first charge was declined, or a first SEPA debit the
+// bank returned, is revoked straight away): a new payment method resumes it,
+// a new purchase would bill a second subscription.
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'payment-failed';
 
 export function LicenseWall() {
@@ -63,8 +64,8 @@ export function LicenseWall() {
     }
   };
 
-  // Stripe's add-a-card page: the new card becomes the subscription's and the
-  // open invoice is paid on the spot. It returns here, where the licence is
+  // Stripe's page for adding a payment method (card or bank account): it
+  // becomes the subscription's and the open invoice is paid on the spot. It returns here, where the licence is
   // checked again.
   const updateCard = async () => {
     if (!token) return;
@@ -80,7 +81,7 @@ export function LicenseWall() {
   };
 
   const reasonFor = (status: Awaited<ReturnType<typeof license.getStatus>>): BlockReason | null => {
-    // A declined card the subscription can still be saved with. Before the
+    // A failed payment the subscription can still be saved from. Before the
     // trial rule: a card trial is charged the moment the free trial ends.
     if (status.paymentFailed) return 'payment-failed';
     // No license at all means the org is not allowed to use the product.
@@ -100,7 +101,7 @@ export function LicenseWall() {
     return null;
   };
 
-  // "I've updated my card": verify the licence now (the payment reaches the
+  // "I've updated my payment method": verify the licence now (the payment reaches the
   // licence a few seconds after Stripe takes it) and lift the wall if it is back.
   const checkAgain = async () => {
     if (!token) return;
@@ -111,7 +112,7 @@ export function LicenseWall() {
       const next = reasonFor(await license.getStatus(token));
       setReason(next);
       if (next === 'payment-failed') {
-        setCheckNote('The payment has not come through yet. If you just updated your card, try again in a minute.');
+        setCheckNote('The payment has not come through yet. If you just updated your payment method, try again in a minute.');
       }
     } catch {
       setCheckNote('Could not check right now. Please try again in a minute.');
@@ -137,7 +138,7 @@ export function LicenseWall() {
       .getStatus(token)
       .then(async (status) => {
         let next = reasonFor(status);
-        // Back from Stripe's card page (or a retry went through since the last
+        // Back from Stripe's payment-method page (or a retry went through since the last
         // daily check): ask for a fresh verification before walling an admin.
         if (next === 'payment-failed' && isAdmin) {
           const { refreshed } = await license.refresh(token).catch(() => ({ refreshed: false }));
@@ -182,8 +183,8 @@ export function LicenseWall() {
   const body =
     reason === 'payment-failed'
       ? isAdmin
-        ? 'Your card was declined, so your subscription is on hold. Update your card and it resumes right away: the open payment is taken as soon as the new card is saved. Your connectors and configurations are preserved.'
-        : 'The card on this workspace’s subscription was declined, so the subscription is on hold. Ask a workspace admin to update the card. Your connectors and configurations are preserved.'
+        ? 'Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.'
+        : 'The last payment for this workspace’s subscription didn’t go through, so the subscription is on hold. Ask a workspace admin to update the payment method. Your connectors and configurations are preserved.'
       : reason === 'no-license'
       ? 'This workspace doesn’t have an active license. Start a trial or purchase a plan to continue.'
       : reason === 'trial-ended'
@@ -255,7 +256,7 @@ export function LicenseWall() {
                   disabled={updatingCard}
                   className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
                 >
-                  {updatingCard ? 'Opening…' : 'Update card'}
+                  {updatingCard ? 'Opening…' : 'Update payment method'}
                 </button>
                 {cardErr && <p role="alert" className="text-xs text-[var(--danger)]">{cardErr}</p>}
                 <button
@@ -263,7 +264,7 @@ export function LicenseWall() {
                   disabled={checking}
                   className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
                 >
-                  {checking ? 'Checking…' : 'I’ve updated my card'}
+                  {checking ? 'Checking…' : 'I’ve updated my payment method'}
                 </button>
                 {checkNote && <p className="text-xs text-[var(--text-2)]">{checkNote}</p>}
               </>

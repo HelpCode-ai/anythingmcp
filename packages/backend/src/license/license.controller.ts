@@ -318,11 +318,11 @@ export class LicenseController {
         'This workspace already has a subscription. Change your plan in the billing portal.',
       );
     }
-    // Nor while Stripe is still retrying a declined card: the new card goes
-    // on that subscription, which resumes once it is paid.
+    // Nor while Stripe is still retrying a failed payment: the new payment
+    // method goes on that subscription, which resumes once it is paid.
     if (!(current && current.plan !== 'trial') && (await this.licenseService.getPaymentFailedLicense(organizationId))) {
       throw new ConflictException(
-        'The last payment for this workspace did not go through. Update your card to resume your subscription.',
+        'The last payment for this workspace did not go through. Update your payment method to resume your subscription.',
       );
     }
 
