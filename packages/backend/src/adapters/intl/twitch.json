@@ -1,0 +1,1039 @@
+{
+  "slug": "twitch",
+  "name": "Twitch",
+  "description": "Let your AI work with Twitch: look up channels, live streams, videos, clips, categories and stream schedules, search channels, see follower counts and chat settings, and create clips or change your stream title, category and tags after your confirmation. Signed in through a Twitch developer application of your own.",
+  "instructions": "## Twitch\nThis connector works with Twitch through the **Twitch Helix API** (`https://api.twitch.tv/helix`), signed in as one Twitch user: users and channels, live streams, videos, clips, categories (games), channel and category search, follower counts, stream schedules and chat settings. It can create clips and change your own channel's title, category and tags. It signs in with **OAuth 2.0** (authorization code) through a Twitch application of your own; every call carries the app's Client ID in the `Client-Id` header, which the connector adds for you.\n\n**Setup (about 5 minutes, free)**\n1. Turn on **two-factor authentication** on your Twitch account (Settings → Security and Privacy); Twitch requires it to register applications.\n2. Open https://dev.twitch.tv/console/apps, click **Register Your Application**: any name, **OAuth Redirect URLs** `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (Twitch accepts HTTPS URLs, or `http://localhost` for local tests), a category such as **Other**, and **Client Type: Confidential**. Click **Create**.\n3. Click **Manage** on the new application: copy the **Client ID** into `TWITCH_CLIENT_ID`, click **New Secret** and copy it into `TWITCH_CLIENT_SECRET`.\n4. Install the connector, click **Authorize with Provider**, sign in to Twitch and click **Authorize**.\n\n**Scopes requested**: `moderator:read:followers` (follower lists of your own or moderated channels), `clips:edit` (`twitch_create_clip`), `channel:manage:broadcast` (`twitch_update_channel`). For `twitch_send_chat_announcement`, which is installed switched off, add `moderator:manage:announcements` in the connector's OAuth settings and authorize again. Everything else is public data and needs no scope.\n\n**Ids, not names**: most tools take numeric user ids (`broadcaster_id`, `user_id`), not login names. Get them with `twitch_get_users` (by `login`, or without arguments for yourself) or `twitch_search_channels`. Category (game) ids come from `twitch_search_categories` or `twitch_get_games`. Tools that accept lists send them as repeated parameters (`id=1&id=2`), at most 100.\n\n**Confirm before every change.** `twitch_create_clip` and `twitch_update_channel` act on Twitch at once and are visible to viewers: say what will happen and wait for the user's yes. `twitch_update_channel` works only on the signed-in user's own channel. Clips need a channel that is live; creation is asynchronous, so check with `twitch_get_clips` (by `id`) after a few seconds.\n\n**Followers**: `twitch_get_channel_followers` returns `total` for any channel. The follower list itself is only returned for your own channel or one you moderate; for others `data` is empty.\n\n**Tools**: `twitch_get_users`, `twitch_get_channel_info`, `twitch_get_streams`, `twitch_get_videos`, `twitch_get_clips`, `twitch_get_games`, `twitch_get_top_games`, `twitch_search_channels`, `twitch_search_categories`, `twitch_get_channel_followers`, `twitch_get_schedule`, `twitch_get_chat_settings` (read); `twitch_create_clip`, `twitch_update_channel` (changes, confirm first); `twitch_send_chat_announcement` (switched off).\n\n**Paging**: list tools return `next_cursor`; pass it as `after` (with the same filters) to get the next page. It is missing on the last page. Clip lists stop after about 1,000 results; narrow the date range instead.\n\n**Sign-in lifetime**: user access tokens last a few hours and are renewed automatically. The refresh token of a confidential app keeps working until the user disconnects the app (Settings → Connections) or changes the Twitch password; then click **Authorize with Provider** again.\n\n**Rate limit**: about 800 points per minute per user and app; each call costs one point. Over the limit Twitch answers 429; wait until the minute resets.\n\n**Errors**\n- 401 \"Invalid OAuth token\" or \"Client ID and OAuth token do not match\": authorize again; if you renewed the secret or use a different app, update `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` first.\n- 401 \"Missing scope\": add the scope named in the message and authorize again.\n- 400: a parameter is wrong, e.g. more than one of id / user_id / game_id, or a title Twitch's AutoMod refused.\n- 404 on `twitch_get_schedule`: the broadcaster has no schedule; on `twitch_create_clip`: the channel is not live.\n\n**Out of scope**: chat messages, whispers, moderation (bans, timeouts), subscriptions and bits revenue, polls and predictions, channel points, raids, EventSub webhooks, stream keys, and deleting videos.",
+  "region": "intl",
+  "category": "social",
+  "icon": "twitch",
+  "docsUrl": "https://dev.twitch.tv/docs/api/reference/",
+  "requiredEnvVars": [
+    "TWITCH_CLIENT_ID",
+    "TWITCH_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://dev.twitch.tv/console/apps",
+  "envVarMeta": {
+    "TWITCH_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Twitch Developer Console → Applications → Manage: Client ID. Also sent as the Client-Id header on every call.",
+      "link": "https://dev.twitch.tv/console/apps",
+      "example": "uo6dggojyb8d6soh92zknwmi5ej1q2",
+      "pattern": "^[a-z0-9]{20,40}$",
+      "patternMessage": "The Client ID is about 30 lowercase letters and digits, without spaces."
+    },
+    "TWITCH_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: click New Secret and copy it. It is shown once; a new secret replaces the old one.",
+      "link": "https://dev.twitch.tv/console/apps",
+      "pattern": "^[a-z0-9]{20,40}$",
+      "patternMessage": "The Client Secret is about 30 lowercase letters and digits, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Twitch refused the token: it expired or was revoked, or TWITCH_CLIENT_ID does not belong to the app that issued it. Click Authorize with Provider again; if you renewed the secret, update TWITCH_CLIENT_SECRET first.",
+    "403": "Twitch refused the call for this user. Most writes only work on the signed-in user's own channel.",
+    "rate_limited": "Twitch is rate limiting this user and app (about 800 calls per minute). Wait until the minute resets."
+  },
+  "probe": {
+    "tool": "twitch_get_users"
+  },
+  "prerequisites": "A Twitch account with two-factor authentication turned on, to register a free application in the Twitch Developer Console with the redirect URL below. About 5 minutes.",
+  "connector": {
+    "name": "Twitch Helix API",
+    "type": "REST",
+    "baseUrl": "https://api.twitch.tv/helix",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{TWITCH_CLIENT_ID}}",
+      "clientSecret": "{{TWITCH_CLIENT_SECRET}}",
+      "authorizationUrl": "https://id.twitch.tv/oauth2/authorize",
+      "tokenUrl": "https://id.twitch.tv/oauth2/token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false,
+      "scopes": "moderator:read:followers clips:edit channel:manage:broadcast",
+      "extraHeaders": {
+        "Client-Id": "{{TWITCH_CLIENT_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/users"
+  },
+  "tools": [
+    {
+      "name": "twitch_get_users",
+      "description": "Look up Twitch users by id or login name: id, login, display name, broadcaster type (partner, affiliate or empty), description, profile image and creation date. Without ids or logins it returns the signed-in user, which is how to find your own user id (the broadcaster_id other tools ask for).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "array",
+            "description": "User ids to look up. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "login": {
+            "type": "array",
+            "description": "Login names to look up, e.g. [\"twitchdev\"]. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "id": "$id",
+          "login": "$login"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "login": "login",
+                "display_name": "display_name",
+                "type": "type",
+                "broadcaster_type": "broadcaster_type",
+                "description": "description",
+                "profile_image_url": "profile_image_url",
+                "created_at": "created_at"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_channel_info",
+      "description": "Read channel information for one or more broadcasters: login, display name, language, current or last category (game), stream title, tags, content classification labels and branded-content flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "array",
+            "description": "Broadcaster user ids (from twitch_get_users or twitch_search_channels). At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "broadcaster_id": "broadcaster_id",
+                "broadcaster_login": "broadcaster_login",
+                "broadcaster_name": "broadcaster_name",
+                "broadcaster_language": "broadcaster_language",
+                "game_id": "game_id",
+                "game_name": "game_name",
+                "title": "title",
+                "delay": "delay",
+                "tags": "tags",
+                "content_classification_labels": "content_classification_labels",
+                "is_branded_content": "is_branded_content"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_streams",
+      "description": "List live streams, most viewers first: stream id, broadcaster, category, title, tags, viewer count, start time and language. Filter by user ids, logins, game ids or language; without filters it lists the top live streams on Twitch. A broadcaster who is offline is simply missing from the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "array",
+            "description": "Only these broadcaster ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "user_login": {
+            "type": "array",
+            "description": "Only these broadcaster logins. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "game_id": {
+            "type": "array",
+            "description": "Only streams in these categories (game ids from twitch_search_categories). At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "language": {
+            "type": "array",
+            "description": "Only these languages, ISO 639-1 codes such as de or en. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "type": {
+            "type": "string",
+            "description": "all (default) or live.",
+            "enum": [
+              "all",
+              "live"
+            ]
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor, to get the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/streams",
+        "queryParams": {
+          "user_id": "$user_id",
+          "user_login": "$user_login",
+          "game_id": "$game_id",
+          "language": "$language",
+          "type": "$type",
+          "first": "$first",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "user_id": "user_id",
+                "user_login": "user_login",
+                "user_name": "user_name",
+                "game_id": "game_id",
+                "game_name": "game_name",
+                "type": "type",
+                "title": "title",
+                "tags": "tags",
+                "viewer_count": "viewer_count",
+                "started_at": "started_at",
+                "language": "language",
+                "thumbnail_url": "thumbnail_url"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_videos",
+      "description": "List published videos (past broadcasts, highlights, uploads): id, title, description, creation and publish time, URL, view count, type, duration and language. Give exactly one of id, user_id or game_id; period, sort and type only apply with user_id or game_id, language only with game_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "array",
+            "description": "Video ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Broadcaster id whose videos to list."
+          },
+          "game_id": {
+            "type": "string",
+            "description": "Category (game) id; returns at most 500 videos."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language filter, only with game_id."
+          },
+          "period": {
+            "type": "string",
+            "description": "all (default), day, week or month.",
+            "enum": [
+              "all",
+              "day",
+              "week",
+              "month"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "time (default, newest first), trending or views.",
+            "enum": [
+              "time",
+              "trending",
+              "views"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "all (default), archive (past broadcasts), highlight or upload.",
+            "enum": [
+              "all",
+              "archive",
+              "highlight",
+              "upload"
+            ]
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page (user_id only)."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor for the previous page (user_id only)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos",
+        "queryParams": {
+          "id": "$id",
+          "user_id": "$user_id",
+          "game_id": "$game_id",
+          "language": "$language",
+          "period": "$period",
+          "sort": "$sort",
+          "type": "$type",
+          "first": "$first",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "stream_id": "stream_id",
+                "user_id": "user_id",
+                "user_login": "user_login",
+                "user_name": "user_name",
+                "title": "title",
+                "description": "description",
+                "created_at": "created_at",
+                "published_at": "published_at",
+                "url": "url",
+                "view_count": "view_count",
+                "language": "language",
+                "type": "type",
+                "duration": "duration"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_clips",
+      "description": "List clips captured from streams, most viewed first: id, URL, broadcaster, creator, source video and offset, category, title, view count, creation time, duration and featured flag. Give exactly one of broadcaster_id, game_id or id. Without a date range Twitch looks at all time; ended_at defaults to started_at plus one week.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id whose clips to list."
+          },
+          "game_id": {
+            "type": "string",
+            "description": "Category (game) id whose clips to list."
+          },
+          "id": {
+            "type": "array",
+            "description": "Clip ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "started_at": {
+            "type": "string",
+            "description": "Start of the creation window, RFC 3339, e.g. 2026-10-01T00:00:00Z."
+          },
+          "ended_at": {
+            "type": "string",
+            "description": "End of the window, RFC 3339."
+          },
+          "is_featured": {
+            "type": "boolean",
+            "description": "true only featured clips, false only non-featured; leave empty for all."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor, to get the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clips",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id",
+          "game_id": "$game_id",
+          "id": "$id",
+          "started_at": "$started_at",
+          "ended_at": "$ended_at",
+          "is_featured": "$is_featured",
+          "first": "$first",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "url": "url",
+                "broadcaster_id": "broadcaster_id",
+                "broadcaster_name": "broadcaster_name",
+                "creator_name": "creator_name",
+                "video_id": "video_id",
+                "vod_offset": "vod_offset",
+                "game_id": "game_id",
+                "language": "language",
+                "title": "title",
+                "view_count": "view_count",
+                "created_at": "created_at",
+                "duration": "duration",
+                "is_featured": "is_featured"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_games",
+      "description": "Look up categories (games) by id, exact name or IGDB id: id, name, IGDB id and box art URL. For a partial name use twitch_search_categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "array",
+            "description": "Category ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "name": {
+            "type": "array",
+            "description": "Exact category names, e.g. [\"Just Chatting\"]. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "igdb_id": {
+            "type": "array",
+            "description": "IGDB game ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/games",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "igdb_id": "$igdb_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": "$.data"
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_top_games",
+      "description": "List the categories (games) with the most viewers right now: id, name, IGDB id and box art URL, most watched first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor, to get the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/games/top",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "igdb_id": "igdb_id"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_search_channels",
+      "description": "Search channels that streamed in the last 6 months by the start of their login name (or, with live_only, by name and category): id (the broadcaster id), login, display name, language, category, live flag, title, tags and start time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, e.g. a channel name."
+          },
+          "live_only": {
+            "type": "boolean",
+            "description": "true to return only channels that are live now (default false)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/channels",
+        "queryParams": {
+          "query": "$query",
+          "live_only": "$live_only",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "broadcaster_login": "broadcaster_login",
+                "display_name": "display_name",
+                "broadcaster_language": "broadcaster_language",
+                "game_id": "game_id",
+                "game_name": "game_name",
+                "is_live": "is_live",
+                "title": "title",
+                "tags": "tags",
+                "started_at": "started_at"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_search_categories",
+      "description": "Search categories (games) whose name contains all words of the query: id, name and box art URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, e.g. \"just chat\"."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/categories",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "box_art_url": "box_art_url"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_channel_followers",
+      "description": "Read how many users follow a channel (total) for any broadcaster. For your own channel, or one you moderate, it also lists the followers (user id, login, name, followed_at), newest first; user_id checks whether one user follows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id of the channel."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional: check whether this user follows (own or moderated channel only)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/followers",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id",
+          "user_id": "$user_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "user_id": "user_id",
+                "user_login": "user_login",
+                "user_name": "user_name",
+                "followed_at": "followed_at"
+              }
+            },
+            "next_cursor": "$.pagination.cursor",
+            "total": "$.total"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_schedule",
+      "description": "Read a broadcaster's stream schedule from now on (or from start_time): each segment's id, start and end time, title, category, whether it recurs weekly and whether it is cancelled, plus any vacation. Twitch answers 404 when the broadcaster has no schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id."
+          },
+          "id": {
+            "type": "array",
+            "description": "Only these segment ids. At most 100; sent as repeated parameters.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start of the period, RFC 3339 in UTC, e.g. 2026-10-20T00:00:00Z."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Segments per page, 1 to 25 (default 20).",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pagination.cursor of the previous page, to get the next page."
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/schedule",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id",
+          "id": "$id",
+          "start_time": "$start_time",
+          "first": "$first",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "broadcaster_name": "$.data.broadcaster_name",
+            "vacation": "$.data.vacation",
+            "segments": {
+              "$from": "$.data.segments[*]",
+              "$select": {
+                "id": "id",
+                "start_time": "start_time",
+                "end_time": "end_time",
+                "title": "title",
+                "canceled_until": "canceled_until",
+                "category_id": "category.id",
+                "category_name": "category.name",
+                "is_recurring": "is_recurring"
+              }
+            },
+            "next_cursor": "$.pagination.cursor"
+          },
+          "maxBytes": 25000
+        }
+      }
+    },
+    {
+      "name": "twitch_get_chat_settings",
+      "description": "Read a channel's chat settings: emote-only, follower-only (and how long one must follow), slow mode wait time, subscriber-only and unique-chat mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id of the channel."
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/settings",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": "$.data"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "twitch_create_clip",
+      "description": "Create a clip from a channel that is live right now: Twitch captures up to the last 90 seconds and publishes a part of it (default 30 seconds). Returns the clip id and an edit_url (valid 24 hours) to trim and title it. Before calling, show the user exactly what will happen and wait for their yes. Creation is asynchronous: check with twitch_get_clips after a few seconds; Twitch answers 404 when the channel is offline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id of the live channel."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional clip title."
+          },
+          "duration": {
+            "type": "number",
+            "description": "Clip length in seconds, 5 to 60 (default 30).",
+            "minimum": 5,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clips",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id",
+          "title": "$title",
+          "duration": "$duration"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": "$.data"
+          },
+          "maxBytes": 3000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "twitch_update_channel",
+      "description": "Change the signed-in broadcaster's channel: stream title, category (game_id), language, tags or the branded-content flag. Only your own channel can be changed. Before calling, show the user exactly what will happen and wait for their yes. Viewers see the change at once. Returns nothing on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Your own broadcaster id (twitch_get_users without arguments)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New stream title, up to 140 characters; cannot be empty."
+          },
+          "game_id": {
+            "type": "string",
+            "description": "Category id from twitch_search_categories; \"0\" removes the category."
+          },
+          "broadcaster_language": {
+            "type": "string",
+            "description": "ISO 639-1 language code, e.g. de, or other."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Up to 10 tags, each up to 25 characters without spaces or special characters. An empty list removes all tags.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "is_branded_content": {
+            "type": "boolean",
+            "description": "true when the stream contains branded content."
+          }
+        },
+        "required": [
+          "broadcaster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/channels",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id"
+        },
+        "bodyMapping": {
+          "title": "$title",
+          "game_id": "$game_id",
+          "broadcaster_language": "$broadcaster_language",
+          "tags": "$tags",
+          "is_branded_content": "$is_branded_content"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "twitch_send_chat_announcement",
+      "description": "Send a highlighted announcement to a channel's chat as the broadcaster or a moderator (up to 500 characters). Everyone in chat sees it at once. Before calling, show the user exactly what will happen and wait for their yes. Installed switched off; needs the extra scope moderator:manage:announcements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "broadcaster_id": {
+            "type": "string",
+            "description": "Broadcaster id of the channel."
+          },
+          "moderator_id": {
+            "type": "string",
+            "description": "Your own user id (the broadcaster's id when you are the broadcaster)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Announcement text, up to 500 characters."
+          },
+          "color": {
+            "type": "string",
+            "description": "primary (default, the channel's accent color), blue, green, orange or purple.",
+            "enum": [
+              "primary",
+              "blue",
+              "green",
+              "orange",
+              "purple"
+            ]
+          }
+        },
+        "required": [
+          "broadcaster_id",
+          "moderator_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/announcements",
+        "queryParams": {
+          "broadcaster_id": "$broadcaster_id",
+          "moderator_id": "$moderator_id"
+        },
+        "bodyMapping": {
+          "message": "$message",
+          "color": "$color"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

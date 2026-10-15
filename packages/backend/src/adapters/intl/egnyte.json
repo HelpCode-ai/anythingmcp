@@ -1,0 +1,926 @@
+{
+  "slug": "egnyte",
+  "name": "Egnyte",
+  "description": "Let your AI work with your Egnyte files: browse folders, read file details, versions and small text files, search names and contents, list and create share links after you confirm, read folder permissions and recent file activity. Internal API key from your Egnyte admin.",
+  "instructions": "## Egnyte\nThis connector works with files in **Egnyte**, the business file sharing and content governance platform, through the official **Egnyte Public API** (`https://<domain>.egnyte.com/pubapi`). It lists folders, reads file and folder details and version history, searches names and contents, reads small text files, lists and creates share links, reads folder permissions, and reads the domain's recent activity (file events).\n\n**Who can use it**: Egnyte gives API access to customers on eligible plans (not on trials, Team or legacy Office plans), and an **admin** creates the API key. Every key starts as *Pending Approval*; Egnyte reviews it, which can take a few days.\n\n**Setup**\n1. As an Egnyte admin, open **Settings**, **Apps & Integrations**, find the **Create API Key** tile (or register at https://developers.egnyte.com), and create a key of type **Internal Application** for your own company. Leave the redirect URI empty; internal keys sign in with a username and password.\n2. Copy the **Key** into `EGNYTE_CLIENT_ID` and the **Secret** into `EGNYTE_CLIENT_SECRET`.\n3. Enter your Egnyte **domain**, the first part of your address: for `https://acme.egnyte.com` that is `acme`, into `EGNYTE_DOMAIN`.\n4. Enter the **username** and **password** of the Egnyte user the connector acts as into `EGNYTE_USERNAME` and `EGNYTE_PASSWORD`. A dedicated user with only the folders it needs is the safest choice. If your company signs in to Egnyte only through single sign-on, use a user that has an Egnyte password.\n5. Wait until the key is **Active**, install and run `egnyte_get_user_info`. AnythingMCP gets a token with these credentials and asks for a new one when it expires (after 30 days).\n\n**Permissions**: the connector sees exactly what that user sees in Egnyte. It asks for the scopes Egnyte.filesystem, Egnyte.link, Egnyte.permission and Egnyte.user.\n\n**Writes: confirm first.** `egnyte_create_link` makes a file or folder reachable by a link and, with send_email, e-mails it to recipients. Show the user the file, who can open the link (anyone, password, domain or recipients) and the expiry, and wait for a clear yes before calling. `egnyte_delete_item` is installed switched off; deleted items go to Egnyte's trash.\n\n**How to work**\n1. `egnyte_get_user_info` shows who the connector acts as.\n2. Browse from `/Shared` (company folders) or `/Private/<username>` with `egnyte_list_folder`; `egnyte_get_item` for one file's or folder's details, `egnyte_list_file_versions` for earlier versions.\n3. `egnyte_search` finds files and folders by name, content or comments (3 to 100 characters, 20 results a page).\n4. `egnyte_read_text_file` returns the beginning of a text file (txt, csv, md, json, xml, html, source code), at most 100000 bytes. It does not convert PDFs or Office documents; send the user a share link instead.\n5. Sharing: `egnyte_list_links`, `egnyte_get_link`, `egnyte_create_link`.\n6. Access: `egnyte_get_folder_permissions` lists who has which permission on a folder; `egnyte_get_effective_permission` checks one user.\n7. Activity: `egnyte_get_events_cursor`, then `egnyte_list_events` with `id` = `latest_event_id` and `reverse` 1 for the latest changes (create, delete, move, copy, permission changes). Egnyte keeps events for up to 30 days.\n\n**Paths**: full paths starting with `/Shared` or `/Private`, case-sensitive, with `/` between folders. Put a name containing `#`, `?` or `%` as `%23`, `%3F` or `%25`; spaces and other characters can stay as they are.\n\n**Rate limits**: depending on the plan, 2 requests per second and 1,000 to 4,000 a day per key. Egnyte answers over the limit with 403 or 429 (Developer Over Rate); wait and try again later, and avoid listing the same large folder repeatedly.\n\n**Common errors**\n- Token request refused (401 at sign-in): wrong username or password, the key is still pending, or a wrong key or secret.\n- 401 Invalid Access Token: sign in again; the token was revoked, e.g. after a password change.\n- 403: the user has no permission there, or the daily or per-second limit is used up.\n- 404: the path does not exist (check the case of every name).\n\n**Out of scope**: uploading or changing files, creating or moving folders, deleting (switched off), locking, comments, metadata editing, users and groups management, project folders, workflows, and Egnyte AI. Egnyte also runs its own remote MCP server for Egnyte AI features.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "egnyte",
+  "docsUrl": "https://developers.egnyte.com/integration/cfs/api-docs/overview",
+  "prerequisites": "An Egnyte plan with API access and an admin who creates an Internal Application API key (Settings, Apps & Integrations, Create API Key). Egnyte approves new keys, which can take a few days. You also need the username and password of the Egnyte user the connector acts as.",
+  "appRegistrationUrl": "https://developers.egnyte.com/member/register",
+  "requiredEnvVars": [
+    "EGNYTE_DOMAIN",
+    "EGNYTE_CLIENT_ID",
+    "EGNYTE_CLIENT_SECRET",
+    "EGNYTE_USERNAME",
+    "EGNYTE_PASSWORD"
+  ],
+  "envVarMeta": {
+    "EGNYTE_DOMAIN": {
+      "label": "Egnyte domain",
+      "kind": "setting",
+      "help": "The first part of your Egnyte address: acme for https://acme.egnyte.com.",
+      "example": "acme",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
+      "patternMessage": "Enter only the domain name, e.g. acme, without https:// or .egnyte.com."
+    },
+    "EGNYTE_CLIENT_ID": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "The Key of your Internal Application API key (Settings, Apps & Integrations, or developers.egnyte.com).",
+      "link": "https://developers.egnyte.com/integration/cfs/api-docs/getting-started",
+      "pattern": "^[A-Za-z0-9]{10,}$",
+      "patternMessage": "Paste the API key only, letters and digits, no spaces."
+    },
+    "EGNYTE_CLIENT_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Secret shown with the same API key (it can be revealed again later)."
+    },
+    "EGNYTE_USERNAME": {
+      "label": "Egnyte username",
+      "kind": "credential",
+      "help": "Username of the Egnyte user the connector acts as. It sees exactly what this user sees.",
+      "example": "jsmith"
+    },
+    "EGNYTE_PASSWORD": {
+      "label": "Egnyte password",
+      "kind": "credential",
+      "secret": true,
+      "help": "That user's Egnyte password. It is only sent to your Egnyte domain to get an access token."
+    }
+  },
+  "verifyHints": {
+    "401": "Egnyte refused the sign-in or the token: check the username and password, the API key and secret, and that the key is Active (new keys wait for Egnyte's approval).",
+    "403": "No permission for this path, or the API key's per-second or daily limit is used up.",
+    "404": "That path does not exist in Egnyte. Paths start with /Shared or /Private and are case-sensitive."
+  },
+  "probe": {
+    "tool": "egnyte_get_user_info"
+  },
+  "connector": {
+    "name": "Egnyte Public API",
+    "type": "REST",
+    "baseUrl": "https://{{EGNYTE_DOMAIN}}.egnyte.com/pubapi",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "password",
+      "tokenUrl": "https://{{EGNYTE_DOMAIN}}.egnyte.com/puboauth/token",
+      "clientId": "{{EGNYTE_CLIENT_ID}}",
+      "clientSecret": "{{EGNYTE_CLIENT_SECRET}}",
+      "username": "{{EGNYTE_USERNAME}}",
+      "password": "{{EGNYTE_PASSWORD}}",
+      "tokenAuthMethod": "client_secret_post",
+      "scope": "Egnyte.filesystem Egnyte.link Egnyte.permission Egnyte.user"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/userinfo"
+  },
+  "tools": [
+    {
+      "name": "egnyte_get_user_info",
+      "description": "Read who the connector acts as: user id, username, first and last name, e-mail and user type. Use it first to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/userinfo"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "username": "$.username",
+            "email": "$.email",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "user_type": "$.user_type"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_list_folder",
+      "description": "List a folder's subfolders and files: names, paths, folder ids, file sizes in bytes, last modified, uploader, number of versions and lock state. Up to count items from offset (default 100); total_count tells how many there are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Items per page, default 100.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first item, for the next page.",
+            "minimum": 0
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort by name, last_modified or uploaded_by.",
+            "enum": [
+              "name",
+              "last_modified",
+              "uploaded_by"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ascending or descending.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fs{path}",
+        "queryParams": {
+          "list_content": "true",
+          "count": "$count",
+          "offset": "$offset",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "path": "$.path",
+            "folder_id": "$.folder_id",
+            "total_count": "$.total_count",
+            "count": "$.count",
+            "offset": "$.offset",
+            "folders": {
+              "$from": "$.folders[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "folder_id": "folder_id",
+                "lastModified": "lastModified"
+              }
+            },
+            "files": {
+              "$from": "$.files[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "size": "size",
+                "last_modified": "last_modified",
+                "uploaded_by": "uploaded_by",
+                "group_id": "group_id",
+                "entry_id": "entry_id",
+                "num_versions": "num_versions",
+                "locked": "locked"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "egnyte_get_item",
+      "description": "Read the details of one file or folder without listing contents: for a file its size, last modified, uploader, ids, number of versions, lock and checksum; for a folder its id, description, link settings and your permission level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the file or folder. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fs{path}",
+        "queryParams": {
+          "include_perm": "true",
+          "allowed_link_types": "true",
+          "count": "0"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "path": "$.path",
+            "is_folder": "$.is_folder",
+            "size": "$.size",
+            "last_modified": "$.last_modified",
+            "uploaded_by": "$.uploaded_by",
+            "uploaded": "$.uploaded",
+            "entry_id": "$.entry_id",
+            "group_id": "$.group_id",
+            "parent_id": "$.parent_id",
+            "num_versions": "$.num_versions",
+            "locked": "$.locked",
+            "checksum": "$.checksum",
+            "permission": "$.permission",
+            "folder_id": "$.folder_id",
+            "lastModified": "$.lastModified",
+            "folder_description": "$.folder_description",
+            "public_links": "$.public_links",
+            "allow_links": "$.allow_links",
+            "allowed_file_link_types": "$.allowed_file_link_types",
+            "allowed_folder_link_types": "$.allowed_folder_link_types",
+            "total_count": "$.total_count"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_list_file_versions",
+      "description": "List the versions of a file: the current version and every earlier one with entry_id, size, last modified, uploader and checksum. Read an older version with egnyte_read_text_file and its entry_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the file. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fs{path}",
+        "queryParams": {
+          "list_content": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "path": "$.path",
+            "group_id": "$.group_id",
+            "num_versions": "$.num_versions",
+            "current": {
+              "entry_id": "$.entry_id",
+              "size": "$.size",
+              "last_modified": "$.last_modified",
+              "uploaded_by": "$.uploaded_by",
+              "checksum": "$.checksum"
+            },
+            "versions": {
+              "$from": "$.versions[*]",
+              "$select": {
+                "entry_id": "entry_id",
+                "size": "size",
+                "last_modified": "last_modified",
+                "uploaded_by": "uploaded_by",
+                "uploaded": "uploaded",
+                "checksum": "checksum"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "egnyte_search",
+      "description": "Search files and folders by name, content or comments. query takes 3 to 100 characters; results carry name, path, type, size, a text snippet, last modified and uploader, 20 per page (use offset for more). Filter by folder, type and modification date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for, 3 to 100 characters.",
+            "minLength": 3,
+            "maxLength": 100
+          },
+          "folder": {
+            "type": "string",
+            "description": "Only inside this folder (and below), e.g. /Shared/Projects."
+          },
+          "type": {
+            "type": "string",
+            "description": "FILE or FOLDER.",
+            "enum": [
+              "FILE",
+              "FOLDER"
+            ]
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only items modified after this time, ISO 8601, e.g. 2026-09-01T00:00:00Z."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only items modified before this time, ISO 8601."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "score (default), last_modified, size or name.",
+            "enum": [
+              "score",
+              "last_modified",
+              "size",
+              "name"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ascending or descending.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first result, for the next page.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Results per page, 1 to 20. Default 20.",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 20
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/search",
+        "queryParams": {
+          "query": "$query",
+          "folder": "$folder",
+          "type": "$type",
+          "modified_after": "$modified_after",
+          "modified_before": "$modified_before",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "offset": "$offset",
+          "count": "$count"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total_count": "$.total_count",
+            "offset": "$.offset",
+            "count": "$.count",
+            "results": {
+              "$from": "$.results[*]",
+              "$select": {
+                "name": "name",
+                "path": "path",
+                "is_folder": "is_folder",
+                "type": "type",
+                "size": "size",
+                "snippet": "snippet",
+                "last_modified": "last_modified",
+                "uploaded_by": "uploaded_by",
+                "entry_id": "entry_id",
+                "group_id": "group_id",
+                "num_versions": "num_versions"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "egnyte_read_text_file",
+      "description": "Read the beginning of a text file (txt, csv, md, json, xml, html, source code), at most max_bytes bytes. JSON files that fit come back parsed. Not for PDFs, Office documents or images. Pass entry_id for an earlier version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the file. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Version to read, from egnyte_list_file_versions. Default: the current version."
+          },
+          "max_bytes": {
+            "type": "integer",
+            "description": "How many bytes to read from the start, 1000 to 100000. Default 50000.",
+            "minimum": 1000,
+            "maximum": 100000,
+            "default": 50000
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fs-content{path}",
+        "queryParams": {
+          "entry_id": "$entry_id"
+        },
+        "headers": {
+          "Range": "bytes=0-${max_bytes}",
+          "Accept": "*/*"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "_links"
+          ],
+          "maxBytes": 110000
+        }
+      }
+    },
+    {
+      "name": "egnyte_list_links",
+      "description": "List share links with their details: id, URL, target path, type (file, folder, upload), who can open it (anyone, password, domain, recipients), creator, creation, expiry and last access. Admins see all links, other users their own. Filter by path, creator, type, accessibility or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Only links to this file or folder path."
+          },
+          "username": {
+            "type": "string",
+            "description": "Only links created by this user."
+          },
+          "type": {
+            "type": "string",
+            "description": "file or folder.",
+            "enum": [
+              "file",
+              "folder"
+            ]
+          },
+          "accessibility": {
+            "type": "string",
+            "description": "anyone, password, domain or recipients.",
+            "enum": [
+              "anyone",
+              "password",
+              "domain",
+              "recipients"
+            ]
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only links created after this date, YYYY-MM-DD."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only links created before this date, YYYY-MM-DD."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first link, for the next page.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Links per page, at most 500. Default 50.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/links",
+        "queryParams": {
+          "path": "$path",
+          "username": "$username",
+          "type": "$type",
+          "accessibility": "$accessibility",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "offset": "$offset",
+          "count": "$count"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.count",
+            "links": {
+              "$from": "$.links[*]",
+              "$select": {
+                "id": "id",
+                "url": "url",
+                "path": "path",
+                "type": "type",
+                "accessibility": "accessibility",
+                "protection": "protection",
+                "recipients": "recipients",
+                "notify": "notify",
+                "link_to_current": "link_to_current",
+                "creation_date": "creation_date",
+                "created_by": "created_by",
+                "expiry_date": "expiry_date",
+                "expiry_clicks": "expiry_clicks",
+                "last_accessed": "last_accessed",
+                "resource_id": "resource_id"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "egnyte_get_link",
+      "description": "Read one share link by id: URL, target path, type, accessibility, recipients, notification, expiry, creator and last access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "link_id": {
+            "type": "string",
+            "description": "The link id, e.g. 6a7ILnZZZ.",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "link_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/links/{link_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "links": {
+              "$from": "$.links[*]",
+              "$select": {
+                "id": "id",
+                "url": "url",
+                "recipients": "recipients"
+              }
+            },
+            "path": "$.path",
+            "type": "$.type",
+            "accessibility": "$.accessibility",
+            "protection": "$.protection",
+            "notify": "$.notify",
+            "link_to_current": "$.link_to_current",
+            "creation_date": "$.creation_date",
+            "created_by": "$.created_by",
+            "expiry_date": "$.expiry_date",
+            "expiry_clicks": "$.expiry_clicks",
+            "last_accessed": "$.last_accessed"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_create_link",
+      "description": "Create a share link to a file or folder. accessibility decides who can open it: anyone with the link, password (Egnyte generates one unless you give it), domain (signed-in users of your Egnyte) or recipients (only the listed e-mails). Optional expiry date or click limit, preview only, and e-mail to recipients. Show the user the target, accessibility and expiry and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the file or folder to share. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          },
+          "type": {
+            "type": "string",
+            "description": "file or folder.",
+            "enum": [
+              "file",
+              "folder"
+            ]
+          },
+          "accessibility": {
+            "type": "string",
+            "description": "Who can open it.",
+            "enum": [
+              "anyone",
+              "password",
+              "domain",
+              "recipients"
+            ]
+          },
+          "expiry_date": {
+            "type": "string",
+            "description": "Last day the link works, YYYY-MM-DD. Not together with expiry_clicks.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "expiry_clicks": {
+            "type": "integer",
+            "description": "Number of opens before the link stops working, 1 to 10. Not together with expiry_date.",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "password": {
+            "type": "string",
+            "description": "Password for accessibility password. Leave out to let Egnyte generate one."
+          },
+          "protection": {
+            "type": "string",
+            "description": "PREVIEW makes a preview-only link (no download); NONE is a normal link.",
+            "enum": [
+              "NONE",
+              "PREVIEW"
+            ]
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "true lets Egnyte e-mail the link to recipients."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "E-mail addresses; required with send_email or accessibility recipients."
+          },
+          "message": {
+            "type": "string",
+            "description": "Personal message for the e-mail."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "true e-mails you when someone opens the link."
+          },
+          "link_to_current": {
+            "type": "boolean",
+            "description": "For files: true always serves the current version."
+          }
+        },
+        "required": [
+          "path",
+          "type",
+          "accessibility"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/links",
+        "bodyMapping": {
+          "path": "$path",
+          "type": "$type",
+          "accessibility": "$accessibility",
+          "expiry_date": "$expiry_date",
+          "expiry_clicks": "$expiry_clicks",
+          "password": "$password",
+          "protection": "$protection",
+          "send_email": "$send_email",
+          "recipients": "$recipients",
+          "message": "$message",
+          "notify": "$notify",
+          "link_to_current": "$link_to_current"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "links": {
+              "$from": "$.links[*]",
+              "$select": {
+                "id": "id",
+                "url": "url",
+                "recipients": "recipients"
+              }
+            },
+            "path": "$.path",
+            "type": "$.type",
+            "accessibility": "$.accessibility",
+            "expiry_date": "$.expiry_date",
+            "creation_date": "$.creation_date",
+            "created_by": "$.created_by",
+            "password": "$.password"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_get_folder_permissions",
+      "description": "Read the permissions set on a folder: each user's and group's level (Viewer Only, Viewer, Editor, Full, Owner) and whether the folder inherits permissions from its parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/perms{path}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "userPerms": "$.userPerms",
+            "groupPerms": "$.groupPerms",
+            "inheritsPermissions": "$.inheritsPermissions"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "egnyte_get_effective_permission",
+      "description": "Check the effective permission of one user on a folder, taking groups and inheritance into account: None, Nav, Viewer Only, Viewer, Editor, Full or Owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "The Egnyte username to check.",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._@+-]+$"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Full folder path, e.g. /Shared/Finance.",
+            "pattern": "^/"
+          }
+        },
+        "required": [
+          "username",
+          "folder"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/perms/user/{username}",
+        "encodePathParams": true,
+        "queryParams": {
+          "folder": "$folder"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "permission": "$.permission"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_get_events_cursor",
+      "description": "Read the position of the activity stream: latest_event_id, oldest_event_id and the time of the latest event. Use latest_event_id with egnyte_list_events and reverse 1 to read the most recent activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/events/cursor"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "latest_event_id": "$.latest_event_id",
+            "oldest_event_id": "$.oldest_event_id",
+            "timestamp": "$.timestamp"
+          }
+        }
+      }
+    },
+    {
+      "name": "egnyte_list_events",
+      "description": "Read file activity of the domain: creates, deletes, moves, copies, restores, comments and permission changes with time, source (web, sync, mobile, API) and paths. Without reverse it returns events after id; with reverse 1 the count events up to id. Events are kept up to 30 days. An empty answer means no events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Cursor: an event id from egnyte_get_events_cursor or a previous answer.",
+            "minimum": 0
+          },
+          "reverse": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Pass 1 to read backwards, the events up to id."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Events per page, 1 to 100. Default 50.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "folder": {
+            "type": "string",
+            "description": "Only events in this folder and below, e.g. /Shared/Finance."
+          },
+          "type": {
+            "type": "string",
+            "description": "Event types separated by |, e.g. file_system|permission_change. Default all."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/events",
+        "queryParams": {
+          "id": "$id",
+          "reverse": "$reverse",
+          "count": "$count",
+          "folder": "$folder",
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "latest_id": "$.latest_id",
+            "oldest_id": "$.oldest_id",
+            "count": "$.count",
+            "events": {
+              "$from": "$.events[*]",
+              "$select": {
+                "id": "id",
+                "timestamp": "timestamp",
+                "action_source": "action_source",
+                "actor": "actor",
+                "type": "type",
+                "action": "action",
+                "data": "data"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "egnyte_delete_item",
+      "description": "Delete a file or folder (it goes to Egnyte's trash). Installed switched off. Only when the user explicitly asks; confirm the path first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the file or folder. Starts with /Shared or /Private, e.g. /Shared/Projects/Plan.docx. Write # as %23, ? as %3F and % as %25 in names.",
+            "pattern": "^/(Shared|Private)(/(?!\\.\\.?(/|$))[^/?#]+)*/?$"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/fs{path}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "parent_folder_path": "$.parent_folder_path"
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

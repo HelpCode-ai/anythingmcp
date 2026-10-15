@@ -1,0 +1,983 @@
+{
+  "slug": "pcloud",
+  "name": "pCloud",
+  "description": "Let your AI work with your pCloud files: browse folders, read file details, revisions and small text files, get download links and list public links, and create folders, copy, move and rename, or share with a public link after you confirm. US and EU accounts. Sign in with your own pCloud app.",
+  "instructions": "## pCloud\nThis connector works with files in **pCloud**, the Swiss cloud storage, through the official **pCloud API** (`https://api.pcloud.com` for US accounts, `https://eapi.pcloud.com` for EU accounts). It lists folders, reads file details, revisions and small text files, creates download links, lists public links, and can create folders, copy, move and rename files and folders and create public links after you confirm.\n\n**Your data region decides the address.** pCloud keeps every account either in the United States or in Europe (Luxembourg), chosen at sign-up, and the API only answers for the account's own region. If you sign in to the web app at **e.pcloud.com**, or chose Europe when you signed up, set `PCLOUD_API_HOST` to `eapi.pcloud.com`; at **my.pcloud.com** (United States) set `api.pcloud.com`. With the wrong one, Authorize with Provider fails or every call answers \"Invalid 'access_token' provided\".\n\n**Setup (about 5 minutes)**\n1. Sign in at https://docs.pcloud.com and open **My Apps** (https://docs.pcloud.com/my_apps/), then **Create new app**. Choose the access the app gets: its own app folder only, or the whole drive (needed to work with existing files).\n2. In the app's settings add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Enter the app's **Client ID** as `PCLOUD_CLIENT_ID`, its **Client secret** as `PCLOUD_CLIENT_SECRET`, and your region host as `PCLOUD_API_HOST`, then install.\n4. Open the connector and click **Authorize with Provider**, sign in to pCloud and allow access. pCloud's tokens do not expire; there is nothing to renew.\n\n**Writes: confirm first.** Creating folders, copying, moving or renaming, and creating public links change the drive or make files reachable by anyone with the link. Show the user exactly what will happen (source, destination, new name, link settings) and wait for a clear yes before calling. Moving a file onto an existing file replaces it. `pcloud_delete_file` and `pcloud_delete_folder` are installed switched off; deleted items go to pCloud's trash.\n\n**How to work**\n1. `pcloud_get_user_info` for the account, plan and used space.\n2. Browse with `pcloud_list_folder`, starting at folder_id 0 (the root). Every item has a `fileid` or `folderid`; prefer ids over paths.\n3. `pcloud_stat` for one file's details, `pcloud_list_revisions` for its earlier versions.\n4. Contents: `pcloud_read_text_file` returns the text of a small text file (txt, csv, md, json, html, source code), cut at about 100 KB; check the size with `pcloud_stat` first. For anything else, `pcloud_get_file_link` gives a temporary download address: join `https://`, the first entry of `hosts` and `path`.\n5. Sharing: `pcloud_list_public_links`, `pcloud_create_file_public_link`, `pcloud_create_folder_public_link`.\n6. Organize: `pcloud_create_folder`, `pcloud_copy_file`, `pcloud_copy_folder`, `pcloud_move_file`, `pcloud_move_folder`.\n\n**Search**: the pCloud API has no search. List folders instead, and narrow down by name.\n\n**Paths and dates**: paths start with `/` (the root); names are case-sensitive. Dates look like `Thu, 21 Mar 2013 18:31:45 +0000` (UTC). Sizes are in bytes.\n\n**Errors**: pCloud answers errors with HTTP 200 and a `result` code, which the connector turns into errors.\n- 1000, 2000 or 2094 (Log in required, Invalid 'access_token' provided): the token is wrong, revoked, or `PCLOUD_API_HOST` is the other region. Authorize again.\n- 2003: access denied, e.g. an app-folder app reaching outside its folder.\n- 2002, 2005, 2009: a folder or file does not exist.\n- 2004: the file or folder already exists.\n- 2008: the account is over quota.\n- 4000: too many requests; wait a minute.\n\n**Out of scope**: uploading files, deleting (switched off), the trash, sharing folders with other pCloud users, upload links, archives (zip), thumbnails, video and audio streaming, collections, and pCloud Crypto folders (encrypted on the device, unreadable to the API).",
+  "region": "intl",
+  "category": "storage",
+  "icon": "pcloud",
+  "docsUrl": "https://docs.pcloud.com/",
+  "prerequisites": "A pCloud account and an app of your own, created under My Apps on docs.pcloud.com with the redirect URI below. Know your data region: e.pcloud.com means Europe. About 5 minutes.",
+  "appRegistrationUrl": "https://docs.pcloud.com/my_apps/",
+  "requiredEnvVars": [
+    "PCLOUD_CLIENT_ID",
+    "PCLOUD_CLIENT_SECRET",
+    "PCLOUD_API_HOST"
+  ],
+  "envVarMeta": {
+    "PCLOUD_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "docs.pcloud.com, My Apps, your app: Client ID.",
+      "link": "https://docs.pcloud.com/my_apps/",
+      "pattern": "^[A-Za-z0-9]{6,}$",
+      "patternMessage": "Paste the Client ID from My Apps: letters and digits, no spaces."
+    },
+    "PCLOUD_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "docs.pcloud.com, My Apps, your app: Client secret.",
+      "link": "https://docs.pcloud.com/my_apps/"
+    },
+    "PCLOUD_API_HOST": {
+      "label": "API host (data region)",
+      "kind": "setting",
+      "help": "eapi.pcloud.com for accounts in Europe (you sign in at e.pcloud.com), api.pcloud.com for accounts in the United States (my.pcloud.com).",
+      "example": "eapi.pcloud.com",
+      "pattern": "^e?api\\.pcloud\\.com$",
+      "patternMessage": "Use api.pcloud.com (United States) or eapi.pcloud.com (Europe), without https://."
+    }
+  },
+  "verifyHints": {
+    "401": "pCloud refused the access token. Check that PCLOUD_API_HOST matches your account's region (eapi.pcloud.com for Europe), then click Authorize with Provider again.",
+    "403": "pCloud denied access: an app limited to its own folder cannot reach other files.",
+    "404": "That file or folder does not exist in pCloud."
+  },
+  "probe": {
+    "tool": "pcloud_get_user_info"
+  },
+  "connector": {
+    "name": "pCloud API",
+    "type": "REST",
+    "baseUrl": "https://{{PCLOUD_API_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{PCLOUD_CLIENT_ID}}",
+      "clientSecret": "{{PCLOUD_CLIENT_SECRET}}",
+      "authorizationUrl": "https://my.pcloud.com/oauth2/authorize",
+      "tokenUrl": "https://{{PCLOUD_API_HOST}}/oauth2_token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/userinfo",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "result",
+          "in": [
+            1000,
+            2000,
+            2094,
+            2095
+          ],
+          "messagePath": "error",
+          "status": 401
+        },
+        {
+          "path": "result",
+          "equals": 2003,
+          "messagePath": "error",
+          "status": 403
+        },
+        {
+          "path": "result",
+          "in": [
+            2002,
+            2005,
+            2009
+          ],
+          "messagePath": "error",
+          "status": 404
+        },
+        {
+          "path": "result",
+          "matches": "^4\\d{3}$",
+          "messagePath": "error",
+          "status": 429
+        },
+        {
+          "path": "result",
+          "matches": "^5\\d{3}$",
+          "messagePath": "error",
+          "status": 502
+        },
+        {
+          "path": "result",
+          "matches": "^[1237]\\d{3}$",
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "pcloud_get_user_info",
+      "description": "Read the pCloud account: e-mail, whether it is verified, premium plan and its end date, storage quota and used space in bytes, language and sign-up date. Use it first to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/userinfo"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "userid": "$.userid",
+            "email": "$.email",
+            "emailverified": "$.emailverified",
+            "premium": "$.premium",
+            "premiumlifetime": "$.premiumlifetime",
+            "premiumexpires": "$.premiumexpires",
+            "business": "$.business",
+            "plan": "$.plan",
+            "quota": "$.quota",
+            "usedquota": "$.usedquota",
+            "freequota": "$.freequota",
+            "language": "$.language",
+            "registered": "$.registered",
+            "cryptosetup": "$.cryptosetup"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_list_folder",
+      "description": "List the contents of a folder: name, file or folder id, whether it is a folder, size in bytes, content type and modification date of each item. Start at folder_id 0 (the root). Set nofiles to 1 to see only subfolders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the folder (folderid); 0 is the root folder. Give folder_id or path.",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          },
+          "nofiles": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Only return subfolders, no files. Pass 1 to switch it on; leave it out otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listfolder",
+        "queryParams": {
+          "folderid": "$folder_id",
+          "path": "$path",
+          "nofiles": "$nofiles"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "folderid": "$.metadata.folderid",
+            "name": "$.metadata.name",
+            "path": "$.metadata.path",
+            "contents": {
+              "$from": "$.metadata.contents[*]",
+              "$select": {
+                "name": "name",
+                "isfolder": "isfolder",
+                "folderid": "folderid",
+                "fileid": "fileid",
+                "size": "size",
+                "contenttype": "contenttype",
+                "modified": "modified",
+                "isshared": "isshared"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pcloud_stat",
+      "description": "Read the details of one file: name, id, parent folder id, size in bytes, content type, created and modified dates, content hash and, for images and videos, width and height.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stat",
+        "queryParams": {
+          "fileid": "$file_id",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "created": "$.metadata.created",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash",
+            "width": "$.metadata.width",
+            "height": "$.metadata.height",
+            "duration": "$.metadata.duration"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_read_text_file",
+      "description": "Read the text of a small text file (txt, csv, md, json, xml, html, source code) as UTF-8. Answers over about 100 KB are cut off; check the size with pcloud_stat first and do not use it for PDFs, Office documents, images or other binary files (use pcloud_get_file_link).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          },
+          "fromencoding": {
+            "type": "string",
+            "description": "Character encoding of the file, e.g. windows-1252. Leave out to let pCloud guess."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gettextfile",
+        "queryParams": {
+          "fileid": "$file_id",
+          "path": "$path",
+          "fromencoding": "$fromencoding",
+          "toencoding": "utf-8"
+        },
+        "headers": {
+          "Accept": "*/*"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result"
+          ],
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "pcloud_get_file_link",
+      "description": "Get a temporary download address for a file. Build the URL as https:// + hosts[0] + path; it stops working at expires and is meant for the user, not for sharing (use a public link for that). Set forcedownload to 1 to make browsers save rather than open the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          },
+          "forcedownload": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Serve the file as a download. Pass 1 to switch it on; leave it out otherwise."
+          },
+          "revision_id": {
+            "type": "integer",
+            "description": "Link to this earlier revision instead of the current file (from pcloud_list_revisions)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getfilelink",
+        "queryParams": {
+          "fileid": "$file_id",
+          "path": "$path",
+          "forcedownload": "$forcedownload",
+          "revisionid": "$revision_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "hosts": "$.hosts",
+            "path": "$.path",
+            "expires": "$.expires"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_list_revisions",
+      "description": "List the earlier revisions of a file: revision id, size in bytes, content hash and the date it was created. Use a revision id with pcloud_get_file_link to download that version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listrevisions",
+        "queryParams": {
+          "fileid": "$file_id",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "file": {
+              "fileid": "$.metadata.fileid",
+              "name": "$.metadata.name",
+              "size": "$.metadata.size",
+              "modified": "$.metadata.modified"
+            },
+            "revisions": {
+              "$from": "$.revisions[*]",
+              "$select": {
+                "revisionid": "revisionid",
+                "size": "size",
+                "hash": "hash",
+                "created": "created"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "pcloud_list_public_links",
+      "description": "List your public links: link id, the link address, code, the file or folder it points to, created date, downloads and traffic so far, and its expiry and limits if set.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listpublinks"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "publinks": {
+              "$from": "$.publinks[*]",
+              "$select": {
+                "linkid": "linkid",
+                "link": "link",
+                "code": "code",
+                "shortlink": "shortlink",
+                "created": "created",
+                "modified": "modified",
+                "downloads": "downloads",
+                "traffic": "traffic",
+                "expires": "expires",
+                "maxdownloads": "maxdownloads",
+                "maxtraffic": "maxtraffic",
+                "name": "metadata.name",
+                "isfolder": "metadata.isfolder",
+                "fileid": "metadata.fileid",
+                "folderid": "metadata.folderid",
+                "path": "metadata.path"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "pcloud_create_folder",
+      "description": "Create a folder: either path (e.g. /Projects/2026) or parent folder_id plus name. If the folder already exists it is returned unchanged. Show the user where the folder will be created and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          },
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the parent folder; 0 is the root. Use with name.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new folder, with folder_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/createfolderifnotexists",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "path": "$path",
+          "folderid": "$folder_id",
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "created": "$.metadata.created",
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_copy_file",
+      "description": "Copy a file into a folder (to_folder_id or to_path), optionally under a new name. An existing file with that name is overwritten unless noover is 1. Show the user the source, destination and name and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          },
+          "to_folder_id": {
+            "type": "integer",
+            "description": "Destination folder id; 0 is the root.",
+            "minimum": 0
+          },
+          "to_path": {
+            "type": "string",
+            "description": "Destination path: a folder ending in / or a full new file path.",
+            "pattern": "^/"
+          },
+          "to_name": {
+            "type": "string",
+            "description": "New name for the copy, with to_folder_id."
+          },
+          "noover": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Fail instead of overwriting an existing file. Pass 1 to switch it on; leave it out otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/copyfile",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "fileid": "$file_id",
+          "path": "$path",
+          "tofolderid": "$to_folder_id",
+          "topath": "$to_path",
+          "toname": "$to_name",
+          "noover": "$noover"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "created": "$.metadata.created",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_move_file",
+      "description": "Move and/or rename a file: give a new to_name, a destination folder (to_folder_id or to_path ending in /), or both. A file already at the destination is replaced. Show the user the change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          },
+          "to_folder_id": {
+            "type": "integer",
+            "description": "Destination folder id; 0 is the root.",
+            "minimum": 0
+          },
+          "to_path": {
+            "type": "string",
+            "description": "Destination: a folder ending in / or a full new path.",
+            "pattern": "^/"
+          },
+          "to_name": {
+            "type": "string",
+            "description": "New file name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/renamefile",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "fileid": "$file_id",
+          "path": "$path",
+          "tofolderid": "$to_folder_id",
+          "topath": "$to_path",
+          "toname": "$to_name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "created": "$.metadata.created",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash",
+            "deletedfileid": "$.metadata.deletedfileid"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_move_folder",
+      "description": "Move and/or rename a folder with everything in it: give a new to_name, a destination folder (to_folder_id or to_path ending in /), or both. Show the user the change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the folder to move.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          },
+          "to_folder_id": {
+            "type": "integer",
+            "description": "Destination parent folder id; 0 is the root.",
+            "minimum": 0
+          },
+          "to_path": {
+            "type": "string",
+            "description": "Destination: an existing folder ending in / or a full new path.",
+            "pattern": "^/"
+          },
+          "to_name": {
+            "type": "string",
+            "description": "New folder name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/renamefolder",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "folderid": "$folder_id",
+          "path": "$path",
+          "tofolderid": "$to_folder_id",
+          "topath": "$to_path",
+          "toname": "$to_name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "created": "$.metadata.created",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_copy_folder",
+      "description": "Copy a folder with everything in it into another folder (to_folder_id or to_path). Files with the same name are overwritten unless noover or skipexisting is 1. Large folders take time and space. Show the user the source and destination and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the folder to copy.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          },
+          "to_folder_id": {
+            "type": "integer",
+            "description": "Destination folder id; 0 is the root.",
+            "minimum": 0
+          },
+          "to_path": {
+            "type": "string",
+            "description": "Destination folder path.",
+            "pattern": "^/"
+          },
+          "noover": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Fail with error 2004 instead of overwriting files. Pass 1 to switch it on; leave it out otherwise."
+          },
+          "skipexisting": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Skip files that already exist. Pass 1 to switch it on; leave it out otherwise."
+          },
+          "copycontentonly": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Copy only the contents, not the folder itself. Pass 1 to switch it on; leave it out otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/copyfolder",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "folderid": "$folder_id",
+          "path": "$path",
+          "tofolderid": "$to_folder_id",
+          "topath": "$to_path",
+          "noover": "$noover",
+          "skipexisting": "$skipexisting",
+          "copycontentonly": "$copycontentonly"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.metadata.name",
+            "isfolder": "$.metadata.isfolder",
+            "fileid": "$.metadata.fileid",
+            "folderid": "$.metadata.folderid",
+            "parentfolderid": "$.metadata.parentfolderid",
+            "path": "$.metadata.path",
+            "size": "$.metadata.size",
+            "contenttype": "$.metadata.contenttype",
+            "category": "$.metadata.category",
+            "created": "$.metadata.created",
+            "modified": "$.metadata.modified",
+            "isshared": "$.metadata.isshared",
+            "ismine": "$.metadata.ismine",
+            "hash": "$.metadata.hash"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_create_file_public_link",
+      "description": "Create a public link to a file: anyone with the address can download it. Optional expiry date, download limit and (premium) password. Show the user the file and the link settings and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          },
+          "expire": {
+            "type": "string",
+            "description": "When the link stops working, e.g. 2026-12-31T23:59:59Z."
+          },
+          "maxdownloads": {
+            "type": "integer",
+            "description": "Maximum number of downloads.",
+            "minimum": 1
+          },
+          "linkpassword": {
+            "type": "string",
+            "description": "Password for the link (premium accounts)."
+          },
+          "shortlink": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Also create a short pc.cd link. Pass 1 to switch it on; leave it out otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getfilepublink",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "fileid": "$file_id",
+          "path": "$path",
+          "expire": "$expire",
+          "maxdownloads": "$maxdownloads",
+          "linkpassword": "$linkpassword",
+          "shortlink": "$shortlink"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "linkid": "$.linkid",
+            "link": "$.link",
+            "code": "$.code",
+            "shortlink": "$.shortlink"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_create_folder_public_link",
+      "description": "Create a public link to a folder: anyone with the address can browse and download everything in it. Optional expiry date, download limit and (premium) password. Show the user the folder and the link settings and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the folder.",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          },
+          "expire": {
+            "type": "string",
+            "description": "When the link stops working, e.g. 2026-12-31T23:59:59Z."
+          },
+          "maxdownloads": {
+            "type": "integer",
+            "description": "Maximum number of downloads from the folder.",
+            "minimum": 1
+          },
+          "linkpassword": {
+            "type": "string",
+            "description": "Password for the link (premium accounts)."
+          },
+          "shortlink": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Also create a short pc.cd link. Pass 1 to switch it on; leave it out otherwise."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getfolderpublink",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "folderid": "$folder_id",
+          "path": "$path",
+          "expire": "$expire",
+          "maxdownloads": "$maxdownloads",
+          "linkpassword": "$linkpassword",
+          "shortlink": "$shortlink"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "linkid": "$.linkid",
+            "link": "$.link",
+            "code": "$.code",
+            "shortlink": "$.shortlink"
+          }
+        }
+      }
+    },
+    {
+      "name": "pcloud_delete_file",
+      "description": "Delete a file (it goes to pCloud's trash). Installed switched off. Only when the user explicitly asks; confirm the file first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the file (fileid), preferred. Give file_id or path.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the file, e.g. /Documents/report.pdf, when you have no file_id.",
+            "pattern": "^/"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deletefile",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "fileid": "$file_id",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "isdeleted": "$.metadata.isdeleted",
+            "name": "$.metadata.name",
+            "fileid": "$.metadata.fileid"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "pcloud_delete_folder",
+      "description": "Delete an empty folder (it goes to pCloud's trash); a folder with contents is refused. Installed switched off. Only when the user explicitly asks; confirm the folder first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "integer",
+            "description": "Id of the folder.",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path of the folder, e.g. /Documents, when you have no folder_id.",
+            "pattern": "^/"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deletefolder",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "folderid": "$folder_id",
+          "path": "$path"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "isdeleted": "$.metadata.isdeleted",
+            "name": "$.metadata.name",
+            "folderid": "$.metadata.folderid"
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

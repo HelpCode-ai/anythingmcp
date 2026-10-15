@@ -1,0 +1,977 @@
+{
+  "slug": "vimeo",
+  "name": "Vimeo",
+  "description": "Let your AI work with your Vimeo account: list and search your videos, read details, folders, showcases, comments, captions and transcripts, upload a video from a link and change titles, descriptions and privacy after your confirmation. Uses a personal access token from a Vimeo developer app of your own.",
+  "instructions": "## Vimeo\nThis connector works with one Vimeo account through the **Vimeo API** (`https://api.vimeo.com`, version 3.4): the account, its videos (list, search, details), folders, showcases, comments, captions and transcripts. It can upload a video from a public URL and change a video's title, description and privacy. It authenticates with a **personal access token** of a Vimeo app of your own, sent as a Bearer token.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.vimeo.com/apps with the Vimeo account the AI should work with and click **Create an app** (any name and description; choose that only you will access it). Accept the terms.\n2. On the app page open **Generate an access token**: choose **Authenticated (you)** and tick the scopes **Public**, **Private**, **Edit**, **Upload** and **Stats**. Add **Delete** only if you will switch on `vimeo_delete_video`. Click **Generate**.\n3. Copy the token (shown once) into `VIMEO_ACCESS_TOKEN` and install. `vimeo_get_me` checks it.\n\nThe token does not expire; it stops working when you delete it on the app page or delete the app. Scopes cannot be added to an existing token: generate a new one.\n\n**Confirm before every change.** `vimeo_upload_video_from_url` and `vimeo_update_video` change the account at once: say what will happen (and, for privacy, who will be able to watch) and wait for the user's yes. `vimeo_delete_video` is installed switched off.\n\n**Ids**: a video uri is `/videos/<id>`; the id is also the number in `vimeo.com/<id>`. A folder uri is `/users/<user id>/projects/<folder id>` and a showcase uri `/users/<user id>/albums/<showcase id>`; the tools take the last number. \"Projects\" and \"albums\" are the API names of folders and showcases.\n\n**Uploads** use Vimeo's pull approach: the file must be at a public URL that stays reachable for 24 hours (a direct download link, not a web page). Vimeo then downloads and transcodes it; `vimeo_get_video` shows `upload.status` and `transcode.status` (complete when done). Uploads count against the plan's storage and weekly quota (`vimeo_get_me` shows `upload_quota`).\n\n**Privacy** (`privacy.view`): anybody (public), unlisted (anyone with the link), nobody (only you), password, contacts, users, team, or disable (hidden on vimeo.com, playable only where embedded). Free plans cannot use every option; Vimeo answers 400 or 403 then.\n\n**Captions and transcripts**: `vimeo_list_text_tracks` lists the caption and subtitle tracks with a temporary WebVTT `link`; `vimeo_get_transcript` returns one track as timed segments. Both need a video the account owns.\n\n**Tools**: `vimeo_get_me`, `vimeo_list_my_videos`, `vimeo_get_video`, `vimeo_list_folders`, `vimeo_list_folder_items`, `vimeo_list_folder_videos`, `vimeo_list_showcases`, `vimeo_list_showcase_videos`, `vimeo_list_video_comments`, `vimeo_list_text_tracks`, `vimeo_get_transcript` (read); `vimeo_upload_video_from_url`, `vimeo_update_video` (changes, confirm first); `vimeo_delete_video` (switched off).\n\n**Paging**: list tools return `total`, `page`, `per_page` and `next`; ask for the next `page` while `next` is set. `per_page` is at most 100. The tools ask Vimeo for a reduced set of fields to keep answers small.\n\n**Errors** (Vimeo adds `error`, `developer_message` and an `error_code`)\n- 401 (error_code 8003 \"The app didn't receive the user's credentials\", or 8000 \"invalid token\"): the token is missing, wrong or deleted; generate a new one.\n- 403: the token lacks a scope (e.g. Upload or Edit) or the plan does not allow the action.\n- 404: the video, folder or showcase does not exist or belongs to another account.\n- 429: too many requests; Vimeo's limits depend on the plan. Wait and try again.\n\n**Out of scope**: downloading video files, live events, analytics reports, webhooks, chapters, thumbnails, custom players, and managing team members.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "vimeo",
+  "docsUrl": "https://developer.vimeo.com/api/reference",
+  "requiredEnvVars": [
+    "VIMEO_ACCESS_TOKEN"
+  ],
+  "appRegistrationUrl": "https://developer.vimeo.com/apps",
+  "envVarMeta": {
+    "VIMEO_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "developer.vimeo.com → My Apps → your app → Generate an access token: Authenticated (you), scopes Public, Private, Edit, Upload and Stats. Shown once.",
+      "link": "https://developer.vimeo.com/apps",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste the access token only: a code of letters and digits (usually 32), without \"Bearer\" or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Vimeo refused the access token (error_code 8000 or 8003): it is wrong or was deleted. Generate a new token on your app page at developer.vimeo.com and paste it into VIMEO_ACCESS_TOKEN.",
+    "403": "The token lacks a scope for this (Private, Edit or Upload), or the Vimeo plan does not allow it. Generate a new token with the scopes from the setup steps.",
+    "rate_limited": "Vimeo is rate limiting this account. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "vimeo_get_me"
+  },
+  "prerequisites": "A Vimeo account and a free app on developer.vimeo.com with a personal access token (scopes Public, Private, Edit, Upload, Stats). About 5 minutes.",
+  "connector": {
+    "name": "Vimeo API",
+    "type": "REST",
+    "baseUrl": "https://api.vimeo.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{VIMEO_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/vnd.vimeo.*+json;version=3.4",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "vimeo_get_me",
+      "description": "Read the Vimeo account that owns the access token: uri (with the user id), name, profile link, plan (account), creation date, upload quota and number of videos. A cheap check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": {
+          "fields": "uri,name,link,account,created_time,upload_quota.space,upload_quota.periodic,metadata.connections.videos.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "uri": "$.uri",
+            "name": "$.name",
+            "link": "$.link",
+            "account": "$.account",
+            "created_time": "$.created_time",
+            "upload_quota": "$.upload_quota",
+            "videos_total": "$.metadata.connections.videos.total"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_my_videos",
+      "description": "List or search the videos of the account (newest first by default): uri (contains the video id), title, link, duration in seconds, dates, privacy, status (available, transcoding, uploading...), folder and tags. query searches title, description, chapters and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "sort": {
+            "type": "string",
+            "description": "alphabetical, date, default, duration, last_user_action_event_date, likes, modified_time or plays.",
+            "enum": [
+              "alphabetical",
+              "date",
+              "default",
+              "duration",
+              "last_user_action_event_date",
+              "likes",
+              "modified_time",
+              "plays"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "filter_tag": {
+            "type": "string",
+            "description": "Comma-separated tags; results have at least one of them."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter: embeddable, featured, playable, live, nolive and others.",
+            "enum": [
+              "app_only",
+              "cold_privacy",
+              "cold_storage",
+              "embeddable",
+              "featured",
+              "live",
+              "no_placeholder",
+              "nolive",
+              "playable",
+              "screen_recorded"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/videos",
+        "queryParams": {
+          "query": "$query",
+          "sort": "$sort",
+          "direction": "$direction",
+          "filter_tag": "$filter_tag",
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,name,link,duration,created_time,modified_time,privacy.view,status,is_playable,parent_folder.uri,parent_folder.name,tags.name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "vimeo_get_video",
+      "description": "Read one video: title, description, links (page and player embed), duration, size, language, dates, full privacy settings, status, upload and transcode status, plays, tags, folder, content rating, licence, and how many comments and text tracks it has.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/{video_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "uri,name,description,link,player_embed_url,duration,width,height,language,created_time,modified_time,release_time,privacy,status,is_playable,upload.status,transcode.status,stats.plays,tags.name,parent_folder.uri,parent_folder.name,content_rating,license,metadata.connections.comments.total,metadata.connections.texttracks.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "embed",
+            "pictures",
+            "files",
+            "download"
+          ],
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_folders",
+      "description": "List the account's folders (called projects in the API): uri (/users/<user id>/projects/<folder id>), name, dates and how many videos and subfolders each holds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search folder names."
+          },
+          "sort": {
+            "type": "string",
+            "description": "date, default, modified_time, name or pinned_on.",
+            "enum": [
+              "date",
+              "default",
+              "modified_time",
+              "name",
+              "pinned_on"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/projects",
+        "queryParams": {
+          "query": "$query",
+          "sort": "$sort",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,name,link,created_time,modified_time,metadata.connections.videos.total,metadata.connections.folders.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 25000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_folder_items",
+      "description": "List everything in one folder, videos and subfolders: type, and for each the uri, name and basic details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Numeric folder id: the last number of a folder uri such as /users/123/projects/456."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Only this type: video, folder, file or live_event.",
+            "enum": [
+              "file",
+              "folder",
+              "live_event",
+              "video"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "alphabetical, date, default, duration or last_user_action_event_date.",
+            "enum": [
+              "alphabetical",
+              "date",
+              "default",
+              "duration",
+              "last_user_action_event_date"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/projects/{folder_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "type,video.uri,video.name,video.link,video.duration,video.created_time,video.privacy.view,video.status,folder.uri,folder.name,folder.metadata.connections.videos.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_folder_videos",
+      "description": "List or search the videos in one folder (optionally including its subfolders): uri, title, link, duration, dates, privacy, status and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Numeric folder id (last number of the folder uri)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "include_subfolders": {
+            "type": "boolean",
+            "description": "true to include videos in subfolders."
+          },
+          "sort": {
+            "type": "string",
+            "description": "alphabetical, date, default, duration or last_user_action_event_date.",
+            "enum": [
+              "alphabetical",
+              "date",
+              "default",
+              "duration",
+              "last_user_action_event_date"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/projects/{folder_id}/videos",
+        "encodePathParams": true,
+        "queryParams": {
+          "query": "$query",
+          "include_subfolders": "$include_subfolders",
+          "sort": "$sort",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,name,link,duration,created_time,modified_time,privacy.view,status,is_playable,parent_folder.uri,parent_folder.name,tags.name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_showcases",
+      "description": "List the account's showcases (called albums in the API): uri (/users/<user id>/albums/<showcase id>), name, description, link, privacy, dates and number of videos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search showcase names."
+          },
+          "sort": {
+            "type": "string",
+            "description": "alphabetical, date, duration, last_modified or videos.",
+            "enum": [
+              "alphabetical",
+              "date",
+              "duration",
+              "last_modified",
+              "videos"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/albums",
+        "queryParams": {
+          "query": "$query",
+          "sort": "$sort",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,name,description,link,privacy.view,created_time,modified_time,metadata.connections.videos.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 25000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_showcase_videos",
+      "description": "List or search the videos in one showcase the account owns: uri, title, link, duration, dates, privacy, status and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "showcase_id": {
+            "type": "string",
+            "description": "Numeric showcase id: the last number of a showcase uri such as /users/123/albums/789."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "sort": {
+            "type": "string",
+            "description": "alphabetical, comments, date, default, duration, likes, manual, modified_time or plays.",
+            "enum": [
+              "alphabetical",
+              "comments",
+              "date",
+              "default",
+              "duration",
+              "likes",
+              "manual",
+              "modified_time",
+              "plays"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "showcase_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/albums/{showcase_id}/videos",
+        "encodePathParams": true,
+        "queryParams": {
+          "query": "$query",
+          "sort": "$sort",
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,name,link,duration,created_time,modified_time,privacy.view,status,is_playable,parent_folder.uri,parent_folder.name,tags.name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_video_comments",
+      "description": "List the comments on a video: uri, text, date, author name and how many replies each has.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/{video_id}/comments",
+        "encodePathParams": true,
+        "queryParams": {
+          "direction": "$direction",
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,text,created_on,user.name,user.uri,metadata.connections.replies.total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "vimeo_list_text_tracks",
+      "description": "List a video's text tracks (captions and subtitles, including auto-generated ones): id, uri, name, language, type, whether active, and a temporary link to the WebVTT file. The account must own the video. Use the id with vimeo_get_transcript.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (Vimeo's default 25).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/{video_id}/texttracks",
+        "encodePathParams": true,
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "fields": "uri,id,name,language,type,active,link,link_expires_time"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "page": "$.page",
+            "per_page": "$.per_page",
+            "next": "$.paging.next",
+            "data": "$.data"
+          },
+          "maxBytes": 15000
+        }
+      }
+    },
+    {
+      "name": "vimeo_get_transcript",
+      "description": "Read the transcript of a video as timed segments, from one of its text tracks (id from vimeo_list_text_tracks). Long videos give long answers; the reply is cut at about 80 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          },
+          "texttrack_id": {
+            "type": "string",
+            "description": "Numeric text track id from vimeo_list_text_tracks."
+          }
+        },
+        "required": [
+          "video_id",
+          "texttrack_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/{video_id}/transcripts/{texttrack_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "metadata",
+            "links"
+          ],
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "vimeo_upload_video_from_url",
+      "description": "Upload a video to the account by letting Vimeo fetch it from a public URL (pull upload): Vimeo downloads the file in the background and transcodes it. Before calling, show the user exactly what will change and wait for their yes. The URL must be publicly reachable for at least 24 hours. Returns the new video's uri and link; check progress with vimeo_get_video (upload.status, transcode.status). Counts against the plan's upload quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_url": {
+            "type": "string",
+            "description": "Public URL of the video file, e.g. https://example.com/video.mp4.",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "description": "Title of the video."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the video."
+          },
+          "privacy": {
+            "type": "object",
+            "description": "Privacy settings to set, e.g. {\"view\": \"unlisted\", \"embed\": \"public\"}. view: anybody, nobody (only me), unlisted (anyone with the link), password (also set password), contacts, users, team or disable (hide from vimeo.com, embed only). Some values need a paid plan.",
+            "properties": {
+              "view": {
+                "type": "string",
+                "description": "Who can watch.",
+                "enum": [
+                  "anybody",
+                  "contacts",
+                  "disable",
+                  "nobody",
+                  "password",
+                  "team",
+                  "unlisted",
+                  "users"
+                ]
+              },
+              "embed": {
+                "type": "string",
+                "description": "Where it can be embedded: public, private or whitelist.",
+                "enum": [
+                  "private",
+                  "public",
+                  "whitelist"
+                ]
+              },
+              "comments": {
+                "type": "string",
+                "description": "Who can comment: anybody, contacts or nobody.",
+                "enum": [
+                  "anybody",
+                  "contacts",
+                  "nobody"
+                ]
+              },
+              "download": {
+                "type": "boolean",
+                "description": "Whether viewers can download it (not on free plans)."
+              },
+              "add": {
+                "type": "boolean",
+                "description": "Whether others can add it to their showcases or channels."
+              }
+            }
+          },
+          "folder_uri": {
+            "type": "string",
+            "description": "Optional folder to put it in, a uri from vimeo_list_folders such as /users/123/projects/456."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Optional file size in bytes.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "video_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/videos",
+        "queryParams": {
+          "fields": "uri,name,description,link,status,privacy,upload.status,upload.approach,transcode.status,parent_folder.uri"
+        },
+        "bodyMapping": {
+          "upload": {
+            "approach": "pull",
+            "link": "$video_url",
+            "size": "$size"
+          },
+          "name": "$name",
+          "description": "$description",
+          "privacy": "$privacy",
+          "folder_uri": "$folder_uri"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "embed",
+            "pictures"
+          ],
+          "maxBytes": 8000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vimeo_update_video",
+      "description": "Change a video's title, description, privacy (who can watch, embed, comment, download), password or language. Before calling, show the user exactly what will change and wait for their yes. Privacy changes take effect at once for everyone who has the link. Returns the updated title, link and privacy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New title, up to 128 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description, up to 5000 characters."
+          },
+          "privacy": {
+            "type": "object",
+            "description": "Privacy settings to set, e.g. {\"view\": \"unlisted\", \"embed\": \"public\"}. view: anybody, nobody (only me), unlisted (anyone with the link), password (also set password), contacts, users, team or disable (hide from vimeo.com, embed only). Some values need a paid plan.",
+            "properties": {
+              "view": {
+                "type": "string",
+                "description": "Who can watch.",
+                "enum": [
+                  "anybody",
+                  "contacts",
+                  "disable",
+                  "nobody",
+                  "password",
+                  "team",
+                  "unlisted",
+                  "users"
+                ]
+              },
+              "embed": {
+                "type": "string",
+                "description": "Where it can be embedded: public, private or whitelist.",
+                "enum": [
+                  "private",
+                  "public",
+                  "whitelist"
+                ]
+              },
+              "comments": {
+                "type": "string",
+                "description": "Who can comment: anybody, contacts or nobody.",
+                "enum": [
+                  "anybody",
+                  "contacts",
+                  "nobody"
+                ]
+              },
+              "download": {
+                "type": "boolean",
+                "description": "Whether viewers can download it (not on free plans)."
+              },
+              "add": {
+                "type": "boolean",
+                "description": "Whether others can add it to their showcases or channels."
+              }
+            }
+          },
+          "password": {
+            "type": "string",
+            "description": "Password to watch; needed when privacy.view is password (up to 32 characters)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Default language of the video, e.g. en-US or de."
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/videos/{video_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "uri,name,description,link,status,privacy,upload.status,upload.approach,transcode.status,parent_folder.uri"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "privacy": "$privacy",
+          "password": "$password",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "embed",
+            "pictures"
+          ],
+          "maxBytes": 8000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vimeo_delete_video",
+      "description": "Delete a video permanently. Installed switched off. Never call it without the user's explicit yes for this exact video; it needs the delete scope on the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "Numeric Vimeo video id, e.g. 76979871 (the number in vimeo.com/76979871 or in the uri /videos/76979871)."
+          }
+        },
+        "required": [
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/videos/{video_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

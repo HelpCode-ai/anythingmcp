@@ -1,0 +1,1629 @@
+{
+  "slug": "quaderno",
+  "name": "Quaderno",
+  "description": "Run Quaderno tax and invoicing from your AI: calculate sales tax, VAT and GST for any location, validate VAT numbers, search contacts, invoices, credit notes, quotes, expenses and products, issue and email invoices, and request tax reports.",
+  "instructions": "## Quaderno\nThis connector calls the **Quaderno API** (`https://<account>.quadernoapp.com/api`, API version `20241028`) with the user's own API key: contacts, invoices, credit notes, quotes (proformas), expenses, products, tax calculation, tax id validation, tax jurisdictions and tax codes, and tax reports. It can create a contact, issue an invoice, email an invoice and request a report.\n\n**Tax and customer data are sensitive.** Invoices, credit notes and contacts hold customers' names, addresses and tax ids, and they are legal tax records. Show them only to people who handle the account's billing, and never copy them elsewhere unasked.\n\n**Writes need a yes.** An issued invoice is a legal document: Quaderno numbers it in sequence and it cannot be deleted, only voided or credited in the Quaderno app. Before `quaderno_create_invoice`, `quaderno_create_contact`, `quaderno_deliver_invoice` (it emails the customer at once) or `quaderno_request_report`, show the user what will happen and wait for their confirmation. `quaderno_delete_contact` is installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://quadernoapp.com and open **Profile, API keys** (https://quadernoapp.com/users/api-keys).\n2. Copy the **private key** (it starts with `sk_`) into `QUADERNO_API_KEY`. It is sent as the HTTP Basic user name with an empty password, only to your Quaderno account.\n3. Put your account name into `QUADERNO_ACCOUNT_NAME`: the part between `https://` and `.quadernoapp.com` in the API URL on the same page (for example `acme-1234` for `https://acme-1234.quadernoapp.com/api/`).\n\n**Amounts**: fields ending in `_cents` are in cents (12345 = 123.45); `unit_price`, `amount` and tax amounts from `quaderno_calculate_tax` are in the currency unit. Rates are percentages.\n\n**Workflow**\n- Check the key: `quaderno_ping`.\n- Customers: `quaderno_list_contacts`, `quaderno_get_contact`, `quaderno_create_contact`, `quaderno_delete_contact` (off).\n- Sales documents: `quaderno_list_invoices`, `quaderno_get_invoice`, `quaderno_create_invoice`, `quaderno_deliver_invoice`, `quaderno_list_credit_notes`, `quaderno_get_credit_note`, `quaderno_list_quotes`, `quaderno_get_quote`. Purchases: `quaderno_list_expenses`. Catalog: `quaderno_list_products`.\n- Tax: `quaderno_calculate_tax` for the rate on a sale to a location (no record is created), `quaderno_validate_tax_id` for a VAT number, `quaderno_list_tax_jurisdictions` and `quaderno_list_tax_codes` for reference.\n- Reports: `quaderno_request_report`, then `quaderno_get_report` until `state` leaves `pending` (`suceeded`, spelled that way by the API, or `failed`); `quaderno_list_reports` shows earlier ones.\n\n**Paging**: lists return the newest 25 records (`limit` up to 100). When `_headers.x-pages-hasmore` is `true`, call again with `created_before` set to the id of the last record.\n\n**Rate limit**: 100 calls per 15 seconds; a 429 means wait until the window resets.\n\n**Common errors**\n- 401 `Wrong API key or the user does not exist`: the key is wrong, or it is the publishable key (`pk_`) instead of the private one, or it belongs to another account than `QUADERNO_ACCOUNT_NAME`.\n- 404: no such record. 406: an invalid parameter value, such as an unknown tax code. 422: the document cannot be created or changed like that (for example a missing first_name or items).\n\n**Out of scope here**: updating, voiding or marking invoices uncollectible, recording payments, receipts, recurring documents, transactions, checkout sessions and coupons, evidence, tax id records, webhooks, the Sandbox, and Quaderno Connect accounts.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "quaderno",
+  "docsUrl": "https://developers.quaderno.io/api/",
+  "prerequisites": "A Quaderno account, its private API key (sk_...) and its account name from Profile, API keys. About 2 minutes.",
+  "requiredEnvVars": [
+    "QUADERNO_ACCOUNT_NAME",
+    "QUADERNO_API_KEY"
+  ],
+  "envVarMeta": {
+    "QUADERNO_ACCOUNT_NAME": {
+      "label": "Account name",
+      "kind": "address",
+      "secret": false,
+      "help": "The part between https:// and .quadernoapp.com in the API URL shown under Profile, API keys.",
+      "link": "https://quadernoapp.com/users/api-keys",
+      "example": "acme-1234",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "patternMessage": "Only the account name, e.g. acme-1234, without https:// or .quadernoapp.com."
+    },
+    "QUADERNO_API_KEY": {
+      "label": "Private API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Profile, API keys: the private key, starting with sk_. The publishable key (pk_) does not work here.",
+      "link": "https://quadernoapp.com/users/api-keys",
+      "pattern": "^sk_[A-Za-z0-9_]{8,}$",
+      "patternMessage": "Paste the private key, which starts with sk_ (not the publishable pk_ key)."
+    }
+  },
+  "verifyHints": {
+    "401": "Quaderno refused the key: it is wrong, it is the publishable pk_ key, or it belongs to another account than QUADERNO_ACCOUNT_NAME. Copy the private key again from https://quadernoapp.com/users/api-keys.",
+    "404": "Quaderno does not know this address. Check QUADERNO_ACCOUNT_NAME against the API URL under Profile, API keys.",
+    "429": "Quaderno is rate limiting this key. Wait 15 seconds and verify again."
+  },
+  "probe": {
+    "tool": "quaderno_list_contacts",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Quaderno",
+    "type": "REST",
+    "baseUrl": "https://{{QUADERNO_ACCOUNT_NAME}}.quadernoapp.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{QUADERNO_API_KEY}}",
+      "password": ""
+    },
+    "headers": {
+      "Accept": "application/json; api_version=20241028",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/contacts?limit=1"
+  },
+  "tools": [
+    {
+      "name": "quaderno_ping",
+      "description": "Check that the API key works and see the requests left in the current rate-limit window. Does not count as a real API call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ping",
+        "exposeHeaders": [
+          "x-ratelimit-remaining",
+          "x-ratelimit-reset"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "status": "$.status"
+          },
+          "maxBytes": 2000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_contacts",
+      "description": "List or search customers and suppliers (contacts) by name, email or tax id: id, kind (person or company), name, email, tax id and tax status, address and payment processor id. Newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in full name, email or tax id (case-sensitive)."
+          },
+          "processor_id": {
+            "type": "string",
+            "description": "Only the contact with this payment processor id, e.g. a Stripe customer id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "q": "$q",
+          "processor_id": "$processor_id",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "contacts": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "kind": "kind",
+                "full_name": "full_name",
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "contact_person": "contact_person",
+                "email": "email",
+                "tax_id": "tax_id",
+                "tax_status": "tax_status",
+                "country": "country",
+                "region": "region",
+                "city": "city",
+                "postal_code": "postal_code",
+                "street_line_1": "street_line_1",
+                "language": "language",
+                "processor": "processor",
+                "processor_id": "processor_id"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_get_contact",
+      "description": "Get one contact with full address, phone, website, language, default discount, notes and the link to their billing area. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id from quaderno_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "kind": "$.kind",
+            "full_name": "$.full_name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "contact_person": "$.contact_person",
+            "email": "$.email",
+            "tax_id": "$.tax_id",
+            "tax_status": "$.tax_status",
+            "country": "$.country",
+            "region": "$.region",
+            "city": "$.city",
+            "postal_code": "$.postal_code",
+            "street_line_1": "$.street_line_1",
+            "language": "$.language",
+            "processor": "$.processor",
+            "processor_id": "$.processor_id",
+            "street_line_2": "$.street_line_2",
+            "phone_1": "$.phone_1",
+            "web": "$.web",
+            "notes": "$.notes",
+            "discount": "$.discount",
+            "permalink": "$.permalink"
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "quaderno_create_contact",
+      "description": "Create a customer or supplier contact. For a company set kind to company and put the company name in first_name. Tax id and country decide how Quaderno taxes the contact. Before calling, show the user the details and confirm with the user first and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person",
+              "company"
+            ],
+            "description": "person (default) or company."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name of a person, or the full name of a company. Required."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name of a person."
+          },
+          "contact_person": {
+            "type": "string",
+            "description": "Contact person at a company."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, where invoices are delivered."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "VAT number or other tax id, e.g. DE123456789."
+          },
+          "tax_status": {
+            "type": "string",
+            "enum": [
+              "taxable",
+              "exempt",
+              "reverse"
+            ],
+            "description": "taxable (default), exempt, or reverse for reverse charge."
+          },
+          "street_line_1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "street_line_2": {
+            "type": "string",
+            "description": "Apartment, suite or building."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "ZIP or postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "region": {
+            "type": "string",
+            "description": "State, province or region."
+          },
+          "country": {
+            "type": "string",
+            "description": "2-letter ISO country code, e.g. DE."
+          },
+          "language": {
+            "type": "string",
+            "description": "2-letter language code for documents sent to the contact, e.g. en."
+          },
+          "phone_1": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          }
+        },
+        "required": [
+          "first_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "kind": "$kind",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "contact_person": "$contact_person",
+          "email": "$email",
+          "tax_id": "$tax_id",
+          "tax_status": "$tax_status",
+          "street_line_1": "$street_line_1",
+          "street_line_2": "$street_line_2",
+          "postal_code": "$postal_code",
+          "city": "$city",
+          "region": "$region",
+          "country": "$country",
+          "language": "$language",
+          "phone_1": "$phone_1",
+          "notes": "$notes"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "kind": "$.kind",
+            "full_name": "$.full_name",
+            "first_name": "$.first_name",
+            "last_name": "$.last_name",
+            "contact_person": "$.contact_person",
+            "email": "$.email",
+            "tax_id": "$.tax_id",
+            "tax_status": "$.tax_status",
+            "country": "$.country",
+            "region": "$.region",
+            "city": "$.city",
+            "postal_code": "$.postal_code",
+            "street_line_1": "$.street_line_1",
+            "language": "$.language",
+            "processor": "$.processor",
+            "processor_id": "$.processor_id",
+            "street_line_2": "$.street_line_2",
+            "phone_1": "$.phone_1",
+            "web": "$.web",
+            "notes": "$.notes",
+            "discount": "$.discount",
+            "permalink": "$.permalink"
+          },
+          "maxBytes": 10000
+        }
+      }
+    },
+    {
+      "name": "quaderno_delete_contact",
+      "description": "Delete one contact for good. Installed switched off. Only when the user asks to delete that exact contact: show its name and tax id, confirm with the user first, and wait for their yes. Contacts with documents cannot be deleted.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id from quaderno_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "deleted": "= true"
+          },
+          "maxBytes": 1000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_invoices",
+      "description": "List or search invoices by number, customer name or PO number, issue date range, state or customer: id, number, dates, state (outstanding, late, uncollectible, paid, refunded, archived), currency, amounts in cents, customer, country, tax id and the public link. Newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in invoice number, customer name or PO number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Issue date range as from,to, e.g. 2026-01-01,2026-03-31."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "outstanding",
+              "late",
+              "uncollectible",
+              "paid"
+            ],
+            "description": "Only invoices in this state."
+          },
+          "contact": {
+            "type": "integer",
+            "description": "Only invoices of this contact id."
+          },
+          "processor_id": {
+            "type": "string",
+            "description": "Only the invoice with this payment processor id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "q": "$q",
+          "date": "$date",
+          "state": "$state",
+          "contact": "$contact",
+          "processor_id": "$processor_id",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "invoices": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "number": "number",
+                "issue_date": "issue_date",
+                "due_date": "due_date",
+                "state": "state",
+                "currency": "currency",
+                "subtotal_cents": "subtotal_cents",
+                "discount_cents": "discount_cents",
+                "total_cents": "total_cents",
+                "contact": {
+                  "id": "contact.id",
+                  "full_name": "contact.full_name"
+                },
+                "country": "country",
+                "tax_id": "tax_id",
+                "po_number": "po_number",
+                "subject": "subject",
+                "payment_processor": "payment_processor",
+                "permalink": "permalink"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_get_invoice",
+      "description": "Get one invoice in full: customer and billing address, line items with their taxes, the tax breakdown, payments, deliveries, alerts, the public link and the PDF link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id from quaderno_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "issue_date": "$.issue_date",
+            "due_date": "$.due_date",
+            "state": "$.state",
+            "currency": "$.currency",
+            "exchange_rate": "$.exchange_rate",
+            "subtotal_cents": "$.subtotal_cents",
+            "discount_cents": "$.discount_cents",
+            "total_cents": "$.total_cents",
+            "contact": {
+              "id": "$.contact.id",
+              "full_name": "$.contact.full_name"
+            },
+            "street_line_1": "$.street_line_1",
+            "postal_code": "$.postal_code",
+            "city": "$.city",
+            "region": "$.region",
+            "country": "$.country",
+            "tax_id": "$.tax_id",
+            "po_number": "$.po_number",
+            "subject": "$.subject",
+            "notes": "$.notes",
+            "tag_list": "$.tag_list",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "description": "description",
+                "quantity": "quantity",
+                "unit_price": "unit_price",
+                "discount_rate": "discount_rate",
+                "subtotal_cents": "subtotal_cents",
+                "total_amount": "total_amount",
+                "product_code": "product_code",
+                "tax_1_name": "tax_1_name",
+                "tax_1_rate": "tax_1_rate",
+                "tax_1_country": "tax_1_country",
+                "tax_1_transaction_type": "tax_1_transaction_type",
+                "tax_2_name": "tax_2_name",
+                "tax_2_rate": "tax_2_rate"
+              }
+            },
+            "taxes": "$.taxes",
+            "payments": {
+              "$from": "$.payments[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "amount": "amount",
+                "payment_method": "payment_method"
+              }
+            },
+            "deliveries": {
+              "$from": "$.deliveries[*]",
+              "$select": {
+                "delivered_at": "delivered_at",
+                "recipient": "recipient",
+                "type": "type"
+              }
+            },
+            "alerts": "$.alerts",
+            "permalink": "$.permalink",
+            "pdf": "$.pdf"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "quaderno_create_invoice",
+      "description": "Issue a new invoice. Quaderno numbers it, calculates the taxes for the customer's location and tax status unless the items carry their own tax, and keeps it as a legal tax document: an issued invoice cannot be deleted, only voided or credited. Give contact as {\"id\": 123} for an existing contact or as new contact details. payment_method records full payment at once and marks it paid. Before calling, show the user the customer, items, prices and currency and confirm with the user first and wait for their yes. Creating does not email it; use quaderno_deliver_invoice for that.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact": {
+            "type": "object",
+            "description": "The customer: {\"id\": 123} for an existing contact, or details such as {\"first_name\": \"Acme GmbH\", \"kind\": \"company\", \"country\": \"DE\", \"tax_id\": \"DE123456789\", \"email\": \"billing@acme.example\"}."
+          },
+          "items": {
+            "type": "array",
+            "description": "Line items, each {\"description\": \"...\", \"quantity\": 1, \"unit_price\": 100.0} (or total_amount instead of unit_price), optionally product_code, discount_rate and tax_1_name, tax_1_rate, tax_1_country to override the tax.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "currency": {
+            "type": "string",
+            "description": "3-letter currency code in upper case, e.g. EUR. Default: the account currency."
+          },
+          "issue_date": {
+            "type": "string",
+            "description": "Issue date, YYYY-MM-DD. Default today."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Payment due date, YYYY-MM-DD."
+          },
+          "po_number": {
+            "type": "string",
+            "description": "Customer's purchase order number."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Short title shown on the invoice."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes printed on the invoice."
+          },
+          "payment_details": {
+            "type": "string",
+            "description": "Payment instructions shown to the customer."
+          },
+          "tag_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for filtering."
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "credit_card",
+              "cash",
+              "wire_transfer",
+              "direct_debit",
+              "check",
+              "iou",
+              "paypal",
+              "offset",
+              "other"
+            ],
+            "description": "Only if the invoice is already paid in full: records the payment with this method."
+          }
+        },
+        "required": [
+          "contact",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyMapping": {
+          "contact": "$contact",
+          "items": "$items",
+          "currency": "$currency",
+          "issue_date": "$issue_date",
+          "due_date": "$due_date",
+          "po_number": "$po_number",
+          "subject": "$subject",
+          "notes": "$notes",
+          "payment_details": "$payment_details",
+          "tag_list": "$tag_list",
+          "payment_method": "$payment_method"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "issue_date": "$.issue_date",
+            "due_date": "$.due_date",
+            "state": "$.state",
+            "currency": "$.currency",
+            "exchange_rate": "$.exchange_rate",
+            "subtotal_cents": "$.subtotal_cents",
+            "discount_cents": "$.discount_cents",
+            "total_cents": "$.total_cents",
+            "contact": {
+              "id": "$.contact.id",
+              "full_name": "$.contact.full_name"
+            },
+            "street_line_1": "$.street_line_1",
+            "postal_code": "$.postal_code",
+            "city": "$.city",
+            "region": "$.region",
+            "country": "$.country",
+            "tax_id": "$.tax_id",
+            "po_number": "$.po_number",
+            "subject": "$.subject",
+            "notes": "$.notes",
+            "tag_list": "$.tag_list",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "description": "description",
+                "quantity": "quantity",
+                "unit_price": "unit_price",
+                "discount_rate": "discount_rate",
+                "subtotal_cents": "subtotal_cents",
+                "total_amount": "total_amount",
+                "product_code": "product_code",
+                "tax_1_name": "tax_1_name",
+                "tax_1_rate": "tax_1_rate",
+                "tax_1_country": "tax_1_country",
+                "tax_1_transaction_type": "tax_1_transaction_type",
+                "tax_2_name": "tax_2_name",
+                "tax_2_rate": "tax_2_rate"
+              }
+            },
+            "taxes": "$.taxes",
+            "payments": {
+              "$from": "$.payments[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "amount": "amount",
+                "payment_method": "payment_method"
+              }
+            },
+            "deliveries": {
+              "$from": "$.deliveries[*]",
+              "$select": {
+                "delivered_at": "delivered_at",
+                "recipient": "recipient",
+                "type": "type"
+              }
+            },
+            "alerts": "$.alerts",
+            "permalink": "$.permalink",
+            "pdf": "$.pdf"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "quaderno_deliver_invoice",
+      "description": "Email an invoice to its customer from Quaderno, with the PDF and the link to it. The customer receives it at once and it cannot be unsent; the contact needs an email address. Before calling, tell the user which invoice goes to which address and confirm with the user first and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id from quaderno_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}/deliver"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "delivered": "= true"
+          },
+          "maxBytes": 1000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_credit_notes",
+      "description": "List or search credit notes (refunds and corrections of invoices) by number, customer name or PO number, issue date range or state: id, number, dates, state, currency, amounts in cents, customer and link. Newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in credit note number, customer name or PO number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Issue date range as from,to, e.g. 2026-01-01,2026-03-31."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "outstanding",
+              "late",
+              "paid"
+            ],
+            "description": "Only credit notes in this state."
+          },
+          "processor_id": {
+            "type": "string",
+            "description": "Only the credit note with this payment processor id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credits",
+        "queryParams": {
+          "q": "$q",
+          "date": "$date",
+          "state": "$state",
+          "processor_id": "$processor_id",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "credit_notes": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "number": "number",
+                "issue_date": "issue_date",
+                "due_date": "due_date",
+                "state": "state",
+                "currency": "currency",
+                "subtotal_cents": "subtotal_cents",
+                "discount_cents": "discount_cents",
+                "total_cents": "total_cents",
+                "contact": {
+                  "id": "contact.id",
+                  "full_name": "contact.full_name"
+                },
+                "country": "country",
+                "tax_id": "tax_id",
+                "po_number": "po_number",
+                "subject": "subject",
+                "payment_processor": "payment_processor",
+                "permalink": "permalink"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_get_credit_note",
+      "description": "Get one credit note in full: customer, line items, tax breakdown, payments, deliveries, the related invoice, the public link and the PDF link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "credit_note_id": {
+            "type": "integer",
+            "description": "Credit note id from quaderno_list_credit_notes."
+          }
+        },
+        "required": [
+          "credit_note_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credits/{credit_note_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "issue_date": "$.issue_date",
+            "due_date": "$.due_date",
+            "state": "$.state",
+            "currency": "$.currency",
+            "exchange_rate": "$.exchange_rate",
+            "subtotal_cents": "$.subtotal_cents",
+            "discount_cents": "$.discount_cents",
+            "total_cents": "$.total_cents",
+            "contact": {
+              "id": "$.contact.id",
+              "full_name": "$.contact.full_name"
+            },
+            "street_line_1": "$.street_line_1",
+            "postal_code": "$.postal_code",
+            "city": "$.city",
+            "region": "$.region",
+            "country": "$.country",
+            "tax_id": "$.tax_id",
+            "po_number": "$.po_number",
+            "subject": "$.subject",
+            "notes": "$.notes",
+            "tag_list": "$.tag_list",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "description": "description",
+                "quantity": "quantity",
+                "unit_price": "unit_price",
+                "discount_rate": "discount_rate",
+                "subtotal_cents": "subtotal_cents",
+                "total_amount": "total_amount",
+                "product_code": "product_code",
+                "tax_1_name": "tax_1_name",
+                "tax_1_rate": "tax_1_rate",
+                "tax_1_country": "tax_1_country",
+                "tax_1_transaction_type": "tax_1_transaction_type",
+                "tax_2_name": "tax_2_name",
+                "tax_2_rate": "tax_2_rate"
+              }
+            },
+            "taxes": "$.taxes",
+            "payments": {
+              "$from": "$.payments[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "amount": "amount",
+                "payment_method": "payment_method"
+              }
+            },
+            "deliveries": {
+              "$from": "$.deliveries[*]",
+              "$select": {
+                "delivered_at": "delivered_at",
+                "recipient": "recipient",
+                "type": "type"
+              }
+            },
+            "alerts": "$.alerts",
+            "related_document": "$.related_document",
+            "permalink": "$.permalink",
+            "pdf": "$.pdf"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_quotes",
+      "description": "List or search quotes (Quaderno calls them proformas; they replaced estimates) by number, customer name or PO number, issue date range, state (outstanding, accepted, declined, invoiced, late) or customer: id, number, dates, state, currency, amounts in cents, customer and link. Newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in quote number, customer name or PO number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Issue date range as from,to, e.g. 2026-01-01,2026-03-31."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "outstanding",
+              "accepted",
+              "declined",
+              "invoiced",
+              "late"
+            ],
+            "description": "Only quotes in this state."
+          },
+          "contact": {
+            "type": "integer",
+            "description": "Only quotes of this contact id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proformas",
+        "queryParams": {
+          "q": "$q",
+          "date": "$date",
+          "state": "$state",
+          "contact": "$contact",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "quotes": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "number": "number",
+                "issue_date": "issue_date",
+                "due_date": "due_date",
+                "state": "state",
+                "currency": "currency",
+                "subtotal_cents": "subtotal_cents",
+                "discount_cents": "discount_cents",
+                "total_cents": "total_cents",
+                "contact": {
+                  "id": "contact.id",
+                  "full_name": "contact.full_name"
+                },
+                "country": "country",
+                "tax_id": "tax_id",
+                "po_number": "po_number",
+                "subject": "subject",
+                "payment_processor": "payment_processor",
+                "permalink": "permalink",
+                "valid_until": "valid_until"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_get_quote",
+      "description": "Get one quote (proforma) in full: customer, line items, tax breakdown, validity, the public link and the PDF link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "integer",
+            "description": "Quote id from quaderno_list_quotes."
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proformas/{quote_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "issue_date": "$.issue_date",
+            "due_date": "$.due_date",
+            "state": "$.state",
+            "currency": "$.currency",
+            "exchange_rate": "$.exchange_rate",
+            "subtotal_cents": "$.subtotal_cents",
+            "discount_cents": "$.discount_cents",
+            "total_cents": "$.total_cents",
+            "contact": {
+              "id": "$.contact.id",
+              "full_name": "$.contact.full_name"
+            },
+            "street_line_1": "$.street_line_1",
+            "postal_code": "$.postal_code",
+            "city": "$.city",
+            "region": "$.region",
+            "country": "$.country",
+            "tax_id": "$.tax_id",
+            "po_number": "$.po_number",
+            "subject": "$.subject",
+            "notes": "$.notes",
+            "tag_list": "$.tag_list",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "description": "description",
+                "quantity": "quantity",
+                "unit_price": "unit_price",
+                "discount_rate": "discount_rate",
+                "subtotal_cents": "subtotal_cents",
+                "total_amount": "total_amount",
+                "product_code": "product_code",
+                "tax_1_name": "tax_1_name",
+                "tax_1_rate": "tax_1_rate",
+                "tax_1_country": "tax_1_country",
+                "tax_1_transaction_type": "tax_1_transaction_type",
+                "tax_2_name": "tax_2_name",
+                "tax_2_rate": "tax_2_rate"
+              }
+            },
+            "taxes": "$.taxes",
+            "payments": {
+              "$from": "$.payments[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "amount": "amount",
+                "payment_method": "payment_method"
+              }
+            },
+            "deliveries": {
+              "$from": "$.deliveries[*]",
+              "$select": {
+                "delivered_at": "delivered_at",
+                "recipient": "recipient",
+                "type": "type"
+              }
+            },
+            "alerts": "$.alerts",
+            "valid_until": "$.valid_until",
+            "permalink": "$.permalink",
+            "pdf": "$.pdf"
+          },
+          "maxBytes": 30000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_expenses",
+      "description": "List or search expenses (purchase invoices from suppliers) by number, supplier name or PO number, issue date range, state or supplier: id, date, state, currency, amounts in cents, supplier and subject. Newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in expense number, supplier name or PO number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Issue date range as from,to, e.g. 2026-01-01,2026-03-31."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "outstanding",
+              "late",
+              "paid"
+            ],
+            "description": "Only expenses in this state."
+          },
+          "contact": {
+            "type": "integer",
+            "description": "Only expenses of this supplier contact id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "q": "$q",
+          "date": "$date",
+          "state": "$state",
+          "contact": "$contact",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "expenses": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "issue_date": "issue_date",
+                "state": "state",
+                "currency": "currency",
+                "subtotal_cents": "subtotal_cents",
+                "total_cents": "total_cents",
+                "contact": {
+                  "id": "contact.id",
+                  "full_name": "contact.full_name"
+                },
+                "po_number": "po_number",
+                "subject": "subject",
+                "payment_method": "payment_method"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_products",
+      "description": "List or search products (items) by name or code: id, code, name, description, unit cost, currency, kind (one-off or subscription), product type (good or service), tax class and stock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search in product name or code (case-sensitive)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page, 1 to 100. Default 25."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Next page: the id of the last record of the previous page. More pages exist while _headers.x-pages-hasmore is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "created_before": "$created_before"
+        },
+        "exposeHeaders": [
+          "x-pages-hasmore",
+          "x-pages-nextpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "products": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "code": "code",
+                "name": "name",
+                "description": "description",
+                "unit_cost": "unit_cost",
+                "currency": "currency",
+                "kind": "kind",
+                "product_type": "product_type",
+                "tax_class": "tax_class",
+                "tax_type": "tax_type",
+                "stock": "stock"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_calculate_tax",
+      "description": "Calculate the sales tax, VAT or GST for a sale to a customer location: tax name, rate, taxable part, tax amount, subtotal and total, the jurisdiction (country, region, county, city) and a status with a notice, for example reverse charge for a valid EU VAT number. Calculates only, records nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_country": {
+            "type": "string",
+            "description": "Customer's country, 2-letter ISO code, e.g. FR. Required."
+          },
+          "to_postal_code": {
+            "type": "string",
+            "description": "Customer's ZIP or postal code. Needed for the US, Canada and some regions."
+          },
+          "to_city": {
+            "type": "string",
+            "description": "Customer's city. Recommended for US sales tax."
+          },
+          "to_street": {
+            "type": "string",
+            "description": "Customer's street address. Recommended for US sales tax."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Customer's tax id, e.g. an EU VAT number; Quaderno validates it."
+          },
+          "tax_code": {
+            "type": "string",
+            "enum": [
+              "consulting",
+              "eservice",
+              "ebook",
+              "saas",
+              "standard",
+              "reduced",
+              "exempt"
+            ],
+            "description": "What is sold. Default: the account's default tax code. See quaderno_list_tax_codes."
+          },
+          "product_type": {
+            "type": "string",
+            "enum": [
+              "good",
+              "service"
+            ],
+            "description": "Good or service. Default: the account default."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount of the sale, in the currency unit (e.g. 99.90), to get the tax amount and total."
+          },
+          "tax_behavior": {
+            "type": "string",
+            "enum": [
+              "inclusive",
+              "exclusive"
+            ],
+            "description": "Whether amount already includes tax."
+          },
+          "currency": {
+            "type": "string",
+            "description": "3-letter currency code. Default: the account currency."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date of the sale, YYYY-MM-DD. Default today."
+          },
+          "from_country": {
+            "type": "string",
+            "description": "Seller's country, 2-letter ISO code. Default: the account's country."
+          },
+          "from_postal_code": {
+            "type": "string",
+            "description": "Seller's postal code. Default: the account's."
+          }
+        },
+        "required": [
+          "to_country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tax_rates/calculate",
+        "queryParams": {
+          "to_country": "$to_country",
+          "to_postal_code": "$to_postal_code",
+          "to_city": "$to_city",
+          "to_street": "$to_street",
+          "tax_id": "$tax_id",
+          "tax_code": "$tax_code",
+          "product_type": "$product_type",
+          "amount": "$amount",
+          "tax_behavior": "$tax_behavior",
+          "currency": "$currency",
+          "date": "$date",
+          "from_country": "$from_country",
+          "from_postal_code": "$from_postal_code"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "name": "$.name",
+            "rate": "$.rate",
+            "taxable_part": "$.taxable_part",
+            "tax_amount": "$.tax_amount",
+            "subtotal": "$.subtotal",
+            "total_amount": "$.total_amount",
+            "country": "$.country",
+            "region": "$.region",
+            "county": "$.county",
+            "city": "$.city",
+            "tax_code": "$.tax_code",
+            "tax_behavior": "$.tax_behavior",
+            "status": "$.status",
+            "notice": "$.notice",
+            "additional_name": "$.additional_name",
+            "additional_rate": "$.additional_rate",
+            "additional_tax_amount": "$.additional_tax_amount"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "quaderno_validate_tax_id",
+      "description": "Check a business tax id against the official registry of its country (EU VIES, UK, Switzerland, Quebec, Australia, New Zealand): returns valid true, false, or null when the registry could not be reached. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Country of registration, 2-letter ISO code, e.g. DE."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "The tax id, e.g. DE123456789."
+          }
+        },
+        "required": [
+          "country",
+          "tax_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tax_ids/validate",
+        "queryParams": {
+          "country": "$country",
+          "tax_id": "$tax_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "valid": "$.valid"
+          },
+          "maxBytes": 1000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_tax_jurisdictions",
+      "description": "List the tax jurisdictions Quaderno knows, optionally for one country or region: id, name, country and region. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "2-letter ISO country code, upper case, e.g. CA."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region code, e.g. BC, or none for jurisdictions without a region."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jurisdictions",
+        "queryParams": {
+          "country": "$country",
+          "region": "$region"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "jurisdictions": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "country": "country",
+                "region": "region"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_tax_codes",
+      "description": "List the tax codes products can be classified with (e.g. eservice, saas, ebook, consulting, standard, reduced, exempt): id, name and what each covers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tax_codes"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "tax_codes": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "quaderno_list_reports",
+      "description": "List the reports requested so far: id, type (tax_summary, invoices_list, credits_list), state, period, when it completed and the download URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reporting/requests"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "reports": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "report_type": "report_type",
+                "state": "state",
+                "parameters": "parameters",
+                "created_at": "created_at",
+                "completed_at": "completed_at",
+                "report_url": "report_url"
+              }
+            }
+          },
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "quaderno_request_report",
+      "description": "Ask Quaderno to build a report for a period: tax_summary (taxes collected per jurisdiction, for filing returns), invoices_list or credits_list. It is built in the background; check it with quaderno_get_report until state is no longer pending, then use report_url. Before calling, tell the user the report type and period and confirm with the user first and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "tax_summary",
+              "invoices_list",
+              "credits_list"
+            ],
+            "description": "Which report."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day of the period, YYYY-MM-DD."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day of the period, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "report_type",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reporting/requests",
+        "bodyMapping": {
+          "report_type": "$report_type",
+          "parameters": {
+            "from_date": "$from_date",
+            "to_date": "$to_date"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "report_type": "$.report_type",
+            "state": "$.state",
+            "parameters": "$.parameters",
+            "created_at": "$.created_at",
+            "completed_at": "$.completed_at",
+            "report_url": "$.report_url"
+          },
+          "maxBytes": 5000
+        }
+      }
+    },
+    {
+      "name": "quaderno_get_report",
+      "description": "Check one report request: state (pending, suceeded or failed), period, when it completed and the report_url to download it once ready. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "integer",
+            "description": "Report request id from quaderno_list_reports or quaderno_request_report."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reporting/requests/{report_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.id",
+            "report_type": "$.report_type",
+            "state": "$.state",
+            "parameters": "$.parameters",
+            "created_at": "$.created_at",
+            "completed_at": "$.completed_at",
+            "report_url": "$.report_url"
+          },
+          "maxBytes": 5000
+        }
+      }
+    }
+  ]
+}

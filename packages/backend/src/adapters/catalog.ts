@@ -115,6 +115,7 @@ import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
 import * as brex from './intl/brex.json';
 import * as browserbase from './intl/browserbase.json';
+import * as bubble from './intl/bubble.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as calendly from './intl/calendly.json';
@@ -157,12 +158,14 @@ import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as easypost from './intl/easypost.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
+import * as egnyte from './intl/egnyte.json';
 import * as elasticsearch from './intl/elasticsearch.json';
 import * as elevenlabs from './intl/elevenlabs.json';
 import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
 import * as eventbrite from './intl/eventbrite.json';
+import * as everhour from './intl/everhour.json';
 import * as exa from './intl/exa.json';
 import * as exerciseCom from './intl/exercise-com.json';
 import * as facebookPages from './intl/facebook-pages.json';
@@ -193,6 +196,7 @@ import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as github from './intl/github.json';
 import * as gitlab from './intl/gitlab.json';
+import * as glide from './intl/glide.json';
 import * as glpi from './intl/glpi.json';
 import * as gmail from './intl/gmail.json';
 import * as goaffpro from './intl/goaffpro.json';
@@ -216,6 +220,7 @@ import * as gorgias from './intl/gorgias.json';
 import * as grafana from './intl/grafana.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
+import * as gumroad from './intl/gumroad.json';
 import * as gusto from './intl/gusto.json';
 import * as hackernews from './intl/hackernews.json';
 import * as harvest from './intl/harvest.json';
@@ -238,6 +243,7 @@ import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
 import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
+import * as jotform from './intl/jotform.json';
 import * as kashflow from './intl/kashflow.json';
 import * as keycrm from './intl/keycrm.json';
 import * as klaviyo from './intl/klaviyo.json';
@@ -257,6 +263,7 @@ import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as mailerlite from './intl/mailerlite.json';
 import * as mailshake from './intl/mailshake.json';
+import * as make from './intl/make.json';
 import * as mangools from './intl/mangools.json';
 import * as mapbox from './intl/mapbox.json';
 import * as mastodon from './intl/mastodon.json';
@@ -310,9 +317,11 @@ import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
 import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
+import * as ozon from './intl/ozon.json';
 import * as pagerduty from './intl/pagerduty.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as paypal from './intl/paypal.json';
+import * as pcloud from './intl/pcloud.json';
 import * as peopleDataLabs from './intl/people-data-labs.json';
 import * as perplexity from './intl/perplexity.json';
 import * as pexels from './intl/pexels.json';
@@ -333,6 +342,7 @@ import * as printify from './intl/printify.json';
 import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
+import * as quaderno from './intl/quaderno.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
 import * as ramp from './intl/ramp.json';
@@ -350,6 +360,7 @@ import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesforce from './intl/salesforce.json';
 import * as salesloft from './intl/salesloft.json';
+import * as sanity from './intl/sanity.json';
 import * as sapConcur from './intl/sap-concur.json';
 import * as sapS4hanaCloud from './intl/sap-s4hana-cloud.json';
 import * as sapS4hanaHana from './intl/sap-s4hana-hana.json';
@@ -369,13 +380,17 @@ import * as servicenow from './intl/servicenow.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopify from './intl/shopify.json';
+import * as shortcut from './intl/shortcut.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as slack from './intl/slack.json';
+import * as snapchat from './intl/snapchat.json';
 import * as snov from './intl/snov.json';
 import * as snowflake from './intl/snowflake.json';
+import * as softr from './intl/softr.json';
 import * as sorare from './intl/sorare.json';
 import * as splunk from './intl/splunk.json';
+import * as spotify from './intl/spotify.json';
 import * as square from './intl/square.json';
 import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
@@ -403,12 +418,15 @@ import * as trendyol from './intl/trendyol.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as twelveData from './intl/twelve-data.json';
 import * as twilio from './intl/twilio.json';
+import * as twitch from './intl/twitch.json';
 import * as typeform from './intl/typeform.json';
 import * as untappd from './intl/untappd.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
 import * as uzumMarket from './intl/uzum-market.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
+import * as vimeo from './intl/vimeo.json';
 import * as vinted from './intl/vinted.json';
+import * as vk from './intl/vk.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
@@ -422,6 +440,7 @@ import * as wix from './intl/wix.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
 import * as workable from './intl/workable.json';
+import * as workday from './intl/workday.json';
 import * as worksection from './intl/worksection.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
@@ -806,6 +825,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   brevo as unknown as AdapterDefinition,
   brex as unknown as AdapterDefinition,
   browserbase as unknown as AdapterDefinition,
+  bubble as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
@@ -848,12 +868,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   easypost as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
+  egnyte as unknown as AdapterDefinition,
   elasticsearch as unknown as AdapterDefinition,
   elevenlabs as unknown as AdapterDefinition,
   erpnext as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   eventbrite as unknown as AdapterDefinition,
+  everhour as unknown as AdapterDefinition,
   exa as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
   facebookPages as unknown as AdapterDefinition,
@@ -884,6 +906,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gitbook as unknown as AdapterDefinition,
   github as unknown as AdapterDefinition,
   gitlab as unknown as AdapterDefinition,
+  glide as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
   gmail as unknown as AdapterDefinition,
   goaffpro as unknown as AdapterDefinition,
@@ -907,6 +930,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   grafana as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,
+  gumroad as unknown as AdapterDefinition,
   gusto as unknown as AdapterDefinition,
   hackernews as unknown as AdapterDefinition,
   harvest as unknown as AdapterDefinition,
@@ -929,6 +953,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   invoiced as unknown as AdapterDefinition,
   iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
+  jotform as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
@@ -948,6 +973,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mailchimp as unknown as AdapterDefinition,
   mailerlite as unknown as AdapterDefinition,
   mailshake as unknown as AdapterDefinition,
+  make as unknown as AdapterDefinition,
   mangools as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   mastodon as unknown as AdapterDefinition,
@@ -1001,9 +1027,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   orderful as unknown as AdapterDefinition,
   otter as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
+  ozon as unknown as AdapterDefinition,
   pagerduty as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
+  pcloud as unknown as AdapterDefinition,
   peopleDataLabs as unknown as AdapterDefinition,
   perplexity as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
@@ -1024,6 +1052,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   procore as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
+  quaderno as unknown as AdapterDefinition,
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
   ramp as unknown as AdapterDefinition,
@@ -1041,6 +1070,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   salesflare as unknown as AdapterDefinition,
   salesforce as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
+  sanity as unknown as AdapterDefinition,
   sapConcur as unknown as AdapterDefinition,
   sapS4hanaCloud as unknown as AdapterDefinition,
   sapS4hanaHana as unknown as AdapterDefinition,
@@ -1060,13 +1090,17 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopify as unknown as AdapterDefinition,
+  shortcut as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   slack as unknown as AdapterDefinition,
+  snapchat as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
   snowflake as unknown as AdapterDefinition,
+  softr as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
+  spotify as unknown as AdapterDefinition,
   square as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
@@ -1094,12 +1128,15 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   trenitalia as unknown as AdapterDefinition,
   twelveData as unknown as AdapterDefinition,
   twilio as unknown as AdapterDefinition,
+  twitch as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
   untappd as unknown as AdapterDefinition,
   uptimeRobot as unknown as AdapterDefinition,
   uzumMarket as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
+  vimeo as unknown as AdapterDefinition,
   vinted as unknown as AdapterDefinition,
+  vk as unknown as AdapterDefinition,
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
@@ -1113,6 +1150,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
   workable as unknown as AdapterDefinition,
+  workday as unknown as AdapterDefinition,
   worksection as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,

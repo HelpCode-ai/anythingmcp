@@ -1,0 +1,576 @@
+{
+  "slug": "sanity",
+  "name": "Sanity",
+  "aliases": [
+    "Sanity.io",
+    "Sanity CMS"
+  ],
+  "description": "Let your AI work with your Sanity content: run GROQ queries, read documents, their revisions and change history, list document types, datasets and projects, and create, change and publish drafts after you confirm. API token with Viewer or Editor rights.",
+  "instructions": "## Sanity\nThis connector works with the content of a **Sanity** project (the headless CMS and Content Lake) through the official **HTTP API** (`https://<projectId>.api.sanity.io/v2025-02-19`). Its main tool runs **GROQ** queries against one dataset; others read a document by id, its earlier revisions and change history, list document types, datasets and projects, and create, change and publish drafts after you confirm.\n\n**Setup (about 3 minutes)**\n1. Open https://www.sanity.io/manage, pick the project and copy its **Project ID** (8 characters, e.g. `abc12xyz`) into `SANITY_PROJECT_ID`.\n2. Under **Datasets** note the dataset name (usually `production`) for `SANITY_DATASET`.\n3. Under **API**, **Tokens**, click **Add API token**, give it a name and choose the permission:\n   - **Viewer**: reads published documents and drafts, history included. Enough for every read tool; writes are refused.\n   - **Editor**: reads and writes documents. Needed for `sanity_create_draft`, `sanity_patch_draft` and `sanity_publish_draft`.\n   Avoid Developer and Administrator tokens: they can also change project settings and datasets.\n4. Copy the token into `SANITY_API_TOKEN` (Sanity shows it once), install and run `sanity_list_document_types`.\n\n**Writes: confirm first, drafts by default.** `sanity_create_draft` and `sanity_patch_draft` only ever write the **draft** (`drafts.<id>`), the version editors see in Sanity Studio; nothing goes live until `sanity_publish_draft`, which replaces the published document visitors see. Before any of them, show the user the document, the change and whether it will go live, and wait for a clear yes. Pass `dry_run: true` to check an action without saving. `sanity_delete_document` is installed switched off.\n\n**GROQ in short** (`sanity_query`)\n- Filter, then project only the fields you need, then slice: `*[_type == \"post\" && defined(slug.current)] | order(publishedAt desc) [0...10] {_id, title, \"slug\": slug.current, publishedAt}`.\n- Always add a slice such as `[0...20]` and a projection `{...}`: a bare `*[_type == \"post\"]` returns whole documents and is cut off at about 60 KB.\n- Pass values as `params` instead of pasting them into the query: query `*[_type == $type && title match $q]`, params `{\"type\": \"post\", \"q\": \"launch*\"}`.\n- Count with `count(*[_type == \"post\"])`; follow references with `author->name`; full text with `title match \"word*\"`; drafts have ids starting with `drafts.`.\n- Field names come from the project's schema: look at a few documents first (`*[_type == \"post\"][0...3]`) when you do not know them. `sanity_list_document_types` lists the types.\n- `perspective`: `published` (default) ignores drafts, `drafts` shows content as if all drafts were published, `raw` returns published documents and drafts side by side.\n\n**How to work**\n1. `sanity_list_document_types`, then `sanity_query` to find documents.\n2. `sanity_get_document` reads documents by id (published or `drafts.<id>`).\n3. History: `sanity_list_document_transactions` lists who changed a document and when (no content); `sanity_get_document_revision` returns the document as it was at a revision id or a time.\n4. Edit: `sanity_create_draft` for a new document, `sanity_patch_draft` to change one (it starts the draft from the published version when there is none), `sanity_publish_draft` to make the draft live.\n5. Setup questions: `sanity_list_datasets` for this project, `sanity_list_projects` for all projects the token can see.\n\n**Rich text** fields (Portable Text) are arrays of blocks; to write plain paragraphs use blocks like `{\"_type\": \"block\", \"_key\": \"a1\", \"style\": \"normal\", \"children\": [{\"_type\": \"span\", \"_key\": \"a2\", \"text\": \"Hello\"}]}`. Every array item needs a unique `_key`.\n\n**Common errors**\n- 401 Session not found: the token is wrong or was deleted.\n- 403 or \"Insufficient permissions\": a Viewer token tried to write, or the token belongs to another project.\n- 404 Dataset not found: check `SANITY_DATASET`; documents that do not exist come back empty from queries and in `omitted` from `sanity_get_document`.\n- 400 queryParseError: the GROQ query has a syntax error; the message shows where.\n\n**Out of scope**: assets (image and file uploads), content releases and scheduled publishing, unpublishing, deleting (switched off), dataset and project management, webhooks, CORS and members, and real-time listening.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "sanity",
+  "docsUrl": "https://www.sanity.io/docs/http-reference",
+  "prerequisites": "A Sanity project and permission to create API tokens in it (sanity.io/manage, project, API, Tokens). About 3 minutes.",
+  "appRegistrationUrl": "https://www.sanity.io/manage",
+  "requiredEnvVars": [
+    "SANITY_PROJECT_ID",
+    "SANITY_DATASET",
+    "SANITY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SANITY_PROJECT_ID": {
+      "label": "Project ID",
+      "kind": "setting",
+      "help": "sanity.io/manage, your project: the Project ID shown at the top (also in sanity.config).",
+      "link": "https://www.sanity.io/manage",
+      "example": "abc12xyz",
+      "pattern": "^[a-z0-9]{8}$",
+      "patternMessage": "A Sanity project ID has 8 lowercase letters and digits, e.g. abc12xyz."
+    },
+    "SANITY_DATASET": {
+      "label": "Dataset",
+      "kind": "setting",
+      "help": "The dataset to work on, usually production. Listed under Datasets in sanity.io/manage.",
+      "example": "production",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+      "patternMessage": "Dataset names use lowercase letters, digits, _ and -, e.g. production."
+    },
+    "SANITY_API_TOKEN": {
+      "label": "API token (Viewer or Editor)",
+      "kind": "credential",
+      "secret": true,
+      "help": "sanity.io/manage, project, API, Tokens, Add API token. Viewer reads, Editor also writes drafts and publishes. Sanity shows it once.",
+      "link": "https://www.sanity.io/docs/content-lake/http-auth",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token, without the word Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Sanity does not know this token (Session not found): it is wrong or was deleted. Add a new one under API, Tokens in sanity.io/manage.",
+    "403": "The token may not do this: a Viewer token cannot write, and a token only works in its own project.",
+    "404": "The dataset was not found in this project. Check SANITY_DATASET and SANITY_PROJECT_ID."
+  },
+  "probe": {
+    "tool": "sanity_query",
+    "params": {
+      "query": "now()"
+    }
+  },
+  "connector": {
+    "name": "Sanity HTTP API",
+    "type": "REST",
+    "baseUrl": "https://{{SANITY_PROJECT_ID}}.api.sanity.io/v2025-02-19",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SANITY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/data/query/{{SANITY_DATASET}}?query=now()",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "results[0].status",
+          "equals": "error",
+          "messagePath": "results[0].error.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "sanity_query",
+      "description": "Run a GROQ query against the dataset and return its result. Always project the fields you need and slice the list, e.g. *[_type == \"post\"] | order(_updatedAt desc) [0...20] {_id, title}; pass values as params. Answers over about 60 KB are cut off. See the connector instructions for GROQ tips.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The GROQ query, e.g. *[_type == $type][0...10]{_id, title}.",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "params": {
+            "type": "object",
+            "description": "Values for $parameters in the query, without the $, e.g. {\"type\": \"post\"}."
+          },
+          "perspective": {
+            "type": "string",
+            "description": "published (default) ignores drafts, drafts shows drafts as if published, raw returns both.",
+            "enum": [
+              "published",
+              "drafts",
+              "raw"
+            ],
+            "default": "published"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/query/{{SANITY_DATASET}}",
+        "queryParams": {
+          "perspective": "$perspective",
+          "returnQuery": "false"
+        },
+        "bodyMapping": {
+          "query": "$query",
+          "params": "$params"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.result",
+            "ms": "$.ms"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sanity_list_document_types",
+      "description": "List the document types that exist in the dataset (from _type), drafts included, e.g. post, author, sanity.imageAsset. Use it before writing queries for an unknown project.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/query/{{SANITY_DATASET}}",
+        "queryParams": {
+          "perspective": "raw",
+          "returnQuery": "false"
+        },
+        "bodyMapping": {
+          "query": "array::unique(*[]._type)"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "types": "$.result"
+          },
+          "maxBytes": 20000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sanity_get_document",
+      "description": "Read documents by id, published (post-123) or draft (drafts.post-123), with all their fields; several ids separated by commas. A document that does not exist or that the token may not read is listed in omitted with the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_ids": {
+            "type": "string",
+            "description": "One id or several separated by commas, e.g. post-123,drafts.post-123.",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(,[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+          }
+        },
+        "required": [
+          "document_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/doc/{{SANITY_DATASET}}/{document_ids}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "documents": "$.documents",
+            "omitted": "$.omitted"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "sanity_get_document_revision",
+      "description": "Read a document as it was in the past: at a revision id (_rev, from sanity_list_document_transactions), at a point in time, or its last state before it was deleted. Give exactly one of revision, time or last_revision.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "The document id, e.g. post-123, or drafts.post-123 for the draft.",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "revision": {
+            "type": "string",
+            "description": "The revision id (_rev) to read."
+          },
+          "time": {
+            "type": "string",
+            "description": "Read the document as it was at this time, ISO 8601, e.g. 2026-09-01T12:00:00Z."
+          },
+          "last_revision": {
+            "type": "boolean",
+            "description": "true returns the last revision, also of a deleted document."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/history/{{SANITY_DATASET}}/documents/{document_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "revision": "$revision",
+          "time": "$time",
+          "lastRevision": "$last_revision"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "documents": "$.documents"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "sanity_list_document_transactions",
+      "description": "List the changes (transactions) of a document: transaction id, time, author id and the kind of change (create, patch, publish, delete), newest first, without the content. Pass the id with and without drafts. to see draft edits too, e.g. post-123,drafts.post-123. The answer is one JSON object per line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_ids": {
+            "type": "string",
+            "description": "One id or several separated by commas, e.g. post-123,drafts.post-123.",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(,[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many transactions, 1 to 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "true (default) lists the newest first.",
+            "default": true
+          },
+          "from_time": {
+            "type": "string",
+            "description": "Only changes from this time on, ISO 8601."
+          },
+          "to_time": {
+            "type": "string",
+            "description": "Only changes up to this time, ISO 8601."
+          }
+        },
+        "required": [
+          "document_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/history/{{SANITY_DATASET}}/transactions/{document_ids}",
+        "encodePathParams": true,
+        "queryParams": {
+          "excludeContent": "true",
+          "limit": "$limit",
+          "reverse": "$reverse",
+          "fromTime": "$from_time",
+          "toTime": "$to_time"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "effects"
+          ],
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "sanity_create_draft",
+      "description": "Create a new document as a draft (not published). document must contain _type and _id = \"drafts.\" + document_id, plus its fields. Fails if the draft already exists. Show the user the document and confirm before calling; publish later with sanity_publish_draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "The document id without the drafts. prefix, e.g. post-123 or a UUID.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!drafts\\.)[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "document": {
+            "type": "object",
+            "description": "The document, e.g. {\"_id\": \"drafts.post-123\", \"_type\": \"post\", \"title\": \"Hello\"}. _id must be drafts. followed by document_id."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true checks the action without saving anything. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "document_id",
+          "document"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/actions/{{SANITY_DATASET}}",
+        "bodyMapping": {
+          "actions": [
+            {
+              "actionType": "sanity.action.document.create",
+              "publishedId": "$document_id",
+              "document": "$document",
+              "ifExists": "fail"
+            }
+          ],
+          "dryRun": "$dry_run"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transactionId": "$.transactionId",
+            "results": "$.results"
+          }
+        }
+      }
+    },
+    {
+      "name": "sanity_patch_draft",
+      "description": "Change fields of a document's draft with a patch, e.g. {\"set\": {\"title\": \"New\"}}, {\"unset\": [\"subtitle\"]}, {\"setIfMissing\": {\"tags\": []}}, {\"inc\": {\"views\": 1}} or {\"insert\": {...}}. When there is no draft yet, it starts one from the published version. Nothing goes live until published. Show the user the change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "The document id without the drafts. prefix, e.g. post-123 or a UUID.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!drafts\\.)[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "patch": {
+            "type": "object",
+            "description": "Patch operations: set, unset, setIfMissing, inc, dec, insert, diffMatchPatch. Paths use dots and brackets, e.g. \"slug.current\" or \"body[0].children[0].text\"."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true checks the action without saving anything. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "document_id",
+          "patch"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/actions/{{SANITY_DATASET}}",
+        "bodyMapping": {
+          "actions": [
+            {
+              "actionType": "sanity.action.document.edit",
+              "publishedId": "$document_id",
+              "versionId": "drafts.${document_id}",
+              "patch": "$patch"
+            }
+          ],
+          "dryRun": "$dry_run"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transactionId": "$.transactionId",
+            "results": "$.results"
+          }
+        }
+      }
+    },
+    {
+      "name": "sanity_publish_draft",
+      "description": "Publish a document's draft: the draft replaces the published version and goes live on every site that reads this dataset, and the draft is removed. Show the user what will go live and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "The document id without the drafts. prefix, e.g. post-123 or a UUID.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!drafts\\.)[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true checks the action without saving anything. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/actions/{{SANITY_DATASET}}",
+        "bodyMapping": {
+          "actions": [
+            {
+              "actionType": "sanity.action.document.publish",
+              "publishedId": "$document_id",
+              "versionId": "drafts.${document_id}"
+            }
+          ],
+          "dryRun": "$dry_run"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transactionId": "$.transactionId",
+            "results": "$.results"
+          }
+        }
+      }
+    },
+    {
+      "name": "sanity_delete_document",
+      "description": "Delete a published document and the drafts you list. Live sites lose it at once. Installed switched off. Only when the user explicitly asks; confirm the document first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "The document id without the drafts. prefix, e.g. post-123 or a UUID.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!drafts\\.)[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "include_drafts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Draft ids to delete with it, e.g. [\"drafts.post-123\"]. A draft that exists but is not listed makes the delete fail."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true checks the action without saving anything. Default false.",
+            "default": false
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/actions/{{SANITY_DATASET}}",
+        "bodyMapping": {
+          "actions": [
+            {
+              "actionType": "sanity.action.document.delete",
+              "publishedId": "$document_id",
+              "includeDrafts": "$include_drafts"
+            }
+          ],
+          "dryRun": "$dry_run"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "transactionId": "$.transactionId",
+            "results": "$.results"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "sanity_list_datasets",
+      "description": "List the datasets of the project: name and whether each is public or private.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://{{SANITY_PROJECT_ID}}.api.sanity.io/v2021-06-07/datasets"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "datasets": {
+              "$from": "$[*]",
+              "$select": {
+                "name": "name",
+                "aclMode": "aclMode",
+                "createdAt": "createdAt"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sanity_list_projects",
+      "description": "List the Sanity projects the token can see: id, name, studio host and creation date. A project token usually sees only its own project; a personal token sees all of yours.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.sanity.io/v2021-06-07/projects",
+        "queryParams": {
+          "includeMembers": "false"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "projects": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "displayName": "displayName",
+                "studioHost": "studioHost",
+                "organizationId": "organizationId",
+                "createdAt": "createdAt"
+              }
+            }
+          },
+          "maxBytes": 30000
+        }
+      }
+    }
+  ]
+}
