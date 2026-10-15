@@ -156,6 +156,48 @@ describe('AdsActivationService', () => {
     expect(body).not.toHaveProperty('gclid');
   });
 
+  it('reports a ChatGPT Ads sign-up with its oppref', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202, data: {} });
+    const { svc, storedEvents } = makeService({
+      signups: [
+        {
+          metadata: attribution({ utm_source: 'chatgpt_ads', oppref: 'op-1', ad_consent: 'granted', channel: 'chatgpt_ads' }),
+          userId: 'user-1',
+        },
+      ],
+    });
+    await svc.onSuccessfulInvocation('org-1');
+    expect((mockedAxios.post.mock.calls[0] as any[])[1]).toEqual({
+      organizationId: 'org-1',
+      activatedAt: FIRST_SUCCESS.toISOString(),
+      oppref: 'op-1',
+      adConsent: 'granted',
+      email: 'founder@example.com',
+    });
+    expect(storedEvents()).toEqual([
+      expect.objectContaining({ event: 'ads_activation_reported', metadata: { kind: 'oppref', status: 202 } }),
+    ]);
+  });
+
+  it('sends the Google click id and the oppref together when the sign-up carried both', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202, data: {} });
+    const { svc, storedEvents } = makeService({
+      signups: [{ metadata: attribution({ gclid: 'g-1', oppref: 'op-1', ad_consent: 'granted' }), userId: 'user-1' }],
+    });
+    await svc.onSuccessfulInvocation('org-1');
+    const body = (mockedAxios.post.mock.calls[0] as any[])[1];
+    expect(body).toEqual(expect.objectContaining({ gclid: 'g-1', oppref: 'op-1' }));
+    expect(storedEvents()[0].metadata).toEqual({ kind: 'gclid+oppref', status: 202 });
+  });
+
+  it('sends nothing for an oppref stored without ad consent', async () => {
+    const { svc } = makeService({
+      signups: [{ metadata: attribution({ utm_source: 'chatgpt_ads', oppref: 'op-1', ad_consent: 'denied' }), userId: 'user-1' }],
+    });
+    await svc.onSuccessfulInvocation('org-1');
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
   it('leaves the email out when the signing-up account is gone', async () => {
     mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
     const { svc, prisma } = makeService({

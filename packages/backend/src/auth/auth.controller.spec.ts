@@ -527,3 +527,52 @@ describe('AuthController — accept-invite ownership check', () => {
     expect(await a.controller.verifyInvite('t2')).toMatchObject({ exists: false });
   });
 });
+
+describe('AuthController — verified sign-up reported for ChatGPT Ads', () => {
+  function makeVerifyController() {
+    const token = { id: 't-1', userId: 'u-1', token: 'link-token', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    const prisma = {
+      emailVerificationToken: {
+        findFirst: jest.fn(async () => token),
+        findUnique: jest.fn(async () => token),
+        update: jest.fn(async () => token),
+      },
+    };
+    const usersService = { update: jest.fn(async () => undefined) };
+    const configService = { get: jest.fn(() => undefined) };
+    const adsSignup = { onEmailVerified: jest.fn(() => undefined) };
+    const controller = new AuthController(
+      {} as any,
+      usersService as any,
+      {} as any,
+      prisma as any,
+      {} as any,
+      configService as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      adsSignup as any,
+    );
+    return { controller, adsSignup };
+  }
+
+  it('hands a code verification to the sign-up report', async () => {
+    const { controller, adsSignup } = makeVerifyController();
+    await controller.verifyEmail({ user: { sub: 'u-1' } }, { code: '123456' } as any);
+    expect(adsSignup.onEmailVerified).toHaveBeenCalledWith('u-1');
+  });
+
+  it('hands a link verification to the sign-up report', async () => {
+    const { controller, adsSignup } = makeVerifyController();
+    const res = { redirect: jest.fn() };
+    await controller.verifyEmailLink({}, 'link-token', res as any);
+    expect(adsSignup.onEmailVerified).toHaveBeenCalledWith('u-1');
+    expect(res.redirect).toHaveBeenCalled();
+  });
+});

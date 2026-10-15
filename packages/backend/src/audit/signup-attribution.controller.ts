@@ -6,9 +6,10 @@ import { ProductEventService } from './product-event.service';
 import { AttributionClickId } from './signup-attribution';
 
 /**
- * GET /api/auth/attribution/click-ids — the signed-in user's own Google Ads
- * click id, so the cloud app can pass it on to the pricing page and a
- * purchase can be uploaded to Google Ads as an offline conversion.
+ * GET /api/auth/attribution/click-ids — the signed-in user's own ad click ids
+ * (one Google Ads id, a ChatGPT Ads `oppref`, or both), so the cloud app can
+ * pass them on to the pricing page and a purchase can be reported to the ad
+ * platform as a conversion.
  *
  * Only ever the caller's own sign-up (the user id comes from the session,
  * never from the request), only an id stored with ad consent granted, and

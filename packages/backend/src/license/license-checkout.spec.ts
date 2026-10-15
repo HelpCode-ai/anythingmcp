@@ -80,6 +80,15 @@ describe('checkoutAdMetadata', () => {
     ).toEqual({ ad_consent: 'granted', gclid: 'abc' });
   });
 
+  it('passes a consented ChatGPT Ads oppref, alone or next to a Google click id', () => {
+    expect(checkoutAdMetadata({ oppref: 'op-1', ad_consent: 'granted' })).toEqual({ ad_consent: 'granted', oppref: 'op-1' });
+    expect(checkoutAdMetadata({ gclid: 'abc', oppref: 'op-1', ad_consent: 'granted' })).toEqual({
+      ad_consent: 'granted',
+      gclid: 'abc',
+      oppref: 'op-1',
+    });
+  });
+
   it('sends nothing without consent or without an id', () => {
     expect(checkoutAdMetadata(null)).toBeUndefined();
     expect(checkoutAdMetadata({ gclid: 'abc', ad_consent: 'denied' } as any)).toBeUndefined();

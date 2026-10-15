@@ -103,6 +103,30 @@ describe('RegisterDto through the global ValidationPipe', () => {
     );
   });
 
+  it('accepts a ChatGPT Ads oppref, opaque but printable, up to 500 characters', async () => {
+    const dto = await validate({
+      ...base,
+      attribution: {
+        first_touch: { utm_source: 'chatgpt_ads', utm_medium: 'cpc', oppref: 'opp_9f2C.x~Z=/+', ad_consent: 'granted' },
+      },
+    });
+    expect(dto.attribution?.first_touch?.oppref).toBe('opp_9f2C.x~Z=/+');
+    await expect(
+      validate({ ...base, attribution: { first_touch: { oppref: 'a'.repeat(500), ad_consent: 'granted' } } }),
+    ).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['a space', 'opp 1'],
+    ['a quote', "opp'1"],
+    ['an address', 'jane@example.com'],
+    ['more than 500 characters', 'a'.repeat(501)],
+  ])('refuses an oppref with %s', async (_label, oppref) => {
+    await expect(
+      validate({ ...base, attribution: { first_touch: { oppref, ad_consent: 'granted' } } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('accepts a click id of exactly 150 characters', async () => {
     const dto = await validate({
       ...base,
