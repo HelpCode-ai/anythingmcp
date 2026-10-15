@@ -39,6 +39,15 @@ describe('demo tools: anythingmcp_connect_client', () => {
     expect(result.content[0].text).toContain('https://claude.ai/directory/anythingmcp');
   });
 
+  it('walks ChatGPT users through Plugins, not the old connector settings', async () => {
+    const result = await tool.handler({ client: 'chatgpt' });
+    const text = result.content[0].text;
+    expect(text).toContain('https://chatgpt.com/plugins');
+    expect(text).toContain('Add custom MCP server');
+    expect(text).toContain('Create as a plugin');
+    expect(text).not.toContain('admin/mcp');
+  });
+
   it('lists Meta Muse among the clients in the description', () => {
     expect(tool.config.description).toContain('Meta Muse');
   });
