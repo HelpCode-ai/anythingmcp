@@ -144,7 +144,7 @@ describe('pcloud adapter: static spec conformance', () => {
     expect(host.test('eapi.pcloud.com')).toBe(true);
     for (const bad of ['https://eapi.pcloud.com', 'evil.com', 'api.pcloud.com.evil.com']) expect(host.test(bad)).toBe(false);
     expect(a.instructions).toContain('https://cloud.anythingmcp.com/api/mcp-oauth/callback');
-    expect(a.instructions).toMatch(/e\.pcloud\.com/);
+    expect(a.instructions).toContain('e.pcloud.com');
     expect(a.connector.healthcheckPath).toBe('/userinfo');
     expect(a.probe.tool).toBe('pcloud_get_user_info');
   });
