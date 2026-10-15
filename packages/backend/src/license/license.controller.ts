@@ -19,7 +19,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
-import { LicenseService } from './license.service';
+import { LicenseService, type BillingPortalFlow } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
@@ -78,10 +78,13 @@ class BillingPortalDto {
   @IsString()
   returnUrl?: string;
 
-  /** 'cancel': open Stripe's cancellation page directly. */
+  /**
+   * 'cancel': open Stripe's cancellation page directly;
+   * 'payment_method_update': the page to add a card.
+   */
   @IsOptional()
-  @IsIn(['cancel'])
-  flow?: 'cancel';
+  @IsIn(['cancel', 'payment_method_update'])
+  flow?: BillingPortalFlow;
 }
 
 @ApiTags('License')
@@ -119,6 +122,30 @@ export class LicenseController {
     }
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
+
+    // Cloud: a paid licence stopped on a declined card while Stripe still
+    // retries the subscription. Reported ahead of a free trial that has run
+    // out (a card trial is charged when the free trial ends), so the app asks
+    // for a new card instead of selling a second subscription.
+    if (
+      this.deployment.isCloud() &&
+      organizationId &&
+      (!license || (license.plan === 'trial' && trialDaysLeftOf(license) === 0))
+    ) {
+      const failed = await this.licenseService.getPaymentFailedLicense(organizationId);
+      if (failed) {
+        return {
+          plan: failed.plan,
+          status: failed.status,
+          features: null,
+          expiresAt: failed.expiresAt,
+          instanceId: null,
+          paymentFailed: true,
+          billing: failed.billing,
+        };
+      }
+    }
+
     if (!license) {
       // Cloud: a workspace whose trial ran out (or whose paid licence lapsed)
       // has no active licence, but it is not a workspace that never had one.
@@ -143,10 +170,7 @@ export class LicenseController {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }
 
-    const trialDaysLeft =
-      license.plan === 'trial' && license.expiresAt
-        ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
-        : undefined;
+    const trialDaysLeft = trialDaysLeftOf(license);
 
     return {
       plan: license.plan,
@@ -292,6 +316,13 @@ export class LicenseController {
     if (current && current.plan !== 'trial' && current.status === 'active') {
       throw new ConflictException(
         'This workspace already has a subscription. Change your plan in the billing portal.',
+      );
+    }
+    // Nor while Stripe is still retrying a failed payment: the new payment
+    // method goes on that subscription, which resumes once it is paid.
+    if (!(current && current.plan !== 'trial') && (await this.licenseService.getPaymentFailedLicense(organizationId))) {
+      throw new ConflictException(
+        'The last payment for this workspace did not go through. Update your payment method to resume your subscription.',
       );
     }
 
@@ -455,4 +486,11 @@ export class LicenseController {
       throw new BadRequestException(err.message || 'Failed to register community license');
     }
   }
+}
+
+/** Whole days left on a free trial (0 once it is over); undefined for other plans. */
+function trialDaysLeftOf(license: { plan: string; expiresAt: Date | null }): number | undefined {
+  return license.plan === 'trial' && license.expiresAt
+    ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
+    : undefined;
 }

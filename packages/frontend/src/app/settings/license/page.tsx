@@ -133,7 +133,7 @@ export default function LicenseSettingsPage() {
     }
   };
 
-  const handleBillingPortal = async (flow?: 'cancel') => {
+  const handleBillingPortal = async (flow?: 'cancel' | 'payment_method_update') => {
     if (!token) return;
     setError('');
     setMessage('');
@@ -318,7 +318,12 @@ export default function LicenseSettingsPage() {
               {verifying ? 'Verifying...' : 'Verify Now'}
             </Button>
             {hasBillableSubscription && (
-              <Button onClick={() => handleBillingPortal()} disabled={openingPortal}>
+              <Button
+                // A declined card is fixed on Stripe's add-a-card page, which
+                // also pays the open invoice; the portal home hides it.
+                onClick={() => handleBillingPortal(billingSummary?.paymentIssue ? 'payment_method_update' : undefined)}
+                disabled={openingPortal}
+              >
                 {openingPortal
                   ? 'Opening…'
                   : billingSummary?.paymentIssue

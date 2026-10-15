@@ -8,13 +8,16 @@ import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 const NOW = new Date('2026-10-13T10:00:00.000Z');
 const DAY = 86_400_000;
 
-function makeService(opts: { isCloud?: boolean; license?: any; history?: Record<string, boolean> | null } = {}) {
+function makeService(
+  opts: { isCloud?: boolean; license?: any; history?: Record<string, boolean> | null; paymentFailed?: any } = {},
+) {
   const licenseService = {
     getCurrentLicense: jest.fn(async () =>
       opts.license === undefined
         ? { plan: 'trial', status: 'active', expiresAt: new Date(NOW.getTime() + 5 * DAY) }
         : opts.license,
     ),
+    getPaymentFailedLicense: jest.fn(async () => opts.paymentFailed ?? null),
     subscriptionHistory: jest.fn(async (emails: string[]) =>
       opts.history === null ? null : new Map(emails.map((e) => [e, opts.history?.[e] ?? false])),
     ),
@@ -55,6 +58,12 @@ describe('CardTrialEligibilityService', () => {
   ])('offers nothing and asks nothing when %s', async (_label, license) => {
     const { svc, licenseService } = makeService({ license });
     await expect(svc.forAdmin('org-1', 'new@example.com')).resolves.toEqual({ kind: 'none' });
+    expect(licenseService.subscriptionHistory).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing to a workspace whose card was declined', async () => {
+    const { svc, licenseService } = makeService({ paymentFailed: { plan: 'starter', status: 'revoked' } });
+    await expect(svc.forAdmin('org-1', 'a@b.com')).resolves.toEqual({ kind: 'none' });
     expect(licenseService.subscriptionHistory).not.toHaveBeenCalled();
   });
 

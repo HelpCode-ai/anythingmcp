@@ -214,10 +214,18 @@ describe('LicenseController.checkoutLink', () => {
   };
 
   function makeController(
-    opts: { isCloud?: boolean; license?: any; click?: any; fail?: boolean; hadSubscription?: boolean | null } = {},
+    opts: {
+      isCloud?: boolean;
+      license?: any;
+      click?: any;
+      fail?: boolean;
+      hadSubscription?: boolean | null;
+      paymentFailed?: any;
+    } = {},
   ) {
     const licenseService = {
       getCurrentLicense: jest.fn(async () => (opts.license === undefined ? trialLicense() : opts.license)),
+      getPaymentFailedLicense: jest.fn(async () => opts.paymentFailed ?? null),
       createCheckoutIntent: jest.fn(async () => {
         if (opts.fail) throw new CheckoutUnavailableError('Checkout intent failed: HTTP 500', 500);
         return { url: 'https://anythingmcp.com/api/stripe/checkout/start?intent=i1' };
@@ -460,6 +468,15 @@ describe('LicenseController.checkoutLink', () => {
       const errors = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
       expect(errors.map((e) => e.property)).toContain('source');
     }
+  });
+
+  it('refuses a second subscription while a declined card is being retried', async () => {
+    const { controller, licenseService } = makeController({
+      license: null,
+      paymentFailed: { plan: 'starter', status: 'revoked', billing: { status: 'past_due', cancelling: false } },
+    });
+    await expect(controller.checkoutLink(adminReq, { plan: 'starter' } as any)).rejects.toThrow(/Update your payment method/);
+    expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
   });
 
   it('maps any licence-site failure to a generic 502', async () => {

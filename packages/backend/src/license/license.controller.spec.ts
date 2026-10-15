@@ -88,10 +88,11 @@ describe('LicenseController — activate-trial is idempotent', () => {
 describe('LicenseController — status reports an ended licence', () => {
   const req = { headers: { authorization: 'Bearer t' } };
 
-  function makeController(opts: { active?: any; inactive?: any; cloud?: boolean }) {
+  function makeController(opts: { active?: any; inactive?: any; paymentFailed?: any; cloud?: boolean }) {
     const licenseService = {
       getCurrentLicense: jest.fn(async () => opts.active ?? null),
       getLatestInactiveLicense: jest.fn(async () => opts.inactive ?? null),
+      getPaymentFailedLicense: jest.fn(async () => opts.paymentFailed ?? null),
     };
     const controller = new LicenseController(
       licenseService as any,
@@ -118,6 +119,41 @@ describe('LicenseController — status reports an ended licence', () => {
     const status: any = await controller.getStatus(req);
     expect(status).toMatchObject({ plan: 'starter', status: 'expired', features: null });
     expect(status.trialDaysLeft).toBeUndefined();
+  });
+
+  // A card trial whose first charge was declined: the site revokes the licence
+  // while Stripe retries. The app must ask for a new card, not sell a second
+  // subscription (duplicates on 13 and 14 Oct 2026).
+  const declined = {
+    plan: 'starter',
+    status: 'revoked',
+    expiresAt: null,
+    billing: { status: 'past_due', cancelling: false },
+  };
+
+  it('reports a licence stopped on a declined card as payment failed, with its billing', async () => {
+    const { controller } = makeController({ paymentFailed: declined, inactive: declined });
+    const status: any = await controller.getStatus(req);
+    expect(status).toMatchObject({
+      plan: 'starter',
+      status: 'revoked',
+      paymentFailed: true,
+      features: null,
+      billing: { status: 'past_due' },
+    });
+  });
+
+  it('puts a declined card ahead of the free trial that ran out with it', async () => {
+    const endedTrial = { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 3600_000) };
+    const { controller } = makeController({ active: endedTrial, paymentFailed: declined });
+    expect(await controller.getStatus(req)).toMatchObject({ plan: 'starter', paymentFailed: true });
+  });
+
+  it('leaves a free trial with days left alone', async () => {
+    const trial = { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() + 3 * 86400000) };
+    const { controller, licenseService } = makeController({ active: trial, paymentFailed: declined });
+    expect(await controller.getStatus(req)).toMatchObject({ plan: 'trial', trialDaysLeft: 3 });
+    expect(licenseService.getPaymentFailedLicense).not.toHaveBeenCalled();
   });
 
   it('still answers "none" for a workspace that never had a licence', async () => {

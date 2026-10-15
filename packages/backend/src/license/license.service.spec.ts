@@ -12,6 +12,7 @@ type MockLicense = {
   activatedAt: Date | null;
   organizationId: string | null;
   createdAt: Date;
+  billing?: unknown;
 };
 
 function mkLicense(p: Partial<MockLicense>): MockLicense {
@@ -27,6 +28,7 @@ function mkLicense(p: Partial<MockLicense>): MockLicense {
     activatedAt: p.activatedAt ?? null,
     organizationId: p.organizationId ?? null,
     createdAt: p.createdAt ?? new Date(),
+    billing: p.billing ?? null,
   };
 }
 
@@ -289,6 +291,47 @@ describe('LicenseService — billing portal', () => {
       expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
     );
   });
+
+  // A card trial whose first charge was declined: the licence is revoked while
+  // Stripe retries the subscription. "Update card" must still reach it.
+  const declined = (over: Partial<MockLicense> = {}) =>
+    mkLicense({
+      licenseKey: 'AMCP-DECL-INED-0000-0001',
+      organizationId: 'org-1',
+      status: 'revoked',
+      billing: { status: 'past_due', cancelling: false },
+      ...over,
+    });
+
+  it('opens the payment-method page for a licence stopped on a declined card', async () => {
+    const { svc } = makeService({ isCloud: true, licenses: [declined()] });
+    const axios = require('axios');
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { url: 'https://billing.stripe.com/p/session/y' } });
+
+    await svc.createBillingPortalSession('org-1', 'https://cloud.anythingmcp.com/', 'payment_method_update');
+    expect(post).toHaveBeenCalledWith(
+      expect.any(String),
+      { licenseKey: 'AMCP-DECL-INED-0000-0001', returnUrl: 'https://cloud.anythingmcp.com/', flow: 'payment_method_update' },
+      expect.any(Object),
+    );
+  });
+
+  it('finds no payment-failed licence once the subscription is cancelled, or on a live licence', async () => {
+    const cancelled = makeService({
+      isCloud: true,
+      licenses: [declined({ billing: { status: 'canceled', cancelling: false } })],
+    });
+    await expect(cancelled.svc.getPaymentFailedLicense('org-1')).resolves.toBeNull();
+    const ending = makeService({ isCloud: true, licenses: [declined({ billing: { status: 'past_due', cancelling: true } })] });
+    await expect(ending.svc.getPaymentFailedLicense('org-1')).resolves.toBeNull();
+    const live = makeService({ isCloud: true, licenses: [declined({ status: 'active' })] });
+    await expect(live.svc.getPaymentFailedLicense('org-1')).resolves.toBeNull();
+    const found = makeService({ isCloud: true, licenses: [declined()] });
+    await expect(found.svc.getPaymentFailedLicense('org-1')).resolves.toMatchObject({
+      licenseKey: 'AMCP-DECL-INED-0000-0001',
+      billing: { status: 'past_due' },
+    });
+  });
 });
 
 describe('LicenseService — paid licences are re-verified', () => {
@@ -307,11 +350,11 @@ describe('LicenseService — paid licences are re-verified', () => {
     get.mockRestore();
   });
 
-  function make(rows: Array<{ licenseKey: string; organizationId: string }>) {
+  function make(rows: Array<{ licenseKey: string; organizationId: string; status?: string }>) {
     const updates: any[] = [];
     const prisma = {
       license: {
-        findMany: jest.fn().mockResolvedValue(rows),
+        findMany: jest.fn().mockResolvedValue(rows.map((r) => ({ status: 'active', ...r }))),
         update: jest.fn(async (args: any) => {
           updates.push(args);
           return {};
@@ -329,13 +372,37 @@ describe('LicenseService — paid licences are re-verified', () => {
     return p;
   }
 
-  it('asks only for active paid licences not verified in the last 20 hours', async () => {
+  it('asks only for live paid licences not verified in the last 20 hours', async () => {
     const { svc, prisma } = make([]);
     await run(svc);
     const where = prisma.license.findMany.mock.calls[0][0].where;
-    expect(where.status).toBe('active');
     expect(where.plan).toEqual({ not: 'trial' });
-    expect(where.OR[0]).toEqual({ lastVerifiedAt: null });
+    const [live, due] = where.AND;
+    expect(live.OR[0]).toEqual({ status: 'active' });
+    // Stopped on a declined card, subscription still retried by Stripe.
+    expect(live.OR).toContainEqual({
+      status: { in: ['revoked', 'expired'] },
+      billing: { path: ['status'], equals: 'past_due' },
+    });
+    expect(live.OR).not.toContainEqual(expect.objectContaining({ billing: { path: ['status'], equals: 'canceled' } }));
+    expect(due.OR[0]).toEqual({ lastVerifiedAt: null });
+  });
+
+  it('brings back a licence whose declined card went through, and stores the billing of one still declined', async () => {
+    const { svc, updates } = make([
+      { licenseKey: 'AMCP-FFFF-0000-0000-0006', organizationId: 'o6', status: 'revoked' },
+      { licenseKey: 'AMCP-GGGG-0000-0000-0007', organizationId: 'o7', status: 'revoked' },
+    ]);
+    get
+      .mockResolvedValueOnce({ data: { valid: true, plan: 'starter', billing: { status: 'active', cancelling: false } } })
+      .mockResolvedValueOnce({
+        data: { valid: false, error: 'License has been revoked', billing: { status: 'past_due', cancelling: false } },
+      });
+
+    // Neither counts as deactivated: one is back, the other was already off.
+    await expect(run(svc)).resolves.toEqual({ checked: 2, deactivated: 0, inGrace: 0, unreachable: 0 });
+    expect(updates[0].data).toMatchObject({ status: 'active' });
+    expect(updates[1].data).toMatchObject({ status: 'revoked', billing: { status: 'past_due' } });
   });
 
   it('deactivates a revoked licence and marks an expired one expired', async () => {
