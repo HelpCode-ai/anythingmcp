@@ -1,0 +1,752 @@
+{
+  "slug": "railway",
+  "name": "Railway",
+  "description": "Let your AI look after your Railway apps: list projects, environments and services, check deployments and read their build and runtime logs, see which environment variables are set (names only), estimate usage, and redeploy or restart a service after confirming with you.",
+  "instructions": "## Railway\nThis connector works with Railway through its **public GraphQL API** (`https://backboard.railway.com/graphql/v2`): projects with their environments and services, how each service runs, deployments with their build and runtime logs, the names of environment variables, and usage. It can redeploy or restart a deployment.\n\n**Setup (about 2 minutes)**\n1. In Railway open **Account Settings, Tokens** (https://railway.com/account/tokens) and create a token. Choose **No workspace** for an **account token** that reaches all your workspaces and can read your profile, or pick a workspace for a **workspace token** limited to that workspace (better for a team; `railway_get_me` does not work with it).\n2. Paste the token into `RAILWAY_API_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Check the setup with `railway_list_projects`.\n\n**Project tokens are not supported.** A project token (project settings, Tokens) reaches one environment of one project and goes in a different header (`Project-Access-Token`); it cannot list projects. Use an account or workspace token.\n\n**Redeploys and restarts interrupt a running service: confirm first.** Before `railway_redeploy_deployment` or `railway_restart_deployment`, tell the user which service and environment it affects and wait for their yes. A redeploy builds again and uses billed resources. Nothing here deletes or stops a service.\n\n**Secrets stay in Railway.** `railway_list_variable_names` returns only the names of environment variables. `railway_get_variable_values` returns the values (passwords, keys, connection strings) and is installed switched off; turn it on only if the AI may see them. Runtime logs show whatever the app prints.\n\n**How to work**\n1. `railway_list_projects` (or `railway_get_me` for your workspaces), then `railway_get_project` for the environment and service ids and the latest deployment per service. `railway_get_service_instance` shows a service's settings in one environment.\n2. `railway_list_deployments` (by service, environment or project) and `railway_get_deployment`. A FAILED deployment usually failed while building: `railway_get_build_logs`. A CRASHED one failed while running: `railway_get_deployment_logs`.\n3. `railway_redeploy_deployment` or `railway_restart_deployment` on the latest deployment of the service.\n4. `railway_list_variable_names` to check configuration; `railway_get_estimated_usage` and `railway_get_usage` for usage figures.\n\n**Usage units**: CPU_USAGE is vCPU minutes, MEMORY_USAGE_GB and DISK_USAGE_GB (volumes) and BACKUP_USAGE_GB are GB minutes, NETWORK_TX_GB is egress in GB. With Railway's list prices at the time of writing (https://railway.com/pricing: CPU $20 per vCPU per month, RAM $10 per GB per month, volumes and backups $0.15 per GB per month, egress $0.05 per GB, a month counted as 43,200 minutes) the cost is for example CPU_USAGE x 20 / 43,200 dollars. Plan credits and discounts are not included.\n\n**Ids** are UUIDs. Deployment status is one of SUCCESS, FAILED, CRASHED, BUILDING, DEPLOYING, INITIALIZING, QUEUED, WAITING, SLEEPING, REMOVED, REMOVING, SKIPPED, NEEDS_APPROVAL.\n\n**Paging**: lists answer with `pageInfo`; while `hasNextPage` is true, pass `endCursor` as `after`.\n\n**Errors**: Railway answers most problems with HTTP 200 and a message, which the connector reports as an error. `Not Authorized`: the token is wrong, revoked, or has no access to that project (or `railway_get_me` was called with a workspace token). `Project not found`, `Deployment not found`: wrong id or no access. HTTP 429: the hourly request limit of the plan is used up (100 on Free, 1,000 on Hobby, 10,000 on Pro); wait.\n\n**Other operations**: `railway_graphql_query` and `railway_graphql_mutation` run any operation of the API. Railway publishes no SDL file, so `railway_graphql_schema` cannot load the schema; its introspection is public instead: run `railway_graphql_query` with `query { __type(name: \\\"Deployment\\\") { fields { name args { name } } } }` to look a type up. `railway_graphql_mutation` can change and delete anything the token can, so it is installed switched off (like `railway_graphql_subscription`); an admin can switch it on for a connector that should be able to do more.\n\n**Out of scope here**: creating, changing or deleting projects, services, environments, variables, domains and volumes, rollbacks, and metrics charts.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "railway",
+  "docsUrl": "https://docs.railway.com/integrations/api",
+  "prerequisites": "A Railway account and an account or workspace token from Account Settings, Tokens. Project tokens do not work here. About 2 minutes.",
+  "requiredEnvVars": [
+    "RAILWAY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "RAILWAY_API_TOKEN": {
+      "label": "Account or workspace token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Railway, Account Settings, Tokens, Create token. No workspace gives an account token, a workspace gives a workspace token. Project tokens do not work.",
+      "link": "https://railway.com/account/tokens",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token Railway shows, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "Railway refused the token (Not Authorized). Create an account or workspace token under Account Settings, Tokens; project tokens do not work here.",
+    "401": "Railway refused the token. Create an account or workspace token under Account Settings, Tokens; project tokens do not work here.",
+    "429": "Railway's hourly request limit for this plan is used up. Wait and verify again."
+  },
+  "probe": {
+    "tool": "railway_list_projects",
+    "params": {
+      "first": 5
+    }
+  },
+  "connector": {
+    "name": "Railway Public API (GraphQL)",
+    "type": "GRAPHQL",
+    "baseUrl": "https://backboard.railway.com/graphql/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RAILWAY_API_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "graphqlBuiltinsOff": ["mutation", "subscription"]
+    }
+  },
+  "tools": [
+    {
+      "name": "railway_get_me",
+      "description": "Read the Railway account behind an account token: id, name, email, username and its workspaces (id, name). Works only with an account token; a workspace token has no user and Railway answers Not Authorized. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Me { me { id name email username workspaces { id name } } }"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.me.id",
+            "name": "$.me.name",
+            "email": "$.me.email",
+            "username": "$.me.username",
+            "workspaces": "$.me.workspaces"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_list_projects",
+      "description": "List the projects the token can see, most recently updated first: id, name, description, workspace and created and updated dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Only projects of this workspace (id from railway_get_me or a project's workspace)."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Items per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor from the previous answer, while pageInfo.hasNextPage is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Projects($first: Int, $after: String, $workspaceId: String) { projects(first: $first, after: $after, workspaceId: $workspaceId, orderBy: UPDATED_AT_DESC) { pageInfo { hasNextPage endCursor } edges { node { id name description createdAt updatedAt workspace { id name } } } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "workspaceId": "$workspace_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "projects": {
+              "$from": "$.projects.edges[*].node",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "workspace": "workspace",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt"
+              }
+            },
+            "pageInfo": "$.projects.pageInfo"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_get_project",
+      "description": "Read one project with its environments and services, and per service and environment: region, replicas, start command, public domains and the latest deployment (id, status, time). The ids found here are what the deployment, variable and usage tools take. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from railway_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Project($id: String!) { project(id: $id) { id name description createdAt updatedAt workspace { id name } environments { edges { node { id name isEphemeral } } } services { edges { node { id name icon createdAt serviceInstances { edges { node { environmentId region numReplicas startCommand source { repo image } domains { serviceDomains { domain } customDomains { domain } } latestDeployment { id status createdAt staticUrl } } } } } } } } }",
+        "queryParams": {
+          "id": "$project_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.project.id",
+            "name": "$.project.name",
+            "description": "$.project.description",
+            "workspace": "$.project.workspace",
+            "createdAt": "$.project.createdAt",
+            "updatedAt": "$.project.updatedAt",
+            "environments": {
+              "$from": "$.project.environments.edges[*].node",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "isEphemeral": "isEphemeral"
+              }
+            },
+            "services": {
+              "$from": "$.project.services.edges[*].node",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "createdAt": "createdAt",
+                "instances": {
+                  "$from": "serviceInstances.edges[*].node",
+                  "$select": {
+                    "environmentId": "environmentId",
+                    "region": "region",
+                    "numReplicas": "numReplicas",
+                    "startCommand": "startCommand",
+                    "source": "source",
+                    "domains": {
+                      "$from": "domains.serviceDomains[*]",
+                      "$select": {
+                        "domain": "domain"
+                      }
+                    },
+                    "customDomains": {
+                      "$from": "domains.customDomains[*]",
+                      "$select": {
+                        "domain": "domain"
+                      }
+                    },
+                    "latestDeployment": "latestDeployment"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "railway_get_service_instance",
+      "description": "Read how one service runs in one environment: builder, build and start commands, root directory, health check, region, replicas, restart policy, cron schedule, sleep setting, source repository or image, domains and the latest deployment. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id (a UUID) from railway_get_project."
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "Environment id (a UUID) from railway_get_project, e.g. the production environment."
+          }
+        },
+        "required": [
+          "service_id",
+          "environment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ServiceInstance($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id serviceId serviceName environmentId builder buildCommand startCommand rootDirectory healthcheckPath healthcheckTimeout region numReplicas restartPolicyType restartPolicyMaxRetries cronSchedule nextCronRunAt sleepApplication source { repo image } domains { serviceDomains { domain targetPort } customDomains { domain targetPort } } latestDeployment { id status createdAt staticUrl } } }",
+        "queryParams": {
+          "serviceId": "$service_id",
+          "environmentId": "$environment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "serviceInstance": "$.serviceInstance"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_list_deployments",
+      "description": "List the deployments of a project, environment or service, newest first: id, status (SUCCESS, FAILED, CRASHED, BUILDING, DEPLOYING, REMOVED...), created time, URL, whether it can be redeployed or rolled back, and the commit or image it came from. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from railway_list_projects."
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "Environment id (a UUID) from railway_get_project, e.g. the production environment."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (a UUID) from railway_get_project."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Items per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor from the previous answer, while pageInfo.hasNextPage is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Deployments($first: Int, $after: String, $projectId: String, $environmentId: String, $serviceId: String) { deployments(first: $first, after: $after, input: { projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId }) { pageInfo { hasNextPage endCursor } edges { node { id status createdAt updatedAt staticUrl canRedeploy canRollback serviceId environmentId meta } } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "projectId": "$project_id",
+          "environmentId": "$environment_id",
+          "serviceId": "$service_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployments": {
+              "$from": "$.deployments.edges[*].node",
+              "$select": {
+                "id": "id",
+                "status": "status",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt",
+                "staticUrl": "staticUrl",
+                "canRedeploy": "canRedeploy",
+                "canRollback": "canRollback",
+                "serviceId": "serviceId",
+                "environmentId": "environmentId",
+                "commitMessage": "meta.commitMessage",
+                "commitHash": "meta.commitHash",
+                "branch": "meta.branch",
+                "repo": "meta.repo",
+                "image": "meta.image",
+                "reason": "meta.reason"
+              }
+            },
+            "pageInfo": "$.deployments.pageInfo"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_get_deployment",
+      "description": "Read one deployment: status and when it last changed, service and environment, URL, whether it can be redeployed or rolled back, whether it was stopped, and the commit or image it came from. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id (a UUID) from railway_list_deployments or latestDeployment in railway_get_project."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Deployment($id: String!) { deployment(id: $id) { id status statusUpdatedAt createdAt updatedAt url staticUrl canRedeploy canRollback deploymentStopped projectId service { id name } environment { id name } meta } }",
+        "queryParams": {
+          "id": "$deployment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployment": {
+              "id": "$.deployment.id",
+              "status": "$.deployment.status",
+              "statusUpdatedAt": "$.deployment.statusUpdatedAt",
+              "createdAt": "$.deployment.createdAt",
+              "updatedAt": "$.deployment.updatedAt",
+              "url": "$.deployment.url",
+              "staticUrl": "$.deployment.staticUrl",
+              "canRedeploy": "$.deployment.canRedeploy",
+              "canRollback": "$.deployment.canRollback",
+              "deploymentStopped": "$.deployment.deploymentStopped",
+              "projectId": "$.deployment.projectId",
+              "service": "$.deployment.service",
+              "environment": "$.deployment.environment",
+              "commitMessage": "$.deployment.meta.commitMessage",
+              "commitHash": "$.deployment.meta.commitHash",
+              "branch": "$.deployment.meta.branch",
+              "repo": "$.deployment.meta.repo",
+              "image": "$.deployment.meta.image",
+              "reason": "$.deployment.meta.reason"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_get_deployment_logs",
+      "description": "Read the runtime logs of a deployment (what the running app printed): timestamp, severity and message per line. Logs can contain whatever the app prints, so treat them as sensitive. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id (a UUID) from railway_list_deployments or latestDeployment in railway_get_project."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 200,
+            "description": "Most log lines to return (default 200)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Railway log filter, e.g. a word to search for, @level:error, or \"connection refused\" in quotes."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Only lines after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Only lines before this time, ISO 8601."
+          }
+        },
+        "required": [
+          "deployment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query DeploymentLogs($deploymentId: String!, $limit: Int, $filter: String, $startDate: DateTime, $endDate: DateTime) { deploymentLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter, startDate: $startDate, endDate: $endDate) { timestamp severity message } }",
+        "queryParams": {
+          "deploymentId": "$deployment_id",
+          "limit": "$limit",
+          "filter": "$filter",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "logs": "$.deploymentLogs"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "railway_get_build_logs",
+      "description": "Read the build logs of a deployment (installing dependencies, building the image): timestamp, severity and message per line. Use it when a deployment has status FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id (a UUID) from railway_list_deployments or latestDeployment in railway_get_project."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 200,
+            "description": "Most log lines to return (default 200)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Railway log filter, e.g. a word to search for, @level:error, or \"connection refused\" in quotes."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Only lines after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Only lines before this time, ISO 8601."
+          }
+        },
+        "required": [
+          "deployment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query BuildLogs($deploymentId: String!, $limit: Int, $filter: String, $startDate: DateTime, $endDate: DateTime) { buildLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter, startDate: $startDate, endDate: $endDate) { timestamp severity message } }",
+        "queryParams": {
+          "deploymentId": "$deployment_id",
+          "limit": "$limit",
+          "filter": "$filter",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "logs": "$.buildLogs"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "railway_redeploy_deployment",
+      "description": "Redeploy a deployment: Railway builds it again from the same source (or reuses the image with use_previous_image_tag) and replaces the running deployment of that service, which can briefly interrupt it and is billed as usage. Before calling, tell the user which service and environment will be redeployed and wait for their yes. Returns the new deployment's id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id (a UUID) from railway_list_deployments or latestDeployment in railway_get_project."
+          },
+          "use_previous_image_tag": {
+            "type": "boolean",
+            "description": "Reuse the image already built instead of building again (faster)."
+          }
+        },
+        "required": [
+          "deployment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation DeploymentRedeploy($id: String!, $usePreviousImageTag: Boolean) { deploymentRedeploy(id: $id, usePreviousImageTag: $usePreviousImageTag) { id status createdAt } }",
+        "queryParams": {
+          "id": "$deployment_id",
+          "usePreviousImageTag": "$use_previous_image_tag"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "deployment": "$.deploymentRedeploy"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_restart_deployment",
+      "description": "Restart a running deployment without building it again: its containers stop and start, so the service is briefly unavailable. Before calling, tell the user which service and environment will restart and wait for their yes. Returns true when Railway accepted the restart.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "description": "Deployment id (a UUID) from railway_list_deployments or latestDeployment in railway_get_project."
+          }
+        },
+        "required": [
+          "deployment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation DeploymentRestart($id: String!) { deploymentRestart(id: $id) }",
+        "queryParams": {
+          "id": "$deployment_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "restarted": "$.deploymentRestart"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_list_variable_names",
+      "description": "List the names of the environment variables of a service (or the shared variables of an environment), without their values, which are often passwords and keys. Use it to check whether a variable is set. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from railway_list_projects."
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "Environment id (a UUID) from railway_get_project, e.g. the production environment."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id for that service's variables; omit for the environment's shared variables."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query VariableNames($projectId: String!, $environmentId: String!, $serviceId: String) { variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId, unrendered: true) }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environmentId": "$environment_id",
+          "serviceId": "$service_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{names: sort(keys(variables))}",
+          "fallbackToRaw": false
+        }
+      }
+    },
+    {
+      "name": "railway_get_variable_values",
+      "description": "Read the environment variables of a service with their values. Values are usually secrets (database passwords, API keys, connection strings) and leave Railway into the AI conversation. Installed switched off; an administrator turns it on deliberately. References to other services stay unresolved (for example ${{Postgres.DATABASE_URL}}) unless unrendered is false. Before calling, ask the user whether the values may be shown. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from railway_list_projects."
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "Environment id (a UUID) from railway_get_project, e.g. the production environment."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id for that service's variables; omit for the environment's shared variables."
+          },
+          "unrendered": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) keeps references such as ${{Postgres.DATABASE_URL}} as written; false resolves them to their final values, which exposes more secrets."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query VariableValues($projectId: String!, $environmentId: String!, $serviceId: String, $unrendered: Boolean) { variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId, unrendered: $unrendered) }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environmentId": "$environment_id",
+          "serviceId": "$service_id",
+          "unrendered": "$unrendered"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "variables": "$.variables"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "railway_get_estimated_usage",
+      "description": "Estimate the usage of the current billing period up to its end for a project or a workspace, per measurement (CPU in vCPU minutes, memory and disk in GB minutes, egress in GB). These are usage figures, not dollars; the instructions explain how to turn them into a cost. Pass project_id or workspace_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Estimate this project (from railway_list_projects)."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Estimate the whole workspace instead."
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CPU_USAGE",
+                "MEMORY_USAGE_GB",
+                "NETWORK_TX_GB",
+                "NETWORK_RX_GB",
+                "DISK_USAGE_GB",
+                "EPHEMERAL_DISK_USAGE_GB",
+                "BACKUP_USAGE_GB"
+              ]
+            },
+            "default": [
+              "CPU_USAGE",
+              "MEMORY_USAGE_GB",
+              "NETWORK_TX_GB",
+              "DISK_USAGE_GB"
+            ],
+            "description": "What to measure (default CPU_USAGE, MEMORY_USAGE_GB, NETWORK_TX_GB, DISK_USAGE_GB)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query EstimatedUsage($measurements: [MetricMeasurement!]!, $projectId: String, $workspaceId: String) { estimatedUsage(measurements: $measurements, projectId: $projectId, workspaceId: $workspaceId) { measurement estimatedValue projectId } }",
+        "queryParams": {
+          "measurements": "$measurements",
+          "projectId": "$project_id",
+          "workspaceId": "$workspace_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "estimates": "$.estimatedUsage"
+          }
+        }
+      }
+    },
+    {
+      "name": "railway_get_usage",
+      "description": "Read the measured usage of a project or workspace over a period, per measurement and, with group_by, per service or environment (CPU in vCPU minutes, memory and disk in GB minutes, network in GB). Without dates Railway uses the current billing period. Pass project_id or workspace_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Usage of this project."
+          },
+          "workspace_id": {
+            "type": "string",
+            "description": "Usage of the whole workspace instead."
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CPU_USAGE",
+                "MEMORY_USAGE_GB",
+                "NETWORK_TX_GB",
+                "NETWORK_RX_GB",
+                "DISK_USAGE_GB",
+                "EPHEMERAL_DISK_USAGE_GB",
+                "BACKUP_USAGE_GB"
+              ]
+            },
+            "default": [
+              "CPU_USAGE",
+              "MEMORY_USAGE_GB",
+              "NETWORK_TX_GB",
+              "DISK_USAGE_GB"
+            ],
+            "description": "What to measure (default CPU_USAGE, MEMORY_USAGE_GB, NETWORK_TX_GB, DISK_USAGE_GB)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PROJECT_ID",
+                "SERVICE_ID",
+                "ENVIRONMENT_ID",
+                "REGION"
+              ]
+            },
+            "description": "Split the totals, e.g. [\"SERVICE_ID\"]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Usage($measurements: [MetricMeasurement!]!, $projectId: String, $workspaceId: String, $startDate: DateTime, $endDate: DateTime, $groupBy: [MetricTag!]) { usage(measurements: $measurements, projectId: $projectId, workspaceId: $workspaceId, startDate: $startDate, endDate: $endDate, groupBy: $groupBy) { measurement value tags { projectId serviceId environmentId region } } }",
+        "queryParams": {
+          "measurements": "$measurements",
+          "projectId": "$project_id",
+          "workspaceId": "$workspace_id",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "groupBy": "$group_by"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "usage": "$.usage"
+          },
+          "maxBytes": 40000
+        }
+      }
+    }
+  ]
+}

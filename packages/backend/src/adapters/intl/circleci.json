@@ -1,0 +1,1015 @@
+{
+  "slug": "circleci",
+  "name": "CircleCI",
+  "aliases": [
+    "Circle CI"
+  ],
+  "description": "Let your AI check CircleCI: pipelines, workflows and jobs, failed tests and artifacts, Insights metrics and flaky tests, contexts and variable names, and start pipelines or rerun and cancel workflows after you confirm.",
+  "instructions": "## CircleCI\nThis connector works with CircleCI through the **API v2** (`https://circleci.com/api/v2`): projects, pipelines, workflows and jobs, test results and artifacts, Insights metrics and flaky tests, contexts, and the names of environment variables. It can start pipelines and rerun or cancel workflows after you confirm. It acts as the user who owns the token and sees what that user can see.\n\n**Setup (about 2 minutes)**\n1. In CircleCI open **User Settings > Personal API Tokens** (https://app.circleci.com/settings/user/tokens) and click **Create New Token**.\n2. Copy the token (newer ones start with CCIPAT_) and paste it into `CIRCLECI_TOKEN`. It is sent in the `Circle-Token` header to circleci.com only. Project API tokens do not work with API v2.\n3. Check the setup with `circleci_get_current_user`, then `circleci_list_collaborations`.\n\nThe token has the same rights as your CircleCI user in every organization you belong to; share the MCP server only with people who may see those builds.\n\n**Project slugs**: most tools need a project slug, shown in **Project Settings > Overview**:\n- GitHub OAuth and Bitbucket Cloud projects: `gh/<org>/<repo>` or `bb/<workspace>/<repo>`, e.g. `gh/acme/web-app`.\n- GitHub App and GitLab projects: `circleci/<organization id>/<project id>`, e.g. `circleci/43G3lM5RtfFE7v5sa4nWAU/44n9wujWcTnVZ2b5S8Fnat`.\nPass the slug with its slashes as it is.\n\n**How to work**\n1. `circleci_list_pipelines` (newest first, optionally one branch), `circleci_get_pipeline` by id, or `circleci_get_pipeline_by_number` for the #number in the app.\n2. `circleci_list_pipeline_workflows` (or `circleci_get_workflow` by id), then `circleci_list_workflow_jobs` to find the failed job and its job_number.\n3. `circleci_get_job`, `circleci_list_job_tests` (counts, and failed tests with messages) and `circleci_list_job_artifacts`. Full step logs are only in the CircleCI app via the job's web_url.\n4. Trends: `circleci_get_workflow_metrics`, `circleci_get_workflow_summary` and `circleci_list_flaky_tests`. Insights data is refreshed daily.\n5. Configuration: `circleci_get_project`, `circleci_list_contexts`, `circleci_list_context_env_var_names` and `circleci_list_project_env_var_names`. Only names are returned, never values.\n\n**Writes always need the user's confirmation**: `circleci_trigger_pipeline` (needs a definition id from `circleci_list_pipeline_definitions`, which needs the project id from `circleci_get_project`; not available for GitLab projects), `circleci_rerun_workflow` and `circleci_cancel_workflow`. Each uses credits or stops running work, and may run or interrupt deploy jobs. Describe the effect and call only after the user agrees. Nothing here deletes projects, contexts or variables.\n\n**Pagination**: lists return `next_page_token`; call again with `page_token` set to it until it is empty.\n\n**Errors**: 401 means the token is wrong or revoked (or a project token was used). 404 usually means a wrong project slug, or a project the user cannot see; CircleCI answers 404 rather than 403 for projects outside your access. 429 means the rate limit is reached; wait and retry.\n\n**Out of scope here**: approving held jobs, creating or deleting projects, contexts, environment variables, schedules and webhooks, and reading full job step logs.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "circleci",
+  "docsUrl": "https://circleci.com/docs/api/v2/",
+  "prerequisites": "A CircleCI account with access to the projects, and a personal API token from User Settings > Personal API Tokens. About 2 minutes.",
+  "requiredEnvVars": [
+    "CIRCLECI_TOKEN"
+  ],
+  "appRegistrationUrl": "https://app.circleci.com/settings/user/tokens",
+  "envVarMeta": {
+    "CIRCLECI_TOKEN": {
+      "label": "Personal API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "CircleCI, User Settings, Personal API Tokens, Create New Token. Project API tokens do not work with API v2.",
+      "link": "https://app.circleci.com/settings/user/tokens",
+      "example": "CCIPAT_...",
+      "pattern": "^(?!Bearer\\s)\\S{30,}$",
+      "patternMessage": "Paste only the personal API token (newer ones start with CCIPAT_), without spaces or a prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "CircleCI refused the token: it is wrong or revoked, or it is a project API token, which API v2 does not accept. Create a personal API token under User Settings.",
+    "404": "CircleCI found nothing here. Check the project slug (Project Settings > Overview) and that your user can see the project.",
+    "rate_limited": "CircleCI is rate limiting this token. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "circleci_get_current_user"
+  },
+  "connector": {
+    "name": "CircleCI API v2",
+    "type": "REST",
+    "baseUrl": "https://circleci.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Circle-Token",
+      "apiKey": "{{CIRCLECI_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "circleci_get_current_user",
+      "description": "Get the CircleCI user the personal API token belongs to: id, login and name. A quick check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "login": "$.login",
+            "name": "$.name"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_collaborations",
+      "description": "List the organizations the user belongs to: id, name, VCS type and slug (e.g. gh/acme, or circleci/<org-id> for GitHub App and GitLab organizations). The organization id is what circleci_list_contexts needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/collaborations"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "organizations": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "vcs_type": "['vcs-type']",
+                "slug": "slug"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_get_project",
+      "description": "Get a project by slug: name, project id, organization name, slug and id, and the connected repository URL and default branch. The project id is what circleci_list_pipeline_definitions needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "slug": "$.slug",
+            "name": "$.name",
+            "id": "$.id",
+            "organization_name": "$.organization_name",
+            "organization_slug": "$.organization_slug",
+            "organization_id": "$.organization_id",
+            "vcs_url": "$.vcs_info.vcs_url",
+            "provider": "$.vcs_info.provider",
+            "default_branch": "$.vcs_info.default_branch"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_pipeline_definitions",
+      "description": "List the pipeline definitions of a project: id, name, description and where the config and code come from. A definition id is needed to start a pipeline with circleci_trigger_pipeline. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from circleci_get_project, not the slug."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/pipeline-definitions"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "created_at": "created_at",
+                "config_source": "config_source",
+                "checkout_source": "checkout_source"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_pipelines",
+      "description": "List the pipelines of a project, newest first: id, number, state, branch or tag, commit, trigger, actor, time and setup errors. Optionally only one branch. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only pipelines for this branch."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/pipeline",
+        "queryParams": {
+          "branch": "$branch",
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "number": "number",
+                "state": "state",
+                "project_slug": "project_slug",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "branch": "vcs.branch",
+                "tag": "vcs.tag",
+                "revision": "vcs.revision",
+                "commit_subject": "vcs.commit.subject",
+                "trigger_type": "trigger.type",
+                "actor": "trigger.actor.login",
+                "errors": "errors"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "circleci_get_pipeline",
+      "description": "Get one pipeline by id: number, state, branch or tag, commit, trigger, actor, time and setup errors. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline id (a UUID), from circleci_list_pipelines or circleci_get_pipeline_by_number."
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipeline/{pipeline_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "state": "$.state",
+            "project_slug": "$.project_slug",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "branch": "$.vcs.branch",
+            "tag": "$.vcs.tag",
+            "revision": "$.vcs.revision",
+            "commit_subject": "$.vcs.commit.subject",
+            "trigger_type": "$.trigger.type",
+            "actor": "$.trigger.actor.login",
+            "errors": "$.errors"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_get_pipeline_by_number",
+      "description": "Get one pipeline of a project by its number (the #123 shown in the CircleCI app). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "pipeline_number": {
+            "type": "integer",
+            "description": "Pipeline number, e.g. 123."
+          }
+        },
+        "required": [
+          "project_slug",
+          "pipeline_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/pipeline/{pipeline_number}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "state": "$.state",
+            "project_slug": "$.project_slug",
+            "created_at": "$.created_at",
+            "updated_at": "$.updated_at",
+            "branch": "$.vcs.branch",
+            "tag": "$.vcs.tag",
+            "revision": "$.vcs.revision",
+            "commit_subject": "$.vcs.commit.subject",
+            "trigger_type": "$.trigger.type",
+            "actor": "$.trigger.actor.login",
+            "errors": "$.errors"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_pipeline_workflows",
+      "description": "List the workflows of a pipeline: id, name, status (success, running, failed, on_hold, canceled ...), start and stop time and who started them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline id (a UUID), from circleci_list_pipelines or circleci_get_pipeline_by_number."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipeline/{pipeline_id}/workflow",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "status": "status",
+                "pipeline_id": "pipeline_id",
+                "pipeline_number": "pipeline_number",
+                "project_slug": "project_slug",
+                "created_at": "created_at",
+                "stopped_at": "stopped_at",
+                "tag": "tag",
+                "started_by": "started_by",
+                "canceled_by": "canceled_by",
+                "errored_by": "errored_by",
+                "auto_rerun_number": "auto_rerun_number"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_get_workflow",
+      "description": "Get one workflow by id: name, status, pipeline id and number, project, start and stop time, and who started, canceled or errored it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id (a UUID), from circleci_list_pipeline_workflows."
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflow/{workflow_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "name": "$.name",
+            "status": "$.status",
+            "pipeline_id": "$.pipeline_id",
+            "pipeline_number": "$.pipeline_number",
+            "project_slug": "$.project_slug",
+            "created_at": "$.created_at",
+            "stopped_at": "$.stopped_at",
+            "tag": "$.tag",
+            "started_by": "$.started_by",
+            "canceled_by": "$.canceled_by",
+            "errored_by": "$.errored_by",
+            "auto_rerun_number": "$.auto_rerun_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_workflow_jobs",
+      "description": "List the jobs of a workflow: id, job number, name, type (build or approval), status, dependencies, start and stop time. Use job_number with the job tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id (a UUID), from circleci_list_pipeline_workflows."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflow/{workflow_id}/job",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "job_number": "job_number",
+                "name": "name",
+                "type": "type",
+                "status": "status",
+                "dependencies": "dependencies",
+                "started_at": "started_at",
+                "stopped_at": "stopped_at",
+                "approval_request_id": "approval_request_id",
+                "approved_by": "approved_by",
+                "canceled_by": "canceled_by",
+                "project_slug": "project_slug"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_get_job",
+      "description": "Get the details of a job by project and job number: name, status, duration, executor and resource class, parallelism and per-run status, contexts used, messages, timing and web link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "job_number": {
+            "type": "integer",
+            "description": "Job number, from circleci_list_workflow_jobs (job_number)."
+          }
+        },
+        "required": [
+          "project_slug",
+          "job_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/job/{job_number}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "number": "$.number",
+            "status": "$.status",
+            "web_url": "$.web_url",
+            "duration": "$.duration",
+            "executor": "$.executor",
+            "parallelism": "$.parallelism",
+            "parallel_runs": "$.parallel_runs",
+            "contexts": "$.contexts[*].name",
+            "messages": "$.messages",
+            "pipeline_id": "$.pipeline.id",
+            "workflow": "$.latest_workflow",
+            "created_at": "$.created_at",
+            "queued_at": "$.queued_at",
+            "started_at": "$.started_at",
+            "stopped_at": "$.stopped_at",
+            "project": "$.project.slug"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_job_tests",
+      "description": "Summarize the test results a job uploaded with store_test_results: how many passed, were skipped and failed, and for every failed test its name, class, file, result, run time and failure message. Only jobs that store test results have any. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "job_number": {
+            "type": "integer",
+            "description": "Job number, from circleci_list_workflow_jobs (job_number)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "project_slug",
+          "job_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/{job_number}/tests",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "{total: length(items), passed: length(items[?result=='success']), skipped: length(items[?result=='skipped']), failed: items[?result!='success' && result!='skipped'].{name: name, classname: classname, file: file, result: result, run_time: run_time, message: message}, next_page_token: next_page_token}",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "circleci_list_job_artifacts",
+      "description": "List the artifacts a job stored with store_artifacts: path, node index and download URL. Downloading a URL needs the same token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "job_number": {
+            "type": "integer",
+            "description": "Job number, from circleci_list_workflow_jobs (job_number)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "project_slug",
+          "job_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/{job_number}/artifacts",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "path": "path",
+                "node_index": "node_index",
+                "url": "url"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "circleci_get_workflow_metrics",
+      "description": "Insights summary for every workflow of a project over a reporting window (default last 90 days): runs, success rate, failed runs, duration statistics, credits used and time to recovery. Data is refreshed daily, not real time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "reporting_window": {
+            "type": "string",
+            "description": "Window to aggregate.",
+            "enum": [
+              "last-24-hours",
+              "last-7-days",
+              "last-30-days",
+              "last-60-days",
+              "last-90-days"
+            ]
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only this branch; default is the default branch."
+          },
+          "all_branches": {
+            "type": "boolean",
+            "description": "All branches combined instead of one branch."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/insights/{project_slug}/workflows",
+        "queryParams": {
+          "reporting-window": "$reporting_window",
+          "branch": "$branch",
+          "all-branches": "$all_branches",
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "metrics": "metrics",
+                "window_start": "window_start",
+                "window_end": "window_end"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_get_workflow_summary",
+      "description": "Insights for one workflow: metrics for the last 90 days (runs, success rate, duration, credits, time to recovery) and their trend against the previous period. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "workflow_name": {
+            "type": "string",
+            "description": "Workflow name as written in .circleci/config.yml, e.g. build-and-test. From circleci_get_workflow_metrics."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only this branch; default is the default branch."
+          },
+          "all_branches": {
+            "type": "boolean",
+            "description": "All branches combined instead of one branch."
+          }
+        },
+        "required": [
+          "project_slug",
+          "workflow_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/insights/{project_slug}/workflows/{workflow_name}/summary",
+        "queryParams": {
+          "branch": "$branch",
+          "all-branches": "$all_branches"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "metrics": "$.metrics",
+            "trends": "$.trends",
+            "workflow_names": "$.workflow_names"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_flaky_tests",
+      "description": "List the project's flaky tests (tests that passed and failed on the same commit): test name, class, file, job and workflow, how often it flaked and the time wasted. A test stops counting as flaky two weeks after its last flake. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/insights/{project_slug}/flaky-tests"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total_flaky_tests": "$.total_flaky_tests",
+            "flaky_tests": {
+              "$from": "$.flaky_tests[*]",
+              "$select": {
+                "test_name": "test_name",
+                "classname": "classname",
+                "file": "file",
+                "source": "source",
+                "job_name": "job_name",
+                "job_number": "job_number",
+                "workflow_name": "workflow_name",
+                "workflow_id": "workflow_id",
+                "pipeline_number": "pipeline_number",
+                "times_flaked": "times_flaked",
+                "time_wasted": "time_wasted",
+                "workflow_created_at": "workflow_created_at"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "circleci_trigger_pipeline",
+      "description": "Start a new pipeline for a project from a pipeline definition, on a branch or tag. This uses credits and runs whatever the config does, including deployments. Get definition_id from circleci_list_pipeline_definitions, tell the user the project, branch and parameters, and call only after the user confirms. Returns the new pipeline's id, number and state. Not available for GitLab projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "definition_id": {
+            "type": "string",
+            "description": "Pipeline definition id from circleci_list_pipeline_definitions."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to build, e.g. main (or pull/<n>/head for a GitHub pull request). Use either branch or tag."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag to build instead of a branch."
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Pipeline parameters declared in the config, e.g. {\"deploy\": true}. At most 100 entries."
+          }
+        },
+        "required": [
+          "project_slug",
+          "definition_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/project/{project_slug}/pipeline/run",
+        "bodyMapping": {
+          "definition_id": "$definition_id",
+          "config": {
+            "branch": "$branch",
+            "tag": "$tag"
+          },
+          "checkout": {
+            "branch": "$branch",
+            "tag": "$tag"
+          },
+          "parameters": "$parameters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "$.id",
+            "number": "$.number",
+            "state": "$.state",
+            "created_at": "$.created_at",
+            "message": "$.message"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_rerun_workflow",
+      "description": "Rerun a workflow as a new workflow: all jobs, only from the failed job (from_failed), or chosen jobs. This uses credits and repeats any deploy jobs it includes. Tell the user which workflow and jobs and call only after the user confirms. Returns the new workflow id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id (a UUID), from circleci_list_pipeline_workflows."
+          },
+          "from_failed": {
+            "type": "boolean",
+            "description": "Rerun from the failed job onward. Do not combine with jobs."
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Job ids (UUIDs from circleci_list_workflow_jobs) to rerun. Do not combine with from_failed."
+          },
+          "sparse_tree": {
+            "type": "boolean",
+            "description": "With jobs: rerun only those jobs and what depends on them."
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workflow/{workflow_id}/rerun",
+        "bodyMapping": {
+          "from_failed": "$from_failed",
+          "jobs": "$jobs",
+          "sparse_tree": "$sparse_tree"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "workflow_id": "$.workflow_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_cancel_workflow",
+      "description": "Cancel a running workflow; its running jobs stop and jobs not yet started will not run, which can leave a deployment half done. Tell the user which workflow and call only after the user confirms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id (a UUID), from circleci_list_pipeline_workflows."
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workflow/{workflow_id}/cancel"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "message": "$.message"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "circleci_list_contexts",
+      "description": "List the contexts (shared sets of environment variables) of an organization: id, name and creation time. Pass the organization id from circleci_list_collaborations, or the organization slug (e.g. gh/acme) for GitHub OAuth and Bitbucket organizations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from circleci_list_collaborations. Use this or owner_slug."
+          },
+          "owner_slug": {
+            "type": "string",
+            "description": "Organization slug, e.g. gh/acme. Not supported for GitHub App and GitLab organizations; use owner_id there."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/context",
+        "queryParams": {
+          "owner-id": "$owner_id",
+          "owner-slug": "$owner_slug",
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "created_at": "created_at"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_context_env_var_names",
+      "description": "List the names of the environment variables in a context, with created and updated time. CircleCI never returns the values. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "context_id": {
+            "type": "string",
+            "description": "Context id from circleci_list_contexts."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "context_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/context/{context_id}/environment-variable",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "variable",
+                "created_at": "created_at",
+                "updated_at": "updated_at"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    },
+    {
+      "name": "circleci_list_project_env_var_names",
+      "description": "List the names of a project's environment variables (Project Settings > Environment Variables) with their creation time. Values are left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug as shown in Project Settings > Overview: gh/<org>/<repo> or bb/<workspace>/<repo> for GitHub OAuth and Bitbucket Cloud projects, circleci/<org-id>/<project-id> for GitHub App and GitLab projects. Slashes stay as they are."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous answer, for the next page. Omit for the first page."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_slug}/envvar",
+        "queryParams": {
+          "page-token": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "created_at": "['created-at']"
+              }
+            },
+            "next_page_token": "$.next_page_token"
+          }
+        }
+      }
+    }
+  ]
+}

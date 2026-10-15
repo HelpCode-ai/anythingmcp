@@ -498,7 +498,7 @@ Every adapter with `connector.type === "GRAPHQL"` is automatically extended with
 - `<slug>_graphql_mutation` — execute an arbitrary `mutation`
 - `<slug>_graphql_subscription` — execute an arbitrary `subscription` (transport availability depends on the upstream API)
 
-Adapter authors don't need to declare them.
+Adapter authors don't need to declare them. To install some of them switched off, list their suffixes in `connector.config.graphqlBuiltinsOff`, e.g. `["mutation", "subscription"]` when the token can reach destructive mutations the curated tools leave out. Admins can still switch them on per connector.
 
 ### GraphQL variables
 

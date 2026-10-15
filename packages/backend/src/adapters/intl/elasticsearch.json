@@ -1,0 +1,815 @@
+{
+  "slug": "elasticsearch",
+  "name": "Elasticsearch",
+  "aliases": [
+    "Elastic",
+    "Elastic Cloud",
+    "ES|QL"
+  ],
+  "description": "Let your AI explore and query your Elasticsearch cluster on Elastic Cloud, Serverless or your own servers: list indices and data streams, read mappings, search, aggregate, count, run ES|QL and, with your confirmation, write documents.",
+  "instructions": "## Elasticsearch\nThis connector calls the **Elasticsearch REST API** of the user's own cluster: Elastic Cloud Hosted, Elastic Cloud Serverless or a self-managed cluster. It can list indices, aliases and data streams, read mappings, search with the Query DSL, aggregate, count, run ES|QL queries, read single documents and, when the key allows it, write documents. It talks to Elasticsearch only, not to Kibana.\n\n**Setup (about 3 minutes)**\n1. Find the Elasticsearch endpoint. Elastic Cloud Hosted: open the deployment in https://cloud.elastic.co and copy the **Elasticsearch endpoint** (e.g. `https://my-deployment.es.europe-west3.gcp.cloud.es.io`). Serverless: open the project and copy the Elasticsearch endpoint (e.g. `https://my-project-a1b2c3.es.eu-west-1.aws.elastic.cloud`). Self-managed: the HTTPS address and port the cluster answers on (e.g. `https://search.example.com:9200`). It must be reachable from the internet for AnythingMCP Cloud; a self-hosted AnythingMCP can reach a cluster in the same network once an admin allows that host. Paste it into `ELASTICSEARCH_URL` without a trailing slash.\n2. Create an API key. In Kibana: **Stack Management > API keys > Create API key** (Serverless: project settings > **API keys**). Give it a name such as `anythingmcp` and an expiry, and turn on **Control security privileges** to limit it (see below). Copy the **Encoded** value (base64, it ends in = in most cases): Elastic shows it only once. Paste it into `ELASTICSEARCH_API_KEY`. It is sent as `Authorization: ApiKey <encoded>`. Username and password (basic auth) are not supported by this connector; create an API key instead.\n\n**Read-only key (recommended)**: use these role descriptors in the Kibana form, or run this in Kibana **Dev Tools** while signed in as a user who may create keys:\n```\nPOST /_security/api_key\n{\n  \"name\": \"anythingmcp-read\",\n  \"expiration\": \"365d\",\n  \"role_descriptors\": {\n    \"anythingmcp_read\": {\n      \"cluster\": [\"monitor\"],\n      \"indices\": [\n        { \"names\": [\"*\"], \"privileges\": [\"read\", \"view_index_metadata\", \"monitor\"] }\n      ]\n    }\n  }\n}\n```\nCopy `encoded` from the answer. Replace `\"*\"` with the index patterns the AI may see (e.g. `[\"products\", \"logs-*\"]`). `read` covers search, count, aggregations, ES|QL and single documents; `view_index_metadata` covers mappings, aliases and data streams; `monitor` covers the index list; the `monitor` cluster privilege covers cluster info and health. A key can never have more rights than the user who creates it.\n\n**Writes**: `elasticsearch_index_document` and `elasticsearch_update_document` need `write` (or `index`) on the target indices in addition; with the read-only key above they fail with 403, which is the intended safety net. Every write asks the user to confirm first. `elasticsearch_delete_document` and `elasticsearch_delete_by_query` are installed switched off; an admin turns them on deliberately, and they need the `delete` (or `write`) privilege.\n\n**Which tool**\n- Orientation: `elasticsearch_whoami` (who the key belongs to; needs no privileges), `elasticsearch_cluster_info`, `elasticsearch_cluster_health` (not on Serverless), `elasticsearch_list_indices`, `elasticsearch_list_aliases`, `elasticsearch_list_data_streams`.\n- Before querying an index, call `elasticsearch_get_mapping`: field names and types decide the query. `text` fields take `match`, `keyword` fields take `term`/`terms` and sort and aggregate; a text field often has a `.keyword` sub-field for that.\n- `elasticsearch_search`: Query DSL search, 10 hits by default, at most 100 per call; use `source_fields` to keep answers small, `from` or `search_after` with `sort` to page.\n- `elasticsearch_aggregate`: counts per value, sums, averages, date histograms, without documents.\n- `elasticsearch_count`: just the number of matches.\n- `elasticsearch_esql_query`: ES|QL for tabular questions (`FROM ... | WHERE ... | STATS ... BY ... | SORT ... | LIMIT n`); always end with `LIMIT`, at most 500 rows are passed on. Pass user-supplied values through `params` with `?` placeholders.\n- `elasticsearch_get_document`: one document by `_index` and `_id`.\n\n**Vectors**: dense vector fields are not useful in a chat. Since Elasticsearch 9.2 new indices leave them out of `_source` by default; otherwise common names (embedding, vector, ...) are dropped from search output, and `source_fields` or `source_excludes` keep others out.\n\n**Errors**: 401 means the API key is wrong, expired or invalidated. 403 `security_exception ... is unauthorized` names the privilege the key lacks. 404 `index_not_found_exception` is an unknown index name (check `elasticsearch_list_indices`). 400 `parsing_exception` or `verification_exception` (ES|QL) points at the query; the message names the field or position. 429 means the cluster is overloaded; wait and retry.\n\n**Out of scope here**: Kibana (dashboards, saved objects), creating or deleting indices, changing mappings or settings, snapshots, ingest pipelines, security administration and the bulk API.",
+  "region": "intl",
+  "category": "database",
+  "icon": "elasticsearch",
+  "docsUrl": "https://www.elastic.co/docs/api/doc/elasticsearch/",
+  "prerequisites": "An Elasticsearch cluster (Elastic Cloud Hosted, Serverless or self-managed, version 8 or later) reachable over HTTPS, and an API key created in Kibana or with the security API. About 3 minutes.",
+  "requiredEnvVars": [
+    "ELASTICSEARCH_URL",
+    "ELASTICSEARCH_API_KEY"
+  ],
+  "envVarMeta": {
+    "ELASTICSEARCH_URL": {
+      "label": "Elasticsearch endpoint",
+      "kind": "address",
+      "help": "The Elasticsearch endpoint of the deployment or project as shown in the Elastic Cloud console (not the Kibana address), or your own cluster's HTTPS address with its port. Without a trailing slash.",
+      "link": "https://cloud.elastic.co/deployments",
+      "example": "https://my-deployment.es.europe-west3.gcp.cloud.es.io",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Use the endpoint as a URL, e.g. https://my-deployment.es.us-central1.gcp.cloud.es.io or https://search.example.com:9200, without a trailing slash."
+    },
+    "ELASTICSEARCH_API_KEY": {
+      "label": "API key (encoded)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Kibana: Stack Management > API keys > Create API key, then copy the Encoded value (base64). For read-only access, limit it with the role descriptors shown in the setup notes.",
+      "link": "https://www.elastic.co/docs/deploy-manage/api-keys/elasticsearch-api-keys",
+      "example": "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6dWkybHAyYXhUTm1zeWFrdzl0dk5udw==",
+      "pattern": "^[A-Za-z0-9+/_-]{20,}={0,2}$",
+      "patternMessage": "Paste the Encoded value only, without the word ApiKey and without spaces. The id and api_key values on their own do not work."
+    }
+  },
+  "verifyHints": {
+    "401": "Elasticsearch refused the API key: it is wrong, expired or invalidated, or the id or api_key value was pasted instead of the Encoded one. Create a new key and copy the Encoded value.",
+    "403": "The API key is valid but lacks a privilege for this request. The error names it; add it to the key's role descriptors (read, view_index_metadata, monitor) or create a new key.",
+    "404": "Nothing answered at this address with an Elasticsearch API. Check ELASTICSEARCH_URL: use the Elasticsearch endpoint, not the Kibana or Cloud console address.",
+    "unreachable": "The cluster could not be reached. Check ELASTICSEARCH_URL, that the cluster is running and that it accepts connections from the internet (or from your AnythingMCP server).",
+    "rate_limited": "Elasticsearch is rejecting requests because it is overloaded (429). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "elasticsearch_whoami"
+  },
+  "connector": {
+    "name": "Elasticsearch",
+    "type": "REST",
+    "baseUrl": "{{ELASTICSEARCH_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "ApiKey {{ELASTICSEARCH_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/_security/_authenticate"
+  },
+  "tools": [
+    {
+      "name": "elasticsearch_whoami",
+      "description": "Show who the connector is signed in as: the user behind the API key, the key's name and id and the authentication type. Needs no privileges, so it is the first check when another tool answers 401 or 403. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_security/_authenticate"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "username": "$.username",
+            "roles": "$.roles",
+            "authentication_type": "$.authentication_type",
+            "realm": "$.authentication_realm.name",
+            "api_key": "$.api_key",
+            "enabled": "$.enabled"
+          }
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_cluster_info",
+      "description": "Get basic information about the cluster: name, uuid, Elasticsearch version and build flavor (serverless on Elastic Cloud Serverless). Needs the monitor cluster privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "name": "$.name",
+            "cluster_name": "$.cluster_name",
+            "cluster_uuid": "$.cluster_uuid",
+            "version": "$.version.number",
+            "build_flavor": "$.version.build_flavor",
+            "lucene_version": "$.version.lucene_version",
+            "tagline": "$.tagline"
+          }
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_cluster_health",
+      "description": "Get the cluster health: status (green, yellow or red), node counts, active, relocating, initializing and unassigned shards and pending tasks. Not available on Elastic Cloud Serverless, where Elastic runs the cluster. Needs the monitor cluster privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Limit the health check to these indices or data streams (comma-separated, wildcards allowed). Default * for the whole cluster.",
+            "default": "*"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_cluster/health/{index}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "indices"
+          ],
+          "maxBytes": 20000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_list_indices",
+      "description": "List indices with their health, status, document count, store size, primary and replica shard counts and creation date, sorted by name (at most 500 rows). Data stream backing indices start with .ds-. Use it to find the index name before searching. Needs the monitor privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index name or pattern to list, e.g. logs-* or products. Default * (all).",
+            "default": "*"
+          },
+          "expand_wildcards": {
+            "type": "string",
+            "enum": [
+              "open",
+              "all",
+              "closed",
+              "hidden"
+            ],
+            "description": "Which indices a pattern matches: open (default, skips hidden and closed ones) or all.",
+            "default": "open"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red"
+            ],
+            "description": "Only list indices with this health."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_cat/indices/{index}",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "h": "index,health,status,docs.count,store.size,pri,rep,creation.date.string",
+          "s": "index",
+          "expand_wildcards": "$expand_wildcards",
+          "health": "$health"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@[:500]",
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_get_mapping",
+      "description": "Get the field mapping of an index or data stream: every field with its type (text, keyword, date, long, dense_vector...). Read it before writing a query so field names and types are right; keyword fields take exact term filters, text fields take match queries. Needs view_index_metadata. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index, data stream or alias to search, e.g. products. Wildcards and comma-separated lists work (logs-*,metrics-*)."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{index}/_mapping",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "$[*].mappings._meta"
+          ],
+          "maxBytes": 120000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_search",
+      "description": "Search an index, data stream or alias with the Query DSL and get the matching documents (total, and per hit _index, _id, _score, _source and highlights). Returns 10 hits by default and never more than 100; page with from or with search_after plus sort. Use source_fields to return only the fields you need. Common vector fields are dropped from the output. Needs the read privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index, data stream or alias to search, e.g. products. Wildcards and comma-separated lists work (logs-*,metrics-*)."
+          },
+          "query": {
+            "type": "object",
+            "description": "Query DSL object, the value of the query key, e.g. {\"match\": {\"title\": \"running shoes\"}} or {\"bool\": {\"filter\": [{\"term\": {\"status\": \"active\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-7d\"}}}]}}. Leave it out to match every document."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of hits to return, 0 to 100 (default 10)."
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Offset of the first hit, for paging (from + size must stay under 10,000)."
+          },
+          "sort": {
+            "type": "array",
+            "items": {},
+            "description": "Sort order, e.g. [{\"@timestamp\": \"desc\"}] or [{\"price\": {\"order\": \"asc\"}}]. Sort on keyword, numeric or date fields, not on text fields."
+          },
+          "source_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return these fields of each document (wildcards allowed, e.g. [\"title\", \"price\", \"user.*\"])."
+          },
+          "highlight": {
+            "type": "object",
+            "description": "Highlight settings, e.g. {\"fields\": {\"description\": {}}} to show where the query matched."
+          },
+          "search_after": {
+            "type": "array",
+            "items": {},
+            "description": "The sort values of the last hit of the previous page, to fetch the next page (requires sort)."
+          },
+          "track_total_hits": {
+            "type": "boolean",
+            "description": "true counts every match exactly; by default Elasticsearch stops counting at 10,000 and reports relation gte."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "size": "$size",
+          "from": "$from",
+          "sort": "$sort",
+          "_source": "$source_fields",
+          "highlight": "$highlight",
+          "search_after": "$search_after",
+          "track_total_hits": "$track_total_hits"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "hits.hits[*]._source.embedding",
+            "hits.hits[*]._source.embeddings",
+            "hits.hits[*]._source.vector",
+            "hits.hits[*]._source.vectors",
+            "hits.hits[*]._source.content_embedding",
+            "hits.hits[*]._source.text_embedding",
+            "hits.hits[*]._source._inference_fields"
+          ],
+          "expression": "from_items(items({took: took, timed_out: timed_out, total: hits.total, max_score: hits.max_score, hits: hits.hits[:100].from_items(items({_index: _index, _id: _id, _score: _score, _source: _source, fields: fields, highlight: highlight, sort: sort})[?@[1] != null]), aggregations: aggregations})[?@[1] != null])",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "elasticsearch_aggregate",
+      "description": "Run aggregations over an index or data stream without returning documents: counts per value (terms), sums and averages, date histograms, percentiles and more, optionally on a filtered subset. Returns the total match count and the aggregations. Needs the read privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index, data stream or alias to search, e.g. products. Wildcards and comma-separated lists work (logs-*,metrics-*)."
+          },
+          "aggs": {
+            "type": "object",
+            "description": "Aggregations object, e.g. {\"by_brand\": {\"terms\": {\"field\": \"brand\", \"size\": 10}}, \"avg_price\": {\"avg\": {\"field\": \"price\"}}} or {\"per_day\": {\"date_histogram\": {\"field\": \"@timestamp\", \"calendar_interval\": \"day\"}}}. Use keyword, numeric or date fields."
+          },
+          "query": {
+            "type": "object",
+            "description": "Query DSL object, the value of the query key, e.g. {\"match\": {\"title\": \"running shoes\"}} or {\"bool\": {\"filter\": [{\"term\": {\"status\": \"active\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-7d\"}}}]}}. Leave it out to match every document."
+          },
+          "track_total_hits": {
+            "type": "boolean",
+            "description": "true counts every match exactly instead of stopping at 10,000."
+          }
+        },
+        "required": [
+          "index",
+          "aggs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "size": 0,
+          "query": "$query",
+          "aggs": "$aggs",
+          "track_total_hits": "$track_total_hits"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "took": "$.took",
+            "timed_out": "$.timed_out",
+            "total": "$.hits.total",
+            "aggregations": "$.aggregations"
+          },
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "elasticsearch_count",
+      "description": "Count the documents in an index, data stream or alias that match a query (all documents without a query). Cheaper than a search when only the number matters. Needs the read privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index, data stream or alias to search, e.g. products. Wildcards and comma-separated lists work (logs-*,metrics-*)."
+          },
+          "query": {
+            "type": "object",
+            "description": "Query DSL object, the value of the query key, e.g. {\"match\": {\"title\": \"running shoes\"}} or {\"bool\": {\"filter\": [{\"term\": {\"status\": \"active\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-7d\"}}}]}}. Leave it out to match every document."
+          }
+        },
+        "required": [
+          "index"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{index}/_count",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "count": "$.count",
+            "shards": "$._shards"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "elasticsearch_esql_query",
+      "description": "Run an ES|QL query (Elasticsearch 8.11 or later, and Serverless), a piped language for filtering, aggregating and joining, e.g. FROM logs-* | WHERE @timestamp > NOW() - 1 day | STATS errors = COUNT(*) BY host.name | SORT errors DESC | LIMIT 20. Returns columns (name, type) and rows as values; at most 500 rows are passed on, so always end with LIMIT. Needs the read privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The ES|QL query. Start with FROM <index pattern>, end with LIMIT n (Elasticsearch applies LIMIT 1000 when none is given). Use ? placeholders with params for values."
+          },
+          "params": {
+            "type": "array",
+            "items": {},
+            "description": "Values for the ? placeholders in order, e.g. [\"error\", 100], so user input is never pasted into the query text."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Optional Query DSL filter applied before the query runs, e.g. {\"range\": {\"@timestamp\": {\"gte\": \"now-1d\"}}}."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/_query",
+        "queryParams": {
+          "format": "json"
+        },
+        "bodyMapping": {
+          "query": "$query",
+          "params": "$params",
+          "filter": "$filter"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "exclude": [
+            "profile"
+          ],
+          "expression": "{columns: columns, values: values[:500], row_count: length(values), is_partial: is_partial, took: took}",
+          "maxBytes": 150000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "elasticsearch_get_document",
+      "description": "Get one document by its _id from an index: found, _version and the _source, optionally only some fields. Use the concrete index name (from a search hit's _index), not a pattern. Needs the read privilege. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "The index that holds the document (a search hit's _index) or an alias pointing to one index."
+          },
+          "id": {
+            "type": "string",
+            "description": "The document _id."
+          },
+          "source_includes": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. title,price. Wildcards allowed."
+          },
+          "source_excludes": {
+            "type": "string",
+            "description": "Comma-separated fields to leave out, e.g. embedding,raw_html."
+          }
+        },
+        "required": [
+          "index",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{index}/_doc/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "_source_includes": "$source_includes",
+          "_source_excludes": "$source_excludes"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "_index": "$._index",
+            "_id": "$._id",
+            "_version": "$._version",
+            "found": "$.found",
+            "_source": "$._source"
+          },
+          "maxBytes": 100000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_list_aliases",
+      "description": "List index aliases: alias name, the index it points to, whether it has a filter and whether it is the write index. Needs view_index_metadata. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Alias name or pattern. Default * (all).",
+            "default": "*"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_cat/aliases/{name}",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "h": "alias,index,filter,is_write_index",
+          "s": "alias"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "@[:500]",
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_list_data_streams",
+      "description": "List data streams (time series such as logs and metrics): name, health status, index template, generation, number of backing indices, current write index, lifecycle or ILM policy and timestamp field. Search a data stream by its name like an index. Needs view_index_metadata. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Data stream name or pattern, e.g. logs-*. Default * (all).",
+            "default": "*"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_data_stream/{name}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data_streams[:200].{name: name, status: status, template: template, generation: generation, backing_indices: length(indices), write_index: indices[-1].index_name, ilm_policy: ilm_policy, lifecycle: lifecycle, timestamp_field: timestamp_field.name, hidden: hidden}",
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_index_document",
+      "description": "Create or replace a whole document under a given _id in an index. Replacing overwrites every field of an existing document. Before calling, show the user the index, the _id and the document and ask them to confirm; never call it without that confirmation. Set op_type create to refuse overwriting an existing document. Needs the write (or index) privilege.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Target index or alias (with a write index)."
+          },
+          "id": {
+            "type": "string",
+            "description": "The document _id. An existing document with this _id is replaced unless op_type is create."
+          },
+          "document": {
+            "type": "object",
+            "description": "The full document as a JSON object, e.g. {\"title\": \"Red shoe\", \"price\": 79.9}."
+          },
+          "op_type": {
+            "type": "string",
+            "enum": [
+              "index",
+              "create"
+            ],
+            "description": "index (default) creates or replaces; create fails with 409 if the _id already exists."
+          },
+          "refresh": {
+            "type": "string",
+            "enum": [
+              "false",
+              "wait_for",
+              "true"
+            ],
+            "description": "When the change becomes visible to searches: false (default, within about a second), wait_for (the call waits until it is searchable) or true (forces a refresh, avoid on busy indices)."
+          }
+        },
+        "required": [
+          "index",
+          "id",
+          "document"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/{index}/_doc/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "op_type": "$op_type",
+          "refresh": "$refresh"
+        },
+        "bodyMapping": {
+          "__merge": "$document"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "_index": "$._index",
+            "_id": "$._id",
+            "_version": "$._version",
+            "result": "$.result",
+            "_shards": "$._shards"
+          }
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_update_document",
+      "description": "Change some fields of an existing document by _id, leaving the others as they are (a partial update with doc). Before calling, show the user the index, the _id and the fields that will change and ask them to confirm; never call it without that confirmation. Scripts are not supported here. Needs the write (or index) privilege.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "The index that holds the document (a search hit's _index)."
+          },
+          "id": {
+            "type": "string",
+            "description": "The document _id."
+          },
+          "doc": {
+            "type": "object",
+            "description": "Only the fields to change, e.g. {\"status\": \"archived\"}. Objects are merged, arrays are replaced."
+          },
+          "doc_as_upsert": {
+            "type": "boolean",
+            "description": "true creates the document from doc when the _id does not exist yet; by default the update fails with 404."
+          },
+          "retry_on_conflict": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How often to retry when another write changed the document at the same time (default 0)."
+          },
+          "refresh": {
+            "type": "string",
+            "enum": [
+              "false",
+              "wait_for",
+              "true"
+            ],
+            "description": "When the change becomes visible to searches: false (default, within about a second), wait_for (the call waits until it is searchable) or true (forces a refresh, avoid on busy indices)."
+          }
+        },
+        "required": [
+          "index",
+          "id",
+          "doc"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{index}/_update/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "refresh": "$refresh",
+          "retry_on_conflict": "$retry_on_conflict"
+        },
+        "bodyMapping": {
+          "doc": "$doc",
+          "doc_as_upsert": "$doc_as_upsert"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "_index": "$._index",
+            "_id": "$._id",
+            "_version": "$._version",
+            "result": "$.result",
+            "_shards": "$._shards"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "elasticsearch_delete_document",
+      "description": "Delete one document by _id. It cannot be undone. Installed switched off; an admin turns it on deliberately. Before calling, show the user the index and the _id and ask them to confirm; never call it without that confirmation. Needs the delete (or write) privilege.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "The index that holds the document (a search hit's _index)."
+          },
+          "id": {
+            "type": "string",
+            "description": "The document _id."
+          },
+          "refresh": {
+            "type": "string",
+            "enum": [
+              "false",
+              "wait_for",
+              "true"
+            ],
+            "description": "When the change becomes visible to searches: false (default, within about a second), wait_for (the call waits until it is searchable) or true (forces a refresh, avoid on busy indices)."
+          }
+        },
+        "required": [
+          "index",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{index}/_doc/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "refresh": "$refresh"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "_index": "$._index",
+            "_id": "$._id",
+            "result": "$.result"
+          }
+        }
+      }
+    },
+    {
+      "name": "elasticsearch_delete_by_query",
+      "description": "Delete every document that matches a query. It cannot be undone and can remove millions of documents. Installed switched off; an admin turns it on deliberately. Before calling, run elasticsearch_count with the same query, tell the user how many documents will be deleted and ask them to confirm; never call it without that confirmation. Needs the delete (or write) privilege.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "string",
+            "description": "Index, data stream or alias to delete from. Avoid wildcards."
+          },
+          "query": {
+            "type": "object",
+            "description": "Query DSL object selecting the documents to delete, e.g. {\"term\": {\"status\": \"spam\"}}. Required: a match_all here would empty the index."
+          },
+          "max_docs": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Stop after deleting this many documents."
+          },
+          "refresh": {
+            "type": "boolean",
+            "description": "true refreshes the affected shards when done."
+          }
+        },
+        "required": [
+          "index",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{index}/_delete_by_query",
+        "encodePathParams": true,
+        "queryParams": {
+          "max_docs": "$max_docs",
+          "refresh": "$refresh"
+        },
+        "bodyMapping": {
+          "query": "$query"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "took": "$.took",
+            "timed_out": "$.timed_out",
+            "total": "$.total",
+            "deleted": "$.deleted",
+            "version_conflicts": "$.version_conflicts",
+            "failures": "$.failures"
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

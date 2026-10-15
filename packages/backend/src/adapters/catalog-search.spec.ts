@@ -56,11 +56,14 @@ describe('catalog search — typos', () => {
   });
 
   it('caps fuzzy results', () => {
-    // "googel" is one edit from every Google connector.
+    // "googel" is one edit from every Google connector, including "Google
+    // BigQuery", whose slug has no google- prefix.
     const result = searchCatalog(catalog, 'googel');
     expect(result.match).toBe('fuzzy');
     expect(result.hits.length).toBeLessThanOrEqual(MAX_FUZZY);
-    expect(result.hits.every((h) => h.entry.slug.startsWith('google-'))).toBe(true);
+    expect(
+      result.hits.every((h) => h.entry.slug.startsWith('google-') || h.entry.name.startsWith('Google ')),
+    ).toBe(true);
   });
 });
 

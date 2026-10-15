@@ -79,6 +79,7 @@ import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as ahrefs from './intl/ahrefs.json';
 import * as airtable from './intl/airtable.json';
+import * as algolia from './intl/algolia.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as amocrm from './intl/amocrm.json';
@@ -100,19 +101,23 @@ import * as baselinker from './intl/baselinker.json';
 import * as baserow from './intl/baserow.json';
 import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
+import * as bigquery from './intl/bigquery.json';
 import * as billCom from './intl/bill-com.json';
 import * as bingWebmaster from './intl/bing-webmaster.json';
+import * as bitbucket from './intl/bitbucket.json';
 import * as bitrix24 from './intl/bitrix24.json';
 import * as bluesky from './intl/bluesky.json';
 import * as botpress from './intl/botpress.json';
 import * as box from './intl/box.json';
 import * as braze from './intl/braze.json';
 import * as brevo from './intl/brevo.json';
+import * as browserbase from './intl/browserbase.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as calendly from './intl/calendly.json';
 import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
+import * as circleci from './intl/circleci.json';
 import * as claap from './intl/claap.json';
 import * as clearbit from './intl/clearbit.json';
 import * as clickup from './intl/clickup.json';
@@ -129,12 +134,15 @@ import * as crisp from './intl/crisp.json';
 import * as customerIo from './intl/customer-io.json';
 import * as customily from './intl/customily.json';
 import * as daftra from './intl/daftra.json';
+import * as databricks from './intl/databricks.json';
 import * as datadog from './intl/datadog.json';
 import * as dataforseo from './intl/dataforseo.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
+import * as digitalocean from './intl/digitalocean.json';
 import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
+import * as dockerhub from './intl/dockerhub.json';
 import * as docusign from './intl/docusign.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
@@ -144,6 +152,7 @@ import * as dynamics365Sales from './intl/dynamics365-sales.json';
 import * as easypost from './intl/easypost.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
+import * as elasticsearch from './intl/elasticsearch.json';
 import * as elevenlabs from './intl/elevenlabs.json';
 import * as erpnext from './intl/erpnext.json';
 import * as espocrm from './intl/espocrm.json';
@@ -156,6 +165,7 @@ import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
 import * as fillout from './intl/fillout.json';
+import * as firebase from './intl/firebase.json';
 import * as firecrawl from './intl/firecrawl.json';
 import * as firma from './intl/firma.json';
 import * as flutterwave from './intl/flutterwave.json';
@@ -197,6 +207,7 @@ import * as googleSheets from './intl/google-sheets.json';
 import * as googleSlides from './intl/google-slides.json';
 import * as googleTasks from './intl/google-tasks.json';
 import * as gorgias from './intl/gorgias.json';
+import * as grafana from './intl/grafana.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
 import * as gusto from './intl/gusto.json';
@@ -209,6 +220,7 @@ import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
 import * as hubspot from './intl/hubspot.json';
+import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as inoreader from './intl/inoreader.json';
@@ -266,6 +278,8 @@ import * as mongodb from './intl/mongodb.json';
 import * as moz from './intl/moz.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
+import * as neon from './intl/neon.json';
+import * as netlify from './intl/netlify.json';
 import * as netsuite from './intl/netsuite.json';
 import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
@@ -287,12 +301,14 @@ import * as openweather from './intl/openweather.json';
 import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
 import * as outreach from './intl/outreach.json';
+import * as pagerduty from './intl/pagerduty.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as paypal from './intl/paypal.json';
 import * as peopleDataLabs from './intl/people-data-labs.json';
 import * as perplexity from './intl/perplexity.json';
 import * as pexels from './intl/pexels.json';
 import * as phorest from './intl/phorest.json';
+import * as pinecone from './intl/pinecone.json';
 import * as pinterest from './intl/pinterest.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as plaid from './intl/plaid.json';
@@ -308,10 +324,12 @@ import * as procore from './intl/procore.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
+import * as railway from './intl/railway.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
 import * as redmine from './intl/redmine.json';
+import * as render from './intl/render.json';
 import * as replicate from './intl/replicate.json';
 import * as resy from './intl/resy.json';
 import * as revolutBusiness from './intl/revolut-business.json';
@@ -610,7 +628,20 @@ function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
     useProxy: adapterUsesProxy,
   }) as unknown as AdapterDefinition['tools'];
 
-  return { ...adapter, tools: [...builtins, ...adapter.tools] };
+  // `connector.config.graphqlBuiltinsOff: ["mutation", "subscription"]` installs
+  // those generic helpers switched off, for adapters whose token can reach
+  // destructive mutations the curated tools deliberately leave out.
+  const off = new Set(
+    ((adapter.connector.config as { graphqlBuiltinsOff?: unknown } | undefined)
+      ?.graphqlBuiltinsOff as string[] | undefined) ?? [],
+  );
+  const shaped = off.size
+    ? builtins.map((t) =>
+        off.has(t.name.slice(`${adapter.slug}_graphql_`.length)) ? { ...t, enabled: false } : t,
+      )
+    : builtins;
+
+  return { ...adapter, tools: [...shaped, ...adapter.tools] };
 }
 
 /**
@@ -723,6 +754,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   agilecrm as unknown as AdapterDefinition,
   ahrefs as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
+  algolia as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   amocrm as unknown as AdapterDefinition,
@@ -744,19 +776,23 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   baserow as unknown as AdapterDefinition,
   beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
+  bigquery as unknown as AdapterDefinition,
   billCom as unknown as AdapterDefinition,
   bingWebmaster as unknown as AdapterDefinition,
+  bitbucket as unknown as AdapterDefinition,
   bitrix24 as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
   botpress as unknown as AdapterDefinition,
   box as unknown as AdapterDefinition,
   braze as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
+  browserbase as unknown as AdapterDefinition,
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   canva as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
+  circleci as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
   clearbit as unknown as AdapterDefinition,
   clickup as unknown as AdapterDefinition,
@@ -773,12 +809,15 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   customerIo as unknown as AdapterDefinition,
   customily as unknown as AdapterDefinition,
   daftra as unknown as AdapterDefinition,
+  databricks as unknown as AdapterDefinition,
   datadog as unknown as AdapterDefinition,
   dataforseo as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
+  digitalocean as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
+  dockerhub as unknown as AdapterDefinition,
   docusign as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
@@ -788,6 +827,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   easypost as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
+  elasticsearch as unknown as AdapterDefinition,
   elevenlabs as unknown as AdapterDefinition,
   erpnext as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
@@ -800,6 +840,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
+  firebase as unknown as AdapterDefinition,
   firecrawl as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
@@ -841,6 +882,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   googleSlides as unknown as AdapterDefinition,
   googleTasks as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
+  grafana as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,
   gusto as unknown as AdapterDefinition,
@@ -853,6 +895,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   hetznerCloud as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
+  huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
   inoreader as unknown as AdapterDefinition,
@@ -910,6 +953,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   moz as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
+  neon as unknown as AdapterDefinition,
+  netlify as unknown as AdapterDefinition,
   netsuite as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
   newRelic as unknown as AdapterDefinition,
@@ -931,12 +976,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   oracle as unknown as AdapterDefinition,
   orderful as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
+  pagerduty as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
   peopleDataLabs as unknown as AdapterDefinition,
   perplexity as unknown as AdapterDefinition,
   pexels as unknown as AdapterDefinition,
   phorest as unknown as AdapterDefinition,
+  pinecone as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
   plaid as unknown as AdapterDefinition,
@@ -952,10 +999,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
   quickbooksOnline as unknown as AdapterDefinition,
+  railway as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,
   redmine as unknown as AdapterDefinition,
+  render as unknown as AdapterDefinition,
   replicate as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   revolutBusiness as unknown as AdapterDefinition,
