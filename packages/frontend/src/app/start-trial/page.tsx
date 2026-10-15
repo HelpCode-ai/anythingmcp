@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { license } from '@/lib/api';
+import { license, productEvents } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { PlanPicker } from '@/components/plan-picker';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ import {
 import { useCardCheckout } from '@/lib/use-card-checkout';
 import { formatLocal, useLocalPricing } from '@/lib/local-currency';
 import { fetchCardTrialKind } from '@/lib/use-card-trial-eligibility';
-import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-offer';
+import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source';
 
 /**
  * Cloud only: the card-trial offer shown once after sign-up (see
@@ -43,6 +43,12 @@ import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-of
  *
  * Anyone it does not apply to (self-hosted, non-admins, no live trial) is
  * sent to the dashboard.
+ *
+ * `?source=` names the entry point that led here (lib/checkout-source.ts). It
+ * goes with the checkout into Stripe metadata, and with the page's two
+ * product events: start_trial_viewed (once per load) and
+ * start_trial_checkout_started (the button), so each entry point's clicks,
+ * emails included, can be read against the checkouts it produced.
  */
 export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
@@ -55,8 +61,9 @@ export default function StartTrialPage() {
   const [promo, setPromo] = useState<string | null>(null);
   // 'pay': this address had a subscription, so the plan starts and is billed today.
   const [kind, setKind] = useState<'trial' | 'pay'>('trial');
-  // Which in-app offer sent the user here (?source=first_success), for Stripe.
-  const [source, setSource] = useState<CheckoutSource | null>(null);
+  // Which entry point sent the user here (?source=…), for Stripe and the events.
+  const [source, setSource] = useState<CheckoutSource>('start_trial');
+  const viewReported = useRef(false);
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
@@ -95,8 +102,13 @@ export default function StartTrialPage() {
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
-        setSource(parseCheckoutSource(new URLSearchParams(window.location.search).get('source')));
+        const from = parseCheckoutSource(new URLSearchParams(window.location.search).get('source')) ?? 'start_trial';
+        setSource(from);
         setReady(true);
+        if (!viewReported.current) {
+          viewReported.current = true;
+          productEvents.track('start_trial_viewed', token, { source: from, kind: trialKind });
+        }
       })
       .catch(() => {
         if (live) leave('/');
@@ -116,6 +128,7 @@ export default function StartTrialPage() {
       window.location.assign(checkout.chargesTodayUrl);
       return;
     }
+    if (token) productEvents.track('start_trial_checkout_started', token, { source, kind: paysToday ? 'pay' : 'trial' });
     const outcome = await checkout.start(selection, !paysToday, source);
     if (outcome === 'redirected') writeCardTrialPrompt(user.id, 'checkout');
   };

@@ -9,6 +9,7 @@ import {
   type StarterPackItem,
 } from '@/lib/api';
 import { findDemoBySlug } from '@/lib/demo-connectors';
+import { startTrialPath } from '@/lib/checkout-source';
 import { Button } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 
@@ -114,7 +115,7 @@ export function StarterPack({ token }: { token: string }) {
           connector{maxConnectors === 1 ? '' : 's'}. Pick the ones you want now — you can add your own
           next.{' '}
           <Link
-            href="/start-trial"
+            href={startTrialPath('starter_pack')}
             className="font-medium text-[var(--brand)] hover:underline"
           >
             Add a card for more

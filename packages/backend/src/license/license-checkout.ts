@@ -25,13 +25,68 @@ export type CheckoutPlan = (typeof CHECKOUT_PLANS)[number];
 export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
 
 /**
- * Where in the app a checkout was started, when it is worth measuring. Sent
- * to the licence site as `source`, which stores it on the Stripe Checkout
- * Session and the subscription as `metadata.trial_source`. Allow-listed: the
- * value ends up in Stripe.
+ * Where in the app a checkout was started. Sent to the licence site as
+ * `source` with every checkout intent; the site stores it on the Stripe
+ * Checkout Session and the subscription as `metadata.checkout_source` (and as
+ * `metadata.trial_source` on card trials). Allow-listed: the value ends up in
+ * Stripe. The frontend mirrors this list in src/lib/checkout-source.ts.
+ *
+ * - first_success_banner / first_success_email: the card-trial offer after a
+ *   workspace's first successful tool call, from the in-app card or the email.
+ * - first_success: the same offer before banner and email were told apart
+ *   (links in emails already sent, tabs already open). Still accepted.
+ * - trial_banner: the countdown banner at the top of every page.
+ * - license_page: Settings → License.
+ * - trial_ended_wall: the wall shown when the free trial is over.
+ * - post_approve: "add a card" on the page after approving an AI client.
+ * - signup_prompt: the card-trial page shown once after sign-up.
+ * - trial_limit / starter_pack: "add a card" next to the connector limit.
+ * - chat_setup: the plan link the setup tools give the AI in a chat.
+ * - start_trial: /start-trial opened without a known source.
+ * - app: a caller that did not say (DEFAULT_CHECKOUT_SOURCE).
  */
-export const CHECKOUT_SOURCES = ['first_success'] as const;
+export const CHECKOUT_SOURCES = [
+  'first_success_banner',
+  'first_success_email',
+  'first_success',
+  'trial_banner',
+  'license_page',
+  'trial_ended_wall',
+  'post_approve',
+  'signup_prompt',
+  'trial_limit',
+  'starter_pack',
+  'chat_setup',
+  'start_trial',
+  'app',
+] as const;
 export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];
+/** The setup tools' plan links (`?source=` on /start-trial and /settings/license). */
+export const CHAT_SETUP_SOURCE: CheckoutSource = 'chat_setup';
+/** "Add a card" on the page after approving an AI client (login.controller). */
+export const POST_APPROVE_SOURCE: CheckoutSource = 'post_approve';
+/** Sent when the app did not name an entry point, so no checkout goes without one. */
+export const DEFAULT_CHECKOUT_SOURCE: CheckoutSource = 'app';
+
+/**
+ * Where a link to the public pricing page came from, as `?source=` on it. The
+ * pricing page passes it to its checkout, which stores it as
+ * `metadata.checkout_source` (anything it does not know becomes
+ * `pricing_page`). Kept in step with PRICING_CHECKOUT_SOURCES on the site.
+ */
+export type PricingLinkSource =
+  | 'email_trial_warn3'
+  | 'email_trial_warn1'
+  | 'email_trial_expired'
+  | 'email_winback';
+
+/** `url` with `source=<source>` added to its query (before any fragment). */
+export function withSourceParam(url: string, source: CheckoutSource | PricingLinkSource): string {
+  const hashAt = url.indexOf('#');
+  const base = hashAt === -1 ? url : url.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : url.slice(hashAt);
+  return `${base}${base.includes('?') ? '&' : '?'}source=${encodeURIComponent(source)}${hash}`;
+}
 export type CheckoutBillingPeriod = (typeof CHECKOUT_BILLING_PERIODS)[number];
 
 /** Body of POST {licence site}/api/stripe/checkout-intent (the agreed contract). */
@@ -45,7 +100,7 @@ export interface CheckoutIntentPayload {
   organizationId?: string;
   /** A Stripe promotion code the user arrived with; the site pre-applies it. */
   promoCode?: string;
-  /** The app entry point (CHECKOUT_SOURCES); Stripe metadata `trial_source`. */
+  /** The app entry point (CHECKOUT_SOURCES); Stripe metadata `checkout_source`. */
   source?: CheckoutSource;
   adMetadata?: {
     ad_consent: 'granted';

@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { ApiError, license } from './api';
 import { useAuth } from './auth-context';
 import { readPromoCode, type PlanSelection } from './card-trial';
-import type { CheckoutSource } from './first-success-offer';
+import type { CheckoutSource } from './checkout-source';
 
 const GENERIC_ERROR = 'We could not open the checkout. Please try again in a moment.';
 
@@ -21,8 +21,8 @@ export type CheckoutOutcome = 'redirected' | 'charges_today' | 'failed';
 /**
  * Opens Stripe Checkout for a Cloud plan (POST /api/license/checkout-link),
  * then leaves the page for it. `trial: true` is the card trial that ends with
- * the free trial; `false` is a plain purchase. `source` marks the in-app offer
- * that led here, for Stripe metadata.
+ * the free trial; `false` is a plain purchase. `source` marks the entry point
+ * that led here, for Stripe metadata (the backend sends 'app' without one).
  */
 export function useCardCheckout() {
   const { token } = useAuth();

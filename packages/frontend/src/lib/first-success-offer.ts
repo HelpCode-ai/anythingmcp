@@ -1,3 +1,5 @@
+import { startTrialPath, type CheckoutSource } from './checkout-source';
+
 /**
  * The card-trial offer after a workspace's first successful tool call
  * (AnythingMCP Cloud, admins only). The backend decides who is eligible
@@ -10,19 +12,8 @@
 /** Pages that show the offer, reported as `via` on its product events. */
 export type OfferVia = 'dashboard' | 'connectors' | 'connect';
 
-/**
- * Where a checkout was started, when it is measured (`?source=` on
- * /start-trial). Mirrors the backend's CHECKOUT_SOURCES: the value reaches
- * Stripe as `metadata.trial_source`, so anything else is dropped.
- */
-export const CHECKOUT_SOURCES = ['first_success'] as const;
-export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];
-export const FIRST_SUCCESS_SOURCE: CheckoutSource = 'first_success';
-
-export function parseCheckoutSource(raw: string | null | undefined): CheckoutSource | null {
-  const value = (raw ?? '').trim();
-  return (CHECKOUT_SOURCES as readonly string[]).includes(value) ? (value as CheckoutSource) : null;
-}
+/** The offer's in-app card, as `?source=` on /start-trial (its email has its own). */
+export const FIRST_SUCCESS_SOURCE: CheckoutSource = 'first_success_banner';
 
 /** After "Not now" the offer stays away this long, on every page. */
 export const OFFER_DISMISS_MS = 3 * 24 * 60 * 60 * 1000;
@@ -71,4 +62,4 @@ export function offerDetail(connectorName: string | null | undefined, trialEnd: 
 }
 
 /** Where the offer's button leads: the existing card-trial page, marked. */
-export const OFFER_START_PATH = `/start-trial?source=${FIRST_SUCCESS_SOURCE}`;
+export const OFFER_START_PATH = startTrialPath(FIRST_SUCCESS_SOURCE);

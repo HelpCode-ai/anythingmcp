@@ -29,6 +29,7 @@ import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.s
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { CardTrialEligibilityService } from '../license/card-trial-eligibility.service';
+import { POST_APPROVE_SOURCE } from '../license/license-checkout';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
   claudeMark,
@@ -446,7 +447,7 @@ export class LoginController {
         redirectHost: consent.redirectHost,
         callbackUrl,
         welcomeUrl: `${dashboard}/welcome`,
-        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: `${dashboard}/start-trial` } } : {}),
+        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: `${dashboard}/start-trial?source=${POST_APPROVE_SOURCE}` } } : {}),
       }),
     );
     return true;

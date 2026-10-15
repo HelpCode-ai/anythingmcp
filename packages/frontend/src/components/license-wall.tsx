@@ -26,8 +26,9 @@ type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'paymen
 export function LicenseWall() {
   const { token, user, deploymentMode } = useAuth();
   const managePlan = useManagePlan();
-  const pricingUrl = usePricingUrl();
   const [reason, setReason] = useState<BlockReason | null>(null);
+  // The pricing links name the wall when it is the ended trial's.
+  const pricingUrl = usePricingUrl(undefined, reason === 'trial-ended' ? 'trial_ended_wall' : 'app_pricing');
   const [starting, setStarting] = useState(false);
   const [startErr, setStartErr] = useState<string | null>(null);
   const pathname = usePathname();
@@ -232,7 +233,7 @@ export function LicenseWall() {
                 <PlanPicker value={selection} onChange={setSelection} compact disabled={checkout.loading} />
               </div>
               <button
-                onClick={() => checkout.start(selection, false)}
+                onClick={() => checkout.start(selection, false, 'trial_ended_wall')}
                 disabled={checkout.loading}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >

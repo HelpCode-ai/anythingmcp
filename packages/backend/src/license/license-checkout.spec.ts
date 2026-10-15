@@ -25,10 +25,12 @@ import { CheckoutLinkDto, LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import {
   CHECKOUT_PLANS,
+  CHECKOUT_SOURCES,
   CheckoutUnavailableError,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
+  withSourceParam,
 } from './license-checkout';
 
 jest.mock('axios');
@@ -296,6 +298,7 @@ describe('LicenseController.checkoutLink', () => {
       returnUrl: 'https://cloud.example.com/settings/license/activate',
       organizationId: 'org-1',
       adMetadata: { ad_consent: 'granted', gclid: 'g-1' },
+      source: 'app',
     });
   });
 
@@ -439,21 +442,23 @@ describe('LicenseController.checkoutLink', () => {
       plan: 'starter',
       billingPeriod: 'monthly',
       trial: true,
-      source: 'first_success',
+      source: 'first_success_banner',
     });
     const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
-    expect(payload.source).toBe('first_success');
+    expect(payload.source).toBe('first_success_banner');
     expect(productEvents.log).toHaveBeenCalledWith({
       event: 'checkout_link_created',
       userId: 'u1',
       organizationId: 'org-1',
-      metadata: { via: 'first_success', kind: 'trial' },
+      metadata: { via: 'first_success_banner', kind: 'trial' },
     });
+  });
 
+  it('sends a source with every checkout: "app" when the page does not name one', async () => {
     const plain = makeController();
     await plain.controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: false });
     const [plainPayload] = plain.licenseService.createCheckoutIntent.mock.calls[0] as any[];
-    expect(plainPayload).not.toHaveProperty('source');
+    expect(plainPayload.source).toBe('app');
     expect(plain.productEvents.log).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { via: 'app', kind: 'pay' } }),
     );
@@ -469,8 +474,10 @@ describe('LicenseController.checkoutLink', () => {
 
   it('accepts only known sources: the value ends up in Stripe metadata', async () => {
     const base = { plan: 'starter', billingPeriod: 'monthly', trial: true };
-    const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source: 'first_success' }));
-    expect(ok).toHaveLength(0);
+    for (const source of CHECKOUT_SOURCES) {
+      const ok = await validate(plainToInstance(CheckoutLinkDto, { ...base, source }));
+      expect(ok).toHaveLength(0);
+    }
     const none = await validate(plainToInstance(CheckoutLinkDto, base));
     expect(none).toHaveLength(0);
     for (const source of ['newsletter', 'first_success; drop', '', 42]) {
@@ -495,5 +502,16 @@ describe('LicenseController.checkoutLink', () => {
       .catch((e) => e);
     expect(err).toBeInstanceOf(BadGatewayException);
     expect(err.message).not.toMatch(/HTTP 500/);
+  });
+});
+
+describe('withSourceParam', () => {
+  it('adds the source to the query, ahead of any fragment', () => {
+    expect(withSourceParam('https://anythingmcp.com/pricing', 'email_winback')).toBe(
+      'https://anythingmcp.com/pricing?source=email_winback',
+    );
+    expect(withSourceParam('https://anythingmcp.com/pricing?promo=X#t=tok', 'email_trial_warn1')).toBe(
+      'https://anythingmcp.com/pricing?promo=X&source=email_trial_warn1#t=tok',
+    );
   });
 });

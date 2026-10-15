@@ -196,6 +196,8 @@ describe('EmailService', () => {
           expect(readEmailLinkToken(token)).toBe('ann@example.com');
           // The address itself never appears in the link.
           expect(link.toLowerCase()).not.toContain('ann@example.com');
+          // The email names itself to the checkout, ahead of the token.
+          expect(new URL(link).searchParams.get('source')).toMatch(/^email_(trial_(warn3|warn1|expired)|winback)$/);
         }
       }
     });
@@ -205,7 +207,9 @@ describe('EmailService', () => {
       await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'expired', { connectors: 0, successfulCalls: 0, daysLeft: 0 });
       const links = pricingLinks(sent().text);
       expect(links).toEqual([
-        'https://anythingmcp.com/pricing?return_url=' + encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate'),
+        'https://anythingmcp.com/pricing?return_url=' +
+          encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+          '&source=email_trial_expired',
       ]);
     });
   });

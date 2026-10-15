@@ -5,7 +5,7 @@ import { EmailService } from '../settings/email.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import {
-  FIRST_SUCCESS_SOURCE,
+  FIRST_SUCCESS_EMAIL_SOURCE,
   OFFER_ELIGIBLE_KEY,
   OFFER_EMAIL_AFTER_MS,
   OFFER_EMAIL_KEY,
@@ -212,8 +212,8 @@ export class CardTrialOfferService {
     const { connector, toolName } = await this.firstSuccessConnector(organizationId, true);
     const nextSteps = pickNextSteps(connector?.tools ?? [], toolName);
     const ctaPath = cardTrial
-      ? `/start-trial?source=${FIRST_SUCCESS_SOURCE}`
-      : `/settings/license?source=${FIRST_SUCCESS_SOURCE}`;
+      ? `/start-trial?source=${FIRST_SUCCESS_EMAIL_SOURCE}`
+      : `/settings/license?source=${FIRST_SUCCESS_EMAIL_SOURCE}`;
 
     let sentAny = false;
     for (const r of trialRecipients) {
