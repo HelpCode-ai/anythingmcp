@@ -1,4 +1,4 @@
-import { LicenseService } from './license.service';
+import { LicenseService, isLivePaidLicence } from './license.service';
 
 type MockLicense = {
   id: string;
@@ -636,5 +636,128 @@ describe('LicenseService — subscription history (Cloud win-back)', () => {
     const post = jest.spyOn(axios, 'post');
     await expect(svc.subscriptionHistory(['ada@gmail.com'])).resolves.toBeNull();
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('isLivePaidLicence', () => {
+  const NOW = new Date('2026-10-15T10:00:00Z');
+  const lic = (p: Partial<{ plan: string; status: string; expiresAt: Date | null; billing: unknown }>) => ({
+    plan: 'starter',
+    status: 'active',
+    expiresAt: null,
+    billing: null,
+    ...p,
+  });
+
+  it('counts an active paid plan and a card trial', () => {
+    expect(isLivePaidLicence(lic({ billing: { status: 'active' } }), NOW)).toBe(true);
+    expect(isLivePaidLicence(lic({ billing: { status: 'trialing', trialEnd: '2026-10-17T07:49:00Z' } }), NOW)).toBe(true);
+    expect(isLivePaidLicence(lic({ plan: 'team', billing: { status: 'trialing', cancelling: true } }), NOW)).toBe(true);
+  });
+
+  it('counts a declined card Stripe still retries, as the app does (#1098)', () => {
+    expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'past_due' } }), NOW)).toBe(true);
+    expect(isLivePaidLicence(lic({ status: 'expired', billing: { status: 'unpaid' } }), NOW)).toBe(true);
+  });
+
+  it('does not count a free trial, an ended plan, or a stopped licence with an old snapshot', () => {
+    expect(isLivePaidLicence(lic({ plan: 'trial' }), NOW)).toBe(false);
+    expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'canceled' } }), NOW)).toBe(false);
+    expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'past_due', cancelling: true } }), NOW)).toBe(false);
+    expect(isLivePaidLicence(lic({ status: 'revoked', billing: null }), NOW)).toBe(false);
+    // Taken while the card trial still ran; the site has revoked it since.
+    expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'trialing' } }), NOW)).toBe(false);
+    expect(isLivePaidLicence(lic({ expiresAt: new Date('2026-10-14T00:00:00Z') }), NOW)).toBe(false);
+  });
+});
+
+describe('LicenseService — workspaces that already pay (trial emails)', () => {
+  const axios = require('axios');
+  const NOW = new Date('2026-10-15T10:00:00Z');
+  let post: jest.SpyInstance;
+  const savedToken = process.env.LICENSE_SERVICE_TOKEN;
+
+  beforeEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+    post = jest.spyOn(axios, 'post');
+  });
+  afterEach(() => {
+    post.mockRestore();
+    if (savedToken === undefined) delete process.env.LICENSE_SERVICE_TOKEN;
+    else process.env.LICENSE_SERVICE_TOKEN = savedToken;
+  });
+
+  function make(rows: Array<{ organizationId: string; plan: string; status: string; billing?: unknown }>) {
+    const prisma = {
+      license: {
+        findMany: jest.fn(async ({ where }: any) =>
+          rows
+            .filter((r) => where.organizationId.in.includes(r.organizationId) && r.plan !== where.plan.not)
+            .map((r) => ({ expiresAt: null, billing: null, ...r })),
+        ),
+      },
+    };
+    const deployment = { isCloud: () => true, isSelfHosted: () => false, mode: 'cloud' };
+    return { svc: new LicenseService(prisma as any, {} as any, deployment as any), prisma };
+  }
+
+  it('settles workspaces with a live paid licence locally and asks the licence site about the rest only', async () => {
+    const { svc } = make([
+      { organizationId: 'org-card-trial', plan: 'starter', status: 'active', billing: { status: 'trialing' } },
+      { organizationId: 'org-declined', plan: 'starter', status: 'revoked', billing: { status: 'past_due' } },
+      { organizationId: 'org-cancelled', plan: 'starter', status: 'revoked', billing: { status: 'canceled' } },
+    ]);
+    post.mockResolvedValue({
+      data: { results: { 'ra@example.com': true, 'free@example.com': false, 'gone@example.com': false } },
+    });
+
+    const out = await svc.workspacesWithPaidPlan(
+      [
+        { organizationId: 'org-card-trial', adminEmails: ['a@example.com'] },
+        { organizationId: 'org-declined', adminEmails: ['b@example.com'] },
+        // A card trial whose licence never reached the Cloud (14 Oct 2026).
+        { organizationId: 'org-unbound', adminEmails: ['RA@example.com'] },
+        { organizationId: 'org-free', adminEmails: ['free@example.com'] },
+        { organizationId: 'org-cancelled', adminEmails: ['gone@example.com'] },
+      ],
+      NOW,
+    );
+
+    expect([...out.paid].sort()).toEqual(['org-card-trial', 'org-declined', 'org-unbound']);
+    expect(out.unknown.size).toBe(0);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][1]).toEqual({ emails: ['ra@example.com', 'free@example.com', 'gone@example.com'] });
+  });
+
+  it('a single admin with a subscription makes the workspace a paying one', async () => {
+    const { svc } = make([]);
+    post.mockResolvedValue({ data: { results: { 'a@example.com': false, 'b@example.com': true } } });
+    const out = await svc.workspacesWithPaidPlan(
+      [{ organizationId: 'org-1', adminEmails: ['a@example.com', 'b@example.com'] }],
+      NOW,
+    );
+    expect([...out.paid]).toEqual(['org-1']);
+  });
+
+  it('returns the workspaces it could not settle as unknown when the licence site fails', async () => {
+    const { svc } = make([{ organizationId: 'org-paid', plan: 'team', status: 'active' }]);
+    post.mockRejectedValue(new Error('timeout'));
+    const out = await svc.workspacesWithPaidPlan(
+      [
+        { organizationId: 'org-paid', adminEmails: ['a@example.com'] },
+        { organizationId: 'org-free', adminEmails: ['b@example.com'] },
+      ],
+      NOW,
+    );
+    expect([...out.paid]).toEqual(['org-paid']);
+    expect([...out.unknown]).toEqual(['org-free']);
+  });
+
+  it('asks nothing when every workspace is settled locally, or there are none', async () => {
+    const { svc, prisma } = make([{ organizationId: 'org-paid', plan: 'starter', status: 'active' }]);
+    await svc.workspacesWithPaidPlan([{ organizationId: 'org-paid', adminEmails: ['a@example.com'] }], NOW);
+    await expect(svc.workspacesWithPaidPlan([], NOW)).resolves.toEqual({ paid: new Set(), unknown: new Set() });
+    expect(post).not.toHaveBeenCalled();
+    expect(prisma.license.findMany).toHaveBeenCalledTimes(1);
   });
 });

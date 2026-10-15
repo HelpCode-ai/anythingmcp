@@ -18,17 +18,26 @@ export function getMarketingUrl(): string {
   return DEFAULT_MARKETING_URL;
 }
 
+/** What the pricing page accepts as an address token. */
+const EMAIL_TOKEN_RE = /^[A-Za-z0-9_-]{20,1024}$/;
+
 /**
  * The pricing page, with `return_url` back to this app. On AnythingMCP Cloud
  * the caller may pass the user's own Google Ads click id (see usePricingUrl),
  * which the pricing page puts into the checkout so the purchase can be
  * reported to Google Ads; anything that is not a well-formed id is left out.
  * A self-hosted instance opens the page on its own plans (`hosting=self-hosted`).
+ *
+ * `emailToken` is the signed-in user's address token (from the Cloud server),
+ * put in the fragment (`#t=`): the pricing page then knows who is buying and
+ * refuses a second subscription beside a card trial or plan the address
+ * already has. The address itself never appears in the URL.
  */
 export function buildPricingUrl(
   returnPath = '/settings/license/activate',
   clickIds?: ClickIds | null,
   selfHosted = false,
+  emailToken?: string | null,
 ): string {
   const base = `${getMarketingUrl()}/pricing`;
   if (typeof window === 'undefined') return selfHosted ? `${base}?hosting=self-hosted` : base;
@@ -39,6 +48,7 @@ export function buildPricingUrl(
     const id = cleanClickId(clickIds?.[key]);
     if (id) url += `&${key}=${id}`;
   }
+  if (emailToken && EMAIL_TOKEN_RE.test(emailToken)) url += `#t=${emailToken}`;
   return url;
 }
 

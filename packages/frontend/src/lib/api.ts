@@ -1468,6 +1468,12 @@ export const license = {
       token,
     }),
   /**
+   * Cloud: the signed-in user's address token for pricing links (`#t=`), so
+   * the pricing page knows who is buying. Null when the server has none.
+   */
+  pricingLinkToken: (token: string) =>
+    request<{ token: string | null }>('/api/license/pricing-link-token', { token, skipAutoLogout: true }),
+  /**
    * Cloud (ADMIN): can this address start a card trial? 'pay' = it had a
    * subscription before, so a plan starts and is billed today.
    */

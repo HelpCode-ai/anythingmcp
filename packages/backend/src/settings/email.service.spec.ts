@@ -1,6 +1,7 @@
 import * as nodemailer from 'nodemailer';
 import { EmailService, systemSmtpFrom } from './email.service';
 import { verifyUnsubscribe } from './unsubscribe-token';
+import { readEmailLinkToken } from '../common/email-link-token';
 
 jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
 
@@ -159,6 +160,54 @@ describe('EmailService', () => {
     expect(mail.html).toContain('41');
     expect(mail.text).toContain('2 connectors set up, 41 successful tool calls');
     expect(mail.headers).toBeUndefined();
+  });
+
+  describe('pricing links carry the recipient as an address token', () => {
+    const pricingLinks = (text: string) =>
+      text.split(/\s+/).filter((word) => {
+        if (!word.startsWith('https://')) return false;
+        const url = new URL(word);
+        return url.host === 'anythingmcp.com' && url.pathname === '/pricing';
+      });
+
+    afterEach(() => {
+      delete process.env.EMAIL_LINK_SECRET;
+    });
+
+    it('in the trial lifecycle and win-back emails, so the site refuses a second subscription', async () => {
+      process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('Ann@Example.com', 'Ann', 'warn1', { connectors: 1, successfulCalls: 3, daysLeft: 1 });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', {
+        kind: 'discount',
+        percentOff: 30,
+        promoCode: 'START30',
+        stage: 'first',
+        trialEndedAt: new Date('2026-10-07T09:30:00Z'),
+        successfulCalls: 3,
+      });
+      await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
+
+      for (const [mail] of sendMail.mock.calls) {
+        const links = pricingLinks(mail.text);
+        expect(links.length).toBeGreaterThan(0);
+        for (const link of links) {
+          const token = new URL(link).hash.replace(/^#t=/, '');
+          expect(readEmailLinkToken(token)).toBe('ann@example.com');
+          // The address itself never appears in the link.
+          expect(link.toLowerCase()).not.toContain('ann@example.com');
+        }
+      }
+    });
+
+    it('not without EMAIL_LINK_SECRET: the links go out as before', async () => {
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'expired', { connectors: 0, successfulCalls: 0, daysLeft: 0 });
+      const links = pricingLinks(sent().text);
+      expect(links).toEqual([
+        'https://anythingmcp.com/pricing?return_url=' + encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate'),
+      ]);
+    });
   });
 
   it('makes no Cloud-only claims on a self-hosted instance', async () => {

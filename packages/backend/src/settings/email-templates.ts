@@ -14,6 +14,7 @@ import {
   steps,
   usageBox,
 } from './email-layout';
+import { withEmailLinkToken } from '../common/email-link-token';
 
 /**
  * Every email the backend sends, as pure functions of their inputs: no
@@ -291,11 +292,19 @@ export function trialLifecycleEmail(
     recap: { connectors: number; successfulCalls: number; daysLeft: number };
     cloudUrl: string;
     marketingUrl: string;
+    /**
+     * The recipient's address token (common/email-link-token.ts), so the
+     * pricing page knows who buys and refuses a second subscription.
+     */
+    emailToken?: string | null;
   },
   ctx: EmailBrandContext,
 ): RenderedEmail {
   const { stage, recap, cloudUrl } = input;
-  const pricingUrl = `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`;
+  const pricingUrl = withEmailLinkToken(
+    `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`,
+    input.emailToken,
+  );
   const licenseUrl = `${cloudUrl}/settings/license`;
   const hi = greeting(input.name);
   const days = Math.max(0, Math.round(recap.daysLeft));
@@ -434,11 +443,19 @@ export type WinbackOffer =
 const dayAndMonth = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
 export function trialWinbackEmail(
-  input: { name: string; offer: WinbackOffer; cloudUrl: string; marketingUrl: string },
+  input: {
+    name: string;
+    offer: WinbackOffer;
+    cloudUrl: string;
+    marketingUrl: string;
+    /** The recipient's address token for the pricing links (see trialLifecycleEmail). */
+    emailToken?: string | null;
+  },
   ctx: MarketingContext,
 ): RenderedEmail {
   const { offer, cloudUrl, marketingUrl } = input;
   const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
+  const priced = (url: string) => withEmailLinkToken(url, input.emailToken);
   const hi = greeting(input.name);
   const endedOn = dayAndMonth(offer.trialEndedAt);
   const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
@@ -451,7 +468,7 @@ export function trialWinbackEmail(
   if (offer.kind === 'firstMonth') {
     const price = esc(offer.price);
     const regular = esc(offer.regularPrice);
-    const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
+    const pricingUrl = priced(`${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`);
     return build({
       subject: `Your first month of AnythingMCP Cloud for ${offer.price}`,
       preheader: `Your workspace is still there. Cloud Starter for ${offer.price} the first month, then ${offer.regularPrice}/month.`,
@@ -478,7 +495,7 @@ export function trialWinbackEmail(
 
   if (offer.kind === 'discount') {
     const percent = Math.round(offer.percentOff);
-    const pricingUrl = `${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`;
+    const pricingUrl = priced(`${marketingUrl}/pricing?promo=${encodeURIComponent(offer.promoCode)}&return_url=${returnUrl}`);
     const ended = offer.stage === 'first' ? `ended on ${endedOn}` : 'ended a month ago';
     return build({
       subject:
@@ -503,7 +520,7 @@ export function trialWinbackEmail(
     });
   }
 
-  const pricingUrl = `${marketingUrl}/pricing?return_url=${returnUrl}`;
+  const pricingUrl = priced(`${marketingUrl}/pricing?return_url=${returnUrl}`);
   const connectorsUrl = `${cloudUrl}/connectors`;
   const mcpUrl = `${cloudUrl}/mcp`;
   return build({
