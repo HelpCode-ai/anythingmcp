@@ -163,7 +163,12 @@ describe('EmailService', () => {
   });
 
   describe('pricing links carry the recipient as an address token', () => {
-    const pricingLinks = (text: string) => [...text.matchAll(/https:\/\/anythingmcp\.com\/pricing\S*/g)].map((m) => m[0]);
+    const pricingLinks = (text: string) =>
+      text.split(/\s+/).filter((word) => {
+        if (!word.startsWith('https://')) return false;
+        const url = new URL(word);
+        return url.host === 'anythingmcp.com' && url.pathname === '/pricing';
+      });
 
     afterEach(() => {
       delete process.env.EMAIL_LINK_SECRET;
