@@ -108,7 +108,7 @@ describe('softr adapter: static spec conformance', () => {
     expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe('softr');
     expect(a.icon).toBe('softr');
-    expect(a.category).toBe('data');
+    expect(a.category).toBe('database');
   });
 
   it('sends the token in Softr-Api-Key to the Database API', () => {

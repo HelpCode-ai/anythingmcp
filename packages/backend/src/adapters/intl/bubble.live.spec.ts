@@ -106,7 +106,7 @@ describe('bubble adapter: static spec conformance', () => {
     expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe('bubble');
     expect(a.icon).toBe('bubble');
-    expect(a.category).toBe('data');
+    expect(a.category).toBe('database');
   });
 
   it('puts /api/1.1 behind the app address and sends the token as Bearer', () => {

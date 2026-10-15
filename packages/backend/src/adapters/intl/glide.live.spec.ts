@@ -101,7 +101,7 @@ describe('glide adapter: static spec conformance', () => {
     expect(a.unlisted).toBeFalsy();
     expect(a.slug).toBe('glide');
     expect(a.icon).toBe('glide');
-    expect(a.category).toBe('data');
+    expect(a.category).toBe('database');
   });
 
   it('sends the team token as Bearer to api.glideapps.com', () => {
