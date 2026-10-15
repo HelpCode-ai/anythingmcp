@@ -1,4 +1,5 @@
 import { LicenseController } from './license.controller';
+import { readEmailLinkToken } from '../common/email-link-token';
 
 /**
  * activate-trial used to answer 400 on every single signup.
@@ -165,5 +166,40 @@ describe('LicenseController — status reports an ended licence', () => {
     const { controller, licenseService } = makeController({ cloud: false });
     await controller.getStatus(req);
     expect(licenseService.getLatestInactiveLicense).not.toHaveBeenCalled();
+  });
+});
+
+describe('LicenseController — pricing-link token', () => {
+  const ENV = process.env.EMAIL_LINK_SECRET;
+  afterEach(() => {
+    if (ENV === undefined) delete process.env.EMAIL_LINK_SECRET;
+    else process.env.EMAIL_LINK_SECRET = ENV;
+  });
+
+  function make(cloud: boolean) {
+    return new LicenseController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { isCloud: () => cloud } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+  const req = { user: { sub: 'u1', email: 'Ann@Example.com', organizationId: 'org-1' } };
+
+  it('gives the signed-in user their own address as a token the pricing page reads', () => {
+    process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
+    const { token } = make(true).pricingLinkToken(req);
+    expect(readEmailLinkToken(token)).toBe('ann@example.com');
+  });
+
+  it('gives none without EMAIL_LINK_SECRET, nor on a self-hosted instance', () => {
+    delete process.env.EMAIL_LINK_SECRET;
+    expect(make(true).pricingLinkToken(req)).toEqual({ token: null });
+    process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
+    expect(make(false).pricingLinkToken(req)).toEqual({ token: null });
   });
 });

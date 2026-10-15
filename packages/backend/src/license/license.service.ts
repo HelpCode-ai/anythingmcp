@@ -108,6 +108,34 @@ export function isPaymentFailedBilling(billing: LicenseBilling | null | undefine
 /** Stripe subscription states in which Stripe may still collect a payment. */
 const LIVE_SUBSCRIPTION_STATUSES = ['past_due', 'unpaid', 'trialing', 'active'] as const;
 
+/**
+ * A workspace licence that means the workspace pays, or is about to: a paid
+ * licence that is active (a card trial included: it is a 'starter' or 'team'
+ * licence while Stripe says trialing), or one stopped on a declined card
+ * while Stripe still retries its subscription (isPaymentFailedBilling, the
+ * same rule as the app's "Update card" wall).
+ *
+ * The billing of any other stopped licence is a snapshot taken before it
+ * stopped (until 15 Oct 2026 the site sent none for invalid licences), so a
+ * revoked licence whose snapshot still says trialing does not count.
+ */
+export function isLivePaidLicence(
+  licence: { plan: string; status: string; expiresAt: Date | null; billing?: unknown },
+  now: Date = new Date(),
+): boolean {
+  if (licence.plan === 'trial') return false;
+  if (licence.status === 'active') return !licence.expiresAt || licence.expiresAt.getTime() > now.getTime();
+  return isPaymentFailedBilling(parseLicenseBilling(licence.billing));
+}
+
+/** Answer of LicenseService.workspacesWithPaidPlan. */
+export interface PaidPlanCheck {
+  /** Workspaces that pay or are about to (see workspacesWithPaidPlan). */
+  paid: Set<string>;
+  /** Workspaces the licence site could not answer for: decide nothing yet. */
+  unknown: Set<string>;
+}
+
 /** Billing-portal flows the app can open directly. */
 export type BillingPortalFlow = 'cancel' | 'payment_method_update';
 
@@ -877,6 +905,56 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         );
         return null;
       }
+    }
+    return out;
+  }
+
+  /**
+   * Which of these workspaces already pay, or are about to, so that nothing
+   * invites them to buy again. Cloud's free-trial emails ("your trial ends
+   * tomorrow", "your trial has ended", the win-back) link to the pricing
+   * page: on 14 Oct 2026 three admins holding a Cloud Starter card trial
+   * bought Cloud Starter a second time within 15 to 100 minutes of one.
+   *
+   * A workspace counts as paying when
+   *   - it holds a live paid licence (isLivePaidLicence): a paid plan, a card
+   *     trial, or a declined card Stripe is still retrying; or
+   *   - one of its admins' addresses has held an AnythingMCP subscription, per
+   *     the licence site (subscriptionHistory). That catches a card trial or a
+   *     purchase that never reached this server: its licence was not activated
+   *     here, or was activated in another workspace. The site answers "has
+   *     had", not "has": an admin whose card trial was cancelled counts too.
+   *
+   * The licence site is asked only about workspaces the local licences do not
+   * settle, in one batched lookup. When it cannot answer, those workspaces are
+   * returned as unknown and the caller sends nothing to them yet.
+   */
+  async workspacesWithPaidPlan(
+    workspaces: Array<{ organizationId: string; adminEmails: string[] }>,
+    now: Date = new Date(),
+  ): Promise<PaidPlanCheck> {
+    const out: PaidPlanCheck = { paid: new Set(), unknown: new Set() };
+    const ids = [...new Set(workspaces.map((w) => w.organizationId))];
+    if (ids.length === 0) return out;
+
+    const licences = await this.prisma.license.findMany({
+      where: { organizationId: { in: ids }, plan: { not: 'trial' } },
+      select: { organizationId: true, plan: true, status: true, expiresAt: true, billing: true },
+    });
+    for (const l of licences) {
+      if (l.organizationId && isLivePaidLicence(l, now)) out.paid.add(l.organizationId);
+    }
+
+    const rest = workspaces.filter((w) => !out.paid.has(w.organizationId));
+    const emails = rest.flatMap((w) => w.adminEmails);
+    if (emails.length === 0) return out;
+    const history = await this.subscriptionHistory(emails).catch(() => null);
+    for (const w of rest) {
+      if (!history) {
+        if (w.adminEmails.length > 0) out.unknown.add(w.organizationId);
+        continue;
+      }
+      if (w.adminEmails.some((e) => history.get(e.trim().toLowerCase()) === true)) out.paid.add(w.organizationId);
     }
     return out;
   }

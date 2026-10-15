@@ -25,6 +25,7 @@ import {
   verificationEmail,
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
+import { createEmailLinkToken } from '../common/email-link-token';
 
 /** The longest an email waits for the trust numbers before going out without fresh ones. */
 const STATS_WAIT_MS = 3000;
@@ -566,7 +567,14 @@ export class EmailService {
     }
 
     const email = trialLifecycleEmail(
-      { name, stage, recap, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      {
+        name,
+        stage,
+        recap,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
       await this.brand(),
     );
 
@@ -641,7 +649,7 @@ export class EmailService {
 
     const { ctx, headers } = await this.marketing(to);
     const email = trialWinbackEmail(
-      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl() },
+      { name, offer, cloudUrl: this.cloudUrl(), marketingUrl: this.marketingUrl(), emailToken: createEmailLinkToken(to) },
       ctx,
     );
 

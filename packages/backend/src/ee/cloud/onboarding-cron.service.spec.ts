@@ -15,6 +15,19 @@ function makeLicense(repaired = 0) {
   } as any;
 }
 
+/** LicenseService.workspacesWithPaidPlan over a stubbed subscriptionHistory, without local licences. */
+function paidPlanFromHistory(license: { subscriptionHistory: (emails: string[]) => Promise<Map<string, boolean> | null> }) {
+  return jest.fn(async (workspaces: Array<{ organizationId: string; adminEmails: string[] }>) => {
+    const out = { paid: new Set<string>(), unknown: new Set<string>() };
+    const history = await license.subscriptionHistory(workspaces.flatMap((w) => w.adminEmails));
+    for (const w of workspaces) {
+      if (!history) out.unknown.add(w.organizationId);
+      else if (w.adminEmails.some((e) => history.get(e.toLowerCase()) === true)) out.paid.add(w.organizationId);
+    }
+    return out;
+  });
+}
+
 function makeRelease(released = 0) {
   return {
     releaseOrphanedLicenses: jest
@@ -208,6 +221,138 @@ describe('OnboardingCronService — trial status transition', () => {
     // The "your trial has ended" email selects on status='active', so the
     // flip must come after it or the email would never be sent.
     expect(calls).toEqual(['lifecycle', 'winback', 'mark-expired']);
+  });
+});
+
+describe('OnboardingCronService — trial lifecycle emails', () => {
+  const HOUR = 60 * 60 * 1000;
+  const NOW = new Date('2026-10-14T09:17:00Z').getTime();
+  const out = () => ({ examined: 0, trialWarn3: 0, trialWarn1: 0, trialExpired: 0, trialEmailsWithheld: 0, skipped: 0 });
+
+  /** Free trials ending `endsInHours` from NOW, one per workspace. */
+  function makeService(opts: {
+    trials: Array<{ organizationId: string; endsInHours: number; admins?: string[] }>;
+    flagged?: Array<[string, string]>;
+    paid?: string[];
+    unknown?: string[];
+  }) {
+    const prisma = {
+      license: {
+        findMany: jest.fn().mockResolvedValue(
+          opts.trials.map((t) => ({ organizationId: t.organizationId, expiresAt: new Date(NOW + t.endsInHours * HOUR) })),
+        ),
+      },
+      orgSettings: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          (opts.flagged ?? []).some(
+            ([org, key]) => org === where.organizationId_key.organizationId && key === where.organizationId_key.key,
+          )
+            ? { id: 'f' }
+            : null,
+        ),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      organizationMember: {
+        findMany: jest.fn(async ({ where }: any) =>
+          (opts.trials.find((t) => t.organizationId === where.organizationId)?.admins ?? ['admin@example.com']).map(
+            (email) => ({ user: { email, name: 'Ada' } }),
+          ),
+        ),
+      },
+      connector: { count: jest.fn().mockResolvedValue(2) },
+      toolInvocation: { count: jest.fn().mockResolvedValue(40) },
+    } as any;
+    const email = { sendTrialLifecycleEmail: jest.fn().mockResolvedValue(true) } as any;
+    const license = makeLicense();
+    license.workspacesWithPaidPlan = jest.fn(async () => ({
+      paid: new Set(opts.paid ?? []),
+      unknown: new Set(opts.unknown ?? []),
+    }));
+    const service = new OnboardingCronService(prisma, email, license, makeRelease());
+    const run = async () => {
+      const o = out();
+      await (service as any).runTrialLifecyclePass(NOW, o);
+      return o;
+    };
+    const flagged = () =>
+      prisma.orgSettings.upsert.mock.calls.map((c: any) => [
+        c[0].where.organizationId_key.organizationId,
+        c[0].where.organizationId_key.key,
+      ]);
+    return { run, email, license, flagged };
+  }
+
+  it('sends each free trial its stage and flags it', async () => {
+    const { run, email, flagged } = makeService({
+      trials: [
+        { organizationId: 'org-3d', endsInHours: 60 },
+        { organizationId: 'org-1d', endsInHours: 20 },
+        { organizationId: 'org-0d', endsInHours: -1 },
+      ],
+    });
+    const o = await run();
+    expect(email.sendTrialLifecycleEmail.mock.calls.map((c: any[]) => c[2])).toEqual(['warn3', 'warn1', 'expired']);
+    expect(flagged()).toEqual([
+      ['org-3d', 'trial_email_warn3'],
+      ['org-1d', 'trial_email_warn1'],
+      ['org-0d', 'trial_email_expired'],
+    ]);
+    expect(o).toMatchObject({ trialWarn3: 1, trialWarn1: 1, trialExpired: 1, trialEmailsWithheld: 0 });
+  });
+
+  // 14 Oct 2026: three admins with a Cloud Starter card trial bought Cloud
+  // Starter again within 15-100 minutes of "your trial ends" / "has ended".
+  it('sends nothing to a workspace that already pays or has a card trial, and leaves the stage open', async () => {
+    const { run, email, flagged } = makeService({
+      trials: [
+        { organizationId: 'org-card-trial', endsInHours: 20 },
+        { organizationId: 'org-free', endsInHours: 20 },
+      ],
+      paid: ['org-card-trial'],
+    });
+    const o = await run();
+    expect(email.sendTrialLifecycleEmail).toHaveBeenCalledTimes(1);
+    expect(flagged()).toEqual([['org-free', 'trial_email_warn1']]);
+    expect(o.trialEmailsWithheld).toBe(1);
+  });
+
+  it('asks once, for the workspaces with a stage to send, with every active admin', async () => {
+    const { run, license } = makeService({
+      trials: [
+        { organizationId: 'org-a', endsInHours: 20, admins: ['a1@example.com', 'a2@example.com'] },
+        { organizationId: 'org-sent', endsInHours: 20 },
+        { organizationId: 'org-b', endsInHours: -2 },
+      ],
+      flagged: [['org-sent', 'trial_email_warn1']],
+    });
+    await run();
+    expect(license.workspacesWithPaidPlan).toHaveBeenCalledTimes(1);
+    expect(license.workspacesWithPaidPlan.mock.calls[0][0]).toEqual([
+      { organizationId: 'org-a', adminEmails: ['a1@example.com', 'a2@example.com'] },
+      { organizationId: 'org-b', adminEmails: ['admin@example.com'] },
+    ]);
+  });
+
+  it('asks nothing when no stage is due', async () => {
+    const { run, license, email } = makeService({
+      trials: [{ organizationId: 'org-sent', endsInHours: 60 }],
+      flagged: [['org-sent', 'trial_email_warn3']],
+    });
+    await run();
+    expect(license.workspacesWithPaidPlan).not.toHaveBeenCalled();
+    expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
+  });
+
+  it('postpones a workspace the licence site could not answer for: no email, no flag', async () => {
+    const { run, email, flagged } = makeService({
+      trials: [{ organizationId: 'org-x', endsInHours: 20 }],
+      unknown: ['org-x'],
+    });
+    const o = await run();
+    expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
+    expect(flagged()).toEqual([]);
+    expect(o.skipped).toBe(1);
+    expect(o.trialEmailsWithheld).toBe(0);
   });
 });
 
@@ -420,6 +565,9 @@ describe('OnboardingCronService — trial win-back', () => {
             emails.map((e) => [e.toLowerCase(), (opts.hadSubscription ?? []).includes(e.toLowerCase())]),
           ),
     );
+    // The remote half of LicenseService.workspacesWithPaidPlan (its own
+    // spec covers the rest): the licences are already settled by `count`.
+    license.workspacesWithPaidPlan = paidPlanFromHistory(license);
     const service = new OnboardingCronService(prisma, email, license, makeRelease());
     const run = async () => {
       const o = out();
@@ -514,8 +662,9 @@ describe('OnboardingCronService — trial win-back', () => {
       trialEndedAt: new Date(NOW - 1.5 * DAY),
     });
     expect(o.winbackHelp).toBe(1);
-    // No discount, so no need to ask the licence site.
-    expect(license.subscriptionHistory).not.toHaveBeenCalled();
+    // No discount, but it links to the pricing page: the site is asked whether
+    // the admin already holds a card trial or a plan.
+    expect(license.subscriptionHistory).toHaveBeenCalledWith(['admin@example.com']);
   });
 
   it('sends nothing more a month after to a workspace that never made a call', async () => {
@@ -570,7 +719,7 @@ describe('OnboardingCronService — trial win-back', () => {
     expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
   });
 
-  it('asks the licence site once per workspace, and skips each address that had a subscription', async () => {
+  it('asks the licence site once per workspace, about every active admin, and mails those who opted in', async () => {
     const { run, email, license } = makeService({
       endedDaysAgo: 2,
       calls: 5,
@@ -579,15 +728,40 @@ describe('OnboardingCronService — trial win-back', () => {
         { email: 'bob@example.com', name: 'Bob' },
         { email: 'carl@example.com', name: 'Carl', optedOut: true },
       ],
-      hadSubscription: ['ada@example.com'],
     });
     const o = await run();
+    expect(license.workspacesWithPaidPlan).toHaveBeenCalledTimes(1);
+    // An opted-out admin's card trial is the workspace's card trial too.
+    expect(license.workspacesWithPaidPlan.mock.calls[0][0]).toEqual([
+      { organizationId: 'org-1', adminEmails: ['Ada@Example.com', 'bob@example.com', 'carl@example.com'] },
+    ]);
     expect(license.subscriptionHistory).toHaveBeenCalledTimes(1);
-    // Opted-out admins are not mailed, so not asked about either.
-    expect(license.subscriptionHistory).toHaveBeenCalledWith(['Ada@Example.com', 'bob@example.com']);
-    expect(email.sendTrialWinbackEmail).toHaveBeenCalledTimes(1);
-    expect(email.sendTrialWinbackEmail.mock.calls[0][0]).toBe('bob@example.com');
+    expect(email.sendTrialWinbackEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['Ada@Example.com', 'bob@example.com']);
     expect(o.winbackOffers).toBe(1);
+  });
+
+  // 14 Oct 2026: a card trial whose licence never reached the Cloud (not
+  // activated in the workspace) left the workspace looking like a free trial.
+  it('mails nobody in a workspace one of whose admins had a subscription, and closes the stage', async () => {
+    for (const [days, calls] of [
+      [2, 5], // first discount
+      [2, 0], // how-to: it links to the pricing page too
+      [31, 5], // final discount
+    ]) {
+      const { run, email, upsertedKeys } = makeService({
+        endedDaysAgo: days,
+        calls,
+        admins: [
+          { email: 'Ada@Example.com', name: 'Ada' },
+          { email: 'bob@example.com', name: 'Bob' },
+        ],
+        hadSubscription: ['ada@example.com'],
+      });
+      const o = await run();
+      expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
+      expect(upsertedKeys()).toEqual([days < 7 ? 'trial_email_winback7' : 'trial_email_winback30']);
+      expect(o.skipped).toBe(1);
+    }
   });
 
   it('closes the stage without sending when every recipient had a subscription', async () => {
@@ -604,8 +778,12 @@ describe('OnboardingCronService — trial win-back', () => {
   });
 
   it('sends nothing and flags nothing when the licence site cannot answer, so the next run retries', async () => {
-    for (const days of [2, 31]) {
-      const { run, email, prisma } = makeService({ endedDaysAgo: days, calls: 5, hadSubscription: null });
+    for (const [days, calls] of [
+      [2, 5],
+      [2, 0],
+      [31, 5],
+    ]) {
+      const { run, email, prisma } = makeService({ endedDaysAgo: days, calls, hadSubscription: null });
       const o = await run();
       expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
       expect(prisma.orgSettings.upsert).not.toHaveBeenCalled();

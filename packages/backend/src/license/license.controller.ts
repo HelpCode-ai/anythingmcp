@@ -27,6 +27,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
+import { createEmailLinkToken } from '../common/email-link-token';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
@@ -363,6 +364,23 @@ export class LicenseController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Get('pricing-link-token')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Cloud: the signed-in user's address token for links to the pricing page (#t=), null when EMAIL_LINK_SECRET is unset",
+  })
+  pricingLinkToken(@Req() req: any): { token: string | null } {
+    // With it the pricing page knows who is buying and refuses a second
+    // subscription beside a card trial or plan the address already has (the
+    // licence site's duplicate guard). The address is the caller's own, and
+    // the token only prefills a checkout with it. Self-hosted instances buy
+    // their licence on the pricing page as anyone does and get none.
+    if (!this.deployment.isCloud()) return { token: null };
+    return { token: createEmailLinkToken(req.user?.email) };
   }
 
   @Get('card-trial-eligibility')

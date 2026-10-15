@@ -105,6 +105,10 @@ x-backend: &backend
     # bucket of three trials an hour. Must match LICENSE_SERVICE_TOKEN on the
     # website. Unset = public limit (self-host default).
     - LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN:-}
+    # Key of the address token in pricing links (`/pricing#t=…`), so the
+    # website knows who is buying and refuses a second subscription. Must
+    # match EMAIL_LINK_SECRET on the website. Unset = links without a token.
+    - EMAIL_LINK_SECRET=${EMAIL_LINK_SECRET:-}
     - CORS_ORIGIN=https://${DOMAIN}
     - SERVER_URL=https://${DOMAIN}
     - FRONTEND_URL=https://${DOMAIN}

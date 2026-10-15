@@ -38,9 +38,11 @@ const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
  * the change shipped. It keeps its OrgSettings key `trial_email_winback7`, so
  * no workspace can get the first stage twice.
  *
- * No discount goes to anyone who has or had a subscription: workspaces with
- * any licence other than the free trial are skipped, and the licence site
- * confirms, per address, that it never had a Stripe subscription.
+ * No win-back goes to a workspace that has or had a subscription: workspaces
+ * with any licence other than the free trial are skipped, and the licence site
+ * confirms, for every admin's address, that it never had a Stripe
+ * subscription (a card trial whose licence never reached this server
+ * included).
  *
  * Self-hosted: none of this runs. CloudModule, which provides this service, is
  * only imported when DEPLOYMENT_MODE=cloud (app.module.ts); self-hosted trials
@@ -223,6 +225,7 @@ export class OnboardingCronService {
     trialWarn3: number;
     trialWarn1: number;
     trialExpired: number;
+    trialEmailsWithheld: number;
     trialsMarkedExpired: number;
     trialsRepaired: number;
     licensesReverified: number;
@@ -244,6 +247,7 @@ export class OnboardingCronService {
       trialWarn3: 0,
       trialWarn1: 0,
       trialExpired: 0,
+      trialEmailsWithheld: 0,
       trialsMarkedExpired: 0,
       trialsRepaired: 0,
       licensesReverified: 0,
@@ -424,6 +428,7 @@ export class OnboardingCronService {
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
+        `trialEmailsWithheld=${out.trialEmailsWithheld} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
@@ -442,10 +447,25 @@ export class OnboardingCronService {
    * lifecycle (paid access ending), not marketing, so they ignore the
    * marketing opt-out. Idempotent via per-org OrgSettings flags
    * (`trial_email_{stage}`). Sends at most one stage per org per run.
+   *
+   * Never to a workspace that already pays or is about to: a paid licence, a
+   * card trial (bound here or not), a declined card still being retried
+   * (LicenseService.workspacesWithPaidPlan). These emails link to the pricing
+   * page, and on 14 Oct 2026 card-trial holders bought a second subscription
+   * from them. Such a stage is left unflagged and decided again on the next
+   * run while the trial is still selected here (the expired stage gets one
+   * run: markExpiredTrials flips the trial right after it).
    */
   private async runTrialLifecyclePass(
     now: number,
-    out: { examined: number; trialWarn3: number; trialWarn1: number; trialExpired: number; skipped: number },
+    out: {
+      examined: number;
+      trialWarn3: number;
+      trialWarn1: number;
+      trialExpired: number;
+      trialEmailsWithheld: number;
+      skipped: number;
+    },
   ): Promise<void> {
     const trials = await this.prisma.license.findMany({
       where: {
@@ -457,6 +477,14 @@ export class OnboardingCronService {
       select: { organizationId: true, expiresAt: true },
     });
 
+    // Workspaces with a stage to send, and their admins (authoritative membership).
+    const due: Array<{
+      organizationId: string;
+      stage: 'warn3' | 'warn1' | 'expired';
+      flagKey: string;
+      daysLeft: number;
+      admins: Array<{ user: { email: string; name: string | null } }>;
+    }> = [];
     for (const lic of trials) {
       const organizationId = lic.organizationId!;
       const expiresAt = lic.expiresAt!.getTime();
@@ -477,12 +505,32 @@ export class OnboardingCronService {
         continue;
       }
 
-      // Recipients: org admins (authoritative membership).
       const admins = await this.prisma.organizationMember.findMany({
         where: { organizationId, role: 'ADMIN', deactivatedAt: null },
         select: { user: { select: { email: true, name: true } } },
       });
       if (admins.length === 0) {
+        out.skipped++;
+        continue;
+      }
+      due.push({ organizationId, stage, flagKey, daysLeft, admins });
+    }
+    if (due.length === 0) return;
+
+    const paidPlan = await this.license.workspacesWithPaidPlan(
+      due.map((d) => ({ organizationId: d.organizationId, adminEmails: d.admins.map((a) => a.user.email) })),
+      new Date(now),
+    );
+
+    for (const { organizationId, stage, flagKey, daysLeft, admins } of due) {
+      if (paidPlan.paid.has(organizationId)) {
+        out.trialEmailsWithheld++;
+        out.skipped++;
+        continue;
+      }
+      // The licence site could not say whether an admin has a subscription:
+      // nothing is sent yet, and the next hourly run asks again.
+      if (paidPlan.unknown.has(organizationId)) {
         out.skipped++;
         continue;
       }
@@ -593,8 +641,31 @@ export class OnboardingCronService {
       }
 
       // Nobody to mail (no admin, all opted out) ends the stage.
-      let recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
+      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
       if (recipients.length === 0) {
+        await this.flag(organizationId, step.flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      // Nor a workspace one of whose admins' addresses had a Stripe
+      // subscription: a card trial or plan bought under it that never reached
+      // this server (its licence not activated here) is as much a customer as
+      // one that did. Neither email goes there: both link to the pricing page.
+      // Without a complete answer from the licence site nothing is sent and
+      // nothing flagged: the next hourly run asks again inside the window.
+      const paidPlan = await this.license.workspacesWithPaidPlan(
+        [{ organizationId, adminEmails: admins.map((a) => a.user.email) }],
+        new Date(now),
+      );
+      if (paidPlan.unknown.has(organizationId)) {
+        this.logger.warn(
+          `Win-back for workspace ${organizationId} postponed: no subscription history from the licence site.`,
+        );
+        out.skipped++;
+        continue;
+      }
+      if (paidPlan.paid.has(organizationId)) {
         await this.flag(organizationId, step.flagKey);
         out.skipped++;
         continue;
@@ -605,24 +676,6 @@ export class OnboardingCronService {
       if (!used) {
         offer = { kind: 'help', trialEndedAt };
       } else {
-        // A discount never reaches an address that had a Stripe subscription.
-        // Without a complete answer from the licence site nothing is sent and
-        // nothing flagged: the next hourly run asks again inside the window.
-        const history = await this.license.subscriptionHistory(recipients.map((r) => r.email));
-        if (!history) {
-          this.logger.warn(
-            `Win-back for workspace ${organizationId} postponed: no subscription history from the licence site.`,
-          );
-          out.skipped++;
-          continue;
-        }
-        recipients = recipients.filter((r) => history.get(r.email.trim().toLowerCase()) === false);
-        if (recipients.length === 0) {
-          await this.flag(organizationId, step.flagKey);
-          out.skipped++;
-          continue;
-        }
-
         if (
           step.stage === 'first' &&
           (await this.inFirstMonthTest(

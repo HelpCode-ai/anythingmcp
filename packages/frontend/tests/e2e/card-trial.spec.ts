@@ -104,6 +104,8 @@ async function cloudSession(
     checkout?: (body: unknown) => { status: number; body: unknown };
     /** GET /license/card-trial-eligibility: 'pay' = the address had a subscription. */
     eligibility?: 'trial' | 'pay' | 'none';
+    /** GET /license/pricing-link-token: the address token for pricing links. */
+    pricingToken?: string | null;
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
@@ -137,6 +139,7 @@ async function cloudSession(
     if (p.endsWith('/license/card-trial-eligibility')) {
       return json({ kind: opts.eligibility ?? 'trial', trialEndsAt: opts.eligibility === 'trial' ? TRIAL_END : null });
     }
+    if (p.endsWith('/license/pricing-link-token')) return json({ token: opts.pricingToken ?? null });
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: null });
     if (p.endsWith('/users/me')) return json(user);
     if (p.endsWith('/license/status')) {
@@ -286,6 +289,26 @@ test.describe('card-trial entry points (cloud)', () => {
     await page.goto('/connectors');
     await expect(page.getByRole('link', { name: 'Upgrade now' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /Add a payment method/ })).toHaveCount(0);
+  });
+
+  // The pricing page reads the buyer's address from the token and refuses a
+  // second subscription beside a card trial or plan it already has.
+  test('the pricing link carries the address token in its fragment', async ({ page }) => {
+    const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz_0123456789-tok';
+    await cloudSession(page, { user: { ...ADMIN, role: 'EDITOR' }, seed: SHOWN, pricingToken: token });
+    await page.goto('/connectors');
+    const link = page.getByRole('link', { name: 'Upgrade now' });
+    await expect(link).toHaveAttribute('href', new RegExp(`/pricing\\?return_url=[^#]+#t=${token}$`), {
+      timeout: 15_000,
+    });
+  });
+
+  test('without a token the pricing link has no fragment', async ({ page }) => {
+    await cloudSession(page, { user: { ...ADMIN, role: 'EDITOR' }, seed: SHOWN, pricingToken: null });
+    await page.goto('/connectors');
+    const link = page.getByRole('link', { name: 'Upgrade now' });
+    await expect(link).toHaveAttribute('href', /\/pricing\?return_url=/, { timeout: 15_000 });
+    expect(await link.getAttribute('href')).not.toContain('#');
   });
 });
 
