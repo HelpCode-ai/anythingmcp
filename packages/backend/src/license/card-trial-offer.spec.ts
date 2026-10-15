@@ -251,7 +251,7 @@ describe('CardTrialOfferService.runEmailPass', () => {
       ],
       trialEndsAt: new Date(NOW.getTime() + 5 * DAY),
       cardTrial: true,
-      ctaPath: '/start-trial?source=first_success',
+      ctaPath: '/start-trial?source=first_success_email',
     });
     expect(emailFlag()).toBe(NOW.toISOString());
     expect(emailedEvents()).toEqual([
@@ -296,7 +296,7 @@ describe('CardTrialOfferService.runEmailPass', () => {
     await svc.runEmailPass(NOW);
     expect(email.sendCardTrialOfferEmail).toHaveBeenCalledWith(
       'ada@example.com',
-      expect.objectContaining({ cardTrial: false, ctaPath: '/settings/license?source=first_success' }),
+      expect.objectContaining({ cardTrial: false, ctaPath: '/settings/license?source=first_success_email' }),
     );
     expect(emailedEvents()[0].metadata.kind).toBe('plan');
   });

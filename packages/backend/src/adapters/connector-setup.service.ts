@@ -17,6 +17,7 @@ import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
 import { searchCatalog } from './catalog-search';
+import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -350,7 +351,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       whatTheUserCanDo: onTrial
         ? 'Add a card to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
         : 'Choose a plan with more connectors, or remove a connector.',
-      upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}`,
+      upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}?source=${CHAT_SETUP_SOURCE}`,
     };
   }
 
@@ -417,7 +418,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ended: true,
         endedAt: endsAt,
         ...(admin
-          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
+          ? { choosePlanUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`, afterTheTrial: 'The trial has ended. Choosing a plan turns the connectors back on.' }
           : { afterTheTrial: 'The trial has ended. A workspace administrator can choose a plan.' }),
       };
     }
@@ -429,13 +430,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       ? {
           daysLeft,
           endsAt,
-          choosePlanUrl: `${ctx.dashboardBase}/start-trial`,
+          choosePlanUrl: `${ctx.dashboardBase}/start-trial?source=${CHAT_SETUP_SOURCE}`,
           afterTheTrial: 'Adding a card keeps the workspace running when the trial ends. Nothing is charged before then.',
         }
       : {
           daysLeft,
           endsAt,
-          choosePlanUrl: `${ctx.dashboardBase}/settings/license`,
+          choosePlanUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`,
           afterTheTrial: 'Choosing a plan keeps the workspace running when the trial ends.',
         };
   }

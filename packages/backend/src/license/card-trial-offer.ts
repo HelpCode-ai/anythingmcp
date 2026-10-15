@@ -28,8 +28,12 @@ export const OFFER_ELIGIBLE_KEY = 'card_trial_offer_eligible_at';
  */
 export const OFFER_EMAIL_KEY = 'card_trial_offer_email';
 
-/** `?source=` on /start-trial, carried into the checkout and Stripe metadata. */
-export const FIRST_SUCCESS_SOURCE = 'first_success';
+/**
+ * `?source=` on the offer email's link (to /start-trial, or to the licence
+ * page when the card trial is no longer available), carried into the
+ * checkout and Stripe metadata. The in-app card uses 'first_success_banner'.
+ */
+export const FIRST_SUCCESS_EMAIL_SOURCE = 'first_success_email';
 
 /**
  * A first success older than this when we first see it does not make the

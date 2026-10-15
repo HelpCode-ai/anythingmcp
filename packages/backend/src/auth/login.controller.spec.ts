@@ -638,7 +638,7 @@ describe('LoginController', () => {
         expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
         expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
         expect(res._sent).toMatch(
-          /<a href="https:\/\/cloud\.example\/start-trial" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
+          /<a href="https:\/\/cloud\.example\/start-trial\?source=post_approve" target="_blank" rel="noopener noreferrer">add a card now \(new tab\)<\/a>/,
         );
         // Continue stays the first and only button.
         const html = res._sent ?? '';

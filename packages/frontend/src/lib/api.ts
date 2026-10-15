@@ -1,4 +1,5 @@
 import type { ClickIds, SignupAttribution } from './attribution';
+import type { CheckoutSource } from './checkout-source';
 
 // Use relative paths so requests go to the same origin.
 // In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
@@ -1457,8 +1458,8 @@ export const license = {
       billingPeriod: 'monthly' | 'yearly';
       trial: boolean;
       promo?: string;
-      /** The in-app offer that led here; reaches Stripe as metadata.trial_source. */
-      source?: 'first_success';
+      /** Where in the app the checkout started; reaches Stripe as metadata.checkout_source. */
+      source?: CheckoutSource;
     },
   ) =>
     /** `trial`: whether the licence site granted the card trial asked for. */

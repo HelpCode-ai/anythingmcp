@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { useTrustStats } from '@/lib/trust-stats';
 import { TrustLine, TrustPanel } from '@/components/auth-trust';
 import { safeRedirect } from '@/lib/safe-redirect';
+import { startTrialPath } from '@/lib/checkout-source';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
 import {
@@ -188,7 +189,7 @@ function LoginForm() {
     });
     if (!eligible || readCardTrialPrompt(u.id) !== null) return false;
     writeCardTrialPrompt(u.id, 'shown');
-    router.push('/start-trial');
+    router.push(startTrialPath('signup_prompt'));
     return true;
   };
 

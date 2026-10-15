@@ -15,6 +15,7 @@ import {
   usageBox,
 } from './email-layout';
 import { withEmailLinkToken } from '../common/email-link-token';
+import { withSourceParam } from '../license/license-checkout';
 
 /**
  * Every email the backend sends, as pure functions of their inputs: no
@@ -301,8 +302,13 @@ export function trialLifecycleEmail(
   ctx: EmailBrandContext,
 ): RenderedEmail {
   const { stage, recap, cloudUrl } = input;
+  // `source` reaches the checkout's Stripe metadata (checkout_source), so a
+  // purchase from this email can be told apart from the pricing page's own.
   const pricingUrl = withEmailLinkToken(
-    `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`,
+    withSourceParam(
+      `${input.marketingUrl}/pricing?return_url=${encodeURIComponent(`${cloudUrl}/settings/license/activate`)}`,
+      `email_trial_${stage}`,
+    ),
     input.emailToken,
   );
   const licenseUrl = `${cloudUrl}/settings/license`;
@@ -455,7 +461,9 @@ export function trialWinbackEmail(
 ): RenderedEmail {
   const { offer, cloudUrl, marketingUrl } = input;
   const returnUrl = encodeURIComponent(`${cloudUrl}/settings/license/activate`);
-  const priced = (url: string) => withEmailLinkToken(url, input.emailToken);
+  // Every pricing link carries `source=email_winback` into the checkout's
+  // Stripe metadata; the promo code already tells the offers apart.
+  const priced = (url: string) => withEmailLinkToken(withSourceParam(url, 'email_winback'), input.emailToken);
   const hi = greeting(input.name);
   const endedOn = dayAndMonth(offer.trialEndedAt);
   const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';

@@ -164,7 +164,7 @@ test.describe('card-trial offer (cloud)', () => {
   test('a new cloud admin is offered the card trial once, and can skip it quietly', async ({ page }) => {
     await cloudSession(page);
     await page.goto('/');
-    await expect(page).toHaveURL(/\/start-trial$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/start-trial\?source=signup_prompt$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Your free trial' })).toBeVisible();
     // The real end date, never a length the user may no longer have.
     await expect(page.getByText(/^Free until \d{1,2} \w+ \d{4}$/)).toBeVisible();
@@ -194,7 +194,8 @@ test.describe('card-trial offer (cloud)', () => {
     await page.getByRole('button', { name: 'Start free trial' }).click();
 
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'yearly', trial: true }]);
+    // Opened without a source: the page names itself.
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'yearly', trial: true, source: 'start_trial' }]);
   });
 
   test('a failed checkout shows a friendly error and can be retried', async ({ page }) => {
@@ -257,7 +258,7 @@ test.describe('card-trial entry points (cloud)', () => {
     const cta = page.getByRole('button', { name: /Add a payment method: no charge before/ });
     await expect(cta).toBeVisible({ timeout: 15_000 });
     await cta.click();
-    await expect(page).toHaveURL(/\/start-trial$/);
+    await expect(page).toHaveURL(/\/start-trial\?source=trial_banner$/);
     expect(posted).toEqual([]);
   });
 
@@ -267,7 +268,7 @@ test.describe('card-trial entry points (cloud)', () => {
     await page.goto('/connectors');
     await page.getByRole('button', { name: /Add a payment method/ }).click({ timeout: 15_000 });
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'monthly', trial: true }]);
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'monthly', trial: true, source: 'trial_banner' }]);
   });
 
   test('after the trial, an admin buys the chosen plan from the licence wall, without a trial', async ({ page }) => {
@@ -281,7 +282,7 @@ test.describe('card-trial entry points (cloud)', () => {
     await page.getByRole('radio', { name: /Starter/ }).click();
     await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false }]);
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
   test('a non-admin keeps the plain pricing link in the banner', async ({ page }) => {
@@ -301,6 +302,8 @@ test.describe('card-trial entry points (cloud)', () => {
     await expect(link).toHaveAttribute('href', new RegExp(`/pricing\\?return_url=[^#]+#t=${token}$`), {
       timeout: 15_000,
     });
+    // The banner names itself to the pricing page's checkout, ahead of the token.
+    expect(await link.getAttribute('href')).toContain('&source=trial_banner#t=');
   });
 
   test('without a token the pricing link has no fragment', async ({ page }) => {
@@ -326,7 +329,7 @@ test.describe('an address that had a subscription (cloud)', () => {
 
     await page.getByRole('button', { name: 'Continue to checkout' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false }]);
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'start_trial' }]);
   });
 
   test('if the licence site still refuses the trial at checkout, the page says so before sending anyone on', async ({ page }) => {
@@ -353,7 +356,7 @@ test.describe('an address that had a subscription (cloud)', () => {
     await expect(cta).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/no charge before/)).toHaveCount(0);
     await cta.click();
-    await expect(page).toHaveURL(/\/start-trial$/);
+    await expect(page).toHaveURL(/\/start-trial\?source=trial_banner$/);
     expect(posted).toEqual([]);
   });
 });

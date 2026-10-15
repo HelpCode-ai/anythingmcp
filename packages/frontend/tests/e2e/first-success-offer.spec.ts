@@ -5,26 +5,38 @@ import {
   offerDay,
   offerDetail,
   offerHeadline,
-  parseCheckoutSource,
   shouldReportShown,
 } from '../../src/lib/first-success-offer';
+import { licensePageSource, parseCheckoutSource, startTrialPath } from '../../src/lib/checkout-source';
 
 /**
  * The card-trial offer right after a Cloud workspace's first successful tool
  * call: a dismissible card for admins on the dashboard, the connector list and
- * the connect page, leading to /start-trial?source=first_success, whose
- * checkout carries the source to Stripe.
+ * the connect page, leading to /start-trial?source=first_success_banner (the
+ * email to ?source=first_success_email), whose checkout carries the source to
+ * Stripe.
  *
  * Helpers first (no browser); then the same fake session as card-trial.spec.ts.
  */
 
 test.describe('first-success offer helpers', () => {
   test('accepts only known checkout sources', () => {
+    expect(parseCheckoutSource('first_success_banner')).toBe('first_success_banner');
+    expect(parseCheckoutSource(' first_success_email ')).toBe('first_success_email');
+    // Links sent before banner and email were told apart still count.
     expect(parseCheckoutSource('first_success')).toBe('first_success');
-    expect(parseCheckoutSource(' first_success ')).toBe('first_success');
     expect(parseCheckoutSource('newsletter')).toBeNull();
     expect(parseCheckoutSource('')).toBeNull();
     expect(parseCheckoutSource(null)).toBeNull();
+    expect(startTrialPath('trial_banner')).toBe('/start-trial?source=trial_banner');
+  });
+
+  test('the licence page passes on only the sources that link to it', () => {
+    expect(licensePageSource('first_success_email')).toBe('first_success_email');
+    expect(licensePageSource('first_success')).toBe('first_success_email');
+    expect(licensePageSource('chat_setup')).toBe('chat_setup');
+    expect(licensePageSource('trial_banner')).toBe('license_page');
+    expect(licensePageSource(null)).toBe('license_page');
   });
 
   test('a dismissal hides the offer for three days', () => {
@@ -158,13 +170,42 @@ test.describe('first-success offer (cloud)', () => {
     await expect(offerCard(page)).toContainText('Keep it running: start your trial, and My Shopify store keeps working');
 
     await page.getByRole('button', { name: 'Start your trial' }).click();
-    await expect(page).toHaveURL(/\/start-trial\?source=first_success$/, { timeout: 15_000 });
-    expect(events.map((e) => e.event)).toEqual(['card_trial_offer_shown', 'card_trial_offer_clicked']);
+    await expect(page).toHaveURL(/\/start-trial\?source=first_success_banner$/, { timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Start free trial' })).toBeVisible({ timeout: 15_000 });
+    expect(events.map((e) => e.event)).toEqual(['card_trial_offer_shown', 'card_trial_offer_clicked', 'start_trial_viewed']);
     expect(events[0].metadata).toEqual({ via: 'dashboard' });
+    expect(events[2].metadata).toEqual({ source: 'first_success_banner', kind: 'trial' });
 
     await page.getByRole('button', { name: 'Start free trial' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(checkouts).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: true, source: 'first_success' }]);
+    expect(checkouts).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: true, source: 'first_success_banner' }]);
+    expect(events.find((e) => e.event === 'start_trial_checkout_started')?.metadata).toEqual({
+      source: 'first_success_banner',
+      kind: 'trial',
+    });
+  });
+
+  test("the offer email's link reaches the checkout with its own source", async ({ page }) => {
+    const { events, checkouts } = await cloudSession(page);
+    await page.goto('/start-trial?source=first_success_email');
+    await page.getByRole('button', { name: 'Start free trial' }).click({ timeout: 15_000 });
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(checkouts).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: true, source: 'first_success_email' }]);
+    expect(events.find((e) => e.event === 'start_trial_viewed')?.metadata).toEqual({
+      source: 'first_success_email',
+      kind: 'trial',
+    });
+  });
+
+  test('from the licence page, the offer email keeps its source on the way to the card trial', async ({ page }) => {
+    await cloudSession(page);
+    await page.goto('/settings/license?source=first_success_email');
+    await expect(page.getByRole('link', { name: 'Add payment method' })).toHaveAttribute(
+      'href',
+      '/start-trial?source=first_success_email',
+      { timeout: 15_000 },
+    );
+    await expect(page.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', /&source=first_success_email/);
   });
 
   test('"shown" is reported once a day, not on every page', async ({ page }) => {

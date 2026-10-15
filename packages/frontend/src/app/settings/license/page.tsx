@@ -14,6 +14,7 @@ import { EditionCard } from '@/components/edition-card';
 import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
 import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { describeBilling } from '@/lib/billing-summary';
+import { licensePageSource, startTrialPath } from '@/lib/checkout-source';
 
 interface LicenseStatus {
   plan: string | null;
@@ -36,7 +37,13 @@ export default function LicenseSettingsPage() {
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
   const managePlan = useManagePlan();
-  const pricingUrl = usePricingUrl();
+  // Where the visitor came from (`?source=`, e.g. the offer email), passed on
+  // to the card trial and the pricing link for Stripe metadata.
+  const [source, setSource] = useState<ReturnType<typeof licensePageSource>>('license_page');
+  useEffect(() => {
+    setSource(licensePageSource(new URLSearchParams(window.location.search).get('source')));
+  }, []);
+  const pricingUrl = usePricingUrl(undefined, source);
   const { edition } = useEdition();
 
   const isCloud = deploymentMode === 'cloud';
@@ -436,7 +443,7 @@ export default function LicenseSettingsPage() {
                 </p>
               )}
               <div className="flex flex-wrap gap-3">
-                <Link href="/start-trial" className={cn(buttonVariants({ variant: 'primary' }))}>
+                <Link href={startTrialPath(source)} className={cn(buttonVariants({ variant: 'primary' }))}>
                   {cardTrialKind === 'pay' ? 'Choose a plan' : 'Add payment method'}
                 </Link>
                 <a

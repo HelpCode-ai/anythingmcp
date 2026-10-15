@@ -127,11 +127,26 @@ export const ProductEvents = {
    */
   CARD_TRIAL_OFFER_EMAILED: 'card_trial_offer_emailed',
   /**
+   * The card-trial page (/start-trial) was opened, once per page load.
+   * metadata.source = the entry point that led there (CHECKOUT_SOURCES in
+   * license-checkout.ts, e.g. 'first_success_banner', 'first_success_email',
+   * 'trial_banner'), metadata.kind = 'trial' (card trial on offer) or 'pay'
+   * (the address had a subscription, the plan is billed today). Answers how
+   * many clicks on each entry point, emails included, reach the page.
+   */
+  START_TRIAL_VIEWED: 'start_trial_viewed',
+  /**
+   * Its checkout button was pressed: metadata.source and metadata.kind as
+   * above. Read against start_trial_viewed (who leaves without trying) and
+   * checkout_link_created (who reaches Stripe).
+   */
+  START_TRIAL_CHECKOUT_STARTED: 'start_trial_checkout_started',
+  /**
    * The app minted a Stripe Checkout link (POST /api/license/checkout-link).
-   * metadata.via = where it came from ('first_success', or 'app' for every
-   * other entry point), metadata.kind = 'trial' (card trial) or 'pay'.
-   * Server-only. Answers how many clicks reach Checkout; Stripe says how
-   * many finish (metadata.trial_source).
+   * metadata.via = the entry point it came from (CHECKOUT_SOURCES, 'app' when
+   * the page did not say), metadata.kind = 'trial' (card trial) or 'pay'.
+   * Server-only. Answers how many clicks reach Checkout; Stripe says how many
+   * finish (metadata.checkout_source, the same value).
    */
   CHECKOUT_LINK_CREATED: 'checkout_link_created',
 } as const;

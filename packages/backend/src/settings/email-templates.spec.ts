@@ -183,7 +183,8 @@ describe('trial win-back', () => {
     }
     expect(email.text).toContain(
       'https://anythingmcp.com/pricing?promo=STARTER599&return_url=' +
-        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate'),
+        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+        '&source=email_winback',
     );
     expect(email.marketing).toBe(true);
   });
@@ -215,15 +216,15 @@ describe('card-trial offer after the first success', () => {
   it('dates the end of the trial and links to the card trial with its source', () => {
     const email = render('card-trial-offer');
     for (const part of [email.html, email.text]) expect(part).toContain('18 October');
-    expect(email.text).toContain('Start your trial: https://cloud.anythingmcp.com/start-trial?source=first_success');
-    expect(email.html).toContain('href="https://cloud.anythingmcp.com/start-trial?source=first_success"');
+    expect(email.text).toContain('Start your trial: https://cloud.anythingmcp.com/start-trial?source=first_success_email');
+    expect(email.html).toContain('href="https://cloud.anythingmcp.com/start-trial?source=first_success_email"');
     expect(email.marketing).toBe(true);
   });
 
   it('links to the plans when the card trial can no longer start, and copes without a connector', () => {
     const email = render('card-trial-offer-plans');
     expect(email.subject).toBe('Your first connection works');
-    expect(email.text).toContain('Choose a plan: https://cloud.anythingmcp.com/settings/license?source=first_success');
+    expect(email.text).toContain('Choose a plan: https://cloud.anythingmcp.com/settings/license?source=first_success_email');
     expect(email.text).toContain('Ask your AI what it can do with your app');
   });
 

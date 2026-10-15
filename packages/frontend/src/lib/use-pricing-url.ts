@@ -5,6 +5,7 @@ import { auth, license } from './api';
 import { useAuth } from './auth-context';
 import type { ClickIds } from './attribution';
 import { buildPricingUrl } from './marketing';
+import type { PricingLinkSource } from './checkout-source';
 
 interface PricingLinkData {
   ids: ClickIds | null;
@@ -43,8 +44,11 @@ function lookup(token: string): Promise<PricingLinkData> {
  *
  * Self-hosted builds never ask for either and never add one. Until the lookup
  * answers, and whenever it fails, the plain link is returned.
+ *
+ * `source` is where in the app the link sits (`?source=`, recorded by the
+ * pricing page's checkout as Stripe `metadata.checkout_source`).
  */
-export function usePricingUrl(returnPath?: string): string {
+export function usePricingUrl(returnPath?: string, source: PricingLinkSource = 'app_pricing'): string {
   const { token, deploymentMode, deploymentModeLoaded } = useAuth();
   const isCloud = deploymentModeLoaded && deploymentMode === 'cloud';
   const [found, setFound] = useState<{ token: string; data: PricingLinkData } | null>(null);
@@ -61,5 +65,5 @@ export function usePricingUrl(returnPath?: string): string {
   }, [isCloud, token]);
 
   const data = isCloud && token && found?.token === token ? found.data : null;
-  return buildPricingUrl(returnPath, data?.ids ?? null, deploymentModeLoaded && !isCloud, data?.emailToken ?? null);
+  return buildPricingUrl(returnPath, data?.ids ?? null, deploymentModeLoaded && !isCloud, data?.emailToken ?? null, source);
 }

@@ -1,4 +1,5 @@
 import { CLICK_ID_KEYS, cleanClickId, type ClickIds } from './attribution';
+import type { PricingLinkSource } from './checkout-source';
 
 const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
 
@@ -33,18 +34,23 @@ const EMAIL_TOKEN_RE = /^[A-Za-z0-9_-]{20,1024}$/;
  * put in the fragment (`#t=`): the pricing page then knows who is buying and
  * refuses a second subscription beside a card trial or plan the address
  * already has. The address itself never appears in the URL.
+ *
+ * `source` names the place in the app the link sits in; the pricing page's
+ * checkout stores it in Stripe as `metadata.checkout_source`.
  */
 export function buildPricingUrl(
   returnPath = '/settings/license/activate',
   clickIds?: ClickIds | null,
   selfHosted = false,
   emailToken?: string | null,
+  source?: PricingLinkSource | null,
 ): string {
   const base = `${getMarketingUrl()}/pricing`;
   if (typeof window === 'undefined') return selfHosted ? `${base}?hosting=self-hosted` : base;
   const returnUrl = `${window.location.origin}${returnPath}`;
   let url = `${base}?return_url=${encodeURIComponent(returnUrl)}`;
   if (selfHosted) url += '&hosting=self-hosted';
+  if (source) url += `&source=${source}`;
   for (const key of CLICK_ID_KEYS) {
     const id = cleanClickId(clickIds?.[key], key);
     if (id) url += `&${key}=${encodeURIComponent(id)}`;

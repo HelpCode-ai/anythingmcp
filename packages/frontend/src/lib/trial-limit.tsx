@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { startTrialPath } from './checkout-source';
 
 /**
  * The backend blocks a connector or MCP-server create on a trial with a message
@@ -29,7 +30,7 @@ export function TrialLimitNotice({ message }: { message: string }) {
       <p className="font-medium">{message}</p>
       <p className="mt-1">
         Your free trial includes a limited number of connectors.{' '}
-        <Link href="/start-trial" className="font-semibold underline hover:no-underline">
+        <Link href={startTrialPath('trial_limit')} className="font-semibold underline hover:no-underline">
           Add a payment method
         </Link>{' '}
         to unlock your full plan, or{' '}

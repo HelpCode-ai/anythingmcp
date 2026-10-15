@@ -35,6 +35,7 @@ import {
   CheckoutBillingPeriod,
   CheckoutPlan,
   CheckoutSource,
+  DEFAULT_CHECKOUT_SOURCE,
   cardTrialEnd,
   checkoutAdMetadata,
   cloudFrontendOrigin,
@@ -67,8 +68,9 @@ export class CheckoutLinkDto {
   @Matches(/^[A-Za-z0-9_-]{1,64}$/)
   promo?: string;
 
-  // Which in-app offer led here (e.g. 'first_success', the card-trial offer
-  // after the first successful tool call). Lands in Stripe metadata.
+  // Where in the app the checkout was started (e.g. 'first_success_banner',
+  // the card-trial offer after the first successful tool call). Lands in
+  // Stripe metadata as checkout_source; 'app' when the page does not say.
   @IsOptional()
   @IsIn(CHECKOUT_SOURCES as unknown as string[])
   source?: CheckoutSource;
@@ -338,6 +340,8 @@ export class LicenseController {
     const adMetadata = checkoutAdMetadata(
       await this.productEvents.clickIdForUser(req.user.sub).catch(() => null),
     );
+    // Every checkout carries its entry point, so Stripe can count each one.
+    const source: CheckoutSource = dto.source ?? DEFAULT_CHECKOUT_SOURCE;
 
     try {
       const link = await this.licenseService.createCheckoutIntent({
@@ -349,13 +353,13 @@ export class LicenseController {
         organizationId,
         ...(dto.promo && { promoCode: dto.promo.toUpperCase() }),
         ...(adMetadata && { adMetadata }),
-        ...(dto.source && { source: dto.source }),
+        source,
       });
       void this.productEvents.log({
         event: ProductEvents.CHECKOUT_LINK_CREATED,
         userId: req.user.sub,
         organizationId,
-        metadata: { via: dto.source ?? 'app', kind: trialEnd ? 'trial' : 'pay' },
+        metadata: { via: source, kind: trialEnd ? 'trial' : 'pay' },
       });
       return link;
     } catch (err: any) {
