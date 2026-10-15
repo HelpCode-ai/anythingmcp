@@ -78,6 +78,7 @@ import * as adyen from './intl/adyen.json';
 import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as ahrefs from './intl/ahrefs.json';
+import * as aircall from './intl/aircall.json';
 import * as airtable from './intl/airtable.json';
 import * as algolia from './intl/algolia.json';
 import * as amazonAds from './intl/amazon-ads.json';
@@ -139,6 +140,7 @@ import * as datadog from './intl/datadog.json';
 import * as dataforseo from './intl/dataforseo.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
+import * as dialpad from './intl/dialpad.json';
 import * as digitalocean from './intl/digitalocean.json';
 import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
@@ -167,6 +169,7 @@ import * as figma from './intl/figma.json';
 import * as fillout from './intl/fillout.json';
 import * as firebase from './intl/firebase.json';
 import * as firecrawl from './intl/firecrawl.json';
+import * as fireflies from './intl/fireflies.json';
 import * as firma from './intl/firma.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
@@ -300,6 +303,7 @@ import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
 import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
+import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
 import * as pagerduty from './intl/pagerduty.json';
 import * as pandadoc from './intl/pandadoc.json';
@@ -315,6 +319,7 @@ import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
+import * as plivo from './intl/plivo.json';
 import * as postgres from './intl/postgres.json';
 import * as posthog from './intl/posthog.json';
 import * as prestashop from './intl/prestashop.json';
@@ -382,6 +387,7 @@ import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
 import * as tiktokAds from './intl/tiktok-ads.json';
 import * as timetastic from './intl/timetastic.json';
+import * as tldv from './intl/tldv.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
 import * as tradingview from './intl/tradingview.json';
@@ -399,6 +405,7 @@ import * as vinted from './intl/vinted.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as waveAccounting from './intl/wave-accounting.json';
+import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
 import * as weeek from './intl/weeek.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
@@ -754,6 +761,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   agentSkills as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
   ahrefs as unknown as AdapterDefinition,
+  aircall as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
   algolia as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
@@ -815,6 +823,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dataforseo as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
+  dialpad as unknown as AdapterDefinition,
   digitalocean as unknown as AdapterDefinition,
   directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
@@ -843,6 +852,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fillout as unknown as AdapterDefinition,
   firebase as unknown as AdapterDefinition,
   firecrawl as unknown as AdapterDefinition,
+  fireflies as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
@@ -976,6 +986,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   openweather as unknown as AdapterDefinition,
   oracle as unknown as AdapterDefinition,
   orderful as unknown as AdapterDefinition,
+  otter as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   pagerduty as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
@@ -991,6 +1002,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   planeSo as unknown as AdapterDefinition,
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
+  plivo as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
   posthog as unknown as AdapterDefinition,
   prestashop as unknown as AdapterDefinition,
@@ -1058,6 +1070,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   tidio as unknown as AdapterDefinition,
   tiktokAds as unknown as AdapterDefinition,
   timetastic as unknown as AdapterDefinition,
+  tldv as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
   tradingview as unknown as AdapterDefinition,
@@ -1075,6 +1088,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
+  webex as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
   weeek as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,

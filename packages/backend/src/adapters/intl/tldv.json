@@ -1,0 +1,334 @@
+{
+  "slug": "tldv",
+  "name": "tl;dv",
+  "aliases": [
+    "tl dv",
+    "too long didn't view"
+  ],
+  "description": "Let your AI read your tl;dv meeting recordings: find meetings from Google Meet, Zoom and Teams, read the AI notes, topics and full transcripts, and with your confirmation import a recording from a link.",
+  "instructions": "## tl;dv\nThis connector reads **tl;dv**, the meeting recorder for Google Meet, Zoom and Microsoft Teams, through the tl;dv public API (`https://pasta.tldv.io`, version v1alpha1) with a personal API key: recorded meetings, tl;dv's AI notes and topics, and the full transcripts. It can also import a recording from a link.\n\n**Setup (about 2 minutes)**\n1. Sign in to tl;dv and open **Settings, Personal settings, API keys** (https://tldv.io/app/settings/personal-settings/api-keys).\n2. Generate a key and paste it into `TLDV_API_KEY`. It is sent in the `x-api-key` header and only to tl;dv.\n3. Check the setup with `tldv_list_meetings`.\n\n**Which meetings the API can reach**: the key acts as its user, and tl;dv only exports meetings whose organizer (the person who sent the calendar invite) has a paid plan (Pro, Business or Enterprise). A meeting the user can see in the app but that was organised by someone on the free plan is not exported, even when it was shared: it is missing from the list or answers 403.\n\n**Recordings and transcripts are personal data.** They hold what colleagues, customers and other participants said, with their names and email addresses. Only fetch what the user's question needs, prefer the AI notes over the full transcript, and do not copy transcripts to other systems unless the user asks for it.\n\n**How to work**\n1. Find meetings: `tldv_list_meetings` with a search word (`query`), a date range (`from`, `to`), `meeting_type` internal or external, or `only_participated`. The answer has `page`, `pages` and `total`; ask for the next `page` while it is below `pages`.\n2. `tldv_get_meeting` for one meeting's details, `tldv_get_notes` for the AI notes and topics.\n3. `tldv_get_transcript` for what was said, 700 lines at a time as [start second, speaker, text]; when `totalLines` is above 700, `tldv_get_transcript_more` gives lines 701 to 1400. tl;dv has no further paging.\n4. `tldv_import_meeting` brings in a recording from a public link and creates a new meeting: confirm the link and the name with the user first. Use `dry_run` to test.\n\n**Errors**\n- 401 `AuthorizationRequiredError` or `UnauthorizedError`: the key is missing, wrong or revoked; generate a new one.\n- 403: the meeting's organizer has no paid plan, or the user may not export it.\n- 404 `NotFoundError`: wrong meeting id, or no transcript or notes yet.\n- 400: a parameter has the wrong format; the message names it (meeting ids are 24 hexadecimal characters).\n\n**Out of scope here**: downloading the recording file (the API answers with a redirect to the file itself), uploading a file in parts, and webhooks (MeetingReady and TranscriptReady are set up in tl;dv's settings, not through this API).",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "tldv",
+  "docsUrl": "https://doc.tldv.io/",
+  "prerequisites": "A tl;dv account and a personal API key from Settings, Personal settings, API keys. The API only exports meetings whose organizer has a paid tl;dv plan. About 2 minutes.",
+  "requiredEnvVars": [
+    "TLDV_API_KEY"
+  ],
+  "envVarMeta": {
+    "TLDV_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "tl;dv, Settings, Personal settings, API keys: generate a key and copy it.",
+      "link": "https://tldv.io/app/settings/personal-settings/api-keys",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key tl;dv shows, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "tl;dv refused the API key: it is wrong or was revoked. Generate a new one under Settings, Personal settings, API keys.",
+    "403": "tl;dv accepted the key but will not export these meetings: the API only reaches meetings organised by someone on a paid tl;dv plan.",
+    "429": "tl;dv is rate limiting the requests. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "tldv_list_meetings",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "tl;dv Public API",
+    "type": "REST",
+    "baseUrl": "https://pasta.tldv.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{TLDV_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1alpha1/meetings?limit=1"
+  },
+  "tools": [
+    {
+      "name": "tldv_list_meetings",
+      "description": "List the meetings recorded with tl;dv that the API key's user can export, newest first: id, name, date, duration in seconds, organizer, invitees and the link in tl;dv. Search by name, filter by date range, internal or external meetings, or only meetings the user took part in. Pages of up to 100. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to search for in the meeting names."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only meetings from this date or date-time, e.g. 2026-10-01 or 2026-10-01T08:00:00Z."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only meetings up to this date or date-time."
+          },
+          "only_participated": {
+            "type": "boolean",
+            "description": "true: only meetings the user took part in. Default false."
+          },
+          "meeting_type": {
+            "type": "string",
+            "description": "internal (everyone from the same organisation) or external (at least one outside participant). Default: both.",
+            "enum": [
+              "internal",
+              "external"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer says how many pages there are.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Meetings per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1alpha1/meetings",
+        "queryParams": {
+          "query": "$query",
+          "from": "$from",
+          "to": "$to",
+          "onlyParticipated": "$only_participated",
+          "meetingType": "$meeting_type",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "page": "$.page",
+            "pages": "$.pages",
+            "total": "$.total",
+            "meetings": {
+              "$from": "$.results[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "happenedAt": "happenedAt",
+                "durationSeconds": "duration",
+                "url": "url",
+                "organizer": "organizer",
+                "invitees": "invitees"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tldv_get_meeting",
+      "description": "Read one tl;dv meeting: name, date, duration in seconds, organizer, invitees, the template used, the link in tl;dv, and the phone number and your own reference fields when it was imported with them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "Meeting id from tldv_list_meetings (24 characters, letters a to f and digits).",
+            "pattern": "^[0-9a-fA-F]{24}$"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1alpha1/meetings/{meeting_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "name": "name",
+            "happenedAt": "happenedAt",
+            "durationSeconds": "duration",
+            "url": "url",
+            "organizer": "organizer",
+            "invitees": "invitees",
+            "template": "template",
+            "phoneNumber": "phoneNumber",
+            "metadata": "metadata",
+            "conferenceId": "extraProperties.conferenceId"
+          }
+        }
+      }
+    },
+    {
+      "name": "tldv_get_notes",
+      "description": "Read tl;dv's AI meeting notes: the notes in Markdown, the topics with their summaries, and each note with the second of the recording it refers to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "Meeting id from tldv_list_meetings (24 characters, letters a to f and digits).",
+            "pattern": "^[0-9a-fA-F]{24}$"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1alpha1/meetings/{meeting_id}/notes"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "markdown": "$.markdownContent",
+            "topics": {
+              "$from": "$.topics[*]",
+              "$select": {
+                "title": "title",
+                "summary": "summary"
+              }
+            },
+            "notes": {
+              "$from": "$.structuredNotes[*]",
+              "$select": {
+                "second": "timestamp",
+                "text": "text"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "tldv_get_transcript",
+      "description": "Read what was said in a meeting, lines 1 to 700: each line is [start second, speaker, text]. totalLines tells how long the transcript is; when it is over 700, read the rest with tldv_get_transcript_more. tl;dv only returns finished transcripts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "Meeting id from tldv_list_meetings (24 characters, letters a to f and digits).",
+            "pattern": "^[0-9a-fA-F]{24}$"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1alpha1/meetings/{meeting_id}/transcript"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{meetingId: meetingId, totalLines: length(data || `[]`), firstLine: `1`, lines: data[0:700].[startTime, speaker, text]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "tldv_get_transcript_more",
+      "description": "Read lines 701 to 1400 of a long meeting's transcript, each line [start second, speaker, text], after tldv_get_transcript showed totalLines over 700. tl;dv sends no further pages: for longer meetings rely on tldv_get_notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "Meeting id from tldv_list_meetings (24 characters, letters a to f and digits).",
+            "pattern": "^[0-9a-fA-F]{24}$"
+          }
+        },
+        "required": [
+          "meeting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1alpha1/meetings/{meeting_id}/transcript"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{meetingId: meetingId, totalLines: length(data || `[]`), firstLine: `701`, lines: data[700:1400].[startTime, speaker, text]}",
+          "maxBytes": 150000
+        }
+      }
+    },
+    {
+      "name": "tldv_import_meeting",
+      "description": "Import a recording into tl;dv from a public link to an mp3, mp4, wav, m4a, mkv, mov, avi, wma or flac file, so tl;dv transcribes it and writes notes. Creates a new meeting in the account: confirm the link and the name with the user before calling it and wait for their yes. Returns a job id; the meeting shows up in tldv_list_meetings once processed. dry_run checks the request without importing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public link that downloads the media file directly.",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new meeting."
+          },
+          "happened_at": {
+            "type": "string",
+            "description": "When the meeting took place, as 2026-10-01T09:30:00.000Z (with milliseconds). Default: now."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses of the people in the recording."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "true: only check the request, import nothing."
+          }
+        },
+        "required": [
+          "url",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1alpha1/meetings/import",
+        "bodyMapping": {
+          "url": "$url",
+          "name": "$name",
+          "happenedAt": "$happened_at",
+          "participants": "$participants",
+          "dryRun": "$dry_run"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "success": "$.success",
+            "jobId": "$.jobId",
+            "message": "$.message"
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    }
+  ]
+}
