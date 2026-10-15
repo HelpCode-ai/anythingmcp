@@ -196,13 +196,13 @@ test.describe('a declined card (cloud)', () => {
     billing: billing({ status: 'past_due', amount: 1900 }),
   };
 
-  test('the wall asks for a new card, not for a purchase, and opens Stripe’s card page', async ({ page }) => {
+  test('the wall asks for a new payment method, not for a purchase, and opens Stripe’s page for it', async ({ page }) => {
     const { posted } = await cloudSession(page, { license: declined });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Your payment didn’t go through' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Purchase/)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Update card' }).click();
+    await page.getByRole('button', { name: 'Update payment method' }).click();
     await expect(page).toHaveURL('https://billing.example.test/session');
     const portal = posted.find((p) => p.path.endsWith('/license/billing-portal'));
     expect(portal?.body).toMatchObject({ flow: 'payment_method_update' });

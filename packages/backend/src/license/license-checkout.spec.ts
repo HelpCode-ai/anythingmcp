@@ -475,7 +475,7 @@ describe('LicenseController.checkoutLink', () => {
       license: null,
       paymentFailed: { plan: 'starter', status: 'revoked', billing: { status: 'past_due', cancelling: false } },
     });
-    await expect(controller.checkoutLink(adminReq, { plan: 'starter' } as any)).rejects.toThrow(/Update your card/);
+    await expect(controller.checkoutLink(adminReq, { plan: 'starter' } as any)).rejects.toThrow(/Update your payment method/);
     expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
   });
 
