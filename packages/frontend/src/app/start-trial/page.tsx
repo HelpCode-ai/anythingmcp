@@ -24,6 +24,7 @@ import {
   type PlanSelection,
 } from '@/lib/card-trial';
 import { useCardCheckout } from '@/lib/use-card-checkout';
+import { formatLocal, useLocalPricing } from '@/lib/local-currency';
 import { fetchCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-offer';
 
@@ -45,6 +46,7 @@ import { parseCheckoutSource, type CheckoutSource } from '@/lib/first-success-of
  */
 export default function StartTrialPage() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
+  const localPricing = useLocalPricing(deploymentMode === 'cloud');
   const router = useRouter();
   const checkout = useCardCheckout();
   const [trialEnd, setTrialEnd] = useState<string | null>(null);
@@ -135,8 +137,13 @@ export default function StartTrialPage() {
 
   const endLong = formatTrialEnd(trialEnd, 'long');
   const plan = planById(selection.plan);
-  const price = formatPlanPrice(plan, selection.period);
-  const dueToday = formatEur(selection.period === 'yearly' ? plan.yearly : plan.monthly);
+  // Outside the euro area Stripe charges in the visitor's currency: say
+  // roughly how much, next to the exact euro price.
+  const euros = selection.period === 'yearly' ? plan.yearly : plan.monthly;
+  const local = formatLocal(euros, localPricing);
+  const exactPrice = formatPlanPrice(plan, selection.period);
+  const price = local ? `≈ ${local}/${selection.period === 'yearly' ? 'year' : 'month'} (${exactPrice})` : exactPrice;
+  const dueToday = local ? `≈ ${local} (${formatEur(euros)})` : formatEur(euros);
   const startLabel = checkout.loading
     ? 'Opening checkout…'
     : checkout.error

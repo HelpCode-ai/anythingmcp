@@ -12,6 +12,7 @@ import {
   yearlyPerMonth,
   yearlySaving,
 } from '../../src/lib/card-trial';
+import { formatLocal, parseLocalPricing } from '../../src/lib/local-currency';
 
 /**
  * The card trial on AnythingMCP Cloud: right after sign-up an admin on a
@@ -106,6 +107,8 @@ async function cloudSession(
     eligibility?: 'trial' | 'pay' | 'none';
     /** GET /license/pricing-link-token: the address token for pricing links. */
     pricingToken?: string | null;
+    /** The marketing site's /api/price-estimate for this visitor. */
+    priceEstimate?: Record<string, unknown>;
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
@@ -128,6 +131,7 @@ async function cloudSession(
     if (p === '/health/server-info') {
       return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
+    if (p === '/api/price-estimate') return json(opts.priceEstimate ?? { currency: null, vat: true });
     if (p.endsWith('/license/checkout-link') && req.method() === 'POST') {
       const body = req.postDataJSON();
       posted.push(body);
@@ -159,6 +163,62 @@ async function cloudSession(
   );
   return { posted };
 }
+
+test.describe('local currency helpers', () => {
+  test('reads the site\'s answer and rejects anything malformed', () => {
+    expect(parseLocalPricing({ currency: 'USD', rate: 1.1656, vat: false })).toEqual({ currency: 'USD', rate: 1.1656, vat: false });
+    expect(parseLocalPricing({ currency: null, vat: true })).toEqual({ currency: null, rate: null, vat: true });
+    expect(parseLocalPricing({ currency: 'USD', rate: -1, vat: false })).toEqual({ currency: null, rate: null, vat: false });
+    expect(parseLocalPricing({ currency: '<b>', rate: 1 })).toEqual({ currency: null, rate: null, vat: null });
+    expect(parseLocalPricing('nonsense')).toBeNull();
+  });
+
+  test('converts like the pricing page, and stays in euros without a currency', () => {
+    const usd = { currency: 'USD', rate: 1.165632, vat: false };
+    expect(formatLocal(19, usd)).toBe('$22.15');
+    expect(formatLocal(490, usd)).toBe('$571.16');
+    expect(formatLocal(19, { currency: null, rate: null, vat: true })).toBeNull();
+    expect(formatLocal(19, null)).toBeNull();
+  });
+});
+
+test.describe('prices in the visitor\'s currency (cloud)', () => {
+  test('a US visitor sees dollars first, the exact euro price under it, and no VAT', async ({ page }) => {
+    await cloudSession(page, {
+      seed: { 'amcp_card_trial_prompt:u1': 'shown' },
+      priceEstimate: { currency: 'USD', rate: 1.165632, vat: false },
+    });
+    await page.goto('/start-trial');
+    const starter = page.getByRole('radio', { name: /Starter/ });
+    await expect(starter).toContainText('≈ $22.15/month', { timeout: 15_000 });
+    await expect(starter).toContainText('19 €/month exactly');
+    await expect(page.getByText('Prices in EUR, paid in USD at checkout.')).toBeVisible();
+    await expect(page.getByText(/VAT included/)).toHaveCount(0);
+
+    await page.getByRole('radio', { name: 'Yearly' }).click();
+    await expect(page.getByRole('radio', { name: /Team/ })).toContainText('≈ $571.16/year');
+    await expect(page.getByRole('radio', { name: /Team/ })).toContainText('490 €/year exactly');
+  });
+
+  test('a visitor in the euro area sees euros and VAT as before', async ({ page }) => {
+    await cloudSession(page, {
+      seed: { 'amcp_card_trial_prompt:u1': 'shown' },
+      priceEstimate: { currency: null, vat: true },
+    });
+    await page.goto('/start-trial');
+    await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('19 €/month', { timeout: 15_000 });
+    await expect(page.getByText(/≈ \$/)).toHaveCount(0);
+    await expect(page.getByText('Prices in EUR, VAT included.')).toBeVisible();
+  });
+
+  test('an unreachable site leaves everything in euros', async ({ page }) => {
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    await page.route('**/api/price-estimate', (route) => route.abort());
+    await page.goto('/start-trial');
+    await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('19 €/month', { timeout: 15_000 });
+    await expect(page.getByText('Prices in EUR, VAT included.')).toBeVisible();
+  });
+});
 
 test.describe('card-trial offer (cloud)', () => {
   test('a new cloud admin is offered the card trial once, and can skip it quietly', async ({ page }) => {
