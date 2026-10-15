@@ -335,12 +335,15 @@ created without `mcpServerId` reaches every server of your organization.
 ### CLI
 
 The repository includes the [`amcp` CLI](../packages/cli/README.md) for logging
-in with an MCP API key and listing tools on a specific server. Build it with
+in with an MCP API key, listing and describing tools, and calling them on a
+specific server. Build it with
 `npm run build -w packages/cli`, then run:
 
 ```bash
 node packages/cli/dist/index.js login --url http://localhost:4000 --server YOUR_SERVER_ID
 node packages/cli/dist/index.js tools ls
+node packages/cli/dist/index.js tools describe YOUR_TOOL_NAME
+node packages/cli/dist/index.js tools call YOUR_TOOL_NAME --args '{"id":"123"}' --json
 ```
 
 The CLI constructs `/mcp/<serverId>` from the instance URL and server ID.

@@ -1,7 +1,7 @@
 # AnythingMCP CLI
 
 The `amcp` command connects to one AnythingMCP MCP server from your terminal.
-This first version supports login, logout, profile inspection and tool listing.
+It supports login, logout, profile inspection, tool discovery and tool calls.
 
 From the repository root:
 
@@ -39,5 +39,40 @@ mode `0600` on Unix. Relative `XDG_CONFIG_HOME` values are ignored. `whoami`
 shows only a key prefix.
 
 `tools ls` shows each tool's name, read-only/destructive hint, and the first
-line of its description. Tool execution and JSON output are planned for the
-next phase of [issue #1009](https://github.com/HelpCode-ai/anythingmcp/issues/1009).
+line of its description. `tools describe` shows the full description and input
+JSON schema. Use that schema to prepare arguments for `tools call`:
+
+```bash
+amcp tools describe YOUR_TOOL_NAME
+amcp tools call YOUR_TOOL_NAME --args '{"id":"123"}'
+amcp tools call YOUR_TOOL_NAME --args @args.json
+cat args.json | amcp tools call YOUR_TOOL_NAME --args -
+```
+
+Without `--args`, the CLI sends an empty object. Arguments must be a JSON
+object. Calls time out after 300 seconds by default. Set `--timeout <seconds>`
+on `tools call` for a different positive timeout (fractional seconds are allowed).
+A timeout exits with code 4 and reports `Tool call timed out after <seconds>s`.
+For a tool annotated as destructive, an interactive terminal asks for
+confirmation. In a non-interactive script, pass `--yes` explicitly. Tool text
+goes to stdout, and non-text content is available with `--json`.
+
+`--json` works with every command. It writes one JSON object to stdout: login
+and logout report the profile, `whoami` reports the instance URL, MCP `endpoint`
+and masked key, `tools ls` returns `{ "tools": [...] }`,
+`tools describe` returns `{ "tool": {...} }`,
+and `tools call` returns `{ "tool": "name", "result": {...} }`. CLI usage and
+connection errors go to stderr (also as JSON when `--json` is set). A tool's
+`isError` result is returned on stdout in JSON mode and on stderr in text mode.
+JSON errors on stderr have the shape `{ "error": "message", "exitCode": 4 }`.
+For example:
+
+```bash
+amcp tools ls --json
+amcp tools call YOUR_TOOL_NAME --args @args.json --json
+```
+
+Exit codes are `0` for success, `1` when a tool returns `isError`, `2` for
+invalid usage or JSON arguments, `3` for authentication failures, and `4` for
+connection or server failures. The API key is never accepted as an argument
+and is never included in CLI status output.

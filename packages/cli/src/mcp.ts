@@ -31,16 +31,10 @@ export async function withClient<T>(profile: Profile, action: (client: Client) =
   }
 }
 
+export async function listClientTools(client: Client) {
+  return (await client.listTools()).tools;
+}
+
 export async function listTools(profile: Profile) {
-  return withClient(profile, async (client) => {
-    const tools: Awaited<ReturnType<Client['listTools']>>['tools'] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < 50; page++) {
-      const result = await client.listTools(cursor ? { cursor } : undefined);
-      tools.push(...result.tools);
-      if (!result.nextCursor) return tools;
-      cursor = result.nextCursor;
-    }
-    throw new Error('Tool list exceeded 50 pages');
-  });
+  return withClient(profile, listClientTools);
 }
