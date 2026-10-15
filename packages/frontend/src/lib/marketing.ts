@@ -23,9 +23,10 @@ const EMAIL_TOKEN_RE = /^[A-Za-z0-9_-]{20,1024}$/;
 
 /**
  * The pricing page, with `return_url` back to this app. On AnythingMCP Cloud
- * the caller may pass the user's own Google Ads click id (see usePricingUrl),
- * which the pricing page puts into the checkout so the purchase can be
- * reported to Google Ads; anything that is not a well-formed id is left out.
+ * the caller may pass the user's own ad click ids (a Google Ads one and a
+ * ChatGPT Ads `oppref`, see usePricingUrl), which the pricing page puts into
+ * the checkout so the purchase can be reported to the ad platform; anything
+ * that is not a well-formed id is left out.
  * A self-hosted instance opens the page on its own plans (`hosting=self-hosted`).
  *
  * `emailToken` is the signed-in user's address token (from the Cloud server),
@@ -45,8 +46,8 @@ export function buildPricingUrl(
   let url = `${base}?return_url=${encodeURIComponent(returnUrl)}`;
   if (selfHosted) url += '&hosting=self-hosted';
   for (const key of CLICK_ID_KEYS) {
-    const id = cleanClickId(clickIds?.[key]);
-    if (id) url += `&${key}=${id}`;
+    const id = cleanClickId(clickIds?.[key], key);
+    if (id) url += `&${key}=${encodeURIComponent(id)}`;
   }
   if (emailToken && EMAIL_TOKEN_RE.test(emailToken)) url += `#t=${emailToken}`;
   return url;

@@ -1,5 +1,5 @@
 import type { LicenseInfo } from './license.service';
-import type { AttributionClickId } from '../audit/signup-attribution';
+import { CLICK_ID_KEYS, type AttributionClickId } from '../audit/signup-attribution';
 
 /**
  * Checkout links for AnythingMCP Cloud (DEPLOYMENT_MODE=cloud only).
@@ -52,6 +52,8 @@ export interface CheckoutIntentPayload {
     gclid?: string;
     gbraid?: string;
     wbraid?: string;
+    /** ChatGPT Ads click reference. */
+    oppref?: string;
   };
 }
 
@@ -73,7 +75,7 @@ export function cardTrialEnd(license: LicenseInfo | null, now: Date = new Date()
 
 /**
  * The ad metadata the licence site may attach to the checkout, so a purchase
- * can be reported to Google Ads. Only a click id stored with ad consent
+ * can be reported to Google Ads or ChatGPT Ads. Only a click id stored with ad consent
  * granted (clickIdForUser already guarantees that; checked again here), and
  * only the id fields, never the capture timestamp.
  */
@@ -82,11 +84,11 @@ export function checkoutAdMetadata(
 ): CheckoutIntentPayload['adMetadata'] | undefined {
   if (!click || click.ad_consent !== 'granted') return undefined;
   const out: NonNullable<CheckoutIntentPayload['adMetadata']> = { ad_consent: 'granted' };
-  for (const key of ['gclid', 'gbraid', 'wbraid'] as const) {
+  for (const key of CLICK_ID_KEYS) {
     const value = click[key];
     if (typeof value === 'string' && value) out[key] = value;
   }
-  return out.gclid || out.gbraid || out.wbraid ? out : undefined;
+  return CLICK_ID_KEYS.some((key) => out[key]) ? out : undefined;
 }
 
 /** The cloud frontend origin the licence site sends the buyer back to. */

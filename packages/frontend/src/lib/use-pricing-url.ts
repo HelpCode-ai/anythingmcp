@@ -20,7 +20,7 @@ let cached: { token: string; data: Promise<PricingLinkData> } | null = null;
 function lookup(token: string): Promise<PricingLinkData> {
   if (cached?.token !== token) {
     const ids = auth.attributionClickIds(token).then(
-      ({ gclid, gbraid, wbraid }) => ({ gclid, gbraid, wbraid }),
+      ({ gclid, gbraid, wbraid, oppref }) => ({ gclid, gbraid, wbraid, oppref }),
       () => null,
     );
     const emailToken = license.pricingLinkToken(token).then(
@@ -34,9 +34,9 @@ function lookup(token: string): Promise<PricingLinkData> {
 
 /**
  * The pricing link (see buildPricingUrl), on AnythingMCP Cloud carrying
- *   - the signed-in user's own Google Ads click id when the Cloud stored one
- *     with their ad consent, so the purchase can be reported to Google Ads as
- *     an offline conversion;
+ *   - the signed-in user's own ad click ids (Google Ads, ChatGPT Ads' oppref)
+ *     when the Cloud stored them with their ad consent, so the purchase can
+ *     be reported to the ad platform as a conversion;
  *   - their address token, so the pricing page knows who is buying and
  *     refuses a second subscription beside a card trial or plan the address
  *     already has.

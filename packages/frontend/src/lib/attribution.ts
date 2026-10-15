@@ -9,9 +9,10 @@
  * request as `attribution` and the backend records it for a newly created
  * account only.
  *
- * Campaign-level, with one exception: a Google Ads click id (gclid, gbraid,
- * wbraid) travels only with `ad_consent: 'granted'`, so a purchase can later
- * be reported to Google Ads as an offline conversion. The site sends it only
+ * Campaign-level, with one exception: an ad click id (Google Ads' gclid,
+ * gbraid, wbraid; ChatGPT Ads' oppref) travels only with
+ * `ad_consent: 'granted'`, so a sign-up, an activation or a purchase can
+ * later be reported to the ad platform as a conversion. The site sends it only
  * with consent; for the touch this page builds itself, the id is kept only if
  * the visitor allowed marketing cookies in this app's own banner, and is
  * otherwise reduced to `paid: true`. The backend drops any id without that
@@ -23,7 +24,9 @@
 import { sessionStore } from './storage';
 
 export type AdConsent = 'granted' | 'denied' | 'unknown';
-export type ClickIdKey = 'gclid' | 'gbraid' | 'wbraid';
+export type GoogleClickIdKey = 'gclid' | 'gbraid' | 'wbraid';
+/** Google's click ids, and `oppref`, the click reference of a ChatGPT Ads landing URL. */
+export type ClickIdKey = GoogleClickIdKey | 'oppref';
 export type ClickIds = Partial<Record<ClickIdKey, string>>;
 
 export type Touch = ClickIds & {
@@ -34,6 +37,7 @@ export type Touch = ClickIds & {
   utm_content?: string;
   gad_source?: string;
   gad_campaignid?: string;
+  /** A Google Ads click id was on the URL (an `oppref` does not set it). */
   paid?: boolean;
   referrer_host?: string;
   landing_path?: string;
@@ -56,7 +60,9 @@ const STRING_KEYS = [
   'gad_campaignid',
 ] as const;
 /** Google Ads click ids, in the order Google prefers them. */
-export const CLICK_ID_KEYS: readonly ClickIdKey[] = ['gclid', 'gbraid', 'wbraid'];
+export const GOOGLE_CLICK_ID_KEYS: readonly GoogleClickIdKey[] = ['gclid', 'gbraid', 'wbraid'];
+/** Every ad click id a touch may carry. */
+export const CLICK_ID_KEYS: readonly ClickIdKey[] = [...GOOGLE_CLICK_ID_KEYS, 'oppref'];
 /**
  * Every query parameter the sign-up page reads for attribution: the site's
  * hand-over and the campaign tags and click ids of a touch built here. The
@@ -65,6 +71,13 @@ export const CLICK_ID_KEYS: readonly ClickIdKey[] = ['gclid', 'gbraid', 'wbraid'
  */
 export const LANDING_PARAM_KEYS: readonly string[] = ['amcp_src', 'amcp_lt', ...STRING_KEYS, ...CLICK_ID_KEYS];
 const MAX_CLICK_ID = 150;
+/**
+ * `oppref` is opaque (OpenAI asks for it unmodified): printable ASCII without
+ * spaces, quotes, angle brackets, backslash or `@`, at most 500 characters.
+ * Same rule as the backend's OPPREF_PATTERN.
+ */
+const MAX_OPPREF = 500;
+const OPPREF_PATTERN = /^[A-Za-z0-9!#$%&()*+,./:;=?[\]^_{|}~-]+$/;
 const AD_CONSENT_VALUES: readonly AdConsent[] = ['granted', 'denied', 'unknown'];
 
 function cleanString(value: unknown): string | undefined {
@@ -74,11 +87,13 @@ function cleanString(value: unknown): string | undefined {
   return v;
 }
 
-/** A Google Ads click id, or undefined for anything that is not one. */
-export function cleanClickId(value: unknown): string | undefined {
+/** A click id of the kind `key` (a Google one by default), or undefined for anything that is not one. */
+export function cleanClickId(value: unknown, key: ClickIdKey = 'gclid'): string | undefined {
   if (typeof value !== 'string') return undefined;
   const v = value.trim();
-  if (!v || v.length > MAX_CLICK_ID || !/^[A-Za-z0-9_-]+$/.test(v)) return undefined;
+  if (!v) return undefined;
+  if (key === 'oppref') return v.length <= MAX_OPPREF && OPPREF_PATTERN.test(v) ? v : undefined;
+  if (v.length > MAX_CLICK_ID || !/^[A-Za-z0-9_-]+$/.test(v)) return undefined;
   return v;
 }
 
@@ -117,10 +132,10 @@ export function sanitizeTouch(input: unknown): Touch | undefined {
   // Never a click id without consent; the backend enforces the same rule.
   if (out.ad_consent === 'granted') {
     for (const key of CLICK_ID_KEYS) {
-      const v = cleanClickId(raw[key]);
+      const v = cleanClickId(raw[key], key);
       if (v) out[key] = v;
     }
-    if (hasClickId(out)) out.paid = true;
+    if (GOOGLE_CLICK_ID_KEYS.some((k) => out[k])) out.paid = true;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -153,8 +168,9 @@ export function decodeTouch(value: string | null | undefined): Touch | undefined
  * app, not a source; the marketing site is kept, since it then means the
  * visitor came from the site without its touch (script blocked, old link).
  *
- * An ad click id in the URL always makes the touch `paid`; the id itself is
- * kept only when `adConsent` (this app's own cookie banner) is 'granted'.
+ * A Google Ads click id in the URL always makes the touch `paid`; any click
+ * id itself (Google's or an `oppref`) is kept only when `adConsent` (this
+ * app's own cookie banner) is 'granted'.
  */
 export function touchFromUrl(
   href: string,
@@ -175,11 +191,11 @@ export function touchFromUrl(
       if (v) touch[key] = v;
     }
     if (CLICK_ID_KEYS.some((p) => url!.searchParams.has(p))) {
-      touch.paid = true;
+      if (GOOGLE_CLICK_ID_KEYS.some((p) => url!.searchParams.has(p))) touch.paid = true;
       touch.ad_consent = adConsent;
       if (adConsent === 'granted') {
         for (const key of CLICK_ID_KEYS) {
-          const v = cleanClickId(url.searchParams.get(key));
+          const v = cleanClickId(url.searchParams.get(key), key);
           if (v) touch[key] = v;
         }
       }

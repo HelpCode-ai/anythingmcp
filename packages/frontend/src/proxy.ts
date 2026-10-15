@@ -13,7 +13,7 @@ const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-passwor
  * signed-out visitors, who would otherwise land on a bare store page.
  *
  * Attribution parameters (the site's `amcp_src`/`amcp_lt`, campaign tags and
- * Google Ads click ids) move out of `redirect` to the top of the /login URL:
+ * ad click ids: Google's and ChatGPT Ads' `oppref`) move out of `redirect` to the top of the /login URL:
  * the sign-up page reads them only there, so inside `redirect` they were
  * lost and the sign-up counted as direct. The destination has no use for
  * them. A query without any is passed through untouched.

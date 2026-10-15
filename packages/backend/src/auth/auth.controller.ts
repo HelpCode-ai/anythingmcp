@@ -14,6 +14,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -33,6 +34,7 @@ import { SiteSettingsService } from '../settings/site-settings.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
+import { AdsSignupService } from '../audit/ads-signup.service';
 import { LicenseService } from '../license/license.service';
 import { RolesService } from '../roles/roles.service';
 import { RecoveryCodesService } from './recovery-codes.service';
@@ -230,6 +232,7 @@ export class AuthController {
     private readonly ssoEnforcement: SsoEnforcementService,
     private readonly productEvents: ProductEventService,
     private readonly edition: EditionService,
+    @Optional() private readonly adsSignup?: AdsSignupService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -651,6 +654,10 @@ export class AuthController {
     // license gate evaluates (best-effort; never blocks verification).
     await this.ensureCloudTrial(userId);
 
+    // Cloud, ChatGPT Ads sign-ups only: report the verified sign-up (in the
+    // background; never blocks verification).
+    void this.adsSignup?.onEmailVerified(userId);
+
     return { message: 'Email verified successfully', emailVerified: true };
   }
 
@@ -676,6 +683,7 @@ export class AuthController {
 
     // Cloud: ensure a trial exists before the user lands back in the app.
     await this.ensureCloudTrial(record.userId);
+    void this.adsSignup?.onEmailVerified(record.userId);
 
     // Redirect to frontend
     const frontendUrl = this.getFrontendUrl(req);

@@ -5,7 +5,9 @@ import {
   AD_CONSENT_VALUES,
   CLICK_ID_PATTERN,
   MAX_CLICK_ID,
+  MAX_OPPREF,
   MAX_TOUCH_FIELD,
+  OPPREF_PATTERN,
   type AdConsent,
 } from '../audit/signup-attribution';
 
@@ -14,8 +16,8 @@ const CLICK_ID_MESSAGE = 'must be a Google Ads click id (letters, digits, "-" an
 /**
  * One touch: what a landing on the marketing site (or on the cloud app, for
  * visitors who came straight there) said about where the visitor came from.
- * Campaign-level, no referrer path, nothing personal; a Google Ads click id
- * only next to `ad_consent: 'granted'`. The server sanitizes again before
+ * Campaign-level, no referrer path, nothing personal; an ad click id (Google
+ * Ads or ChatGPT Ads) only next to `ad_consent: 'granted'`. The server sanitizes again before
  * storing (audit/signup-attribution.ts) and drops a click id sent without
  * that consent; these rules only bound what the register endpoint accepts.
  *
@@ -100,6 +102,16 @@ export class SignupTouchDto {
   @MaxLength(MAX_CLICK_ID)
   @Matches(CLICK_ID_PATTERN, { message: `wbraid ${CLICK_ID_MESSAGE}` })
   wbraid?: string;
+
+  @ApiPropertyOptional({
+    description: "ChatGPT Ads click reference (opaque). Stored only when `ad_consent` is 'granted'.",
+    maxLength: MAX_OPPREF,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_OPPREF)
+  @Matches(OPPREF_PATTERN, { message: 'oppref must be a ChatGPT Ads click reference (printable characters, no spaces)' })
+  oppref?: string;
 
   @ApiPropertyOptional({
     enum: AD_CONSENT_VALUES,
